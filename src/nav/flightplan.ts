@@ -186,6 +186,11 @@ export class FlightPlan {
     }
   }
 
+  /** ATC "cleared for the approach" while already flying the route into it */
+  armApproach() {
+    if (this.approachId) this.approachActive = true;
+  }
+
   activateApproach(from: LatLon) {
     if (!this.approachId) return;
     this.approachActive = true;

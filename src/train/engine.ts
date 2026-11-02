@@ -380,6 +380,28 @@ export const S = {
   missedHold(laps: number, def: HoldDef): Step {
     return { ...S.hold(def, laps), text: `Missed approach: climb to ${def.altFt}, proceed to ${def.fix.ident} and hold (${laps} circuit${laps > 1 ? 's' : ''})` };
   },
+  locIntercept(freq: number, course: number, fix: LatLon & { ident: string }, alt: number, maxOvershootDots = 1): Step {
+    return {
+      text: `Intercept the localizer (CRS ${fmtHdg(course)}) and track it to ${fix.ident} at ${alt} ft — no overshoot`,
+      hint: 'Start the turn when the CDI comes alive (≈ 1 dot): lead the turn by the needle rate, not its position.',
+      onStart: (c) => {
+        c.sim.av.nav1.active = freq;
+        c.sim.av.obs1 = course;
+        c.sim.setCdi('NAV1');
+      },
+      done: (c) => distanceNm(c.sim.ac.s, fix) < 0.6,
+      check: (c) => {
+        const a = devCheck(c, { alt });
+        if (a) return a;
+        const dev = c.sim.nav1.dev;
+        if (c.sim.nav1.valid && Math.abs(dev) < 0.15) c.mem.captured = true;
+        if (c.mem.captured && Math.abs(dev) * 2 > maxOvershootDots) return `Overshoot ${(Math.abs(dev) * 2).toFixed(1)} dots (max ${maxOvershootDots})`;
+        return null;
+      },
+      readout: (c) => `${c.mem.captured ? 'established' : 'intercepting'} · ${(c.sim.nav1.dev * 2).toFixed(1)} dots · ${distanceNm(c.sim.ac.s, fix).toFixed(1)} NM to ${fix.ident}`,
+      graceSec: 3,
+    };
+  },
   takeoff(alt: number, hdg: number): Step {
     return {
       text: `Take off, climb runway heading ${fmtHdg(hdg)} at 74 KIAS (Vy) to ${alt} ft`,

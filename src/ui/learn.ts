@@ -250,7 +250,13 @@ export class HoldDrillModal extends Modal {
     const fixes = ['ARD', 'MSV', 'KEDDY', 'WILLO', 'TOBEY', 'PA'];
     const inbound = Math.round(Math.random() * 35) * 10 || 360;
     const turn: Turn = Math.random() < 0.65 ? 'R' : 'L';
-    const crs = Math.round(Math.random() * 71) * 5 || 360;
+    let crs = 360;
+    for (let k = 0; k < 50; k++) {
+      crs = Math.round(Math.random() * 71) * 5 || 360;
+      let a = ((crs - inbound + 540) % 360) - 180;
+      if (turn === 'L') a = -a;
+      if ([-110, 70, 180, -180].every((b) => Math.abs(a - b) > 8)) break;
+    }
     const fix = fixes[Math.floor(Math.random() * fixes.length)];
     this.q = { inbound, turn, crs, fix, answer: holdEntry(inbound, turn, crs) };
     this.picked = null;

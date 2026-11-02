@@ -15,6 +15,10 @@ describe('curriculum', () => {
       const sim = new Sim();
       const run = new LessonRun(ex, sim);
       expect(run.rt.steps.length).toBeGreaterThan(0);
+      if (run.rt.quiz && run.rt.hold) {
+        const entry = holdEntry(run.rt.hold.inbound, run.rt.hold.turn, bearingDeg(sim.ac.s, run.rt.hold.fix));
+        expect(run.rt.quiz.options[run.rt.quiz.answer]).toBe(entry);
+      }
       for (let i = 0; i < 600; i++) {
         sim.step(1 / 30);
         run.update(1 / 30);
@@ -23,10 +27,6 @@ describe('curriculum', () => {
       if (!ex.allowAp) {
         sim.ap.toggleAp(sim.ac.data);
         expect(sim.ap.ap).toBe(false);
-      }
-      if (run.rt.quiz && run.rt.hold) {
-        const entry = holdEntry(run.rt.hold.inbound, run.rt.hold.turn, bearingDeg(sim.ac.s, run.rt.hold.fix));
-        expect(run.rt.quiz.options[run.rt.quiz.answer]).toBe(entry);
       }
     });
   }
@@ -70,5 +70,28 @@ describe('curriculum', () => {
     expect(run.finished).not.toBeNull();
     expect(run.finished!.acs?.result).toBe("PASS");
     expect(run.finished!.passed).toBe(true);
+  });
+});
+
+describe('IFR flights', () => {
+  it('builds route + approach in one flight plan and arms the approach on clearance', () => {
+    const sim = new Sim();
+    const run = new LessonRun(exercise('ifr-pard-msvl-rnav'), sim);
+    expect(sim.fp.wpts.map((w) => w.ident).slice(0, 6)).toEqual(['PARD', 'ARD', 'SCREE', 'FENNY', 'CRAGG', 'RW03']);
+    expect(sim.ac.s.onGround).toBe(true);
+    expect(run.rt.clearance).toMatch(/Cleared to MSVL via ARD SCREE/);
+    expect(sim.fp.approachActive).toBe(false);
+    run.rt.steps[3].onStart!(run.ctx(0));
+    expect(sim.fp.approachActive).toBe(true);
+  });
+  it('the intercept step flags an overshoot', () => {
+    const sim = new Sim();
+    const run = new LessonRun(exercise('int-loc90'), sim);
+    const st = run.rt.steps[0];
+    st.onStart!(run.ctx(0));
+    const c = run.ctx(0.1);
+    c.mem.captured = true;
+    sim.nav1 = { ...sim.nav1, valid: true, dev: 0.9 };
+    expect(st.check!(c)).toMatch(/Overshoot/);
   });
 });

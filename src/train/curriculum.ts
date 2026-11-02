@@ -1,6 +1,6 @@
 // IFR curriculum: stages, exercises and learning paths for flight schools.
-import { S, startAt, setAttitude, radialQuiz, fmtHdg, type Exercise, type Step } from './engine';
-import { findFix, navaid, runway } from '../nav/data';
+import { S, startAt, setAttitude, radialQuiz, fmtHdg, devCheck, type Exercise, type Step } from './engine';
+import { findFix, navaid, runway, airport, approach as getApproach } from '../nav/data';
 import { destination } from '../nav/geo';
 import { clearanceText, holdEntry, type HoldDef, type Turn } from '../nav/holding';
 import { holdDiagramSvg } from './diagram';
@@ -21,6 +21,7 @@ export const STAGES = [
   { id: 'S5', title: 'Stage 5 — Instrument approaches', desc: 'ILS, LOC, VOR/DME with arc, NDB with procedure turn, RNAV LPV with HILPT, LNAV/VNAV, back course, circling.' },
   { id: 'S6', title: 'Stage 6 — Missed approaches & abnormals', desc: 'Go-around at DA, missed approach holds, GS/AP failures, partial-panel approach.' },
   { id: 'S7', title: 'Stage 7 — Checkride preparation', desc: 'Full IFR profiles evaluated against the ACS.' },
+  { id: 'S8', title: 'Stage 8 — IFR cross-country flights', desc: 'Gate to gate: clearance, departure, route, descent, approach and landing at another airport.' },
 ];
 
 function holdExercise(id: string, title: string, fixId: string, inbound: number, turn: Turn, courseToFix: number, alt: number, opts: { wind?: [number, number]; vor?: boolean; summary?: string; laps?: number } = {}): Exercise {
@@ -127,6 +128,73 @@ function approachExercise(id: string, stage: string, title: string, approachId: 
         return { steps, acs: true, allowanceSec: 30, hold };
       }
       return { steps, acs: true, allowanceSec: 30 };
+    },
+  };
+}
+
+function interceptExercise(id: string, title: string, summary: string, o: { navaidIdent: string; freq: number; course: number; fix: string; from: { brg: number; dist: number; off: number }; hdg: number; alt: number; wind: [number, number]; maxOvershoot?: number; plate?: string }): Exercise {
+  return {
+    id,
+    stage: 'S3',
+    title,
+    summary,
+    objectives: ['Anticipate the intercept with the needle movement', 'Roll out on course without overshooting', 'Establish the wind correction angle'],
+    standards: [`Overshoot ≤ ${o.maxOvershoot ?? 1} dot after establishing`, 'Altitude ±100 ft'],
+    briefing: ['Localizer full scale = 2.5°: at 10 NM one dot ≈ 0.2 NM — the needle moves fast close in.', 'Begin the turn at ~1 dot for a 30° intercept, earlier for 45°+ or with a tailwind component.'],
+    allowAp: false,
+    minutes: 6,
+    plate: o.plate,
+    setup: (sim) => {
+      const fx = F(o.fix);
+      const onCourse = destination(fx, o.course + 180, o.from.dist);
+      const start = destination(onCourse, o.from.brg, o.from.off);
+      startAt(sim, { pos: start, altFt: o.alt, hdg: o.hdg, iasKt: 95, weather: { windDir: o.wind[0], windKt: o.wind[1], ceilingFt: 800, visibilitySm: 2 }, setup: (s) => { s.ap.altSel = o.alt; s.ap.hdgBug = o.hdg; } });
+      return { steps: [S.locIntercept(o.freq, o.course, { ...fx, ident: fx.ident }, o.alt, o.maxOvershoot ?? 1)], allowanceSec: 8 };
+    },
+  };
+}
+
+function ifrFlight(id: string, title: string, o: { dep: [string, string]; route: string[]; cruise: number; approachId: string; transition: string; weather: Partial<import('../sim/environment').Weather>; summary: string; minutes: number }): Exercise {
+  const ap = getApproach(o.approachId);
+  const depApt = airport(o.dep[0]);
+  const rw = runway(o.dep[0], o.dep[1]);
+  const clearance = `Cleared to ${ap.airport} via ${o.route.join(' ')}, then ${ap.name} via ${o.transition}. Climb and maintain 3000, expect ${o.cruise} ten minutes after departure. Departure frequency ${depApt.freqs.approach?.toFixed(2) ?? '119.85'}, squawk 4721.`;
+  return {
+    id,
+    stage: 'S8',
+    title,
+    summary: o.summary,
+    objectives: ['Copy and read back the IFR clearance (CRAFT)', 'Depart, climb and level at the assigned altitudes', 'Fly the route, brief and fly the approach, land'],
+    standards: ['Altitude ±100 ft when level', 'Approach to ACS standards', 'Land or execute the missed approach'],
+    briefing: [`CRAFT: C ${ap.airport} · R ${o.route.join(' ')} · A 3000 → ${o.cruise} · F departure · T 4721.`, 'Before departure: load the route (already in the FPL), brief the destination plate, set minimums.', 'Use the autopilot as you wish — this is about managing the whole flight.'],
+    plate: o.approachId,
+    allowAp: true,
+    minutes: o.minutes,
+    setup: (sim) => {
+      startAt(sim, {
+        pos: destination(rw.threshold, rw.heading, 0.05),
+        altFt: rw.elevFt,
+        hdg: rw.heading,
+        iasKt: 0,
+        onGround: true,
+        weather: { turbulence: 0.15, ...o.weather },
+        setup: (s) => {
+          s.ap.altSel = 3000;
+          s.ap.hdgBug = Math.round(rw.heading) || 360;
+          s.av.xpdr = '4721';
+          s.fp.setEnroute([{ ident: depApt.icao, lat: depApt.lat, lon: depApt.lon }, ...o.route.map((r) => { const f = F(r); return { ident: f.ident, lat: f.lat, lon: f.lon }; })]);
+          s.loadApproach(o.approachId, o.transition, 'load');
+        },
+      });
+      const iafAlt = ap.transitions.find((t) => t.name === o.transition)?.legs[0].altMin ?? o.cruise;
+      const lastRoute = o.route[o.route.length - 1];
+      const steps: Step[] = [
+        S.takeoff(3000, rw.heading),
+        { text: `ATC: "Climb and maintain ${o.cruise}, proceed on course." — set ALT SEL, fly the GPS route (NAV)`, done: (c) => Math.abs(c.sim.indicatedAlt() - o.cruise) < 100 && Math.abs(c.d.vsFpm) < 300, check: (c) => (c.d.iasKt < 62 ? 'Too slow in the climb' : c.d.stallWarn ? 'Stall warning' : null), graceSec: 10 },
+        { text: `En route ${o.route.join(' → ')} at ${o.cruise}. Brief the ${ap.name} plate.`, done: (c) => c.sim.fp.out.valid && (c.sim.fp.out.toIdent === lastRoute ? c.sim.fp.out.distNm < 6 : c.sim.fp.wpts.findIndex((w) => w.ident === c.sim.fp.out.toIdent) > o.route.length), check: (c) => devCheck(c, { alt: o.cruise }), readout: (c) => (c.sim.fp.out.valid ? `${c.sim.fp.out.toIdent} ${c.sim.fp.out.distNm.toFixed(1)} NM` : ''), graceSec: 15 },
+        { ...S.approach(false), text: `ATC: "Descend and maintain ${iafAlt}, cleared ${ap.name} approach." — fly it and land at ${ap.airport}`, onStart: (c) => c.sim.fp.armApproach() },
+      ];
+      return { steps, acs: true, allowanceSec: 60, clearance };
     },
   };
 }
@@ -360,6 +428,10 @@ export const EXERCISES: Exercise[] = [
       };
     },
   },
+  interceptExercise('int-loc30', 'Localizer intercept at 30°', 'Vectors: heading 240 to intercept the I-PRD localizer outside MARLO. Turn on without overshooting.', { navaidIdent: 'IPRD', freq: 110.3, course: 270, fix: 'MARLO', from: { brg: 0, dist: 7, off: 3 }, hdg: 240, alt: 3000, wind: [200, 10], plate: 'PARD-I27' }),
+  interceptExercise('int-loc45-tail', 'Localizer intercept at 45° with a tailwind', 'Steeper intercept with a 25 kt wind pushing you through the course: lead it early.', { navaidIdent: 'IPRD', freq: 110.3, course: 270, fix: 'MARLO', from: { brg: 180, dist: 8, off: 3.5 }, hdg: 315, alt: 3000, wind: [160, 25], plate: 'PARD-I27' }),
+  interceptExercise('int-loc90', 'Late 90° localizer intercept', 'ATC vectors you through the final at 90° close to the FAF — a classic overshoot trap. ½-dot tolerance.', { navaidIdent: 'IPRD', freq: 110.3, course: 270, fix: 'MARLO', from: { brg: 0, dist: 4, off: 2.2 }, hdg: 180, alt: 3000, wind: [360, 15], maxOvershoot: 1.5, plate: 'PARD-I27' }),
+  interceptExercise('int-lda', 'LDA intercept (offset course)', 'Intercept the I-ADN LDA (course 016) — the course is not aligned with any runway.', { navaidIdent: 'IADN', freq: 109.5, course: 16, fix: 'NIXIE', from: { brg: 286, dist: 7, off: 3 }, hdg: 60, alt: 3000, wind: [300, 12], plate: 'PARD-L36' }),
   // ---------------------------------------------------------------- Stage 4
   holdExercise('hold-direct', 'Holding: direct entry', 'ARD', 270, 'R', 300, 3000, { summary: 'The simplest entry — arriving within the 180° direct sector. Learn the hold geometry and timing.' }),
   holdExercise('hold-teardrop', 'Holding: teardrop entry', 'ARD', 270, 'R', 120, 3000, { summary: 'Arriving from the 70° teardrop sector: outbound 30° toward the holding side, then turn inbound.' }),
@@ -383,7 +455,14 @@ export const EXERCISES: Exercise[] = [
       const fx = fixes[Math.floor(Math.random() * fixes.length)];
       const inbound = Math.round(Math.random() * 35) * 10 || 360;
       const turn: Turn = Math.random() < 0.7 ? 'R' : 'L';
-      const crs = Math.round(Math.random() * 35) * 10 || 360;
+      // avoid courses within 8° of a sector boundary: the quiz must be unambiguous
+      let crs = 360;
+      for (let k = 0; k < 50; k++) {
+        crs = Math.round(Math.random() * 71) * 5 || 360;
+        let a = ((crs - inbound + 540) % 360) - 180;
+        if (turn === 'L') a = -a;
+        if ([-110, 70, 180, -180].every((b) => Math.abs(a - b) > 8)) break;
+      }
       const alt = 3000 + Math.round(Math.random() * 3) * 500;
       const ex = holdExercise('hold-random', 'ATC hold', fx, inbound, turn, crs, alt, { wind: [Math.round(Math.random() * 35) * 10, Math.round(Math.random() * 20)] });
       return ex.setup(sim);
@@ -433,6 +512,14 @@ export const EXERCISES: Exercise[] = [
   },
 ];
 
+EXERCISES.push(
+  ifrFlight('ifr-pard-msvl-rnav', 'IFR flight PARD → MSVL (RNAV 03)', { dep: ['PARD', '27'], route: ['ARD', 'SCREE'], cruise: 5000, approachId: 'MSVL-R03', transition: 'SCREE', weather: { ceilingFt: 1700, visibilitySm: 2, windDir: 320, windKt: 14 }, summary: 'Depart Port Ardent, cruise 5000, arrive Mistral Valley with the RNAV (GPS) 03 LNAV/VNAV.', minutes: 30 }),
+  ifrFlight('ifr-msvl-pard-ils', 'IFR flight MSVL → PARD (ILS 27)', { dep: ['MSVL', '21'], route: ['TOBEY'], cruise: 4000, approachId: 'PARD-I27', transition: 'TOBEY', weather: { ceilingFt: 400, visibilitySm: 0.75, windDir: 250, windKt: 12 }, summary: 'Valley departure from runway 21, then the ILS 27 at Port Ardent to near-minimums weather.', minutes: 30 }),
+  ifrFlight('ifr-pard-msvl-vor', 'IFR flight PARD → MSVL (VOR/DME 21, DME arc)', { dep: ['PARD', '09'], route: ['KEDDY', 'TOMAS'], cruise: 5000, approachId: 'MSVL-V21', transition: 'TOMAS (10 DME ARC)', weather: { ceilingFt: 2100, visibilitySm: 3, windDir: 230, windKt: 16, turbulence: 0.3 }, summary: 'East departure, route to TOMAS, the 10 DME arc and the VOR/DME 21 with step-downs.', minutes: 35 }),
+  ifrFlight('ifr-msvl-pard-ndb', 'IFR flight MSVL → PARD (NDB 27, procedure turn)', { dep: ['MSVL', '03'], route: ['ARD', 'PA'], cruise: 4000, approachId: 'PARD-N27', transition: 'PA (PROC TURN)', weather: { ceilingFt: 1300, visibilitySm: 2, windDir: 200, windKt: 15 }, summary: 'The old-school arrival: overfly the NDB, fly the barbed procedure turn and the NDB approach.', minutes: 35 }),
+  ifrFlight('ifr-local-lda', 'IFR local flight (LDA/DME 36)', { dep: ['PARD', '27'], route: ['HERON', 'GULLS'], cruise: 3000, approachId: 'PARD-L36', transition: 'GULLS', weather: { ceilingFt: 1100, visibilitySm: 2, windDir: 340, windKt: 10 }, summary: 'Short local IFR flight back into Port Ardent via the offset LDA to runway 36.', minutes: 25 }),
+);
+
 export interface Path {
   id: string;
   title: string;
@@ -446,6 +533,8 @@ export const PATHS: Path[] = [
   { id: 'classic', title: 'Classic procedures (VOR, NDB, DME arc, PT)', desc: 'The “old-school” skills examiners love: radials, QDM, arcs, procedure turns, timing.', exercises: ['nav-vor-out', 'nav-vor-in', 'nav-arc', 'nav-ndb', 'hold-ndb', 'app-vor-arc', 'app-ndb-pt', 'app-loc', 'app-bc', 'app-circle'] },
   { id: 'approaches', title: 'Approach mastery', desc: 'Every approach type, coupled and hand-flown, in low weather.', exercises: ['app-ils-ap', 'app-ils-hand', 'app-loc', 'app-vor-arc', 'app-ndb-pt', 'app-rnav-hilpt', 'app-lnav-vnav', 'app-bc', 'app-circle', 'ma-da'] },
   { id: 'emerg', title: 'Partial panel & abnormals', desc: 'Failures, standby instruments, unusual attitudes, go-arounds.', exercises: ['bai-unusual', 'pp-compass', 'pp-unusual', 'ma-gsfail', 'ma-pp', 'ma-da'] },
+  { id: 'xc', title: 'IFR cross-country flights', desc: 'Gate-to-gate IFR flights between the two airports: clearance, departure, route, approach, landing.', exercises: ['ifr-local-lda', 'ifr-pard-msvl-rnav', 'ifr-msvl-pard-ils', 'ifr-pard-msvl-vor', 'ifr-msvl-pard-ndb'] },
+  { id: 'intercepts', title: 'Interceptions', desc: 'Localizer, LDA and radial intercepts: 30°, 45° with tailwind, late 90° — no overshoot.', exercises: ['int-loc30', 'int-loc45-tail', 'int-loc90', 'int-lda', 'nav-vor-out', 'nav-vor-in'] },
   { id: 'ckp', title: 'Checkride prep (refresher)', desc: 'A short pre-test sequence for IPCs and practical tests.', exercises: ['bai-steep', 'bai-unusual', 'hold-random', 'app-ils-hand', 'app-loc', 'ma-da', 'ck-profile'] },
 ];
 
