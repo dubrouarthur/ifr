@@ -9,10 +9,14 @@ import { h, store, fmtTime } from './ui/dom';
 import { knob, bkey } from './ui/knob';
 import { ChartsDrawer } from './ui/charts';
 import { InstructorDrawer, HistoryModal } from './ui/instructor';
+import { LearnModal, BriefingModal, LessonResultModal, HoldDrillModal } from './ui/learn';
+import type { LessonRun, Exercise } from './train/engine';
+import type { Path } from './train/curriculum';
 import type { AssessSettings } from './sim/sim';
 import { Launcher, WeatherModal, ProcModal, DirectModal, JoystickModal, DebriefModal, HelpModal, Modal, WX_PRESETS, type WxPreset } from './ui/modals';
 import { distanceNm, wrap180 } from './nav/geo';
 import type { Phase } from './sim/recorder';
+import { CockpitAudio } from './sim/audio';
 
 // ------------------------------------------------------------------ state
 const sim = new Sim(SCENARIOS[1]);
@@ -27,6 +31,9 @@ let debriefShown = false;
 let endTimer = 0;
 
 const input = new InputManager({ onAction: (a) => doAction(a) });
+const audio = new CockpitAudio(store.get('ifr.muted', false));
+window.addEventListener('pointerdown', () => audio.start(), { once: true });
+window.addEventListener('keydown', () => audio.start(), { once: true });
 
 // ------------------------------------------------------------------ toasts
 const toasts = h('div', { class: 'toasts', 'aria-live': 'polite' });
@@ -49,11 +56,34 @@ const directModal = new DirectModal(sim, (m) => toast(m, 'good'));
 const joyModal = new JoystickModal(input);
 const debrief = new DebriefModal(sim, () => startScenario(lastScenario, lastWx, sim.assess), () => launcher.open());
 const historyModal = new HistoryModal();
+let lesson: LessonRun | null = null;
+let lessonPath: Path | null = null;
+const briefing = new BriefingModal(sim, (run) => startLesson(run), (id) => { charts.toggle(true); charts.show(id); });
+const drill = new HoldDrillModal();
+const learn = new LearnModal((ex, path) => pickExercise(ex, path), () => drill.open());
+const lessonResult = new LessonResultModal((ex) => pickExercise(ex, lessonPath), (ex) => pickExercise(ex, lessonPath), () => openDebrief());
+function pickExercise(ex: Exercise, path: Path | null) {
+  lesson = null;
+  lessonPath = path;
+  sim.assess = { mode: 'training', student: launcher.assess.student, handFlown: false, randomFailure: false };
+  briefing.show(ex);
+}
+function startLesson(run: LessonRun) {
+  lesson = run;
+  debriefShown = true; // the lesson result replaces the automatic debrief
+  sim.paused = false;
+  input.keys.clear();
+  scnName.textContent = `Lesson · ${run.ex.title}`;
+  scnSub.textContent = run.ex.summary;
+  if (run.ex.plate) charts.show(run.ex.plate);
+  toast(`Exercise started: ${run.ex.title}`, 'info');
+}
 const help = new HelpModal();
 const charts = new ChartsDrawer(sim);
 const ios = new InstructorDrawer(sim, (m, k) => toast(m, k ?? 'info'));
 
 function startScenario(sc: Scenario, wx: WxPreset, a: AssessSettings = launcher.assess) {
+  lesson = null;
   lastScenario = sc;
   lastWx = wx;
   sim.assess = { ...a };
@@ -89,17 +119,26 @@ const I = {
   play: 'M7 5l12 7-12 7z',
   proc: 'M4 6h16M4 12h10M4 18h7',
   ga: 'M12 20V5M5 12l7-7 7 7',
+  sound: 'M4 9v6h4l5 4V5L8 9H4zM17 8a5 5 0 0 1 0 8M19.5 5.5a9 9 0 0 1 0 13',
+  mute: 'M4 9v6h4l5 4V5L8 9H4zM17 9l5 6M22 9l-5 6',
+  learn: 'M2 9l10-5 10 5-10 5-10-5zM6 11v5c3 2 9 2 12 0v-5M22 9v6',
   ios: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0',
   records: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01',
 };
 const scnName = h('b', {}, '');
 const scnSub = h('span', {}, '');
 const phaseChip = h('span', { class: 'chip live' }, 'Ready');
-const wxChip = h('span', { class: 'chip' }, '');
+const wxChip = h('span', { class: 'chip', id: 'wx-chip' }, '');
 const pauseBtn = h('button', { class: 'btn', title: 'Pause (Esc)', onclick: () => togglePause() }, icon(I.pause), h('span', { class: 'lbl' }, 'Pause'));
 const rateSeg = h('div', { class: 'seg', title: 'Simulation rate' }, ...[1, 2, 4].map((r) => h('button', { class: r === 1 ? 'on' : '', onclick: () => setRate(r) }, `${r}×`)));
 const viewSeg = h('div', { class: 'seg', title: 'Outside view (Tab)' }, ...(['normal', 'big', 'none'] as const).map((m) => h('button', { 'data-m': m, onclick: () => setOtw(m) }, m === 'normal' ? 'View' : m === 'big' ? 'Big' : 'Panel')));
 
+const muteBtn = h('button', { class: 'btn ghost', title: 'Sound on/off (M)', onclick: () => toggleMute() }, icon(audio.muted ? I.mute : I.sound));
+function toggleMute() {
+  audio.setMuted(!audio.muted);
+  store.set('ifr.muted', audio.muted);
+  muteBtn.replaceChildren(icon(audio.muted ? I.mute : I.sound));
+}
 const topbar = h('header', { class: 'topbar' },
   h('div', { class: 'brand' }, h('img', { class: 'logo', src: '/favicon.svg', alt: '' }), 'IFR Trainer', h('small', {}, 'G1000 · ARDENT ISLANDS')),
   h('div', { class: 'scn' }, scnName, scnSub),
@@ -107,7 +146,8 @@ const topbar = h('header', { class: 'topbar' },
   wxChip,
   h('div', { class: 'spacer' }),
   h('div', { class: 'tb-actions' },
-    h('button', { class: 'btn primary', onclick: () => launcher.open(), title: 'Choose a scenario' }, icon(I.plane), h('span', { class: 'lbl' }, 'Scenarios')),
+    h('button', { class: 'btn primary', onclick: () => learn.open(), title: 'Learning paths & exercises (J)' }, icon(I.learn), h('span', { class: 'lbl' }, 'Learn')),
+    h('button', { class: 'btn', onclick: () => launcher.open(), title: 'Choose a scenario' }, icon(I.plane), h('span', { class: 'lbl' }, 'Scenarios')),
     h('button', { class: 'btn', onclick: () => procModal.open(), title: 'Load an approach (X)' }, icon(I.proc), h('span', { class: 'lbl' }, 'Procedures')),
     h('button', { class: 'btn', onclick: () => directModal.open(), title: 'Direct-To (D)' }, icon(I.route), h('span', { class: 'lbl' }, 'D→')),
     h('button', { class: 'btn', onclick: () => charts.toggle(), title: 'Charts (K)' }, icon(I.map), h('span', { class: 'lbl' }, 'Charts')),
@@ -119,6 +159,7 @@ const topbar = h('header', { class: 'topbar' },
     viewSeg,
     rateSeg,
     pauseBtn,
+    muteBtn,
     h('button', { class: 'btn ghost', onclick: () => help.open(), title: 'Help (?)' }, icon(I.help)),
   ),
 );
@@ -470,6 +511,8 @@ window.addEventListener('keydown', (e) => {
     case 'd': if (e.shiftKey) openDebrief(); else directModal.open(); e.preventDefault(); break;
     case 'x': procModal.open(); break;
     case 'i': ios.toggle(); break;
+    case 'j': learn.open(); break;
+    case 'm': toggleMute(); break;
     case 'g': goAround(); break;
     case 'b': setQnh(); break;
     case 't': toggleTimer(); break;
@@ -504,6 +547,33 @@ function updateCoach() {
   const w = sim.weather;
   wxChip.textContent = `${imc ? 'IMC' : 'VMC'} · ${w.ceilingFt >= 15000 ? 'CLR' : 'OVC' + String(Math.round(w.ceilingFt / 100)).padStart(3, '0')} · ${w.visibilitySm}SM · ${String(w.windDir).padStart(3, '0')}/${w.windKt}${w.gustKt ? 'G' + w.gustKt : ''}`;
   wxChip.className = `chip${imc ? ' warn' : ''}`;
+  if (lesson) {
+    const run = lesson;
+    const st = run.step;
+    const ctx = run.ctx(0);
+    const ro = st?.readout ? st.readout(ctx) : '';
+    const key = `lesson|${run.idx}|${run.currentViolation}|${ro}|${sim.paused}|${!!run.finished}`;
+    if (key === coachKey) return;
+    coachKey = key;
+    coach.innerHTML = '';
+    coach.classList.add('lesson');
+    const steps = h('ul', { class: 'steps' }, ...run.rt.steps.map((x, i) => h('li', { class: i < run.idx ? 'ok' : i === run.idx ? 'cur' : '' }, i < run.idx ? '✓' : i === run.idx ? '▶' : '○', ' ', x.text)));
+    coach.append(
+      h('h4', {}, `Lesson · ${run.ex.title}`, h('span', { class: 'muted', style: 'font-size:11px' }, fmtTime(run.totalT))),
+      h('div', { class: 'next' }, st ? st.text : run.finished ? 'Complete' : ''),
+    );
+    if (st?.hint) coach.append(h('div', { class: 'hint', style: 'color:#9fb0c0;font-size:12.5px;margin-top:4px' }, st.hint));
+    if (ro) coach.append(h('div', { class: 'ro' }, ro));
+    if (run.currentViolation) coach.append(h('div', { class: 'viol' }, `⚠ ${run.currentViolation}`));
+    coach.append(steps);
+    coach.append(h('div', { class: 'acts' },
+      h('button', { class: 'btn', onclick: () => pickExercise(run.ex, lessonPath) }, 'Restart'),
+      run.ex.plate ? h('button', { class: 'btn', onclick: () => { charts.toggle(true); charts.show(run.ex.plate!); } }, 'Plate') : null,
+      h('button', { class: 'btn', onclick: () => { run.abort(); } }, 'End'),
+    ));
+    return;
+  }
+  coach.classList.remove('lesson');
   if (sim.assess.mode === 'checkride') {
     const fails = Object.values(sim.failures).some(Boolean);
     const key = `ride|${sim.ac.s.crashed}|${sim.paused}|${fails}`;
@@ -582,6 +652,15 @@ function frame(now: number) {
     toast('Autopilot disconnected — control input', 'warn');
   }
   sim.step(dt);
+  if (lesson && !sim.paused) {
+    lesson.update(Math.min(0.1, dt) * sim.rate);
+  }
+  if (lesson?.finished && !lessonResult.isOpen && !Modal.anyOpen()) {
+    const run = lesson;
+    lesson = null;
+    sim.paused = true;
+    lessonResult.show(run, lessonPath);
+  }
 
   // auto debrief at the end of a flight
   if (!debriefShown && (sim.ac.s.crashed || (sim.rec.touchdown && sim.ac.s.onGround && sim.ac.data.gsKt < 2))) {
@@ -609,6 +688,7 @@ function frame(now: number) {
   drawMfd(mfdCanvas.getContext('2d')!, sim, mfdSt);
   charts.update();
   ios.update(dt);
+  audio.update(sim, dt);
 
   // footer
   if (!thrDragging) thr.value = String(Math.round(sim.controls.throttle * 100));
@@ -646,7 +726,7 @@ setOtw(otwMode);
 updateHeader();
 updateCoach();
 requestAnimationFrame(frame);
-launcher.open();
+learn.open();
 // deep link: ?scenario=ils27-vtf&wx=mins
 {
   const q = new URLSearchParams(location.search);

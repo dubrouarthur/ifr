@@ -557,6 +557,8 @@ export class HelpModal extends Modal {
       ['Outside view size', 'Tab'],
       ['Debrief / checkride report', 'Shift+D'],
       ['Instructor station', 'I'],
+      ['Learn (paths & exercises)', 'J'],
+      ['Sound on/off', 'M'],
       ['This help', '?'],
     ];
     this.body.append(h('div', { class: 'help-grid' }, ...rows.map(([a, k]) => h('div', {}, h('span', {}, a), h('span', {}, ...k.split('  ').map((x) => h('kbd', {}, x)))))));

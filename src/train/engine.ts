@@ -5,7 +5,7 @@ import type { Weather } from '../sim/environment';
 import { wrap180, distanceNm, bearingDeg, destination, DEG, type LatLon } from '../nav/geo';
 import { computeNav } from '../nav/radios';
 import { HoldEvaluator } from './holdEval';
-import type { HoldDef } from '../nav/holding';
+import { holdEntry, type HoldDef } from '../nav/holding';
 import { evaluateAcs, type AcsReport } from '../sim/recorder';
 
 export interface Ctx {
@@ -354,7 +354,7 @@ export const S = {
       readout: (c) => {
         const h = c.run.holdEval;
         if (!h) return '';
-        if (h.crossedAt === null) return `to ${def.fix.ident} ${distanceNm(c.sim.ac.s, def.fix).toFixed(1)} NM · entry ${h.correctEntry ?? '?'}`;
+        if (h.crossedAt === null) return `to ${def.fix.ident} ${distanceNm(c.sim.ac.s, def.fix).toFixed(1)} NM · planned entry ${holdEntry(def.inbound, def.turn, bearingDeg(c.sim.ac.s, def.fix))}`;
         const last = h.inboundTimes[h.inboundTimes.length - 1];
         return `lap ${h.laps}/${laps}${last ? ` · last inbound ${Math.round(last)} s` : ''}`;
       },

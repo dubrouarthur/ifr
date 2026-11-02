@@ -159,8 +159,8 @@ export function approachPlate(ap: Approach): string {
   // notes + MSA
   const notesY = boxY + 38;
   parts.push(`<rect x="10" y="${notesY}" width="${W - 140}" height="58" fill="none" stroke="#000"/>`);
-  ap.notes.forEach((n, i) => parts.push(`<text x="18" y="${notesY + 16 + i * 13}" font-size="10">${esc(n)}</text>`));
-  if (ap.category === 'Non-precision' && ap.type !== 'NDB') parts.push(`<text x="18" y="${notesY + 16 + ap.notes.length * 13}" font-size="10">Procedure NA for arrivals on airways without radar.</text>`);
+  ap.notes.forEach((n, i) => parts.push(`<text x="18" y="${notesY + 14 + i * 11.5}" font-size="9">${esc(n)}</text>`));
+  if (ap.category === 'Non-precision' && ap.type !== 'NDB' && ap.notes.length < 4) parts.push(`<text x="18" y="${notesY + 14 + ap.notes.length * 11.5}" font-size="9">Procedure NA for arrivals on airways without radar.</text>`);
   // MSA circle
   const mx = W - 70;
   const my = notesY + 29;
@@ -221,7 +221,11 @@ export function approachPlate(ap: Approach): string {
         parts.push(arrowLine(b1, back, { width: 1.6 }));
         parts.push(legLabel(bb, b1, `${pad3(s45)}°`));
         parts.push(legLabel(b1, back, `${pad3(s45 + 180)}°`, -1));
-        parts.push(`<text x="${f2((p0.x + p1.x) / 2)}" y="${f2((p0.y + p1.y) / 2 + 26)}" font-size="9" text-anchor="middle" font-weight="700">PROCEDURE TURN — REMAIN WITHIN ${l.pt.withinNm} NM · ${l.altMin}</text>`);
+        const side = l.pt.side === 'L' ? -1 : 1;
+        const lp = proj(destination(destination(b0, s45, 1.8), o + 90 * side, 1.2));
+        parts.push(`<rect x="${f2(lp.x - 62)}" y="${f2(lp.y - 20)}" width="124" height="24" fill="#fff"/>`);
+        parts.push(`<text x="${f2(lp.x)}" y="${f2(lp.y - 9)}" font-size="8.5" text-anchor="middle" font-weight="700">PROCEDURE TURN · ${l.altMin}</text>`);
+        parts.push(`<text x="${f2(lp.x)}" y="${f2(lp.y + 1)}" font-size="8" text-anchor="middle">REMAIN WITHIN ${l.pt.withinNm} NM</text>`);
       }
       if (l.hilpt && l.hold) parts.push(holdPath(proj, l.fix, l.hold.inbound, l.hold.turn, false));
       if (i === 0) continue;
@@ -345,6 +349,7 @@ export function approachPlate(ap: Approach): string {
   parts.push(`<rect x="10" y="${mnY}" width="${W - 20}" height="${22 + rows * rowH}" fill="none" stroke="#000"/>`);
   const catX = [10, 150, 262, 374, 486];
   ['CATEGORY', 'A', 'B', 'C', 'D'].forEach((c, i) => {
+    if (i) parts.push(`<text x="${catX[i] + 100}" y="${mnY + 15}" font-size="7.5" text-anchor="end">DA/MDA-VIS  HAT</text>`);
     parts.push(`<text x="${catX[i] + (i === 0 ? 8 : 56)}" y="${mnY + 15}" font-size="10.5" font-weight="700" ${i ? 'text-anchor="middle"' : ''}>${c}</text>`);
     if (i) parts.push(`<line x1="${catX[i]}" y1="${mnY}" x2="${catX[i]}" y2="${mnY + 22 + rows * rowH}" stroke="#000"/>`);
   });
@@ -355,7 +360,7 @@ export function approachPlate(ap: Approach): string {
     const alt = m.da ?? m.mda;
     for (let i = 1; i <= 4; i++) {
       const extra = m.label === 'CIRCLING' ? (i - 1) * 40 : 0;
-      parts.push(`<text x="${catX[i] + 56}" y="${y + 14}" font-size="9.5" text-anchor="middle"><tspan font-weight="700">${(alt ?? 0) + extra}-${esc(m.vis)}</tspan>  ${m.hat + extra} (${Math.ceil((m.hat + extra) / 100)}00-${esc(m.vis)})</text>`);
+      parts.push(`<text x="${catX[i] + 56}" y="${y + 14}" font-size="9.5" text-anchor="middle"><tspan font-weight="700">${(alt ?? 0) + extra}-${esc(m.vis)}</tspan>  ${m.hat + extra}</text>`);
     }
     parts.push(`<line x1="10" y1="${y + rowH}" x2="${W - 10}" y2="${y + rowH}" stroke="#000" stroke-width="0.5"/>`);
   });

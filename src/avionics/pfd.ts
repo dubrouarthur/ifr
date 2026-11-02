@@ -273,7 +273,7 @@ export function drawTopBar(ctx: CanvasRenderingContext2D, sim: Sim) {
   ctx.save();
   if (g.valid) {
     const arrow = g.holding ? 'HOLD' : g.fromIdent ? `${g.fromIdent} → ` : '→ ';
-    text(ctx, g.holding ? `HOLD ${g.toIdent}` : `${arrow}${g.toIdent}`, 300, 15, C.magenta, 17);
+    text(ctx, g.holding ? `HOLD ${g.toIdent}${g.holdEntry && g.holdPhase !== 'racetrack' ? ' · ' + g.holdEntry + ' ENTRY' : ''}` : `${arrow}${g.toIdent}`, 300, 15, C.magenta, 17);
     text(ctx, 'DIS', 300, 38, C.white, 14);
     text(ctx, `${g.distNm.toFixed(g.distNm < 10 ? 1 : 0)}NM`, 330, 38, C.magenta, 17);
     text(ctx, 'DTK', 420, 38, C.white, 14);

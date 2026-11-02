@@ -252,7 +252,23 @@ export function drawMap(
       const isActive = i === fp.active && !fp.out.holding;
       const missed = fp.wpts[i].appr === 'missed';
       if (missed) ctx.setLineDash([8, 6]);
-      line(ctx, a.x, a.y, b.x, b.y, isActive ? C.magenta : C.white, isActive ? 4 : 2.5);
+      const arc = fp.wpts[i].arc;
+      if (arc) {
+        const th0 = bearingDeg(arc.center, fp.wpts[i - 1]);
+        const th1 = bearingDeg(arc.center, fp.wpts[i]);
+        let span = th1 - th0;
+        if (arc.dir === 'R') span = ((span % 360) + 360) % 360;
+        else span = -((((-span) % 360) + 360) % 360);
+        ctx.beginPath();
+        for (let k = 0; k <= 24; k++) {
+          const p = xy(destination(arc.center, th0 + (span * k) / 24, arc.radius));
+          if (k) ctx.lineTo(p.x, p.y);
+          else ctx.moveTo(p.x, p.y);
+        }
+        ctx.strokeStyle = isActive ? C.magenta : C.white;
+        ctx.lineWidth = isActive ? 4 : 2.5;
+        ctx.stroke();
+      } else line(ctx, a.x, a.y, b.x, b.y, isActive ? C.magenta : C.white, isActive ? 4 : 2.5);
       ctx.setLineDash([]);
     }
     // direct-to leg
