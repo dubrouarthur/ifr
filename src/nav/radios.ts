@@ -23,6 +23,8 @@ export interface NavOutput {
   distNm: number;
   /** horizontal distance to the GS antenna (nm) */
   gsDistNm: number;
+  /** aircraft is on the localizer back course */
+  backCourse: boolean;
 }
 
 export interface AircraftPos extends LatLon {
@@ -43,6 +45,7 @@ export const EMPTY_NAV: NavOutput = {
   course: 0,
   distNm: 0,
   gsDistNm: 0,
+  backCourse: false,
 };
 
 export function tunedNavaid(freq: number): Navaid | undefined {
@@ -68,8 +71,13 @@ export function computeNav(freq: number, obs: number, ac: AircraftPos, magVar = 
 
   if (n.type === 'ILS' || n.type === 'LOC') {
     const course = n.course ?? obs;
-    const off = wrap180(radial - course - 180); // + => fly right
-    // Front course coverage ±35°, otherwise unreliable
+    // Deviation is expressed in the course-pointer frame (+ => the course line lies to
+    // the right of the aircraft when looking along the front course direction).
+    const front = wrap180(radial - course - 180);
+    const back = wrap180(course - radial);
+    const backCourse = Math.abs(back) < Math.abs(front);
+    const off = backCourse ? back : front;
+    // Coverage ±35°, otherwise unreliable
     if (Math.abs(off) > 35) return { ...EMPTY_NAV, ident: n.ident, isLoc: true, course };
     const dev = Math.max(-1.2, Math.min(1.2, off / 2.5));
     let gsValid = false;
@@ -81,13 +89,13 @@ export function computeNav(freq: number, obs: number, ac: AircraftPos, magVar = 
       const brgFromGs = bearingDeg(n.gsPos, ac);
       // only in front of the GS antenna, within 10 nm and ±8°
       const inFront = Math.abs(wrap180(brgFromGs - (course + 180))) < 8;
-      if (inFront && dg < 10 * FT_PER_NM && dg > 200) {
+      if (!backCourse && inFront && dg < 10 * FT_PER_NM && dg > 200) {
         const angle = Math.atan2(ac.altFt - n.elevFt, dg) / DEG;
         gsDev = Math.max(-1.2, Math.min(1.2, (n.gsAngle - angle) / 0.7));
         gsValid = true;
       }
     }
-    return { valid: true, ident: n.ident, isLoc: true, radial, bearingTo, dev, toFrom: 'TO', gsValid, gsDev, dmeNm: dme, course, distNm: d, gsDistNm };
+    return { valid: true, ident: n.ident, isLoc: true, radial, bearingTo, dev, toFrom: 'TO', gsValid, gsDev, dmeNm: dme, course, distNm: d, gsDistNm, backCourse };
   }
 
   // VOR: cone of confusion overhead
@@ -109,6 +117,7 @@ export function computeNav(freq: number, obs: number, ac: AircraftPos, magVar = 
     course: obs,
     distNm: d,
     gsDistNm: 0,
+    backCourse: false,
   };
 }
 
@@ -120,4 +129,20 @@ export function markerBeacon(ac: AircraftPos): 'O' | null {
   const height = (ac.altFt - 420) / FT_PER_NM;
   // cone ~ ±40° from vertical
   return height > 0 && d < Math.max(0.15, height * 0.85) ? 'O' : null;
+}
+
+export interface AdfOutput {
+  valid: boolean;
+  ident: string;
+  /** magnetic bearing to the station */
+  bearingTo: number;
+  distNm: number;
+}
+
+export function computeAdf(freqKhz: number, ac: AircraftPos, magVar = 0): AdfOutput {
+  const n = NAVAIDS.find((x) => x.type === 'NDB' && Math.abs(x.freq - freqKhz) < 0.6);
+  if (!n) return { valid: false, ident: '', bearingTo: 0, distNm: 0 };
+  const d = distanceNm(ac, n);
+  if (d > 60) return { valid: false, ident: n.ident, bearingTo: 0, distNm: d };
+  return { valid: true, ident: n.ident, bearingTo: norm360(bearingDeg(ac, n) - magVar), distNm: d };
 }

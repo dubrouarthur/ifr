@@ -47,3 +47,28 @@ describe('VOR receiver', () => {
     expect(computeNav(114.2, 0, { ...p, altFt: 1000 }).valid).toBe(false);
   });
 });
+
+describe('localizer back course', () => {
+  const r09 = runway('PARD', '09');
+  it('west of the field is the back course with no glideslope, HSI-frame sensing', () => {
+    // 6 nm west of RW09, 0.2 nm north. Flying east; course line is to the south (right).
+    // In the course-pointer frame (front course 270) the aircraft is right of the line => dev < 0.
+    const p = destination(destination(r09.threshold, 270, 6), 0, 0.2);
+    const out = computeNav(110.3, 0, { ...p, altFt: 2000 });
+    expect(out.valid).toBe(true);
+    expect(out.backCourse).toBe(true);
+    expect(out.gsValid).toBe(false);
+    expect(out.dev).toBeLessThan(-0.2);
+  });
+});
+
+import { computeAdf } from '../src/nav/radios';
+describe('ADF', () => {
+  it('points at the NDB', () => {
+    const pa = navaid('PA');
+    const p = destination(pa, 90, 5);
+    const o = computeAdf(344, { ...p, altFt: 2000 });
+    expect(o.valid).toBe(true);
+    expect(o.bearingTo).toBeCloseTo(270, 0);
+  });
+});

@@ -2,9 +2,10 @@
 import { Aircraft, neutralControls, type Controls } from './aircraft';
 import { defaultWeather, KT, type Weather } from './environment';
 import { Autopilot, type CdiSource, type NavInputs } from '../avionics/autopilot';
-import { computeNav, EMPTY_NAV, markerBeacon, type NavOutput } from '../nav/radios';
+import { computeAdf, computeNav, EMPTY_NAV, markerBeacon, type AdfOutput, type NavOutput } from '../nav/radios';
+import { Recorder } from './recorder';
 import { FlightPlan } from '../nav/flightplan';
-import { AIRPORTS, groundElevation, runway, findFix, approach } from '../nav/data';
+import { AIRPORTS, NAVAIDS, groundElevation, runway, findFix, approach } from '../nav/data';
 import { destination, distanceNm, DEG, FT_PER_NM, crossTrackNm, alongTrackNm, type LatLon } from '../nav/geo';
 
 export interface Radio {
@@ -25,8 +26,9 @@ export interface Avionics {
   xpdr: string;
   xpdrMode: 'STBY' | 'ON' | 'ALT';
   timerStart: number | null;
-  bearing1: 'OFF' | 'NAV1' | 'GPS';
-  bearing2: 'OFF' | 'NAV2' | 'GPS';
+  bearing1: 'OFF' | 'NAV1' | 'GPS' | 'ADF';
+  bearing2: 'OFF' | 'NAV2' | 'GPS' | 'ADF';
+  adf: Radio;
   inset: boolean;
 }
 
@@ -39,6 +41,12 @@ export interface Scenario {
   hdg: number;
   iasKt: number;
   onGround?: boolean;
+  /** Category shown on the launcher card */
+  kind: 'Departure' | 'Precision' | 'APV' | 'Non-precision' | 'Holding' | 'Free flight';
+  difficulty: 1 | 2 | 3;
+  approachId?: string;
+  weather?: Partial<Weather>;
+  briefing: string[];
   setup?: (s: Sim) => void;
 }
 
@@ -75,11 +83,16 @@ export class Sim {
     timerStart: null,
     bearing1: 'OFF',
     bearing2: 'OFF',
+    adf: { active: 344, standby: 344 },
     inset: true,
   };
   nav1: NavOutput = EMPTY_NAV;
   nav2: NavOutput = EMPTY_NAV;
   marker: 'O' | null = null;
+  adf: AdfOutput = { valid: false, ident: '', bearingTo: 0, distNm: 0 };
+  rec = new Recorder();
+  /** failure injection */
+  gsFailed = false;
   time = 0;
   paused = false;
   rate = 1;
@@ -96,6 +109,8 @@ export class Sim {
     this.scenario = sc;
     this.ap = new Autopilot();
     this.fp = new FlightPlan();
+    this.gsFailed = false;
+    this.weather = defaultWeather();
     this.controls = neutralControls();
     const ground = groundElevation(sc.pos);
     this.ac = new Aircraft(
@@ -122,9 +137,32 @@ export class Sim {
     }
     this.ap.hdgBug = sc.hdg;
     this.ap.altSel = Math.round(sc.altFt / 100) * 100;
+    this.time = 0;
+    if (sc.weather) Object.assign(this.weather, sc.weather);
     sc.setup?.(this);
     this.ac.step(0.01, this.controls, this.weather);
     this.updateAvionics(0);
+    this.rec.start(this);
+  }
+
+  /** Load an approach the way a pilot would: FPL, minimums, CRS and NAV frequency. */
+  loadApproach(id: string, transition: string | null, mode: 'load' | 'activate' | 'vtf' = 'activate') {
+    this.fp.loadApproach(id, transition);
+    const ap = this.fp.approach!;
+    const m = ap.minimums[0];
+    this.av.minimums = (m.da ?? m.mda) ?? null;
+    const nav = ap.navaid ? NAVAIDS.find((n) => n.ident === ap.navaid) : undefined;
+    if (nav && nav.type !== 'NDB') {
+      this.av.nav1.standby = this.av.nav1.active;
+      this.av.nav1.active = nav.freq;
+      this.av.obs1 = ap.crsSetting ?? ap.finalCourse;
+    }
+    if (nav && nav.type === 'NDB') {
+      this.av.adf.active = nav.freq;
+      this.av.bearing1 = 'ADF';
+    }
+    if (mode === 'activate') this.fp.activateApproach(this.ac.s);
+    if (mode === 'vtf') this.fp.vectorsToFinal();
   }
 
   step(dtReal: number) {
@@ -136,6 +174,7 @@ export class Sim {
     this.time += dt;
     this.ac.step(dt, this.controls, this.weather);
     this.updateAvionics(dt);
+    this.rec.update(this, dt);
   }
 
   navInputs(): NavInputs {
@@ -149,7 +188,12 @@ export class Sim {
     const pos = { lat: s.lat, lon: s.lon, altFt: s.altFt };
     this.nav1 = computeNav(this.av.nav1.active, this.av.obs1, pos);
     this.nav2 = computeNav(this.av.nav2.active, this.av.obs2, pos);
+    if (this.gsFailed) {
+      this.nav1 = { ...this.nav1, gsValid: false };
+      this.nav2 = { ...this.nav2, gsValid: false };
+    }
     this.marker = markerBeacon(pos);
+    this.adf = computeAdf(this.av.adf.active, pos);
     this.fp.update(pos, d.gsKt, d.trackTrue);
     if (dt > 0) {
       const pr = (d.pitchDeg - this.lastPitch) / dt;
@@ -202,107 +246,263 @@ export class Sim {
 
 // --------------------------------------------------------------- Scenarios
 const r27 = runway('PARD', '27');
+const fixPos = (id: string) => findFix(id)!;
 
 export const SCENARIOS: Scenario[] = [
   {
     id: 'rwy27',
-    name: 'Departure — PARD RWY 27',
-    description: 'Lined up on runway 27 at Port Ardent. Full power, rotate at 55 KIAS, climb runway heading to 3000.',
+    name: 'IFR departure — PARD RWY 27',
+    kind: 'Departure',
+    difficulty: 1,
+    description: 'Lined up on runway 27. Take off into an 800 ft overcast, climb runway heading to 3000, then proceed direct ARD.',
     pos: destination(r27.threshold, 270, 0.05),
     altFt: 420,
     hdg: 270,
     iasKt: 0,
     onGround: true,
+    weather: { ceilingFt: 1200, visibilitySm: 2 },
+    briefing: [
+      'Full power (Shift+Up or throttle axis), release brakes.',
+      'Rotate at 55 KIAS, pitch ~8° nose up, climb at 74 KIAS (Vy).',
+      'At 1000 ft press HDG then ALT/VS on the autopilot, or hand-fly to 3000.',
+      'Use Direct-To (D) and type ARD to proceed to the VOR.',
+    ],
     setup: (s) => {
       s.ap.altSel = 3000;
       s.ap.hdgBug = 270;
-      s.av.minimums = 670;
+      s.av.minimums = null;
     },
   },
   {
     id: 'ils27-vtf',
-    name: 'ILS 27 — vectors to final',
-    description: '14 nm east of PARD, 3000 ft, heading 240 to intercept the I-PRD localizer. NAV1 tuned, approach loaded (vectors to final).',
+    name: 'ILS RWY 27 — vectors to final',
+    kind: 'Precision',
+    difficulty: 1,
+    approachId: 'PARD-I27',
+    description: '14 nm east, 3000 ft, heading 240 to intercept the I-PRD localizer. Ceiling 500 ft.',
     pos: destination(destination(r27.threshold, 90, 14), 0, 3.2),
     altFt: 3000,
     hdg: 240,
     iasKt: 90,
+    weather: { ceilingFt: 900, visibilitySm: 1 },
+    briefing: [
+      'NAV1 is tuned to I-PRD 110.30, CDI on LOC1, course 270.',
+      'Press APR to arm LOC and GS (or hand-fly the intercept).',
+      'Glideslope intercept at 3000 ft, cross MARLO (OM) at 2400.',
+      'DA 670 ft — at minimums with the runway in sight, land; otherwise go around (G).',
+    ],
     setup: (s) => {
-      s.av.nav1.active = 110.3;
-      s.av.obs1 = 270;
       s.ap.hdgBug = 240;
       s.ap.altSel = 3000;
-      s.av.minimums = 670;
-      s.fp.loadApproach('PARD-I27', null);
-      s.fp.vectorsToFinal();
+      s.loadApproach('PARD-I27', null, 'vtf');
       s.setCdi('NAV1');
     },
   },
   {
     id: 'ils27-full',
-    name: 'ILS 27 — full procedure via TOBEY',
-    description: 'Enroute north-east at 4000 ft, cleared direct TOBEY, ILS 27 via TOBEY transition. Fly the GPS to the LOC switch-over.',
-    pos: destination(findFix('TOBEY')!, 30, 12),
+    name: 'ILS RWY 27 — full procedure via TOBEY',
+    kind: 'Precision',
+    difficulty: 2,
+    approachId: 'PARD-I27',
+    description: 'Enroute at 4000 ft, cleared ILS 27 via TOBEY. GPS to the LOC switch-over, then down the glideslope.',
+    pos: destination(fixPos('TOBEY'), 30, 12),
     altFt: 4000,
     hdg: 210,
     iasKt: 105,
+    weather: { ceilingFt: 700, visibilitySm: 1 },
+    briefing: [
+      'Fly the GPS (CDI GPS) to TOBEY, then KEDDY at 3000.',
+      'Before KEDDY switch the CDI to LOC1 (CDI softkey or V key) and press APR.',
+      'Descend to 3000 after TOBEY; GS intercept just after KEDDY.',
+    ],
     setup: (s) => {
-      s.av.nav1.active = 110.3;
-      s.av.obs1 = 270;
       s.ap.altSel = 4000;
-      s.av.minimums = 670;
-      s.fp.loadApproach('PARD-I27', 'TOBEY');
-      s.fp.activateApproach(s.ac.s);
+      s.loadApproach('PARD-I27', 'TOBEY');
+    },
+  },
+  {
+    id: 'loc27',
+    name: 'LOC RWY 27 (glideslope out)',
+    kind: 'Non-precision',
+    difficulty: 2,
+    approachId: 'PARD-I27',
+    description: 'Same ILS, but the glideslope is NOTAMed out. Fly the localizer-only minimums: MDA 900.',
+    pos: destination(destination(r27.threshold, 90, 12), 180, 3),
+    altFt: 3000,
+    hdg: 300,
+    iasKt: 95,
+    weather: { ceilingFt: 1000, visibilitySm: 1.5 },
+    briefing: [
+      'Descend to 2400 after intercepting the localizer, cross MARLO, then descend to MDA 900.',
+      'Do not descend below 900 until the runway is in sight. Missed approach at RW27.',
+      'Tip: a "dive and drive" at 800–1000 fpm is acceptable; continuous descent of ~500 fpm is better.',
+    ],
+    setup: (s) => {
+      s.ap.altSel = 3000;
+      s.ap.hdgBug = 300;
+      s.loadApproach('PARD-I27', null, 'vtf');
+      s.av.minimums = 900;
+      s.gsFailed = true;
+      s.setCdi('NAV1');
     },
   },
   {
     id: 'rnav09',
-    name: 'RNAV (GPS) 09 — LPV via LUNKS',
-    description: 'West of PARD at 3500 ft, RNAV 09 loaded via LUNKS. Couple APR for LPV glidepath.',
-    pos: destination(findFix('LUNKS')!, 320, 10),
+    name: 'RNAV (GPS) RWY 09 — LPV via LUNKS',
+    kind: 'APV',
+    difficulty: 1,
+    approachId: 'PARD-R09',
+    description: 'West of PARD at 3500 ft, RNAV 09 via LUNKS. Couple APR for the LPV glidepath to DA 670.',
+    pos: destination(fixPos('LUNKS'), 320, 10),
     altFt: 3500,
     hdg: 140,
     iasKt: 100,
+    weather: { ceilingFt: 800, visibilitySm: 1, windDir: 120, windKt: 10 },
+    briefing: [
+      'Press NAV to fly the GPS flight plan, then APR to arm the glidepath (GP).',
+      'Descend to 3000 at WILLO. The CDI scales to APR 2 nm before PERCH.',
+      'LPV DA 670 ft.',
+    ],
     setup: (s) => {
       s.ap.altSel = 3500;
-      s.av.minimums = 670;
-      s.fp.loadApproach('PARD-R09', 'LUNKS');
-      s.fp.activateApproach(s.ac.s);
+      s.loadApproach('PARD-R09', 'LUNKS');
+    },
+  },
+  {
+    id: 'locbc09',
+    name: 'LOC BC RWY 09 — back course',
+    kind: 'Non-precision',
+    difficulty: 3,
+    approachId: 'PARD-B09',
+    description: 'A rare back-course approach. Course set to the front course 270; HSI sensing stays correct.',
+    pos: destination(fixPos('WILLO'), 300, 6),
+    altFt: 3000,
+    hdg: 120,
+    iasKt: 95,
+    weather: { ceilingFt: 1100, visibilitySm: 1.5, windDir: 60, windKt: 12 },
+    briefing: [
+      'NAV1 on I-PRD 110.30, CRS 270 (front course) — the HSI course arrow points behind you.',
+      'Autopilot: APR engages BC mode. No glideslope on the back course.',
+      'Cross BACKY at 2000, then descend to MDA 860.',
+    ],
+    setup: (s) => {
+      s.ap.altSel = 3000;
+      s.ap.hdgBug = 120;
+      s.loadApproach('PARD-B09', null, 'load');
+      s.fp.activateLeg(s.fp.wpts.findIndex((w) => w.ident === 'BACKY'));
+      s.setCdi('NAV1');
+      s.av.obs1 = 270;
+    },
+  },
+  {
+    id: 'ndb27',
+    name: 'NDB RWY 27 — ADF approach',
+    kind: 'Non-precision',
+    difficulty: 3,
+    approachId: 'PARD-N27',
+    description: 'Old-school: track the ADF bearing pointer (cyan) to the PA NDB and outbound to the MAP. Time it.',
+    pos: destination(fixPos('SANDR'), 150, 6),
+    altFt: 4000,
+    hdg: 330,
+    iasKt: 95,
+    weather: { ceilingFt: 1300, visibilitySm: 2, windDir: 200, windKt: 15 },
+    briefing: [
+      'ADF tuned to PA 344 kHz, bearing pointer 1 = ADF.',
+      'Via SANDR and KEDDY to PA (FAF) at 1800, then MDA 1000.',
+      'Start the timer at PA: 3:00 at 90 KT to the MAP.',
+      'GPS overlay is available — but try to fly it on the needle.',
+    ],
+    setup: (s) => {
+      s.ap.altSel = 4000;
+      s.loadApproach('PARD-N27', 'SANDR');
     },
   },
   {
     id: 'vor21',
-    name: 'VOR/DME 21 — Mistral Valley',
-    description: 'Non-precision approach into MSVL. 4500 ft north-east, NAV1 on MSV 112.70, step-down at DOPPS, MDA 1640.',
-    pos: destination(findFix('GALEN')!, 60, 8),
+    name: 'VOR/DME RWY 21 — Mistral Valley',
+    kind: 'Non-precision',
+    difficulty: 2,
+    approachId: 'MSVL-V21',
+    description: 'Step-down VOR/DME approach into a valley airport. Step-down at DOPPS, MDA 1640.',
+    pos: destination(fixPos('GALEN'), 60, 8),
     altFt: 4500,
     hdg: 240,
     iasKt: 100,
+    weather: { ceilingFt: 2000, visibilitySm: 2, windDir: 230, windKt: 14, turbulence: 0.3 },
+    briefing: [
+      'NAV1 on MSV 112.70, CRS 210. CDI VOR1 for the final.',
+      'GALEN 4500 → MSV (FAF) 3200 → DOPPS (2.5 DME) 2100 → MDA 1640.',
+      'MAP at RW21 (5.0 DME).',
+    ],
     setup: (s) => {
-      s.av.nav1.active = 112.7;
-      s.av.obs1 = 210;
       s.ap.altSel = 4500;
-      s.av.minimums = 1640;
+      s.loadApproach('MSVL-V21', 'GALEN');
       s.av.baro = s.weather.qnh;
-      s.fp.loadApproach('MSVL-V21', 'GALEN');
-      s.fp.activateApproach(s.ac.s);
+    },
+  },
+  {
+    id: 'rnav03',
+    name: 'RNAV (GPS) RWY 03 — LNAV/VNAV',
+    kind: 'APV',
+    difficulty: 2,
+    approachId: 'MSVL-R03',
+    description: 'Mistral Valley from the south-west, via TALUS. LNAV/VNAV DA 1500 with a gusty crosswind.',
+    pos: destination(fixPos('TALUS'), 140, 8),
+    altFt: 4000,
+    hdg: 300,
+    iasKt: 100,
+    weather: { ceilingFt: 1700, visibilitySm: 1.5, windDir: 320, windKt: 16, gustKt: 24, turbulence: 0.35 },
+    briefing: [
+      'TALUS 4000 → FENNY 3600 → CRAGG (FAF) 2900, glidepath 3.00°.',
+      'Strong crosswind from the left: expect a 10° wind correction on final.',
+      'LNAV/VNAV DA 1500.',
+    ],
+    setup: (s) => {
+      s.ap.altSel = 4000;
+      s.loadApproach('MSVL-R03', 'TALUS');
     },
   },
   {
     id: 'hold-ard',
     name: 'Holding at ARD',
-    description: 'Hold at ARD VOR/DME, inbound 270, right turns, 3000 ft. Enter via the GPS (missed-approach hold) or by hand.',
+    kind: 'Holding',
+    difficulty: 2,
+    approachId: 'PARD-I27',
+    description: 'Missed approach hold at ARD: inbound 270, right turns, 1-minute legs, 3000 ft.',
     pos: destination(approach('PARD-I27').missed[1].fix, 45, 9),
     altFt: 3000,
     hdg: 225,
     iasKt: 90,
+    weather: { ceilingFt: 600, visibilitySm: 0.75 },
+    briefing: [
+      'Determine the entry: arriving from the north-east → parallel or teardrop.',
+      'The GPS flies the hold in NAV mode, or hand-fly it on the magenta racetrack.',
+      'Time 1 minute outbound, adjust for wind.',
+    ],
     setup: (s) => {
       s.av.nav1.active = 114.2;
       s.av.obs1 = 270;
       s.ap.altSel = 3000;
       s.fp.loadApproach('PARD-I27', null);
+      s.fp.approachActive = true;
       s.fp.activateMissed();
     },
   },
+  {
+    id: 'free',
+    name: 'Free flight — VFR on top',
+    kind: 'Free flight',
+    difficulty: 1,
+    description: 'Clear skies at 5500 ft over the Ardent Islands. Explore, load any approach, practice anything.',
+    pos: destination(fixPos('PARD'), 90, 20),
+    altFt: 5500,
+    hdg: 270,
+    iasKt: 105,
+    weather: { ceilingFt: 20000, visibilitySm: 10, windKt: 5, turbulence: 0.05 },
+    briefing: ['Use the FPL panel to load any approach and the Charts drawer to read the plate.'],
+    setup: (s) => {
+      s.ap.altSel = 5500;
+      s.av.minimums = null;
+    },
+  },
 ];
-

@@ -85,7 +85,12 @@ export interface Approach {
   id: string;
   airport: string;
   name: string; // e.g. "ILS or LOC RWY 27"
-  type: 'ILS' | 'RNAV' | 'VOR' | 'LOC';
+  type: 'ILS' | 'RNAV' | 'VOR' | 'LOC' | 'LOCBC' | 'NDB';
+  /** Short tag for UI (e.g. 'Precision', 'Non-precision') */
+  category: 'Precision' | 'APV' | 'Non-precision';
+  /** CRS to set on the HSI if different from the final course (back course) */
+  crsSetting?: number;
+  difficulty: 1 | 2 | 3;
   runway: string;
   finalCourse: number; // magnetic
   /** Navaid used for final (LOC/VOR ident) */

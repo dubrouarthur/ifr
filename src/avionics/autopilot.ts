@@ -4,7 +4,7 @@ import type { Controls, FlightData } from '../sim/aircraft';
 import type { NavOutput } from '../nav/radios';
 import type { GpsOutput } from '../nav/flightplan';
 
-export type LatMode = 'ROL' | 'HDG' | 'GPS' | 'VOR' | 'LOC';
+export type LatMode = 'ROL' | 'HDG' | 'GPS' | 'VOR' | 'LOC' | 'BC';
 export type VertMode = 'PIT' | 'ALT' | 'VS' | 'FLC' | 'GS' | 'GP';
 export type CdiSource = 'GPS' | 'NAV1' | 'NAV2';
 
@@ -44,7 +44,7 @@ export class Autopilot {
 
   private navSourceMode(n: NavInputs): LatMode {
     if (n.cdi === 'GPS') return 'GPS';
-    return n.nav.isLoc ? 'LOC' : 'VOR';
+    return n.nav.isLoc ? (n.nav.backCourse ? 'BC' : 'LOC') : 'VOR';
   }
 
   private ensureFd(d: FlightData) {
@@ -177,13 +177,13 @@ export class Autopilot {
       }
       const src = navMode === 'GPS' ? n.gps : n.nav;
       const valid = navMode === 'GPS' ? n.gps.valid : n.nav.valid;
-      const capThreshold = navMode === 'LOC' ? 0.85 : navMode === 'VOR' ? 0.75 : 0.9;
+      const capThreshold = navMode === 'LOC' || navMode === 'BC' ? 0.85 : navMode === 'VOR' ? 0.75 : 0.9;
       if (valid && Math.abs(src.dev) < capThreshold) {
         this.lat = navMode;
         this.latArmed = null;
       }
     }
-    if ((this.lat === 'GPS' || this.lat === 'VOR' || this.lat === 'LOC') && this.lat !== navMode) {
+    if ((this.lat === 'GPS' || this.lat === 'VOR' || this.lat === 'LOC' || this.lat === 'BC') && this.lat !== navMode) {
       // source switched while coupled -> revert to ROL like the real system
       this.lat = 'ROL';
       this.rollRef = 0;
@@ -212,18 +212,25 @@ export class Autopilot {
         break;
       }
       case 'VOR':
-      case 'LOC': {
+      case 'LOC':
+      case 'BC': {
         const v = n.nav;
         if (!v.valid) {
           bank = 0;
           break;
         }
-        const fsDeg = this.lat === 'LOC' ? 2.5 : 10;
+        const loc = this.lat !== 'VOR';
+        const fsDeg = loc ? 2.5 : 10;
         const distNm = Math.max(0.3, v.distNm);
-        const offNm = distNm * Math.tan(v.dev * fsDeg * DEG); // + => course is to the right
-        const gain = this.lat === 'LOC' ? 60 : 35;
-        const intercept = clamp(offNm * gain, this.lat === 'LOC' ? -30 : -45, this.lat === 'LOC' ? 30 : 45);
-        bank = clamp(trackErr(v.course + intercept) * 1.3, -22, 22);
+        const offNm = distNm * Math.tan(v.dev * fsDeg * DEG); // + => course is to the right (pointer frame)
+        const gain = loc ? 60 : 35;
+        const lim = loc ? 30 : 45;
+        if (this.lat === 'BC') {
+          // flying opposite to the front course: left/right are reversed
+          bank = clamp(trackErr(v.course + 180 + clamp(-offNm * gain, -lim, lim)) * 1.3, -22, 22);
+        } else {
+          bank = clamp(trackErr(v.course + clamp(offNm * gain, -lim, lim)) * 1.3, -22, 22);
+        }
         break;
       }
     }

@@ -130,6 +130,14 @@ const PERCH = fix('PERCH', destination(r09.threshold, 270, distForAlt(2100, 420)
 const WILLO = fix('WILLO', destination(r09.threshold, 270, 10));
 const LUNKS = fix('LUNKS', destination(WILLO, 0, 7));
 const BRAVR = fix('BRAVR', destination(WILLO, 180, 7));
+// LOC BC 09 (final from the west on the back course)
+const BACKY = fix('BACKY', destination(r09.threshold, 270, 5));
+// RNAV 03 at MSVL (final from the south-west)
+const r03 = runway('MSVL', '03');
+const CRAGG = fix('CRAGG', destination(r03.threshold, 210, distForAlt(2900, 1150)));
+const FENNY = fix('FENNY', destination(r03.threshold, 210, 10));
+const TALUS = fix('TALUS', destination(FENNY, 120, 6));
+const SCREE = fix('SCREE', destination(FENNY, 300, 6));
 // VOR 21 at MSVL
 const GALEN = fix('GALEN', destination(MSV_POS, 30, 10));
 const DOPPS = fix('DOPPS', destination(MSV_POS, 210, 2.5));
@@ -140,10 +148,11 @@ fix('KRILL', destination(MSVL_REF, 330, 15));
 
 const ARD = fix('ARD', ARD_POS, 'vor');
 const MSV = fix('MSV', MSV_POS, 'vor');
-fix('PA', navaid('PA'), 'ndb');
+const PA = fix('PA', navaid('PA'), 'ndb');
 const RW27 = fix('RW27', r27.threshold, 'runway');
 const RW09 = fix('RW09', r09.threshold, 'runway');
 const RW21 = fix('RW21', r21.threshold, 'runway');
+const RW03 = fix('RW03', r03.threshold, 'runway');
 for (const a of AIRPORTS) fix(a.icao, a, 'airport');
 
 export const FIXES = fixes;
@@ -167,6 +176,8 @@ export const APPROACHES: Approach[] = [
     airport: 'PARD',
     name: 'ILS or LOC RWY 27',
     type: 'ILS',
+    category: 'Precision',
+    difficulty: 1,
     runway: '27',
     finalCourse: 270,
     navaid: 'IPRD',
@@ -200,6 +211,8 @@ export const APPROACHES: Approach[] = [
     airport: 'PARD',
     name: 'RNAV (GPS) RWY 09',
     type: 'RNAV',
+    category: 'APV',
+    difficulty: 1,
     runway: '09',
     finalCourse: 90,
     gsAngle: 3.0,
@@ -231,6 +244,8 @@ export const APPROACHES: Approach[] = [
     airport: 'MSVL',
     name: 'VOR/DME RWY 21',
     type: 'VOR',
+    category: 'Non-precision',
+    difficulty: 2,
     runway: '21',
     finalCourse: 210,
     navaid: 'MSV',
@@ -248,6 +263,93 @@ export const APPROACHES: Approach[] = [
     ],
     msa: { center: 'MSV', alt: 5200 },
     notes: ['Simulated procedure. Not for navigation.', 'MAP at 5.0 DME / RW21.'],
+  },
+  {
+    id: 'PARD-B09',
+    airport: 'PARD',
+    name: 'LOC BC RWY 09',
+    type: 'LOCBC',
+    category: 'Non-precision',
+    difficulty: 3,
+    runway: '09',
+    finalCourse: 90,
+    crsSetting: 270,
+    navaid: 'IPRD',
+    transitions: [
+      { name: 'LUNKS', legs: legs({ fix: LUNKS, role: 'IAF', altMin: 3500 }, { fix: WILLO, role: 'IF', altMin: 3000 }) },
+      { name: 'BRAVR', legs: legs({ fix: BRAVR, role: 'IAF', altMin: 3500 }, { fix: WILLO, role: 'IF', altMin: 3000 }) },
+    ],
+    final: legs(
+      { fix: WILLO, role: 'IF', altMin: 3000 },
+      { fix: BACKY, role: 'FAF', altMin: 2000, course: 90 },
+      { fix: RW09, role: 'MAP', course: 90 },
+    ),
+    missed: legs({ fix: RW09 }, { fix: ARD, role: 'MAHP', altMin: 3000, hold: { inbound: 270, turn: 'R', legMin: 1 } }),
+    missedText: 'Climb to 3000 direct ARD VOR/DME and hold.',
+    minimums: [
+      { label: 'S-BC 09', mda: 860, vis: '3/4', hat: 440 },
+      { label: 'CIRCLING', mda: 1000, vis: '1', hat: 580 },
+    ],
+    msa: { center: 'ARD', alt: 3100 },
+    notes: ['Simulated procedure. Not for navigation.', 'Set HSI course to 270 (front course).', 'Glideslope unusable. MAP at RW09.'],
+  },
+  {
+    id: 'PARD-N27',
+    airport: 'PARD',
+    name: 'NDB RWY 27',
+    type: 'NDB',
+    category: 'Non-precision',
+    difficulty: 3,
+    runway: '27',
+    finalCourse: 270,
+    navaid: 'PA',
+    transitions: [
+      { name: 'TOBEY', legs: legs({ fix: TOBEY, role: 'IAF', altMin: 4000 }, { fix: KEDDY, role: 'IF', altMin: 3000 }) },
+      { name: 'SANDR', legs: legs({ fix: SANDR, role: 'IAF', altMin: 4000 }, { fix: KEDDY, role: 'IF', altMin: 3000 }) },
+    ],
+    final: legs(
+      { fix: KEDDY, role: 'IF', altMin: 3000 },
+      { fix: PA, role: 'FAF', altMin: 1800, course: 270 },
+      { fix: RW27, role: 'MAP', course: 270 },
+    ),
+    missed: legs({ fix: RW27 }, { fix: ARD, role: 'MAHP', altMin: 3000, hold: { inbound: 270, turn: 'R', legMin: 1 } }),
+    missedText: 'Climb to 3000 direct ARD VOR/DME and hold.',
+    minimums: [
+      { label: 'S-27', mda: 1000, vis: '1 1/4', hat: 580 },
+      { label: 'CIRCLING', mda: 1080, vis: '1 1/2', hat: 660 },
+    ],
+    msa: { center: 'PA', alt: 3100 },
+    notes: ['Simulated procedure. Not for navigation.', 'ADF required. MAP 4.5 NM from PA NDB (FAF to MAP 3:00 @ 90 KT).'],
+  },
+  {
+    id: 'MSVL-R03',
+    airport: 'MSVL',
+    name: 'RNAV (GPS) RWY 03',
+    type: 'RNAV',
+    category: 'APV',
+    difficulty: 2,
+    runway: '03',
+    finalCourse: 30,
+    gsAngle: 3.0,
+    tch: 50,
+    transitions: [
+      { name: 'TALUS', legs: legs({ fix: TALUS, role: 'IAF', altMin: 4000 }, { fix: FENNY, role: 'IF', altMin: 3600 }) },
+      { name: 'SCREE', legs: legs({ fix: SCREE, role: 'IAF', altMin: 4000 }, { fix: FENNY, role: 'IF', altMin: 3600 }) },
+    ],
+    final: legs(
+      { fix: FENNY, role: 'IF', altMin: 3600 },
+      { fix: CRAGG, role: 'FAF', altMin: 2900, course: 30 },
+      { fix: RW03, role: 'MAP', course: 30 },
+    ),
+    missed: legs({ fix: RW03 }, { fix: MSV, role: 'MAHP', altMin: 4500, hold: { inbound: 210, turn: 'R', legMin: 1 } }),
+    missedText: 'Climb to 4500 direct MSV VOR/DME and hold.',
+    minimums: [
+      { label: 'LNAV/VNAV', da: 1500, vis: '1', hat: 350 },
+      { label: 'LNAV', mda: 1620, vis: '1', hat: 470 },
+      { label: 'CIRCLING', mda: 1740, vis: '1 1/4', hat: 590 },
+    ],
+    msa: { center: 'MSV', alt: 5200 },
+    notes: ['Simulated procedure. Not for navigation.', 'LPV not authorized. Baro-VNAV / WAAS glidepath 3.00°.'],
   },
 ];
 
