@@ -36,6 +36,7 @@ export const AIRFRAME = {
   vso: 40,
   vs1: 48,
   vfe: 85,
+  vfe10: 110,
   vno: 129,
   vne: 163,
   vr: 55,

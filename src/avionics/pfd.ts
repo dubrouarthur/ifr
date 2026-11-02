@@ -57,6 +57,7 @@ export function drawPfd(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState, d
   drawVsi(ctx, sim);
   drawHsi(ctx, sim, st);
   drawLowerWindows(ctx, sim, st);
+  drawFailures(ctx, sim, st);
   drawSoftkeys(ctx, PFD_SOFTKEYS, st.softkeyFlash, {
     INSET: sim.av.inset,
     SVT: st.svt,
@@ -393,13 +394,13 @@ function rollingIas(ctx: CanvasRenderingContext2D, value: number, x: number, cy:
   text(ctx, tens > 0 ? String(tens) : '', x + 44, cy, color, 30, 'right', 700);
   ctx.save();
   ctx.beginPath();
-  ctx.rect(x + 44, cy - 17, 22, 34);
+  ctx.rect(x + 44, cy - 15, 22, 30);
   ctx.clip();
   const base = Math.floor(ones);
   const off = ones - base;
   for (let i = -1; i <= 2; i++) {
     const digit = (((base + i) % 10) + 10) % 10;
-    text(ctx, String(digit), x + 46, cy + (off - i) * 27, color, 30, 'left', 700);
+    text(ctx, String(digit), x + 46, cy + (off - i) * 32, color, 30, 'left', 700);
   }
   ctx.restore();
 }
@@ -458,7 +459,7 @@ function drawAltimeter(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   // rolling 20s
   ctx.save();
   ctx.beginPath();
-  ctx.rect(x + 64, cy - 15, 44, 30);
+  ctx.rect(x + 64, cy - 12, 44, 24);
   ctx.clip();
   const tens = Math.abs(alt) % 100;
   const step = 20;
@@ -700,6 +701,85 @@ function drawHsi(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   };
   brgInfo(sim.av.bearing1, 270, 'left');
   brgInfo(sim.av.bearing2, 634, 'right');
+}
+
+// ------------------------------------------------------------------ failures
+function redX(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, label?: string) {
+  box(ctx, x, y, w, h, '#000');
+  ctx.strokeStyle = C.red;
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(x + 4, y + 4);
+  ctx.lineTo(x + w - 4, y + h - 4);
+  ctx.moveTo(x + w - 4, y + 4);
+  ctx.lineTo(x + 4, y + h - 4);
+  ctx.stroke();
+  ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
+  if (label) {
+    box(ctx, x + w / 2 - 70, y + h / 2 - 14, 140, 28, '#000');
+    text(ctx, label, x + w / 2, y + h / 2, C.red, 17, 'center', 700);
+  }
+}
+
+let compassHdg = 0;
+function drawFailures(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
+  const f = sim.failures;
+  const d = sim.ac.data;
+  if (f.ahrs) {
+    redX(ctx, 222, 84, 556, 370);
+    // standby attitude indicator (vacuum/electric backup)
+    const cx = 500, cy = 270, r = 92;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.translate(cx, cy);
+    ctx.rotate(-d.rollDeg * DEG);
+    ctx.translate(0, d.pitchDeg * 4);
+    ctx.fillStyle = '#2b78c9';
+    ctx.fillRect(-300, -300, 600, 300);
+    ctx.fillStyle = '#7a4c1c';
+    ctx.fillRect(-300, 0, 600, 300);
+    line(ctx, -300, 0, 300, 0, C.white, 2);
+    for (const p of [-20, -10, 10, 20]) line(ctx, -18, -p * 4, 18, -p * 4, C.white, 2);
+    ctx.restore();
+    ctx.strokeStyle = '#888';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + 3, 0, Math.PI * 2);
+    ctx.stroke();
+    line(ctx, cx - 46, cy, cx - 14, cy, C.amber, 4);
+    line(ctx, cx + 14, cy, cx + 46, cy, C.amber, 4);
+    box(ctx, cx - 3, cy - 3, 6, 6, C.amber);
+    text(ctx, 'STBY ATTITUDE', cx, cy + r + 18, C.white, 14, 'center', 700);
+    text(ctx, 'AHRS FAIL', cx, 108, C.red, 18, 'center', 700);
+    // HSI red X + magnetic compass with lag (northerly turning errors are left to the pilot!)
+    redX(ctx, 512 - 150, 610 - 165, 300, 300, 'HDG FAIL');
+    let diff = d.hdgTrue - compassHdg;
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+    compassHdg = (compassHdg + diff * Math.min(1, 0.05 + Math.abs(Math.cos(d.hdgTrue * DEG)) * 0.08) + 360) % 360;
+    box(ctx, 452, 690, 120, 36, '#111', C.gray);
+    text(ctx, `COMPASS ${pad3(compassHdg)}`, 512, 708, C.white, 15, 'center', 700);
+  } else compassHdg = d.hdgTrue;
+  if (f.airData) {
+    redX(ctx, 120, 92, 96, 356);
+    redX(ctx, 788, 92, 100, 356);
+    redX(ctx, 896, 118, 46, 300);
+    text(ctx, 'ADC FAIL', 840, 470, C.red, 15, 'center', 700);
+  }
+  const alerts: string[] = [];
+  if (f.gps) alerts.push('LOI — GPS INTEGRITY LOST');
+  if (f.ap) alerts.push('AP FAIL');
+  if (f.nav1) alerts.push('NAV1 FAIL');
+  if (f.gs) alerts.push('GS OUT');
+  if (f.engine) alerts.push('ENGINE FAILURE');
+  if (sim.ac.s.fuelGal < 8) alerts.push('LOW FUEL');
+  alerts.forEach((a, i) => {
+    const flash = Math.floor(st.flash * 2) % 2 === 0 || st.flash % 10 > 5;
+    box(ctx, 640, 460 + i * 26, 140, 22, flash ? C.amber : '#000', C.amber);
+    text(ctx, a.length > 20 ? a.slice(0, 18) + '…' : a, 710, 471 + i * 26, flash ? '#000' : C.amber, 12.5, 'center', 700);
+  });
 }
 
 // ------------------------------------------------------------------ lower windows

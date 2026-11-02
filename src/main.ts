@@ -8,6 +8,8 @@ import { fitCanvas } from './avionics/draw';
 import { h, store, fmtTime } from './ui/dom';
 import { knob, bkey } from './ui/knob';
 import { ChartsDrawer } from './ui/charts';
+import { InstructorDrawer, HistoryModal } from './ui/instructor';
+import type { AssessSettings } from './sim/sim';
 import { Launcher, WeatherModal, ProcModal, DirectModal, JoystickModal, DebriefModal, HelpModal, Modal, WX_PRESETS, type WxPreset } from './ui/modals';
 import { distanceNm, wrap180 } from './nav/geo';
 import type { Phase } from './sim/recorder';
@@ -35,22 +37,26 @@ function toast(msg: string, kind: 'info' | 'good' | 'warn' | 'bad' = 'info', ms 
   setTimeout(() => t.remove(), ms);
 }
 sim.rec.onEvent = (e) => {
+  if (sim.assess.mode === 'checkride' && !e.text.startsWith('FAILURE') && !e.text.startsWith('CRASH')) return;
   if (e.kind !== 'info' || /Crossed FAF|Minimums|Liftoff/.test(e.text)) toast(e.text, e.kind);
 };
 
 // ------------------------------------------------------------------ modals
-const launcher = new Launcher((sc, wx) => startScenario(sc, wx));
+const launcher = new Launcher((sc, wx, a) => startScenario(sc, wx, a));
 const weatherModal = new WeatherModal(sim);
 const procModal = new ProcModal(sim, (m) => toast(m, 'good'));
 const directModal = new DirectModal(sim, (m) => toast(m, 'good'));
 const joyModal = new JoystickModal(input);
-const debrief = new DebriefModal(sim, () => startScenario(lastScenario, lastWx), () => launcher.open());
+const debrief = new DebriefModal(sim, () => startScenario(lastScenario, lastWx, sim.assess), () => launcher.open());
+const historyModal = new HistoryModal();
 const help = new HelpModal();
 const charts = new ChartsDrawer(sim);
+const ios = new InstructorDrawer(sim, (m, k) => toast(m, k ?? 'info'));
 
-function startScenario(sc: Scenario, wx: WxPreset) {
+function startScenario(sc: Scenario, wx: WxPreset, a: AssessSettings = launcher.assess) {
   lastScenario = sc;
   lastWx = wx;
+  sim.assess = { ...a };
   sim.load(sc);
   Object.assign(sim.weather, wx.wx);
   sim.paused = false;
@@ -83,6 +89,8 @@ const I = {
   play: 'M7 5l12 7-12 7z',
   proc: 'M4 6h16M4 12h10M4 18h7',
   ga: 'M12 20V5M5 12l7-7 7 7',
+  ios: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0',
+  records: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01',
 };
 const scnName = h('b', {}, '');
 const scnSub = h('span', {}, '');
@@ -106,6 +114,8 @@ const topbar = h('header', { class: 'topbar' },
     h('button', { class: 'btn', onclick: () => weatherModal.open(), title: 'Weather' }, icon(I.cloud), h('span', { class: 'lbl' }, 'Weather')),
     h('button', { class: 'btn', onclick: () => joyModal.open(), title: 'Joystick setup' }, icon(I.joy), h('span', { class: 'lbl' }, 'Controls')),
     h('button', { class: 'btn', onclick: () => openDebrief(), title: 'Debrief (Shift+D)' }, icon(I.chart), h('span', { class: 'lbl' }, 'Debrief')),
+    h('button', { class: 'btn', onclick: () => ios.toggle(), title: 'Instructor station (I)' }, icon(I.ios), h('span', { class: 'lbl' }, 'Instructor')),
+    h('button', { class: 'btn', onclick: () => historyModal.open(), title: 'Training records' }, icon(I.records), h('span', { class: 'lbl' }, 'Records')),
     viewSeg,
     rateSeg,
     pauseBtn,
@@ -242,7 +252,7 @@ const footer = h('footer', { class: 'footer' },
 );
 
 document.getElementById('app')!.append(topbar, cockpit, footer);
-document.body.append(charts.el);
+document.body.append(charts.el, ios.el);
 
 // touch stick
 {
@@ -459,6 +469,7 @@ window.addEventListener('keydown', (e) => {
     case 'c': doAction('cdi'); break;
     case 'd': if (e.shiftKey) openDebrief(); else directModal.open(); e.preventDefault(); break;
     case 'x': procModal.open(); break;
+    case 'i': ios.toggle(); break;
     case 'g': goAround(); break;
     case 'b': setQnh(); break;
     case 't': toggleTimer(); break;
@@ -488,10 +499,21 @@ function updateCoach() {
   const ph = sim.rec.phase(sim);
   phaseChip.textContent = sim.ac.s.crashed ? 'Crashed' : sim.paused ? 'Paused' : PHASE_LABEL[ph];
   phaseChip.className = `chip ${sim.ac.s.crashed ? 'warn' : sim.paused ? '' : 'live'}`;
+
   const imc = inCloud(sim);
   const w = sim.weather;
   wxChip.textContent = `${imc ? 'IMC' : 'VMC'} · ${w.ceilingFt >= 15000 ? 'CLR' : 'OVC' + String(Math.round(w.ceilingFt / 100)).padStart(3, '0')} · ${w.visibilitySm}SM · ${String(w.windDir).padStart(3, '0')}/${w.windKt}${w.gustKt ? 'G' + w.gustKt : ''}`;
   wxChip.className = `chip${imc ? ' warn' : ''}`;
+  if (sim.assess.mode === 'checkride') {
+    const fails = Object.values(sim.failures).some(Boolean);
+    const key = `ride|${sim.ac.s.crashed}|${sim.paused}|${fails}`;
+    if (key !== coachKey) {
+      coachKey = key;
+      coach.innerHTML = '';
+      coach.append(h('h4', {}, 'Checkride in progress'), h('div', { class: 'next' }, sim.assess.student || 'Applicant'), h('ul', {}, h('li', {}, 'No coaching. Fly as briefed — the evaluator is recording.'), h('li', {}, 'Shift+D opens the report at any time.')));
+    }
+    return;
+  }
 
   const fp = sim.fp;
   const g = fp.out;
@@ -586,6 +608,7 @@ function frame(now: number) {
   fitCanvas(mfdCanvas, MFD_W, MFD_H);
   drawMfd(mfdCanvas.getContext('2d')!, sim, mfdSt);
   charts.update();
+  ios.update(dt);
 
   // footer
   if (!thrDragging) thr.value = String(Math.round(sim.controls.throttle * 100));
@@ -614,6 +637,9 @@ function frame(now: number) {
   }
   requestAnimationFrame(frame);
 }
+
+// test/automation hook
+(window as unknown as { __ifr: unknown }).__ifr = { sim };
 
 // ------------------------------------------------------------------ boot
 setOtw(otwMode);

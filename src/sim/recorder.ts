@@ -22,6 +22,8 @@ export interface Sample {
   vertDots: number | null;
   ap: boolean;
   phase: Phase;
+  visual: boolean;
+  mins: number | null;
 }
 
 export interface FlightEvent {
@@ -57,13 +59,22 @@ export class Recorder {
   private lastLat = '';
   private lastVert = '';
   private lastActive = '';
-  private belowMinsAnnounced = false;
+  belowMinsAnnounced = false;
   floorViolationSec = 0;
   unstableSec = 0;
   stallSec = 0;
   overspeedSec = 0;
   flapOverspeedSec = 0;
   steepBankSec = 0;
+  /** seconds below DA/MDA without the required visual references */
+  belowMinsNoVisualSec = 0;
+  visualAtMins: boolean | null = null;
+  minsUsed: number | null = null;
+  missedAt: number | null = null;
+  failuresInjected: string[] = [];
+  mode: 'training' | 'checkride' = 'training';
+  student = '';
+  handFlown = false;
   private stallActive = false;
   /** Live coaching callback (toast) */
   onEvent?: (e: FlightEvent) => void;
@@ -79,17 +90,26 @@ export class Recorder {
     this.floorViolationSec = this.unstableSec = this.stallSec = this.overspeedSec = this.flapOverspeedSec = this.steepBankSec = 0;
     this.belowMinsAnnounced = false;
     this.lastActive = '';
+    this.belowMinsNoVisualSec = 0;
+    this.visualAtMins = null;
+    this.minsUsed = null;
+    this.missedAt = null;
+    this.failuresInjected = [];
   }
 
   start(sim: Sim) {
     this.reset();
     this.wasOnGround = sim.ac.s.onGround;
     this.lastAp = sim.ap.ap;
-    this.log(sim.time, 'info', `Scenario: ${sim.scenario?.name ?? 'free flight'}`);
+    this.mode = sim.assess.mode;
+    this.student = sim.assess.student;
+    this.handFlown = sim.assess.handFlown;
+    this.log(sim.time, 'info', `${this.mode === 'checkride' ? 'CHECKRIDE' : 'Training'}: ${sim.scenario?.name ?? 'free flight'}${this.student ? ' — ' + this.student : ''}`);
   }
 
   log(t: number, kind: FlightEvent['kind'], text: string) {
     const e = { t, kind, text };
+    if (text.startsWith('FAILURE')) this.failuresInjected.push(text.replace('FAILURE: ', ''));
     this.events.push(e);
     this.onEvent?.(e);
   }
@@ -138,7 +158,7 @@ export class Recorder {
         this.overspeedSec += dt;
         this.once('vne', t, 'bad', 'Exceeded VNE');
       }
-      if (d.flapsDeg > 1 && d.iasKt > AIRFRAME.vfe + 3) {
+      if (d.flapsDeg > 1 && d.iasKt > (d.flapsDeg > 11 ? AIRFRAME.vfe : AIRFRAME.vfe10) + 3) {
         this.flapOverspeedSec += dt;
         this.once('vfe' + Math.floor(t / 60), t, 'warn', `Flaps extended above VFE (${Math.round(d.iasKt)} KIAS)`);
       }
@@ -170,7 +190,10 @@ export class Recorder {
       }
       this.lastActive = active;
     }
-    if (sim.fp.missedActive) this.once('missed', t, 'good', 'Missed approach initiated');
+    if (sim.fp.missedActive && this.missedAt === null) {
+      this.missedAt = t;
+      this.once('missed', t, 'good', 'Missed approach initiated');
+    }
 
     // ---------- approach floors and minimums
     const ph = this.phase(sim);
@@ -182,8 +205,18 @@ export class Recorder {
       }
       const mins = sim.av.minimums;
       if (mins !== null && sim.indicatedAlt() < mins + 100) this.once('mins100', t, 'info', '100 above minimums');
+      if (ph === 'final' && mins !== null) this.minsUsed = mins;
+      if (ph === 'final' && mins !== null && !s.onGround) {
+        const precision = this.vertDots(sim) !== null;
+        if (sim.indicatedAlt() < mins - (precision ? 50 : 0) && !sim.hasVisual()) {
+          this.belowMinsNoVisualSec += dt;
+          this.once('belowmins', t, 'bad', 'Descended below minimums without visual references');
+        }
+      }
       if (mins !== null && sim.indicatedAlt() < mins && !this.belowMinsAnnounced) {
         this.belowMinsAnnounced = true;
+        this.visualAtMins = sim.hasVisual();
+        this.log(t, this.visualAtMins ? 'good' : 'warn', this.visualAtMins ? 'Runway environment in sight at minimums' : 'No visual references at minimums — missed approach required');
         const lat = this.latDots(sim);
         const vert = this.vertDots(sim);
         this.log(
@@ -229,6 +262,8 @@ export class Recorder {
         vertDots: this.vertDots(sim),
         ap: sim.ap.ap,
         phase: ph,
+        visual: sim.hasVisual(),
+        mins: sim.av.minimums,
       });
       if (this.samples.length > 20000) this.samples.splice(0, 1000);
     }
@@ -390,6 +425,11 @@ export function computeDebrief(r: Recorder, minimums: number | null): Debrief {
     if (vs > 400) tips.push('Flare: at ~20 ft reduce power to idle and gradually raise the nose to hold the aircraft just off the runway.');
   }
 
+  if (r.belowMinsNoVisualSec > 0) {
+    items.push({ label: 'Below minimums without visual', value: `${Math.round(r.belowMinsNoVisualSec)} s`, penalty: 35 });
+    tips.push('At DA/MDA without the runway environment in sight: go around immediately (G). Never "duck under".');
+  }
+  if (r.visualAtMins === false && r.missedAt === null) items.push({ label: 'Missed approach', value: 'required but not flown', penalty: 25 });
   if (r.crashed) items.push({ label: 'Outcome', value: r.crashed, penalty: 100 });
 
   const penalty = items.reduce((a, b) => a + b.penalty, 0);
@@ -422,4 +462,82 @@ export function computeDebrief(r: Recorder, minimums: number | null): Debrief {
 export function thresholdOf(ap: Approach): LatLon & { elev: number; heading: number } {
   const rw = getRunway(ap.airport, ap.runway);
   return { ...rw.threshold, elev: rw.elevFt, heading: rw.heading };
+}
+
+// ------------------------------------------------------------------ ACS evaluation
+
+export interface AcsItem {
+  task: string;
+  standard: string;
+  actual: string;
+  result: 'PASS' | 'FAIL' | 'N/A';
+}
+
+export interface AcsReport {
+  result: 'PASS' | 'FAIL' | 'INCOMPLETE';
+  items: AcsItem[];
+}
+
+/**
+ * Evaluates the flight against FAA Instrument Rating ACS-style tolerances
+ * (IR.VI.A/B instrument approaches, IR.VI.C missed approach, IR.VII emergency/partial panel).
+ */
+export function evaluateAcs(r: Recorder): AcsReport {
+  const items: AcsItem[] = [];
+  const minsOf = (s: Sample) => s.mins ?? r.minsUsed;
+  const final = r.samples.filter((s) => s.phase === 'final' && !(minsOf(s) !== null && s.alt < (minsOf(s) as number)) && s.agl > 100);
+  const ap = r.approach;
+  const precision = final.some((s) => s.vertDots !== null);
+  if (r.crashed) items.push({ task: 'Aircraft control', standard: 'Complete the flight without an accident', actual: r.crashed, result: 'FAIL' });
+
+  if (final.length >= 4) {
+    const lat = final.map((s) => Math.abs(s.latDots ?? 0));
+    const maxLat = Math.max(...lat);
+    items.push({ task: 'Lateral guidance FAF → minimums', standard: '≤ ¾-scale CDI deflection (1.5 dots)', actual: `max ${maxLat.toFixed(2)} dots`, result: maxLat <= 1.5 ? 'PASS' : 'FAIL' });
+    if (precision) {
+      const vert = final.filter((s) => s.vertDots !== null).map((s) => Math.abs(s.vertDots as number));
+      const maxV = Math.max(...vert);
+      items.push({ task: 'Vertical guidance FAF → DA', standard: '≤ ¾-scale GS/GP deflection (1.5 dots)', actual: `max ${maxV.toFixed(2)} dots`, result: maxV <= 1.5 ? 'PASS' : 'FAIL' });
+    }
+    const ias = final.map((s) => s.ias).sort((a, b) => a - b);
+    const med = ias[Math.floor(ias.length / 2)];
+    const dev = Math.max(...ias.map((v) => Math.abs(v - med)));
+    items.push({ task: 'Airspeed on final', standard: `±10 KIAS of approach speed (${Math.round(med)})`, actual: `max ±${dev.toFixed(0)} kt`, result: dev <= 10 ? 'PASS' : 'FAIL' });
+  } else if (ap) {
+    items.push({ task: 'Final approach segment', standard: 'Fly the final approach segment', actual: 'not flown', result: 'N/A' });
+  }
+
+  if (ap) {
+    items.push({ task: 'Published altitudes', standard: 'No descent below a segment minimum before the fix (−100 ft)', actual: r.floorViolationSec > 0 ? `${Math.round(r.floorViolationSec)} s below` : 'respected', result: r.floorViolationSec > 0 ? 'FAIL' : 'PASS' });
+    if (r.minsUsed !== null && (final.length >= 4 || r.belowMinsAnnounced)) {
+      items.push({
+        task: precision ? 'Decision altitude' : 'Minimum descent altitude',
+        standard: precision ? 'No descent below DA without visual references' : 'No descent below MDA without visual references',
+        actual: r.belowMinsNoVisualSec > 0 ? `${Math.round(r.belowMinsNoVisualSec)} s below without visual` : `respected (${r.minsUsed} ft)`,
+        result: r.belowMinsNoVisualSec > 0 ? 'FAIL' : 'PASS',
+      });
+    }
+    if (r.visualAtMins === false) {
+      items.push({ task: 'Missed approach', standard: 'Execute the missed approach promptly at DA/MAP without visual references', actual: r.missedAt !== null ? 'executed' : 'not executed', result: r.missedAt !== null ? 'PASS' : 'FAIL' });
+    } else if (r.missedAt !== null) {
+      items.push({ task: 'Missed approach', standard: 'Execute the published missed approach', actual: 'executed', result: 'PASS' });
+    }
+    if (r.belowMinsAnnounced && r.unstableSec > 3)
+      items.push({ task: 'Stabilized approach', standard: 'Stable below 500 AGL (speed, path, < 1000 fpm)', actual: `${Math.round(r.unstableSec)} s unstable`, result: 'FAIL' });
+  }
+  const loc = r.stallSec > 0 || r.steepBankSec > 2 || r.overspeedSec > 0;
+  items.push({ task: 'Loss-of-control avoidance', standard: 'No stall warning, bank ≤ 45°, no VNE exceedance', actual: loc ? [r.stallSec > 0 && 'stall warning', r.steepBankSec > 2 && 'steep bank', r.overspeedSec > 0 && 'overspeed'].filter(Boolean).join(', ') : 'none', result: loc ? 'FAIL' : 'PASS' });
+  if (r.failuresInjected.length)
+    items.push({ task: 'Abnormal / partial panel', standard: 'Maintain control and complete the procedure', actual: r.failuresInjected.join(', '), result: r.crashed ? 'FAIL' : 'PASS' });
+  if (r.touchdown) {
+    const td = r.touchdown;
+    const ok = Number.isFinite(td.centerlineFt) && td.vsFpm > -600 && td.fromThresholdFt > 0;
+    items.push({ task: 'Landing from instrument approach', standard: 'On the runway, past the threshold, < 600 fpm', actual: Number.isFinite(td.centerlineFt) ? `${Math.round(-td.vsFpm)} fpm, ${Math.round(td.fromThresholdFt)} ft past threshold` : 'off runway', result: ok ? 'PASS' : 'FAIL' });
+  }
+  if (r.handFlown) items.push({ task: 'Hand-flown', standard: 'Autopilot not used', actual: r.samples.some((s) => s.ap) ? 'autopilot used' : 'hand-flown', result: r.samples.some((s) => s.ap) ? 'FAIL' : 'PASS' });
+
+  const graded = items.filter((i) => i.result !== 'N/A');
+  const anyFail = graded.some((i) => i.result === 'FAIL');
+  const flownEnough = final.length >= 4 || !!r.touchdown || !!r.crashed || r.missedAt !== null;
+  return { result: anyFail ? 'FAIL' : flownEnough ? 'PASS' : 'INCOMPLETE', items };
 }

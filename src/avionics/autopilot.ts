@@ -65,7 +65,14 @@ export class Autopilot {
     this.pitchInt = 0;
   }
 
+  /** set by the sim when the AP is failed or a hand-flown checkride is in progress */
+  inhibited: string | null = null;
+
   toggleAp(d: FlightData) {
+    if (!this.ap && this.inhibited) {
+      this.annunciation = { text: this.inhibited, until: this.time + 4 };
+      return;
+    }
     if (this.ap) {
       this.disconnect();
       return;

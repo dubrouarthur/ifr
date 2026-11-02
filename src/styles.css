@@ -251,3 +251,59 @@ kbd { font-family: 'Roboto Condensed', monospace; background: var(--bg3); border
   .topbar { gap: 6px; padding: 6px 8px; }
   .brand small { display: none; }
 }
+
+/* ---------------------------------------------------------------- instructor station */
+.drawer.left { left: 0; right: auto; border-left: 0; border-right: 1px solid var(--line); transform: translateX(-105%); width: min(420px, 100vw); grid-template-rows: auto 1fr; }
+.drawer.left.open { transform: none; }
+.ios-scroll { overflow: auto; padding: 12px 14px 20px; }
+.ios-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ios-toggle { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 9px; border: 1px solid var(--line); background: var(--bg2); color: var(--text); font: 600 12.5px var(--font); cursor: pointer; text-align: left; }
+.ios-toggle i { width: 10px; height: 10px; border-radius: 50%; background: #2a333d; flex: none; }
+.ios-toggle.on { border-color: #7a2323; background: #2a1213; }
+.ios-toggle.on i { background: var(--bad); box-shadow: 0 0 8px var(--bad); }
+.ios-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.ios-stat { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ios-stat div { padding: 7px 9px; border-radius: 8px; background: var(--bg2); border: 1px solid var(--line); }
+.ios-stat small { display: block; color: var(--muted); font-size: 11px; }
+.ios-stat b { font-size: 13.5px; }
+.ios-stat b.bad { color: var(--bad); }
+.ios-verdict { margin: 10px 0 6px; padding: 10px 12px; border-radius: 10px; font-weight: 800; display: flex; justify-content: space-between; align-items: center; background: var(--bg2); border: 1px solid var(--line); }
+.ios-verdict span { font-weight: 600; color: var(--muted); font-size: 12.5px; }
+.ios-verdict.PASS { color: var(--good); border-color: #1f5f3d; }
+.ios-verdict.FAIL { color: var(--bad); border-color: #6b2222; }
+.ios-verdict.INCOMPLETE { color: var(--warn); }
+.ios-acs { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+.ios-acs div { display: grid; grid-template-columns: 44px 1fr; gap: 2px 8px; padding: 5px 0; border-bottom: 1px dashed #222a33; }
+.ios-acs b { font-size: 11px; }
+.ios-acs .PASS b { color: var(--good); }
+.ios-acs .FAIL b { color: var(--bad); }
+.ios-acs .N\/A b { color: var(--muted); }
+.ios-acs small { grid-column: 2; color: var(--muted); }
+.muted { color: var(--muted); }
+.items th { text-align: left; font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; padding: 6px; border-bottom: 1px solid var(--line); }
+.hist td { font-size: 12.5px; }
+td.acs.PASS, .acs-badge.PASS { color: var(--good); font-weight: 800; }
+td.acs.FAIL, .acs-badge.FAIL { color: var(--bad); font-weight: 800; }
+td.acs.INCOMPLETE, .acs-badge.INCOMPLETE { color: var(--warn); font-weight: 800; }
+.acs-table td:first-child { width: 64px; font-weight: 800; }
+.acs-table tr.PASS td:first-child { color: var(--good); }
+.acs-table tr.FAIL td:first-child { color: var(--bad); }
+.acs-table tr.N\/A td:first-child { color: var(--muted); }
+.mode-box { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 12px; align-items: end; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg2); }
+.mode-box .opts { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.chip.ride { color: #ffb3b3; border-color: #6b2222; }
+.report-head { display: none; }
+
+@media print {
+  body { overflow: visible; background: #fff; }
+  #app, .drawer, .toasts { display: none !important; }
+  .modal-bg { position: static; display: none; background: none; backdrop-filter: none; padding: 0; }
+  .modal-bg.open { display: block; }
+  .modal { width: 100%; max-height: none; overflow: visible; border: 0; box-shadow: none; background: #fff; color: #000; }
+  .modal header, .modal footer { display: none; }
+  .report-head { display: block; border-bottom: 2px solid #000; margin-bottom: 12px; padding-bottom: 8px; }
+  .chartbox, .items td, .timeline div { border-color: #ccc !important; background: #fff !important; color: #000 !important; }
+  .muted, .timeline .t { color: #555 !important; }
+  .grade { box-shadow: 0 0 0 3px #000 inset !important; background: #fff !important; color: #000 !important; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

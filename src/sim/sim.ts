@@ -6,7 +6,7 @@ import { computeAdf, computeNav, EMPTY_NAV, markerBeacon, type AdfOutput, type N
 import { Recorder } from './recorder';
 import { FlightPlan } from '../nav/flightplan';
 import { AIRPORTS, NAVAIDS, groundElevation, runway, findFix, approach } from '../nav/data';
-import { destination, distanceNm, DEG, FT_PER_NM, crossTrackNm, alongTrackNm, type LatLon } from '../nav/geo';
+import { destination, distanceNm, bearingDeg, DEG, FT_PER_NM, crossTrackNm, alongTrackNm, type LatLon } from '../nav/geo';
 
 export interface Radio {
   active: number;
@@ -30,6 +30,33 @@ export interface Avionics {
   bearing2: 'OFF' | 'NAV2' | 'GPS' | 'ADF';
   adf: Radio;
   inset: boolean;
+}
+
+export interface Failures {
+  gs: boolean;
+  nav1: boolean;
+  gps: boolean;
+  ap: boolean;
+  ahrs: boolean;
+  airData: boolean;
+  engine: boolean;
+}
+export const FAILURE_LABELS: Record<keyof Failures, string> = {
+  gs: 'Glideslope',
+  nav1: 'NAV1 receiver',
+  gps: 'GPS (loss of integrity)',
+  ap: 'Autopilot',
+  ahrs: 'AHRS (attitude & heading)',
+  airData: 'Air data (pitot-static)',
+  engine: 'Engine',
+};
+export const noFailures = (): Failures => ({ gs: false, nav1: false, gps: false, ap: false, ahrs: false, airData: false, engine: false });
+
+export interface AssessSettings {
+  mode: 'training' | 'checkride';
+  student: string;
+  handFlown: boolean;
+  randomFailure: boolean;
 }
 
 export interface Scenario {
@@ -91,8 +118,17 @@ export class Sim {
   marker: 'O' | null = null;
   adf: AdfOutput = { valid: false, ident: '', bearingTo: 0, distNm: 0 };
   rec = new Recorder();
-  /** failure injection */
-  gsFailed = false;
+  /** failure injection (instructor station) */
+  failures: Failures = noFailures();
+  /** assessment settings */
+  assess: AssessSettings = { mode: 'training', student: '', handFlown: false, randomFailure: false };
+  private randomFailureArmed: keyof Failures | null | undefined = null;
+  get gsFailed() {
+    return this.failures.gs;
+  }
+  set gsFailed(v: boolean) {
+    this.failures.gs = v;
+  }
   time = 0;
   paused = false;
   rate = 1;
@@ -109,8 +145,9 @@ export class Sim {
     this.scenario = sc;
     this.ap = new Autopilot();
     this.fp = new FlightPlan();
-    this.gsFailed = false;
+    this.failures = noFailures();
     this.weather = defaultWeather();
+    this.randomFailureArmed = null;
     this.controls = neutralControls();
     const ground = groundElevation(sc.pos);
     this.ac = new Aircraft(
@@ -172,6 +209,8 @@ export class Sim {
     }
     const dt = Math.min(0.1, dtReal) * this.rate;
     this.time += dt;
+    if (this.failures.engine) this.controls.throttle = 0;
+    this.maybeRandomFailure();
     this.ac.step(dt, this.controls, this.weather);
     this.updateAvionics(dt);
     this.rec.update(this, dt);
@@ -188,10 +227,19 @@ export class Sim {
     const pos = { lat: s.lat, lon: s.lon, altFt: s.altFt };
     this.nav1 = computeNav(this.av.nav1.active, this.av.obs1, pos);
     this.nav2 = computeNav(this.av.nav2.active, this.av.obs2, pos);
-    if (this.gsFailed) {
+    const f = this.failures;
+    if (f.gs) {
       this.nav1 = { ...this.nav1, gsValid: false };
       this.nav2 = { ...this.nav2, gsValid: false };
     }
+    if (f.nav1) this.nav1 = { ...EMPTY_NAV, course: this.av.obs1 };
+    if (f.gps) {
+      this.fp.out.valid = false;
+      this.fp.out.gpValid = false;
+    }
+    if (f.ap && this.ap.ap) this.ap.disconnect();
+    this.ap.inhibited = f.ap || f.ahrs || f.airData ? 'AP FAIL' : this.assess.handFlown && this.assess.mode === 'checkride' ? 'HAND-FLOWN CHECKRIDE' : null;
+    if (this.ap.inhibited && this.ap.ap) this.ap.disconnect();
     this.marker = markerBeacon(pos);
     this.adf = computeAdf(this.av.adf.active, pos);
     this.fp.update(pos, d.gsKt, d.trackTrue);
@@ -202,6 +250,88 @@ export class Sim {
     }
     this.lastPitch = d.pitchDeg;
     this.lastRoll = d.rollDeg;
+  }
+
+  /** Instructor reposition: put the aircraft at a point of the loaded approach, trimmed at 90 KIAS. */
+  reposition(kind: 'iaf' | 'if' | 'final10' | 'final5' | 'runway'): boolean {
+    const ap = this.fp.approach;
+    if (!ap) return false;
+    const rw = runway(ap.airport, ap.runway);
+    let pos: LatLon;
+    let alt: number;
+    let hdg = ap.finalCourse;
+    if (kind === 'iaf' || kind === 'if') {
+      const tr = ap.transitions[0];
+      const leg = kind === 'iaf' && tr ? tr.legs[0] : ap.final[0];
+      const nextFix = kind === 'iaf' && tr ? tr.legs[1].fix : ap.final[1].fix;
+      pos = destination(leg.fix, bearingDeg(nextFix, leg.fix), 2);
+      alt = leg.altMin ?? 3000;
+      hdg = bearingDeg(pos, nextFix);
+    } else if (kind === 'runway') {
+      pos = destination(rw.threshold, rw.heading, 0.05);
+      alt = rw.elevFt;
+    } else {
+      const dist = kind === 'final10' ? 10 : 5;
+      pos = destination(rw.threshold, rw.heading + 180, dist);
+      const faf = ap.final.find((l) => l.role === 'FAF');
+      alt = ap.gsAngle ? rw.elevFt + (ap.tch ?? 50) + dist * 318.4 : Math.max(faf?.altMin ?? 2000, rw.elevFt + 1000);
+      alt = Math.round(alt / 10) * 10;
+    }
+    const onGround = kind === 'runway';
+    this.ac = new Aircraft(
+      { lat: pos.lat, lon: pos.lon, altFt: onGround ? groundElevation(pos) : alt, psi: hdg * DEG, tas: onGround ? 0 : 90 * KT * (1 + alt / 1000 * 0.015), onGround, theta: onGround ? 0 : 1.5 * DEG },
+      groundElevation,
+    );
+    this.ac.onRunwayCheck = onRunway;
+    this.controls.throttle = onGround ? 0 : 0.5;
+    this.controls.trim = -0.17;
+    this.controls.flaps = 0;
+    this.ap.hdgBug = Math.round(hdg) || 360;
+    this.ap.altSel = Math.round(alt / 100) * 100;
+    if (kind === 'final10' || kind === 'final5') this.fp.vectorsToFinal();
+    else if (kind !== 'runway') this.fp.activateApproach(this.ac.s);
+    this.ac.step(0.01, this.controls, this.weather);
+    this.updateAvionics(0);
+    this.rec.log(this.time, 'info', `Instructor reposition: ${kind}`);
+    return true;
+  }
+
+  /** Instructor: set or clear a failure, logged in the flight record. */
+  setFailure(k: keyof Failures, on: boolean) {
+    if (this.failures[k] === on) return;
+    this.failures[k] = on;
+    this.rec.log(this.time, on ? 'warn' : 'info', `${on ? 'FAILURE' : 'Restored'}: ${FAILURE_LABELS[k]}`);
+    if (k === 'ap' && on) this.ap.disconnect();
+    this.updateAvionics(0);
+  }
+
+  /** Checkride option: one random failure somewhere on the approach. */
+  private maybeRandomFailure() {
+    if (!this.assess.randomFailure || this.randomFailureArmed === undefined) return;
+    if (this.randomFailureArmed === null) {
+      const pool: (keyof Failures)[] = ['gs', 'ap', 'ahrs', 'gps'];
+      const ap = this.fp.approach;
+      const choices = pool.filter((k) => (k === 'gs' ? ap?.type === 'ILS' : k === 'gps' ? ap?.type !== 'RNAV' : true));
+      this.randomFailureArmed = choices[Math.floor(Math.random() * choices.length)] ?? 'ap';
+    }
+    const fafIdx = this.fp.wpts.findIndex((w) => w.role === 'FAF' && w.appr === 'final');
+    if (fafIdx >= 0 && this.fp.active >= fafIdx - 1 && this.fp.out.distNm < 3 && this.fp.approachActive && Math.random() < 0.002) {
+      this.setFailure(this.randomFailureArmed, true);
+      this.randomFailureArmed = undefined;
+    }
+  }
+
+  /** True when the pilot would see the runway environment (below the cloud base, within visibility). */
+  hasVisual(): boolean {
+    const ap = this.fp.approach;
+    const s = this.ac.s;
+    let near = AIRPORTS[0];
+    for (const a of AIRPORTS) if (distanceNm(s, a) < distanceNm(s, near)) near = a;
+    const base = near.elevFt + this.weather.ceilingFt;
+    if (this.weather.ceilingFt < 15000 && s.altFt > base) return false;
+    const thr = ap ? runway(ap.airport, ap.runway).threshold : near;
+    const visNm = this.weather.visibilitySm / 1.15078;
+    return distanceNm(s, thr) < visNm + 0.3;
   }
 
   /** Indicated altitude for the current baro setting */

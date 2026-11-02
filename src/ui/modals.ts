@@ -1,9 +1,10 @@
 import { h, clear, fmtTime, store } from './dom';
-import { SCENARIOS, type Scenario, type Sim } from '../sim/sim';
+import { SCENARIOS, type Scenario, type Sim, type AssessSettings } from '../sim/sim';
 import type { Weather } from '../sim/environment';
 import { APPROACHES, FIXES, runway, airport } from '../nav/data';
 import { approachPlate } from '../plates/plates';
-import { computeDebrief, type Recorder } from '../sim/recorder';
+import { computeDebrief, evaluateAcs, type Recorder } from '../sim/recorder';
+import { history } from './instructor';
 import { AXIS_LABELS, BUTTON_LABELS, AxisDetector, type AxisName, type ButtonAction, type InputManager } from '../sim/input';
 import { alongTrackNm, distanceNm, toLocal } from '../nav/geo';
 
@@ -69,7 +70,8 @@ export class Launcher extends Modal {
   private sel: Scenario = SCENARIOS[1];
   private wx: WxPreset = WX_PRESETS[0];
   private filter = 'All';
-  constructor(private onFly: (sc: Scenario, wx: WxPreset) => void) {
+  assess: AssessSettings = store.get<AssessSettings>('ifr.assess', { mode: 'training', student: '', handFlown: false, randomFailure: false });
+  constructor(private onFly: (sc: Scenario, wx: WxPreset, a: AssessSettings) => void) {
     super('Choose your flight');
     this.render();
   }
@@ -109,13 +111,34 @@ export class Launcher extends Modal {
     this.body.append(cards);
     this.body.append(h('div', { class: 'section-t' }, 'Weather'));
     this.body.append(h('div', { class: 'wx-presets' }, ...WX_PRESETS.map((w) => h('button', { class: w === this.wx ? 'on' : '', onclick: () => { this.wx = w; this.render(); } }, h('b', {}, w.name), h('span', {}, w.desc)))));
+    this.body.append(h('div', { class: 'section-t' }, 'Session'));
+    const a = this.assess;
+    const save = () => store.set('ifr.assess', a);
+    const name = h('input', { type: 'text', placeholder: 'Student name (for records)', value: a.student, oninput: (e: Event) => { a.student = (e.target as HTMLInputElement).value; save(); } });
+    name.addEventListener('keydown', (e) => e.stopPropagation());
+    this.body.append(
+      h('div', { class: 'mode-box' },
+        h('label', { class: 'field' }, h('b', {}, 'Student'), name),
+        h('div', { class: 'field' }, h('b', {}, 'Mode'),
+          h('div', { class: 'seg' },
+            h('button', { class: a.mode === 'training' ? 'on' : '', onclick: () => { a.mode = 'training'; save(); this.render(); } }, 'Training (coached)'),
+            h('button', { class: a.mode === 'checkride' ? 'on' : '', onclick: () => { a.mode = 'checkride'; save(); this.render(); } }, 'Checkride (ACS)'),
+          ),
+        ),
+        h('div', { class: 'opts' },
+          h('label', {}, h('input', { type: 'checkbox', checked: a.handFlown, disabled: a.mode !== 'checkride', onchange: (e: Event) => { a.handFlown = (e.target as HTMLInputElement).checked; save(); } }), ' Hand-flown (AP inhibited)'),
+          h('label', {}, h('input', { type: 'checkbox', checked: a.randomFailure, disabled: a.mode !== 'checkride', onchange: (e: Event) => { a.randomFailure = (e.target as HTMLInputElement).checked; save(); } }), ' Random failure on the approach'),
+        ),
+      ),
+    );
+    if (a.mode === 'checkride') this.body.append(h('p', { class: 'muted', style: 'font-size:12.5px;margin:8px 0 0' }, 'Checkride: no coaching, no evaluation toasts. Graded PASS/FAIL against FAA Instrument ACS tolerances — ¾-scale deflection, DA/MDA discipline with visual references, published altitudes, missed approach, ±10 kt. The instructor station (I) can inject failures at any time.'));
     this.body.append(h('div', { class: 'section-t' }, 'Briefing — ' + this.sel.name), h('ul', { class: 'tips' }, ...this.sel.briefing.map((b) => h('li', {}, b))));
     this.foot.append(h('span', { style: 'flex:1;color:var(--muted);font-size:12px;align-self:center' }, 'Tip: double-click a card to fly immediately. Press ? in flight for all keyboard shortcuts.'));
-    this.foot.append(h('button', { class: 'btn primary', onclick: () => this.fly() }, 'Fly this scenario ✈'));
+    this.foot.append(h('button', { class: 'btn primary', onclick: () => this.fly() }, this.assess.mode === 'checkride' ? 'Start checkride ✈' : 'Fly this scenario ✈'));
   }
   private fly() {
     this.close();
-    this.onFly(this.sel, this.wx);
+    this.onFly(this.sel, this.wx, { ...this.assess });
   }
 }
 
@@ -351,6 +374,7 @@ export class JoystickModal extends Modal {
 
 // ----------------------------------------------------------------- debrief
 export class DebriefModal extends Modal {
+  private savedFor = new WeakSet<Recorder>();
   constructor(private sim: Sim, private onAgain: () => void, private onNew: () => void) {
     super('Flight debrief');
   }
@@ -363,6 +387,24 @@ export class DebriefModal extends Modal {
     clear(this.foot);
     const rec = this.sim.rec;
     const db = computeDebrief(rec, this.sim.av.minimums);
+    const acs = evaluateAcs(rec);
+    if (!this.savedFor.has(rec) && (db.finalSamples.length > 4 || rec.touchdown || rec.crashed || rec.missedAt !== null)) {
+      this.savedFor.add(rec);
+      history.add({
+        id: String(Date.now()),
+        date: new Date().toISOString(),
+        student: rec.student,
+        scenario: this.sim.scenario?.name ?? '',
+        approach: db.approachName ?? '',
+        mode: rec.mode,
+        score: db.score,
+        grade: db.grade,
+        acs: acs.result,
+        failedTasks: acs.items.filter((i) => i.result === 'FAIL').map((i) => i.task),
+        failures: rec.failuresInjected,
+        durationSec: db.durationSec,
+      });
+    }
     // persist best
     const sc = this.sim.scenario;
     if (sc && (db.finalSamples.length > 4 || rec.touchdown || rec.crashed)) {
@@ -373,15 +415,24 @@ export class DebriefModal extends Modal {
       }
     }
     this.body.append(
+      h('div', { class: 'report-head' }, h('h2', { style: 'margin:0' }, `IFR Trainer — ${rec.mode === 'checkride' ? 'Checkride report' : 'Training debrief'}`), h('div', {}, `Student: ${rec.student || '—'} · ${new Date().toLocaleString()} · ${this.sim.scenario?.name ?? ''}`)),
+    );
+    const acsBlock = h('div', { class: 'chartbox', style: 'margin-top:16px' },
+      h('h5', {}, 'FAA Instrument ACS evaluation — ', h('span', { class: `acs-badge ${acs.result}` }, acs.result)),
+      h('table', { class: 'items acs-table' }, h('tr', {}, ...['Result', 'Task', 'Standard', 'Performance'].map((t) => h('th', {}, t))), ...acs.items.map((i) => h('tr', { class: i.result }, h('td', {}, i.result), h('td', {}, i.task), h('td', { class: 'muted' }, i.standard), h('td', {}, i.actual)))),
+    );
+    this.body.append(
       h('div', { class: 'grade-row' },
         h('div', { class: `grade ${db.grade}` }, db.grade, h('small', {}, `${db.score}/100`)),
         h('div', {},
           h('h2', { style: 'margin:0 0 6px' }, db.headline),
-          h('div', { style: 'color:var(--muted);font-size:13px;margin-bottom:10px' }, `${sc?.name ?? ''}${db.approachName ? ' · ' + db.approachName : ''} · ${fmtTime(db.durationSec)} flight time`),
+          h('div', { style: 'color:var(--muted);font-size:13px;margin-bottom:10px' }, `${rec.mode === 'checkride' ? 'CHECKRIDE · ' : ''}${rec.student ? rec.student + ' · ' : ''}${sc?.name ?? ''}${db.approachName ? ' · ' + db.approachName : ''} · ${fmtTime(db.durationSec)} flight time`),
           h('table', { class: 'items' }, ...db.items.map((i) => h('tr', {}, h('td', {}, h('b', {}, i.label), i.note ? h('div', { style: 'color:var(--muted);font-size:12px' }, i.note) : null), h('td', {}, i.value), h('td', { class: `pen${i.penalty === 0 ? ' zero' : ''}` }, i.penalty === 0 ? '✓' : `−${Math.round(i.penalty)}`)))),
         ),
       ),
     );
+    if (rec.mode === 'checkride') this.body.insertBefore(acsBlock, this.body.children[1]);
+    else this.body.append(acsBlock);
     this.body.append(h('div', { class: 'charts2' }, h('div', { class: 'chartbox' }, h('h5', {}, 'Ground track'), this.trackSvg(rec)), h('div', { class: 'chartbox' }, h('h5', {}, 'Vertical profile'), this.profileSvg(rec))));
     this.body.append(
       h('div', { class: 'charts2' },
@@ -391,6 +442,7 @@ export class DebriefModal extends Modal {
     );
     this.foot.append(
       h('button', { class: 'btn', onclick: () => this.exportJson() }, 'Export flight (JSON)'),
+      h('button', { class: 'btn', onclick: () => window.print(), title: 'Print or save as PDF' }, 'Print / PDF'),
       h('span', { style: 'flex:1' }),
       h('button', { class: 'btn', onclick: () => { this.close(); } }, 'Keep flying'),
       h('button', { class: 'btn', onclick: () => { this.close(); this.onNew(); } }, 'New scenario'),
@@ -503,7 +555,8 @@ export class HelpModal extends Modal {
       ['Pause', 'Esc / Pause'],
       ['Sim rate', 'Ctrl+1 / 2 / 4'],
       ['Outside view size', 'Tab'],
-      ['Debrief', 'Shift+D'],
+      ['Debrief / checkride report', 'Shift+D'],
+      ['Instructor station', 'I'],
       ['This help', '?'],
     ];
     this.body.append(h('div', { class: 'help-grid' }, ...rows.map(([a, k]) => h('div', {}, h('span', {}, a), h('span', {}, ...k.split('  ').map((x) => h('kbd', {}, x)))))));
