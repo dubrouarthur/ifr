@@ -8,6 +8,10 @@ G1000-style glass cockpit (PFD + MFD with bezel knobs/softkeys), GFC700-class au
 
 **3D outside view (WebGL)** — the Ardent Islands with terrain relief, coastline and sea, towns and forests; runways with full markings (threshold bars, numbers, TDZ, aiming points, centreline), taxiways, aprons, tower and hangars; **ALSF-II / MALSR approach lights with sequenced flashers**, edge / threshold / end / TDZ / centreline lights, REIL strobes and **PAPI driven by your actual glide angle**; sky dome with sun, overcast base and tops, visibility fog and the break-out at minimums; **day, dusk and night**; mouse look-around.
 
+**Wind & weather model** — surface wind with a logarithmic boundary layer, **winds aloft by layer** (auto veer-and-strengthen profile or custom 3000/6000/9000 ft layers with per-layer turbulence), **gust surges** with direction swing (gusts change your airspeed by inertia), Dryden-style turbulence (more near the ground in strong wind), low-level wind shear, weathervaning on the ground. Weather station with runway head/crosswind calculator against the C172's 15 kt demonstrated crosswind, wind at 3000 ft, and a generated **ATIS**. PFD wind box shows head/tail and crosswind components; drift angle on the situation bar.
+
+**Clarity** — situation bar (phase · next fix & constraint · altitude vs selected · wind with components and drift · minimums · IMC/VMC), a coach that only shows what to do now, a first-launch **guided tour**, and **Explain mode (F1)** that labels and explains every instrument in all three cockpits.
+
 **Professional controls** — concentric dual encoders (knurled outer ring = coarse, inner knob = fine, push), live value read-outs, CRS/BARO dual knob, backlit bezel keys and physical softkeys under the G1000 screens. Settings: cockpit, time of day, graphics quality, **Pro mode** (no coach or info pop-ups), sound, SVT.
 
 **Three cockpits** — G1000 glass (PFD/MFD, GFC 700), classic **steam gauges** (six-pack, wet compass, CDI with GS, RMI/ADF, KX155 / KR87 / KN62 / KAP 140 / KT76 stack, GPS), and an **airliner** layout (Boeing-style PFD with FMA, tapes and ILS scales, map-mode ND, MCP).

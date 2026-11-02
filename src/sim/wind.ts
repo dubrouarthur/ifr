@@ -27,9 +27,9 @@ export interface WindInputs {
 export function defaultAloft(w: WindInputs): WindLayer[] {
   const k = Math.max(3, w.windKt);
   return [
-    { altFt: 3000, dir: (w.windDir + 25) % 360, kt: Math.round(k * 1.55) },
-    { altFt: 6000, dir: (w.windDir + 35) % 360, kt: Math.round(k * 1.9) },
-    { altFt: 9000, dir: (w.windDir + 40) % 360, kt: Math.round(k * 2.3) },
+    { altFt: 3000, dir: (w.windDir + 25) % 360 || 360, kt: Math.round(k * 1.55) },
+    { altFt: 6000, dir: (w.windDir + 35) % 360 || 360, kt: Math.round(k * 1.9) },
+    { altFt: 9000, dir: (w.windDir + 40) % 360 || 360, kt: Math.round(k * 2.3) },
   ];
 }
 

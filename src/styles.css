@@ -599,3 +599,53 @@ body.pro .coach:not(.lesson) { display: none; }
 .ap-col .bkey { height: 22px; }
 .knob-wrap:has(.pknob.show) { z-index: 10; position: relative; }
 .bezel .side { justify-content: flex-start; align-self: stretch; }
+.wx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px 18px; }
+.wx-f { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; font-size: 12.5px; color: var(--muted); }
+.wx-f b { color: var(--text); font: 700 13px 'Roboto Mono', monospace; }
+.wx-f input { grid-column: 1 / -1; accent-color: var(--accent); }
+.wx-aloft input { width: 90px; height: 32px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg2); color: var(--text); padding: 0 8px; }
+.wx-aloft input:disabled { opacity: .55; }
+.wx-rwy tr.inuse td { background: rgba(43,213,118,.06); }
+.xw.ok, .xw { color: var(--good); font-weight: 700; }
+.xw.challenging, .xw.tailwind { color: var(--warn); }
+.xw.over-demo { color: var(--bad); }
+.atis { display: flex; gap: 12px; padding: 12px 14px; border-radius: 12px; background: #0b1a12; border: 1px solid #1f5f3d; font-size: 13.5px; line-height: 1.55; }
+.atis b { color: var(--good); white-space: nowrap; font-size: 11.5px; letter-spacing: 1px; }
+.set-sec .seg { vertical-align: middle; text-transform: none; letter-spacing: 0; }
+/* situation bar */
+.sitbar { position: absolute; left: 0; right: 0; top: 0; display: flex; gap: 1px; background: rgba(5,8,12,.62); backdrop-filter: blur(6px); border-bottom: 1px solid rgba(255,255,255,.06); z-index: 4; overflow-x: auto; scrollbar-width: none; }
+.sitbar .sb { flex: 1 1 auto; min-width: 0; padding: 5px 12px; border-right: 1px solid rgba(255,255,255,.06); white-space: nowrap; }
+.sitbar .sb:nth-child(2), .sitbar .sb:nth-child(4) { flex: 2 1 auto; }
+.sitbar small { display: block; font-size: 9.5px; letter-spacing: 1.1px; text-transform: uppercase; color: #8b97a4; font-weight: 700; }
+.sitbar b { font: 700 13.5px 'Roboto Condensed', sans-serif; color: #eef3f7; letter-spacing: .2px; }
+.sitbar .mag b { color: #ff7af5; }
+.sitbar .good b { color: #6ee7a2; }
+.sitbar .warn b { color: #ffc24d; }
+.sitbar .bad b { color: #ff6b6b; }
+.sitbar .imc b { color: #9fd1ff; }
+.coach { top: 58px; }
+.coach.empty:not(.lesson) { display: none; }
+.pause-veil { position: absolute; inset: 0; display: none; place-content: center; text-align: center; gap: 4px; background: rgba(3,6,9,.35); pointer-events: none; z-index: 3; }
+.pause-veil.on { display: grid; }
+.pause-veil b { font-size: 26px; letter-spacing: 3px; text-transform: uppercase; }
+.pause-veil span { color: #c6d0da; font-size: 13px; }
+/* explain mode */
+.explain { position: absolute; inset: 0; z-index: 6; }
+.explain .hot { position: absolute; border: 1.5px dashed rgba(0,228,255,.7); border-radius: 6px; background: rgba(0,228,255,.06); cursor: help; }
+.explain .hot:hover { background: rgba(0,228,255,.16); border-style: solid; z-index: 2; }
+.explain .tag { position: absolute; left: 4px; top: 4px; padding: 2px 6px; border-radius: 4px; background: rgba(0,20,28,.85); color: #8ff3ff; font: 700 10px var(--font); white-space: nowrap; pointer-events: none; }
+.explain .tip { display: none; position: absolute; left: 50%; top: calc(100% + 6px); transform: translateX(-50%); width: 260px; padding: 10px 12px; border-radius: 10px; background: #0b1117; border: 1px solid #22404c; box-shadow: var(--shadow); font-size: 12.5px; line-height: 1.45; color: #d6dee6; z-index: 3; }
+.explain .hot:hover .tip { display: block; }
+.explain .tip b { display: block; color: #fff; margin-bottom: 4px; font-size: 13px; }
+.explain .hot.up .tip { top: auto; bottom: calc(100% + 6px); }
+/* guided tour */
+.tour { position: fixed; inset: 0; z-index: 90; }
+.tour-spot { position: fixed; border-radius: 12px; box-shadow: 0 0 0 9999px rgba(3,6,9,.72), 0 0 0 2px var(--accent); transition: all .25s ease; pointer-events: none; }
+.tour-card { position: fixed; padding: 16px 18px; border-radius: 14px; background: #10161d; border: 1px solid #2a3a48; box-shadow: var(--shadow); }
+.tour-card h3 { margin: 4px 0 6px; font-size: 17px; }
+.tour-card p { margin: 0 0 10px; color: #c6d0da; font-size: 13.5px; line-height: 1.55; }
+.tour-k { font-size: 11px; color: var(--accent); font-weight: 800; letter-spacing: 1px; }
+.tour-dots { display: flex; gap: 5px; margin-bottom: 12px; }
+.tour-dots i { width: 7px; height: 7px; border-radius: 50%; background: #2a3540; }
+.tour-dots i.on { background: var(--accent); }
+.tour-btns { display: flex; gap: 6px; align-items: center; }

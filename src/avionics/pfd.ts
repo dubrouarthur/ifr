@@ -798,8 +798,13 @@ function drawLowerWindows(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState)
     line(ctx, 0, 14, 0, -12, C.white, 3);
     poly(ctx, [[0, -16], [-7, -5], [7, -5]], C.white);
     ctx.restore();
-    text(ctx, `${pad3(d.windDir)}°`, 222, 488, C.white, 16, 'right');
-    text(ctx, `${Math.round(d.windKt)}KT`, 222, 510, C.white, 16, 'right');
+    text(ctx, `${pad3(d.windDir)}°`, 176, 484, C.white, 15, 'left');
+    text(ctx, `${Math.round(d.windKt)}KT`, 176, 500, C.white, 15, 'left');
+    // G1000 wind option 2: head/tail and cross components
+    const hw = Math.round(d.headwindKt);
+    const xw = Math.round(d.crosswindKt);
+    text(ctx, `${hw >= 0 ? '▼' : '▲'}${Math.abs(hw)}`, 176, 516, hw >= 0 ? C.white : C.amber, 13, 'left');
+    text(ctx, `${xw >= 0 ? '◀' : '▶'}${Math.abs(xw)}`, 206, 516, Math.abs(xw) > 15 ? C.amber : C.white, 13, 'left');
   } else text(ctx, 'NO WIND DATA', 176, 498, C.white, 12, 'center');
   // inset map
   if (sim.av.inset) {
