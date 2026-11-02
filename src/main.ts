@@ -4,6 +4,9 @@ import { InputManager, type ButtonAction } from './sim/input';
 import { drawPfd, newPfdState, PFD_W, PFD_H, softkeyAt, PFD_SOFTKEYS } from './avionics/pfd';
 import { drawMfd, newMfdState, MFD_W, MFD_H, MFD_SOFTKEYS } from './avionics/mfd';
 import { drawOtw, inCloud } from './avionics/otw';
+import { drawSixPack, drawStack } from './avionics/steam';
+import { drawAirlinerPfd, drawNd } from './avionics/airliner';
+import { mfdRange } from './avionics/mfd';
 import { fitCanvas } from './avionics/draw';
 import { h, store, fmtTime } from './ui/dom';
 import { knob, bkey } from './ui/knob';
@@ -26,6 +29,8 @@ const mfdSt = newMfdState();
 pfdSt.svt = store.get('ifr.svt', true);
 let lastScenario: Scenario = SCENARIOS[1];
 let lastWx: WxPreset = WX_PRESETS[0];
+export type CockpitType = 'g1000' | 'steam' | 'airliner';
+let cockpitType = store.get<CockpitType>('ifr.cockpit', 'g1000');
 let otwMode = store.get<'normal' | 'big' | 'none'>('ifr.otw', 'normal');
 let debriefShown = false;
 let endTimer = 0;
@@ -131,6 +136,7 @@ const phaseChip = h('span', { class: 'chip live' }, 'Ready');
 const wxChip = h('span', { class: 'chip', id: 'wx-chip' }, '');
 const pauseBtn = h('button', { class: 'btn', title: 'Pause (Esc)', onclick: () => togglePause() }, icon(I.pause), h('span', { class: 'lbl' }, 'Pause'));
 const rateSeg = h('div', { class: 'seg', title: 'Simulation rate' }, ...[1, 2, 4].map((r) => h('button', { class: r === 1 ? 'on' : '', onclick: () => setRate(r) }, `${r}×`)));
+const cockpitSeg = h('div', { class: 'seg', title: 'Cockpit type' }, ...([['g1000', 'G1000'], ['steam', 'Steam'], ['airliner', 'Airliner']] as const).map(([c, l]) => h('button', { 'data-c': c, onclick: () => setCockpit(c) }, l)));
 const viewSeg = h('div', { class: 'seg', title: 'Outside view (Tab)' }, ...(['normal', 'big', 'none'] as const).map((m) => h('button', { 'data-m': m, onclick: () => setOtw(m) }, m === 'normal' ? 'View' : m === 'big' ? 'Big' : 'Panel')));
 
 const muteBtn = h('button', { class: 'btn ghost', title: 'Sound on/off (M)', onclick: () => toggleMute() }, icon(audio.muted ? I.mute : I.sound));
@@ -156,6 +162,7 @@ const topbar = h('header', { class: 'topbar' },
     h('button', { class: 'btn', onclick: () => openDebrief(), title: 'Debrief (Shift+D)' }, icon(I.chart), h('span', { class: 'lbl' }, 'Debrief')),
     h('button', { class: 'btn', onclick: () => ios.toggle(), title: 'Instructor station (I)' }, icon(I.ios), h('span', { class: 'lbl' }, 'Instructor')),
     h('button', { class: 'btn', onclick: () => historyModal.open(), title: 'Training records' }, icon(I.records), h('span', { class: 'lbl' }, 'Records')),
+    cockpitSeg,
     viewSeg,
     rateSeg,
     pauseBtn,
@@ -217,7 +224,7 @@ const apKeys = () => {
 };
 
 const pfdBezel = h('div', { class: 'bezel pfd' },
-  h('div', { class: 'brand-mark' }, 'PFD'),
+  h('div', { class: 'brand-mark', 'data-l': '1' }, 'PFD'),
   h('div', { class: 'side left' },
     knob({ label: 'NAV', sub: 'NAV1 STBY', dual: true, onTurn: (d, c) => tune(sim.av.nav1, d, c, 108, 118, 0.05) }),
     bkey('NAV ⇆', () => swap(sim.av.nav1), 'Swap NAV1 active/standby'),
@@ -241,7 +248,7 @@ const pfdBezel = h('div', { class: 'bezel pfd' },
   ),
 );
 const mfdBezel = h('div', { class: 'bezel mfd' },
-  h('div', { class: 'brand-mark' }, 'MFD'),
+  h('div', { class: 'brand-mark', 'data-r': '1' }, 'MFD'),
   h('div', { class: 'side left' },
     knob({ label: 'NAV2', sub: 'STBY', dual: true, onTurn: (d, c) => tune(sim.av.nav2, d, c, 108, 118, 0.05) }),
     bkey('NAV2 ⇆', () => swap(sim.av.nav2), 'Swap NAV2'),
@@ -265,7 +272,42 @@ const mfdBezel = h('div', { class: 'bezel mfd' },
   ),
 );
 const panel = h('section', { class: 'panel' }, pfdBezel, mfdBezel);
-const cockpit = h('main', { class: 'cockpit' }, otw, panel);
+// airliner mode-control panel
+const mcpWin = (label: string) => {
+  const v = h('b', {}, '');
+  return { el: h('div', { class: 'mcp-win' }, h('small', {}, label), v), v };
+};
+const mcpSpd = mcpWin('IAS');
+const mcpHdg = mcpWin('HEADING');
+const mcpAlt = mcpWin('ALTITUDE');
+const mcpVs = mcpWin('VERT SPD');
+const mcpKey = (label: string, fn: () => void, key: string) => {
+  const b = h('button', { class: 'mcp-key', onclick: fn }, h('i', {}), label);
+  b.dataset.mcp = key;
+  return b;
+};
+const mcp = h('section', { class: 'mcp' },
+  h('div', { class: 'mcp-group' }, mcpKey('F/D', () => sim.ap.toggleFd(sim.ac.data), 'FD'), mcpKey('CMD A', () => doAction('apToggle'), 'AP')),
+  h('div', { class: 'mcp-group' }, mcpSpd.el, mcpKey('FLCH', () => sim.ap.pressFlc(sim.ac.data), 'FLC')),
+  h('div', { class: 'mcp-group' }, mcpKey('LNAV', () => { if (sim.av.cdi !== 'GPS') sim.setCdi('GPS'); sim.ap.pressNav(sim.ac.data, sim.navInputs()); }, 'LNAV'), mcpKey('VOR LOC', () => { if (sim.av.cdi === 'GPS') sim.setCdi('NAV1'); sim.ap.pressNav(sim.ac.data, sim.navInputs()); }, 'VORLOC'), mcpKey('APP', () => sim.ap.pressApr(sim.ac.data, sim.navInputs()), 'APR')),
+  h('div', { class: 'mcp-group' }, mcpHdg.el, knob({ label: 'HDG', onTurn: hdgBy, onPush: () => (sim.ap.hdgBug = Math.round(sim.ac.data.hdgTrue) || 360) }), mcpKey('HDG SEL', () => sim.ap.pressHdg(sim.ac.data), 'HDG')),
+  h('div', { class: 'mcp-group' }, mcpAlt.el, knob({ label: 'ALT', dual: true, onTurn: altBy }), mcpKey('ALT HOLD', () => sim.ap.pressAlt(sim.ac.data), 'ALT')),
+  h('div', { class: 'mcp-group' }, mcpVs.el, knob({ label: 'V/S', onTurn: (d) => { if (sim.ap.vert !== 'VS') sim.ap.pressVs(sim.ac.data); sim.ap.vsSel = Math.max(-2000, Math.min(1500, sim.ap.vsSel + d * 100)); } }), mcpKey('V/S', () => sim.ap.pressVs(sim.ac.data), 'VS')),
+  h('div', { class: 'mcp-group' }, mcpKey('A/P DISC', () => sim.ap.disconnect(), 'DISC'), mcpKey('TO/GA', () => goAround(), 'TOGA')),
+);
+const cockpit = h('main', { class: 'cockpit' }, otw, mcp, panel);
+const BEZEL_LABELS: Record<CockpitType, [string, string]> = { g1000: ['PFD', 'MFD'], steam: ['FLIGHT INSTRUMENTS', 'NAV / COM STACK'], airliner: ['CAPT PFD', 'NAVIGATION DISPLAY'] };
+function setCockpit(t: CockpitType, announce = true) {
+  cockpitType = t;
+  store.set('ifr.cockpit', t);
+  panel.classList.remove('theme-g1000', 'theme-steam', 'theme-airliner');
+  panel.classList.add(`theme-${t}`);
+  cockpit.classList.toggle('with-mcp', t === 'airliner');
+  pfdBezel.querySelector('[data-l]')!.textContent = BEZEL_LABELS[t][0];
+  mfdBezel.querySelector('[data-r]')!.textContent = BEZEL_LABELS[t][1];
+  cockpitSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', (b as HTMLElement).dataset.c === t));
+  if (announce) toast(t === 'g1000' ? 'Cockpit: G1000 glass' : t === 'steam' ? 'Cockpit: classic steam gauges' : 'Cockpit: airliner PFD/ND', 'info');
+}
 
 // footer
 const thr = h('input', { type: 'range', min: 0, max: 100, value: 60, 'aria-label': 'Throttle' }) as HTMLInputElement;
@@ -320,6 +362,7 @@ function canvasPoint(c: HTMLCanvasElement, e: MouseEvent, W: number, H: number) 
   return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H };
 }
 pfdCanvas.addEventListener('click', (e) => {
+  if (cockpitType !== 'g1000') return;
   const p = canvasPoint(pfdCanvas, e, PFD_W, PFD_H);
   const i = softkeyAt(p.x, p.y);
   if (i === null) return;
@@ -352,6 +395,7 @@ pfdCanvas.addEventListener('wheel', (e) => {
   e.preventDefault();
 }, { passive: false });
 mfdCanvas.addEventListener('click', (e) => {
+  if (cockpitType !== 'g1000') return;
   const p = canvasPoint(mfdCanvas, e, MFD_W, MFD_H);
   const i = softkeyAt(p.x, p.y, MFD_H, MFD_W);
   if (i === null) return;
@@ -683,9 +727,26 @@ function frame(now: number) {
     drawOtw(octx, sim, W, Hh, now / 1000);
   }
   fitCanvas(pfdCanvas, PFD_W, PFD_H);
-  drawPfd(pfdCanvas.getContext('2d')!, sim, pfdSt, sim.paused ? 0 : dt);
   fitCanvas(mfdCanvas, MFD_W, MFD_H);
-  drawMfd(mfdCanvas.getContext('2d')!, sim, mfdSt);
+  const lctx = pfdCanvas.getContext('2d')!;
+  const rctx = mfdCanvas.getContext('2d')!;
+  if (cockpitType === 'steam') {
+    drawSixPack(lctx, sim, sim.paused ? 0 : dt);
+    drawStack(rctx, sim);
+  } else if (cockpitType === 'airliner') {
+    drawAirlinerPfd(lctx, sim);
+    drawNd(rctx, sim, mfdRange(mfdSt));
+    mcpSpd.v.textContent = sim.ap.vert === 'FLC' ? String(sim.ap.iasSel) : '---';
+    mcpHdg.v.textContent = String(sim.ap.hdgBug).padStart(3, '0');
+    mcpAlt.v.textContent = String(sim.ap.altSel).padStart(5, '0');
+    mcpVs.v.textContent = sim.ap.vert === 'VS' ? `${sim.ap.vsSel > 0 ? '+' : ''}${sim.ap.vsSel}` : '';
+    const a = sim.ap;
+    const lit: Record<string, boolean> = { FD: a.fd, AP: a.ap, FLC: a.engaged && a.vert === 'FLC', LNAV: a.engaged && (a.lat === 'GPS' || a.latArmed === 'GPS'), VORLOC: a.engaged && (['VOR', 'LOC', 'BC'].includes(a.lat) || ['VOR', 'LOC', 'BC'].includes(a.latArmed ?? '')), APR: a.apprMode, HDG: a.engaged && a.lat === 'HDG', ALT: a.engaged && a.vert === 'ALT', VS: a.engaged && a.vert === 'VS' };
+    mcp.querySelectorAll<HTMLElement>('[data-mcp]').forEach((b) => b.classList.toggle('on', !!lit[b.dataset.mcp!]));
+  } else {
+    drawPfd(lctx, sim, pfdSt, sim.paused ? 0 : dt);
+    drawMfd(rctx, sim, mfdSt);
+  }
   charts.update();
   ios.update(dt);
   audio.update(sim, dt);
@@ -723,6 +784,7 @@ function frame(now: number) {
 
 // ------------------------------------------------------------------ boot
 setOtw(otwMode);
+setCockpit(cockpitType, false);
 updateHeader();
 updateCoach();
 requestAnimationFrame(frame);

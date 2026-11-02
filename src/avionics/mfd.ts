@@ -136,7 +136,7 @@ export function drawMap(
   const s = sim.ac.s;
   const d = sim.ac.data;
   const northUp = st ? st.northUp : false;
-  const rot = northUp ? 0 : -d.trackTrue * DEG;
+  const rot = northUp ? 0 : d.trackTrue * DEG;
   const cx = r.x + r.w / 2;
   const cy = r.y + r.h * (northUp ? 0.5 : 0.62);
   const ppn = (Math.min(r.w, r.h) * (northUp ? 0.45 : 0.55)) / rangeNm;
@@ -327,7 +327,7 @@ export function drawMap(
   // own ship
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.rotate(d.hdgTrue * DEG + rot);
+  ctx.rotate(d.hdgTrue * DEG - rot);
   poly(ctx, [[0, -14], [3, -5], [13, 2], [13, 5], [3, 2], [2, 9], [6, 12], [6, 14], [0, 12], [-6, 14], [-6, 12], [-2, 9], [-3, 2], [-13, 5], [-13, 2], [-3, -5]], C.white, C.black, 1);
   ctx.restore();
   // north indicator & range
