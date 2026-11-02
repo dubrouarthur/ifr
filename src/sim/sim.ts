@@ -272,7 +272,8 @@ export class Sim {
       alt = rw.elevFt;
     } else {
       const dist = kind === 'final10' ? 10 : 5;
-      pos = destination(rw.threshold, rw.heading + 180, dist);
+      const mapFix = ap.final[ap.final.length - 1].fix;
+      pos = destination(mapFix, ap.finalCourse + 180, dist);
       const faf = ap.final.find((l) => l.role === 'FAF');
       alt = ap.gsAngle ? rw.elevFt + (ap.tch ?? 50) + dist * 318.4 : Math.max(faf?.altMin ?? 2000, rw.elevFt + 1000);
       alt = Math.round(alt / 10) * 10;
@@ -590,6 +591,42 @@ export const SCENARIOS: Scenario[] = [
     setup: (s) => {
       s.ap.altSel = 4000;
       s.loadApproach('MSVL-R03', 'TALUS');
+    },
+  },
+  {
+    id: 'ils03',
+    name: 'ILS RWY 03 — Mistral Valley',
+    kind: 'Precision',
+    difficulty: 2,
+    approachId: 'MSVL-I03',
+    description: 'Valley ILS with rising terrain and a gusty wind. Via SCREE, GS intercept at 3600, DA 1400.',
+    pos: destination(fixPos('SCREE'), 250, 8),
+    altFt: 4000,
+    hdg: 70,
+    iasKt: 100,
+    weather: { ceilingFt: 300, visibilitySm: 0.75, windDir: 60, windKt: 14, gustKt: 22, turbulence: 0.3 },
+    briefing: ['NAV1 I-MSV 111.10, CRS 030.', 'SCREE 4000 → FENNY 3600 → GS. DA 1400.', 'Missed: 4500 direct MSV, hold.'],
+    setup: (s) => {
+      s.ap.altSel = 4000;
+      s.loadApproach('MSVL-I03', 'SCREE');
+    },
+  },
+  {
+    id: 'lda36',
+    name: 'LDA/DME RWY 36 — offset localizer',
+    kind: 'Non-precision',
+    difficulty: 3,
+    approachId: 'PARD-L36',
+    description: 'A localizer offset 16° from the runway. Track it to ADNAP, then manoeuvre visually to runway 36.',
+    pos: destination(fixPos('GULLS'), 240, 6),
+    altFt: 3500,
+    hdg: 60,
+    iasKt: 95,
+    weather: { ceilingFt: 1100, visibilitySm: 2, windDir: 340, windKt: 10 },
+    briefing: ['NAV1 I-ADN 109.50, CRS 016.', 'GULLS 3500 → OSPRY 3000 → NIXIE (FAF) 2100 → MDA 800.', 'At ADNAP with the runway in sight: turn ~16° right to line up with RWY 36.'],
+    setup: (s) => {
+      s.ap.altSel = 3500;
+      s.loadApproach('PARD-L36', 'GULLS');
     },
   },
   {

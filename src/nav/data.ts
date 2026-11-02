@@ -73,6 +73,10 @@ const r27 = runway('PARD', '27');
 const r09 = runway('PARD', '09');
 const r21 = runway('MSVL', '21');
 
+const r36 = runway('PARD', '36');
+const r03n = runway('MSVL', '03');
+// LDA 36: offset localizer, course 016, passes 1.3 NM SSW of the RWY 36 threshold
+const LDA_MAP_POS = destination(r36.threshold, 200, 1.3);
 const ARD_POS = destination(PARD_REF, 330, 2.2);
 const MSV_POS = destination(r21.threshold, 30, 5.0);
 
@@ -95,6 +99,33 @@ export const NAVAIDS: Navaid[] = [
     ...destination(r27.end, 270, ft2nm(1000)),
     // Glideslope antenna ~1000 ft past the threshold
     gsPos: destination(r27.threshold, 270, ft2nm(1000)),
+  },
+  {
+    ident: 'IMSV',
+    name: 'I-MSV',
+    type: 'ILS',
+    freq: 111.1,
+    elevFt: 1150,
+    course: 30,
+    gsAngle: 3.0,
+    tch: 50,
+    dme: true,
+    runway: '03',
+    airport: 'MSVL',
+    ...destination(r03n.end, 30, ft2nm(1000)),
+    gsPos: destination(r03n.threshold, 30, ft2nm(1000)),
+  },
+  {
+    ident: 'IADN',
+    name: 'I-ADN',
+    type: 'LOC',
+    freq: 109.5,
+    elevFt: 420,
+    course: 16,
+    dme: true,
+    runway: '36',
+    airport: 'PARD',
+    ...destination(LDA_MAP_POS, 16, 4.2),
   },
   { ident: 'PA', name: 'PADDY', type: 'NDB', freq: 344, elevFt: 400, ...destination(r27.threshold, 90, 4.5) },
 ];
@@ -138,6 +169,11 @@ const CRAGG = fix('CRAGG', destination(r03.threshold, 210, distForAlt(2900, 1150
 const FENNY = fix('FENNY', destination(r03.threshold, 210, 10));
 const TALUS = fix('TALUS', destination(FENNY, 120, 6));
 const SCREE = fix('SCREE', destination(FENNY, 300, 6));
+// LDA 36 at PARD (final from the south-southwest, offset 16°)
+const LDAMP = fix('ADNAP', LDA_MAP_POS);
+const NIXIE = fix('NIXIE', destination(LDA_MAP_POS, 196, 4.5));
+const OSPRY = fix('OSPRY', destination(LDA_MAP_POS, 196, 10));
+const GULLS = fix('GULLS', destination(destination(LDA_MAP_POS, 196, 10), 286, 6));
 // VOR 21 at MSVL
 const GALEN = fix('GALEN', destination(MSV_POS, 30, 10));
 const TOMAS = fix('TOMAS', destination(MSV_POS, 100, 10));
@@ -154,6 +190,9 @@ const RW27 = fix('RW27', r27.threshold, 'runway');
 const RW09 = fix('RW09', r09.threshold, 'runway');
 const RW21 = fix('RW21', r21.threshold, 'runway');
 const RW03 = fix('RW03', r03.threshold, 'runway');
+function findFixRaw(id: string) {
+  return fixes.find((f) => f.ident === id)!;
+}
 for (const a of AIRPORTS) fix(a.icao, a, 'airport');
 
 export const FIXES = fixes;
@@ -201,6 +240,7 @@ export const APPROACHES: Approach[] = [
     missedText: 'Climb to 1000 then climbing right turn to 3000 direct ARD VOR/DME and hold.',
     minimums: [
       { label: 'S-ILS 27', da: 670, vis: '1/2', hat: 250 },
+      { label: 'S-ILS 27 CAT II', da: 520, vis: 'RVR 1200', hat: 100 },
       { label: 'S-LOC 27', mda: 900, vis: '3/4', hat: 480 },
       { label: 'CIRCLING', mda: 1000, vis: '1', hat: 580 },
     ],
@@ -363,6 +403,65 @@ export const APPROACHES: Approach[] = [
     ],
     msa: { center: 'MSV', alt: 5200 },
     notes: ['Simulated procedure. Not for navigation.', 'LPV not authorized. Baro-VNAV / WAAS glidepath 3.00°.'],
+  },
+  {
+    id: 'MSVL-I03',
+    airport: 'MSVL',
+    name: 'ILS RWY 03',
+    type: 'ILS',
+    category: 'Precision',
+    difficulty: 2,
+    runway: '03',
+    finalCourse: 30,
+    navaid: 'IMSV',
+    gsAngle: 3.0,
+    tch: 50,
+    transitions: [
+      { name: 'TALUS', legs: legs({ fix: TALUS, role: 'IAF', altMin: 4000 }, { fix: FENNY, role: 'IF', altMin: 3600 }) },
+      { name: 'SCREE', legs: legs({ fix: SCREE, role: 'IAF', altMin: 4000 }, { fix: FENNY, role: 'IF', altMin: 3600 }) },
+    ],
+    final: legs(
+      { fix: FENNY, role: 'IF', altMin: 3600 },
+      { fix: CRAGG, role: 'FAF', altMin: 2900, course: 30 },
+      { fix: RW03, role: 'MAP', course: 30 },
+    ),
+    missed: legs({ fix: RW03 }, { fix: MSV, role: 'MAHP', altMin: 4500, hold: { inbound: 210, turn: 'R', legMin: 1 } }),
+    missedText: 'Climb to 4500 direct MSV VOR/DME and hold.',
+    minimums: [
+      { label: 'S-ILS 03', da: 1400, vis: '3/4', hat: 250 },
+      { label: 'S-LOC 03', mda: 1640, vis: '1', hat: 490 },
+      { label: 'CIRCLING', mda: 1740, vis: '1 1/4', hat: 590 },
+    ],
+    msa: { center: 'MSV', alt: 5200 },
+    notes: ['Simulated procedure. Not for navigation.', 'Rising terrain north-east: missed approach climb gradient 250 ft/NM to 2500.', 'DME from I-MSV. GS 3.00°, TCH 50.'],
+  },
+  {
+    id: 'PARD-L36',
+    airport: 'PARD',
+    name: 'LDA/DME RWY 36',
+    type: 'LDA',
+    category: 'Non-precision',
+    difficulty: 3,
+    runway: '36',
+    finalCourse: 16,
+    navaid: 'IADN',
+    transitions: [
+      { name: 'GULLS', legs: legs({ fix: GULLS, role: 'IAF', altMin: 3500 }, { fix: OSPRY, role: 'IF', altMin: 3000 }) },
+      { name: 'ORCAS', legs: legs({ fix: findFixRaw('ORCAS'), role: 'IAF', altMin: 3500 }, { fix: OSPRY, role: 'IF', altMin: 3000 }) },
+    ],
+    final: legs(
+      { fix: OSPRY, role: 'IF', altMin: 3000 },
+      { fix: NIXIE, role: 'FAF', altMin: 2100, course: 16 },
+      { fix: LDAMP, role: 'MAP', course: 16 },
+    ),
+    missed: legs({ fix: LDAMP }, { fix: ARD, role: 'MAHP', altMin: 3000, hold: { inbound: 270, turn: 'R', legMin: 1 } }),
+    missedText: 'Climb to 3000 direct ARD VOR/DME and hold.',
+    minimums: [
+      { label: 'S-LDA 36', mda: 800, vis: '1', hat: 380 },
+      { label: 'CIRCLING', mda: 1000, vis: '1 1/4', hat: 580 },
+    ],
+    msa: { center: 'ARD', alt: 3100 },
+    notes: ['Simulated procedure. Not for navigation.', 'LDA course 016° is offset 16° from the runway: manoeuvre visually at ADNAP (MAP).', 'DME from I-ADN.'],
   },
 ];
 

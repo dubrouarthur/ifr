@@ -605,7 +605,7 @@ function updateCoach() {
     const ap = fp.approach;
     if (ap && !fp.approachActive) hints.push('Approach loaded but not active — ACT/VTF on the MFD bezel, or Procedures.');
     if (ap && fp.approachActive && !fp.missedActive) {
-      const navBased = ap.type === 'ILS' || ap.type === 'LOC' || ap.type === 'LOCBC' || ap.type === 'VOR';
+      const navBased = ap.type === 'ILS' || ap.type === 'LOC' || ap.type === 'LOCBC' || ap.type === 'VOR' || ap.type === 'LDA';
       const faf = fp.wpts.find((x) => x.role === 'FAF' && x.appr === 'final');
       const dFaf = faf ? distanceNm(sim.ac.s, faf) : 99;
       if (navBased && sim.av.cdi === 'GPS' && dFaf < 12) hints.push(`Switch the CDI to ${ap.type === 'VOR' ? 'VOR1' : 'LOC1'} before the FAF (C key).`);

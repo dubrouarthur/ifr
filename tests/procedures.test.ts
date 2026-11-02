@@ -71,3 +71,41 @@ describe('classic procedures flown by the FMS/autopilot', () => {
     expect(Math.abs(((s.ac.data.trackTrue - 90 + 540) % 360) - 180)).toBeLessThan(25);
   });
 });
+
+import { runway } from '../src/nav/data';
+import { crossTrackNm, FT_PER_NM } from '../src/nav/geo';
+
+describe('new approaches', () => {
+  for (const [id, sc, stopAgl, maxOff] of [['MSVL-I03', 'ils03', 300, 150], ['PARD-L36', 'lda36', 450, 400]] as const) {
+    it(`${id}: coupled from a 10 NM final`, () => {
+      const s = new Sim(SCENARIOS.find((x) => x.id === sc));
+      s.weather.turbulence = 0;
+      s.weather.gustKt = 0;
+      s.reposition('final10');
+      s.setCdi('NAV1');
+      const d = () => s.ac.data;
+      s.ap.toggleAp(d());
+      s.ap.pressHdg(d());
+      s.ap.pressAlt(d());
+      s.ap.pressApr(d(), s.navInputs());
+      let locked = false;
+      run(s, 900, () => {
+        if (s.ap.lat === 'LOC') locked = true;
+        if (id === 'PARD-L36' && locked && s.ap.vert === 'ALT' && d().aglFt > 1200) {
+          s.ap.altSel = 800;
+          s.ap.pressVs(d());
+          s.ap.vsSel = -450;
+        }
+        return locked && d().aglFt < stopAgl && (s.ap.vert === 'GS' || id === 'PARD-L36');
+      });
+      expect(locked).toBe(true);
+      expect(Math.abs(s.nav1.dev)).toBeLessThan(0.15);
+      if (id === 'MSVL-I03') {
+        expect(s.ap.vert).toBe('GS');
+        const r = runway('MSVL', '03');
+        expect(Math.abs(crossTrackNm(r.threshold, r.end, s.ac.s) * FT_PER_NM)).toBeLessThan(maxOff);
+      }
+      expect(s.ac.s.crashed).toBeNull();
+    });
+  }
+});

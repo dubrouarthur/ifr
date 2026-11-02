@@ -142,7 +142,7 @@ export function approachPlate(ap: Approach): string {
   parts.push(`<text x="20" y="28" font-size="10">${esc(apt.city)}</text>`);
   parts.push(`<text x="${W - 20}" y="28" font-size="10" text-anchor="end">${esc(apt.name)} (${apt.icao})</text>`);
   parts.push(`<text x="${W / 2}" y="30" font-size="17" font-weight="700" text-anchor="middle">${esc(ap.name)}</text>`);
-  const navLine = nav ? `${nav.type === 'ILS' ? 'LOC/DME' : nav.type === 'NDB' ? 'NDB' : 'VOR/DME'} ${nav.name} ${nav.type === 'NDB' ? nav.freq : nav.freq.toFixed(2)}` : 'WAAS CH 51027  W27A';
+  const navLine = nav ? `${nav.type === 'ILS' ? 'LOC/DME' : nav.type === 'LOC' ? (ap.type === 'LDA' ? 'LDA/DME' : 'LOC/DME') : nav.type === 'NDB' ? 'NDB' : 'VOR/DME'} ${nav.name} ${nav.type === 'NDB' ? nav.freq : nav.freq.toFixed(2)}` : 'WAAS CH 51027  W27A';
   const boxY = 40;
   const cols = [
     [nav ? navLine : 'WAAS', ap.type === 'RNAV' ? 'GPS' : nav?.ident ?? ''],
