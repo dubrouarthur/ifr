@@ -63,6 +63,8 @@ export interface ExerciseRuntime {
   acs?: boolean;
   /** allowed violation seconds before failing */
   allowanceSec?: number;
+  /** called every frame (e.g. scheduled failures) */
+  tick?: (c: Ctx) => void;
 }
 
 export interface StepResult {
@@ -119,6 +121,7 @@ export class LessonRun {
     }
     this.totalT += dt;
     const d = sim.ac.data;
+    this.rt.tick?.(this.ctx(dt));
     this.holdEval?.update({ lat: sim.ac.s.lat, lon: sim.ac.s.lon, alt: sim.indicatedAlt(), track: d.trackTrue, turnRate: d.turnRateDps, gsKt: d.gsKt, t: sim.time }, dt);
     const st = this.step;
     if (!st) return this.finish();

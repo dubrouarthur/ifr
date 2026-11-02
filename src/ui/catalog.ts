@@ -3,13 +3,15 @@ import { SCENARIOS, type Scenario } from '../sim/sim';
 import { EXERCISES, type Path } from '../train/curriculum';
 import type { Exercise } from '../train/engine';
 import { approach } from '../nav/data';
+import { PRESET_CIRCUITS, circuitStore, circuitToExercise, circuitStats, type Circuit } from '../train/circuits';
 
-export type CatId = 'approaches' | 'procedures' | 'xc' | 'basics' | 'abnormal' | 'checkride' | 'free';
+export type CatId = 'approaches' | 'procedures' | 'xc' | 'circuits' | 'basics' | 'abnormal' | 'checkride' | 'free';
 
 export const CATEGORIES: { id: CatId; title: string; icon: string; desc: string; subs: string[] }[] = [
   { id: 'approaches', title: 'Approaches', icon: '🛬', desc: 'Every instrument approach type, coupled or hand-flown.', subs: ['ILS & precision', 'Localizer-based (LOC · LDA · BC)', 'VOR & NDB', 'RNAV (GPS)', 'Circling'] },
   { id: 'procedures', title: 'Procedures', icon: '🔁', desc: 'Holdings, entries, DME arcs, procedure turns, interceptions and tracking.', subs: ['Holdings', 'Interceptions', 'DME arcs & procedure turns', 'Tracking & navigation aids'] },
   { id: 'xc', title: 'IFR flights', icon: '🧭', desc: 'Gate-to-gate IFR cross-country flights between airports.', subs: ['Cross-country'] },
+  { id: 'circuits', title: 'IFR circuits', icon: '🛠️', desc: 'Instructor-built circuits: start, legs, holds, approaches, weather and scheduled failures.', subs: ['School presets', 'My circuits'] },
   { id: 'basics', title: 'Instrument basics', icon: '🎯', desc: 'Attitude instrument flying and partial panel.', subs: ['Attitude instrument flying', 'Partial panel'] },
   { id: 'abnormal', title: 'Abnormal & emergency', icon: '⚠️', desc: 'Missed approaches, failures, partial-panel approaches.', subs: ['Missed approach & failures'] },
   { id: 'checkride', title: 'Checkride', icon: '🎓', desc: 'Full profiles graded against the ACS.', subs: ['Practical test profiles'] },
@@ -31,6 +33,7 @@ export interface Item {
   graded: boolean;
   ex?: Exercise;
   sc?: Scenario;
+  circuit?: Circuit;
   tags: string[];
 }
 
@@ -109,8 +112,15 @@ function scItem(s: Scenario): Item {
   return { id: `sc-${s.id}`, kind: 'scenario', cat, sub, title: s.name, summary: s.description, difficulty: s.difficulty, airport: apt, minutes: 15, ap: null, plate: s.approachId, graded: false, sc: s, tags: [s.name, s.description, sub] };
 }
 
+function circuitItem(c: Circuit, preset: boolean): Item {
+  const ex = circuitToExercise(c);
+  const apt = ex.plate ? approach(ex.plate).airport : c.start.type === 'runway' ? c.start.airport : 'PARD';
+  const diff: 1 | 2 | 3 = c.failures.length || !c.allowAp ? 3 : c.legs.length > 3 ? 2 : 1;
+  return { id: ex.id, kind: 'exercise', cat: 'circuits', sub: preset ? 'School presets' : 'My circuits', title: c.name, summary: ex.summary, difficulty: diff, airport: apt, minutes: circuitStats(c).minutes, ap: c.allowAp, plate: ex.plate, graded: true, ex, circuit: c, tags: [c.name, c.description, 'circuit'] };
+}
+
 export function catalog(): Item[] {
-  return [...EXERCISES.map(exItem), ...SCENARIOS.map(scItem)];
+  return [...EXERCISES.map(exItem), ...SCENARIOS.map(scItem), ...PRESET_CIRCUITS.map((c) => circuitItem(c, true)), ...circuitStore.list().map((c) => circuitItem(c, false))];
 }
 
 export function pathItems(p: Path): Item[] {

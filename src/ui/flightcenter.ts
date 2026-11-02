@@ -20,6 +20,8 @@ export interface FcHooks {
   openChart: (id: string) => void;
   setCockpit: (t: CockpitType) => void;
   getCockpit: () => CockpitType;
+  openBuilder: (c?: import('../train/circuits').Circuit) => void;
+  flyCircuit: (c: import('../train/circuits').Circuit) => void;
 }
 
 type View = { type: 'home' } | { type: 'cat'; cat: CatId; sub: string | null } | { type: 'path'; path: Path } | { type: 'search' };
@@ -107,6 +109,7 @@ export class FlightCenter extends Modal {
       this.side.append(navBtn(p.title.replace(' — complete syllabus', ''), this.view.type === 'path' && this.view.path.id === p.id, () => this.go({ type: 'path', path: p }), undefined, done === p.exercises.length ? '✅' : `${Math.round((done / p.exercises.length) * 100)}%`));
     }
     this.side.append(h('div', { class: 'fc-sec' }, 'Tools'));
+    this.side.append(navBtn('IFR circuit builder', false, () => { this.close(); this.hooks.openBuilder(); }, undefined, '🛠️'));
     this.side.append(navBtn('Hold-entry drill', false, () => { this.close(); this.hooks.openDrill(); }, undefined, '⚡'));
     this.side.append(navBtn('Training records', false, () => { this.close(); this.hooks.openRecords(); }, undefined, '📋'));
   }
@@ -218,6 +221,8 @@ export class FlightCenter extends Modal {
     }
     const cat = CATEGORIES.find((c) => c.id === v.cat)!;
     this.main.append(h('div', { class: 'fc-head' }, h('div', {}, h('h2', {}, `${cat.icon} ${cat.title}${v.sub ? ' · ' + v.sub : ''}`), h('p', { class: 'muted' }, cat.desc))), this.filtersBar());
+    if (v.cat === 'circuits')
+      this.main.append(h('div', { class: 'fc-builder-cta' }, h('div', {}, h('b', {}, 'Build your own IFR circuit'), h('span', { class: 'muted' }, 'Like a pro simulator IOS: start on a runway or airborne, chain route fixes, holds and approaches (missed or full stop), set the weather and schedule failures. Save, export, or share as a link.')), h('button', { class: 'btn primary', onclick: () => { this.close(); this.hooks.openBuilder(); } }, '🛠️ Open the builder')));
     const inCat = this.items.filter((i) => i.cat === v.cat);
     const subs = v.sub ? [v.sub] : cat.subs;
     for (const s of subs) {
@@ -277,6 +282,7 @@ export class FlightCenter extends Modal {
           h('label', { class: 'fc-check' }, h('input', { type: 'checkbox', checked: this.assess.randomFailure, onchange: (e: Event) => { this.assess.randomFailure = (e.target as HTMLInputElement).checked; store.set('ifr.assess', this.assess); } }), ' Random failure on the approach'),
         );
     }
+    if (i.circuit) this.detail.append(h('button', { class: 'btn', style: 'margin-top:10px', onclick: () => { this.close(); this.hooks.openBuilder(i.circuit); } }, '🛠️ Open in the circuit builder'));
     this.detail.append(h('div', { class: 'fc-cta' }, h('button', { class: 'btn primary big', onclick: () => this.fly(i) }, i.kind === 'exercise' ? 'Brief & fly ✈' : this.assess.mode === 'checkride' ? 'Start checkride ✈' : 'Fly now ✈')));
   }
 
@@ -292,7 +298,8 @@ export class FlightCenter extends Modal {
 
   private fly(i: Item, path: Path | null = null) {
     this.close();
-    if (i.ex) this.hooks.briefExercise(i.ex, path ?? (this.view.type === 'path' ? this.view.path : null));
+    if (i.circuit) this.hooks.flyCircuit(i.circuit);
+    else if (i.ex) this.hooks.briefExercise(i.ex, path ?? (this.view.type === 'path' ? this.view.path : null));
     else if (i.sc) this.hooks.flyScenario(i.sc, this.wx, { ...this.assess });
   }
 }

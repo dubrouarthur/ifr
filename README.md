@@ -10,6 +10,8 @@ G1000-style glass cockpit (PFD + MFD with bezel knobs/softkeys), GFC700-class au
 
 **Flight Center** — every flight in one place, classified by type (Approaches · Procedures · IFR flights · Instrument basics · Abnormal · Checkride · Free flight) with sub-types, search, level/airport/autopilot filters, a briefing pane with the plate, and cockpit choice.
 
+**IFR circuit builder (pro-simulator IOS style)** — the instructor composes a circuit: start on a runway or airborne (fix / bearing / distance / altitude / heading / speed), then any sequence of route fixes, ATC altitude changes, holds (fix, inbound course, turns, leg time, altitude, number of circuits) and approaches (transition or vectors; missed approach to continue, or full-stop landing). Add weather and **scheduled failures** (after N minutes or at the start of leg #), autopilot policy, training/checkride mode and the cockpit. Live map preview, validation, save to the library, duplicate, export/import JSON, and **share as a link** (`#circuit=…`). Each circuit is flown with ATC phraseology and graded step by step + ACS. Four school presets included.
+
 **For flight schools**
 - **Learning paths** — Instrument Rating syllabus (7 stages, 32 graded exercises), Holding masterclass, Classic procedures (VOR/NDB/DME arc/PT), Approach mastery, Partial panel & abnormals, Checkride prep. Progress is tracked per exercise.
 - **Exercises** with briefing, objectives, ACS-style standards, approach plate, knowledge check (e.g. *which hold entry?*), live step-by-step HUD with tolerance alerts, and a graded result.

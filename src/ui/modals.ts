@@ -559,6 +559,8 @@ export class HelpModal extends Modal {
       ['Instructor station', 'I'],
       ['Learn (paths & exercises)', 'J'],
       ['Sound on/off', 'M'],
+      ['IFR circuit builder', 'U'],
+      ['Flight Center', 'F2'],
       ['This help', '?'],
     ];
     this.body.append(h('div', { class: 'help-grid' }, ...rows.map(([a, k]) => h('div', {}, h('span', {}, a), h('span', {}, ...k.split('  ').map((x) => h('kbd', {}, x)))))));

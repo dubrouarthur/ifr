@@ -9,6 +9,7 @@ export class InstructorDrawer {
   private body: HTMLElement;
   private live: HTMLElement;
   private acc = 0;
+  onBuilder?: () => void;
   constructor(private sim: Sim, private toast: (m: string, k?: 'info' | 'good' | 'warn' | 'bad') => void) {
     this.body = h('div', { class: 'ios-body' });
     this.live = h('div', { class: 'ios-live' });
@@ -30,6 +31,7 @@ export class InstructorDrawer {
     clear(this.body);
     const sim = this.sim;
     const sec = (t: string) => h('div', { class: 'section-t' }, t);
+    this.body.append(h('button', { class: 'btn primary', style: 'width:100%;justify-content:center;margin-top:12px', onclick: () => { this.toggle(false); this.onBuilder?.(); } }, '🛠️ Build an IFR circuit'));
     this.body.append(sec('Failures'));
     const grid = h('div', { class: 'ios-grid' });
     for (const k of Object.keys(FAILURE_LABELS) as (keyof Failures)[]) {

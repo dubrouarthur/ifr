@@ -14,6 +14,8 @@ import { ChartsDrawer } from './ui/charts';
 import { InstructorDrawer, HistoryModal } from './ui/instructor';
 import { LearnModal, BriefingModal, LessonResultModal, HoldDrillModal } from './ui/learn';
 import { FlightCenter } from './ui/flightcenter';
+import { CircuitBuilder, decodeCircuit } from './ui/circuitBuilder';
+import { circuitToExercise, type Circuit } from './train/circuits';
 import type { LessonRun, Exercise } from './train/engine';
 import type { Path } from './train/curriculum';
 import type { AssessSettings } from './sim/sim';
@@ -76,7 +78,14 @@ const fc = new FlightCenter({
   openChart: (id) => { charts.toggle(true); charts.show(id); },
   setCockpit: (t) => setCockpit(t),
   getCockpit: () => cockpitType,
+  openBuilder: (c) => builder.edit(c),
+  flyCircuit: (c) => flyCircuit(c),
 });
+const builder = new CircuitBuilder((c) => flyCircuit(c), (m, k) => toast(m, k ?? 'info'));
+function flyCircuit(c: Circuit) {
+  if (c.cockpit && c.cockpit !== cockpitType) setCockpit(c.cockpit);
+  pickExercise(circuitToExercise(c), null);
+}
 const lessonResult = new LessonResultModal((ex) => pickExercise(ex, lessonPath), (ex) => pickExercise(ex, lessonPath), () => openDebrief());
 function pickExercise(ex: Exercise, path: Path | null) {
   lesson = null;
@@ -97,6 +106,7 @@ function startLesson(run: LessonRun) {
 const help = new HelpModal();
 const charts = new ChartsDrawer(sim);
 const ios = new InstructorDrawer(sim, (m, k) => toast(m, k ?? 'info'));
+ios.onBuilder = () => builder.edit();
 
 function startScenario(sc: Scenario, wx: WxPreset, a: AssessSettings = launcher.assess) {
   lesson = null;
@@ -166,6 +176,7 @@ moreMenu.append(
   moreItem(I.chart, 'Debrief', 'Shift D', () => openDebrief()),
   moreItem(I.records, 'Training records', '', () => historyModal.open()),
   moreItem(I.learn, 'Learning paths', 'J', () => learn.open()),
+  moreItem(I.proc, 'IFR circuit builder', 'U', () => builder.edit()),
   moreItem(I.help, 'Keyboard shortcuts', '?', () => help.open()),
   h('div', { class: 'menu-sep' }),
   h('div', { class: 'menu-row' }, h('span', {}, 'Outside view'), viewSeg),
@@ -580,6 +591,7 @@ window.addEventListener('keydown', (e) => {
     case 'i': ios.toggle(); break;
     case 'j': learn.open(); break;
     case 'f2': fc.open(); break;
+    case 'u': builder.edit(); break;
     case 'm': toggleMute(); break;
     case 'g': goAround(); break;
     case 'b': setQnh(); break;
@@ -630,9 +642,10 @@ function updateCoach() {
       h('h4', {}, `Lesson · ${run.ex.title}`, h('span', { class: 'muted', style: 'font-size:11px' }, fmtTime(run.totalT))),
       h('div', { class: 'next' }, st ? st.text : run.finished ? 'Complete' : ''),
     );
-    if (st?.hint) coach.append(h('div', { class: 'hint', style: 'color:#9fb0c0;font-size:12.5px;margin-top:4px' }, st.hint));
+    const ride = sim.assess.mode === 'checkride';
+    if (st?.hint && !ride) coach.append(h('div', { class: 'hint', style: 'color:#9fb0c0;font-size:12.5px;margin-top:4px' }, st.hint));
     if (ro) coach.append(h('div', { class: 'ro' }, ro));
-    if (run.currentViolation) coach.append(h('div', { class: 'viol' }, `⚠ ${run.currentViolation}`));
+    if (run.currentViolation && !ride) coach.append(h('div', { class: 'viol' }, `⚠ ${run.currentViolation}`));
     coach.append(steps);
     coach.append(h('div', { class: 'acts' },
       h('button', { class: 'btn', onclick: () => pickExercise(run.ex, lessonPath) }, 'Restart'),
@@ -813,6 +826,17 @@ updateHeader();
 updateCoach();
 requestAnimationFrame(frame);
 fc.open();
+// shared circuit: #circuit=<base64>
+if (location.hash.startsWith('#circuit=')) {
+  try {
+    const c = decodeCircuit(location.hash.slice(9));
+    Modal.closeAll();
+    flyCircuit(c);
+    toast(`Shared circuit: ${c.name}`, 'good');
+  } catch {
+    toast('This circuit link is invalid', 'bad');
+  }
+}
 // deep link: ?scenario=ils27-vtf&wx=mins
 {
   const q = new URLSearchParams(location.search);
