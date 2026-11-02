@@ -13,6 +13,7 @@ import { knob, bkey } from './ui/knob';
 import { ChartsDrawer } from './ui/charts';
 import { InstructorDrawer, HistoryModal } from './ui/instructor';
 import { LearnModal, BriefingModal, LessonResultModal, HoldDrillModal } from './ui/learn';
+import { FlightCenter } from './ui/flightcenter';
 import type { LessonRun, Exercise } from './train/engine';
 import type { Path } from './train/curriculum';
 import type { AssessSettings } from './sim/sim';
@@ -59,13 +60,23 @@ const weatherModal = new WeatherModal(sim);
 const procModal = new ProcModal(sim, (m) => toast(m, 'good'));
 const directModal = new DirectModal(sim, (m) => toast(m, 'good'));
 const joyModal = new JoystickModal(input);
-const debrief = new DebriefModal(sim, () => startScenario(lastScenario, lastWx, sim.assess), () => launcher.open());
+const debrief = new DebriefModal(sim, () => startScenario(lastScenario, lastWx, sim.assess), () => fc.open());
 const historyModal = new HistoryModal();
 let lesson: LessonRun | null = null;
 let lessonPath: Path | null = null;
 const briefing = new BriefingModal(sim, (run) => startLesson(run), (id) => { charts.toggle(true); charts.show(id); });
 const drill = new HoldDrillModal();
 const learn = new LearnModal((ex, path) => pickExercise(ex, path), () => drill.open());
+const fc = new FlightCenter({
+  flyScenario: (sc, wx, a) => startScenario(sc, wx, a),
+  briefExercise: (ex, path) => pickExercise(ex, path),
+  openPaths: () => learn.open(),
+  openDrill: () => drill.open(),
+  openRecords: () => historyModal.open(),
+  openChart: (id) => { charts.toggle(true); charts.show(id); },
+  setCockpit: (t) => setCockpit(t),
+  getCockpit: () => cockpitType,
+});
 const lessonResult = new LessonResultModal((ex) => pickExercise(ex, lessonPath), (ex) => pickExercise(ex, lessonPath), () => openDebrief());
 function pickExercise(ex: Exercise, path: Path | null) {
   lesson = null;
@@ -126,6 +137,7 @@ const I = {
   ga: 'M12 20V5M5 12l7-7 7 7',
   sound: 'M4 9v6h4l5 4V5L8 9H4zM17 8a5 5 0 0 1 0 8M19.5 5.5a9 9 0 0 1 0 13',
   mute: 'M4 9v6h4l5 4V5L8 9H4zM17 9l5 6M22 9l-5 6',
+  more: 'M5 12h.01M12 12h.01M19 12h.01',
   learn: 'M2 9l10-5 10 5-10 5-10-5zM6 11v5c3 2 9 2 12 0v-5M22 9v6',
   ios: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0',
   records: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01',
@@ -145,29 +157,40 @@ function toggleMute() {
   store.set('ifr.muted', audio.muted);
   muteBtn.replaceChildren(icon(audio.muted ? I.mute : I.sound));
 }
+const moreMenu = h('div', { class: 'menu', role: 'menu' });
+const moreItem = (ic: string, label: string, kbd: string, fn: () => void) =>
+  h('button', { class: 'menu-item', role: 'menuitem', onclick: () => { moreMenu.classList.remove('open'); fn(); } }, icon(ic), h('span', {}, label), kbd ? h('kbd', {}, kbd) : null);
+moreMenu.append(
+  moreItem(I.cloud, 'Weather', '', () => weatherModal.open()),
+  moreItem(I.joy, 'Joystick & controls', '', () => joyModal.open()),
+  moreItem(I.chart, 'Debrief', 'Shift D', () => openDebrief()),
+  moreItem(I.records, 'Training records', '', () => historyModal.open()),
+  moreItem(I.learn, 'Learning paths', 'J', () => learn.open()),
+  moreItem(I.help, 'Keyboard shortcuts', '?', () => help.open()),
+  h('div', { class: 'menu-sep' }),
+  h('div', { class: 'menu-row' }, h('span', {}, 'Outside view'), viewSeg),
+  h('div', { class: 'menu-row' }, h('span', {}, 'Sim rate'), rateSeg),
+);
+const moreBtn = h('button', { class: 'btn', title: 'More', 'aria-haspopup': 'menu', onclick: (e: Event) => { e.stopPropagation(); moreMenu.classList.toggle('open'); } }, icon(I.more), h('span', { class: 'lbl' }, 'More'));
+document.addEventListener('click', (e) => { if (!moreMenu.contains(e.target as Node)) moreMenu.classList.remove('open'); });
 const topbar = h('header', { class: 'topbar' },
-  h('div', { class: 'brand' }, h('img', { class: 'logo', src: '/favicon.svg', alt: '' }), 'IFR Trainer', h('small', {}, 'G1000 · ARDENT ISLANDS')),
+  h('div', { class: 'brand' }, h('img', { class: 'logo', src: '/favicon.svg', alt: '' }), h('span', { class: 'brand-t' }, 'IFR Trainer')),
   h('div', { class: 'scn' }, scnName, scnSub),
   phaseChip,
   wxChip,
   h('div', { class: 'spacer' }),
   h('div', { class: 'tb-actions' },
-    h('button', { class: 'btn primary', onclick: () => learn.open(), title: 'Learning paths & exercises (J)' }, icon(I.learn), h('span', { class: 'lbl' }, 'Learn')),
-    h('button', { class: 'btn', onclick: () => launcher.open(), title: 'Choose a scenario' }, icon(I.plane), h('span', { class: 'lbl' }, 'Scenarios')),
-    h('button', { class: 'btn', onclick: () => procModal.open(), title: 'Load an approach (X)' }, icon(I.proc), h('span', { class: 'lbl' }, 'Procedures')),
-    h('button', { class: 'btn', onclick: () => directModal.open(), title: 'Direct-To (D)' }, icon(I.route), h('span', { class: 'lbl' }, 'D→')),
-    h('button', { class: 'btn', onclick: () => charts.toggle(), title: 'Charts (K)' }, icon(I.map), h('span', { class: 'lbl' }, 'Charts')),
-    h('button', { class: 'btn', onclick: () => weatherModal.open(), title: 'Weather' }, icon(I.cloud), h('span', { class: 'lbl' }, 'Weather')),
-    h('button', { class: 'btn', onclick: () => joyModal.open(), title: 'Joystick setup' }, icon(I.joy), h('span', { class: 'lbl' }, 'Controls')),
-    h('button', { class: 'btn', onclick: () => openDebrief(), title: 'Debrief (Shift+D)' }, icon(I.chart), h('span', { class: 'lbl' }, 'Debrief')),
+    h('button', { class: 'btn primary', onclick: () => fc.open(), title: 'Flight Center — all flights, exercises and paths (F2)' }, icon(I.plane), h('span', { class: 'lbl' }, 'Flight Center')),
+    h('div', { class: 'tb-group' },
+      h('button', { class: 'btn', onclick: () => charts.toggle(), title: 'Charts (K)' }, icon(I.map), h('span', { class: 'lbl' }, 'Charts')),
+      h('button', { class: 'btn', onclick: () => procModal.open(), title: 'Load an approach (X)' }, icon(I.proc), h('span', { class: 'lbl' }, 'Procedures')),
+      h('button', { class: 'btn', onclick: () => directModal.open(), title: 'Direct-To (D)' }, icon(I.route), h('span', { class: 'lbl' }, 'D→')),
+    ),
     h('button', { class: 'btn', onclick: () => ios.toggle(), title: 'Instructor station (I)' }, icon(I.ios), h('span', { class: 'lbl' }, 'Instructor')),
-    h('button', { class: 'btn', onclick: () => historyModal.open(), title: 'Training records' }, icon(I.records), h('span', { class: 'lbl' }, 'Records')),
     cockpitSeg,
-    viewSeg,
-    rateSeg,
     pauseBtn,
     muteBtn,
-    h('button', { class: 'btn ghost', onclick: () => help.open(), title: 'Help (?)' }, icon(I.help)),
+    h('div', { class: 'menu-wrap' }, moreBtn, moreMenu),
   ),
 );
 
@@ -556,6 +579,7 @@ window.addEventListener('keydown', (e) => {
     case 'x': procModal.open(); break;
     case 'i': ios.toggle(); break;
     case 'j': learn.open(); break;
+    case 'f2': fc.open(); break;
     case 'm': toggleMute(); break;
     case 'g': goAround(); break;
     case 'b': setQnh(); break;
@@ -788,7 +812,7 @@ setCockpit(cockpitType, false);
 updateHeader();
 updateCoach();
 requestAnimationFrame(frame);
-learn.open();
+fc.open();
 // deep link: ?scenario=ils27-vtf&wx=mins
 {
   const q = new URLSearchParams(location.search);

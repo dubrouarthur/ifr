@@ -2,7 +2,13 @@
 
 G1000-style glass cockpit (PFD + MFD with bezel knobs/softkeys), GFC700-class autopilot, every approach type with generated approach plates, joystick support and scored debriefs. Built for flight-school use.
 
-**Approaches:** ILS (CAT I), LOC-only, LOC back course, VOR/DME with step-downs, NDB (ADF), RNAV LPV, RNAV LNAV/VNAV, LNAV, circling minima, published holds and missed approaches.
+**Approaches (9 procedures, 2 airports):** ILS 27 (CAT I/II minima) and ILS 03, LOC-only, **LDA/DME** (offset localizer), LOC back course, VOR/DME with 10 DME arc, NDB with barbed procedure turn, RNAV LPV with hold-in-lieu, LNAV/VNAV, circling minima, published holds and missed approaches.
+
+**IFR flights:** gate-to-gate cross-country flights with CRAFT clearance, departure, route, approach clearance and landing; localizer/LDA/radial interception drills.
+
+**Three cockpits** — G1000 glass (PFD/MFD, GFC 700), classic **steam gauges** (six-pack, wet compass, CDI with GS, RMI/ADF, KX155 / KR87 / KN62 / KAP 140 / KT76 stack, GPS), and an **airliner** layout (Boeing-style PFD with FMA, tapes and ILS scales, map-mode ND, MCP).
+
+**Flight Center** — every flight in one place, classified by type (Approaches · Procedures · IFR flights · Instrument basics · Abnormal · Checkride · Free flight) with sub-types, search, level/airport/autopilot filters, a briefing pane with the plate, and cockpit choice.
 
 **For flight schools**
 - **Learning paths** — Instrument Rating syllabus (7 stages, 32 graded exercises), Holding masterclass, Classic procedures (VOR/NDB/DME arc/PT), Approach mastery, Partial panel & abnormals, Checkride prep. Progress is tracked per exercise.
