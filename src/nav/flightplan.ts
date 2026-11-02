@@ -59,7 +59,7 @@ export class FlightPlan {
   missedActive = false;
   /** Hold state for the waypoint at index `active` once reached */
   holdActive = false;
-  private directFrom: LatLon | null = null;
+  directFrom: LatLon | null = null;
   out: GpsOutput = {
     valid: false,
     fromIdent: '',

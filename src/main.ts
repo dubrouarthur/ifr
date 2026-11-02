@@ -1,0 +1,632 @@
+import './styles.css';
+import { Sim, SCENARIOS, type Scenario } from './sim/sim';
+import { InputManager, type ButtonAction } from './sim/input';
+import { drawPfd, newPfdState, PFD_W, PFD_H, softkeyAt, PFD_SOFTKEYS } from './avionics/pfd';
+import { drawMfd, newMfdState, MFD_W, MFD_H, MFD_SOFTKEYS } from './avionics/mfd';
+import { drawOtw, inCloud } from './avionics/otw';
+import { fitCanvas } from './avionics/draw';
+import { h, store, fmtTime } from './ui/dom';
+import { knob, bkey } from './ui/knob';
+import { ChartsDrawer } from './ui/charts';
+import { Launcher, WeatherModal, ProcModal, DirectModal, JoystickModal, DebriefModal, HelpModal, Modal, WX_PRESETS, type WxPreset } from './ui/modals';
+import { distanceNm, wrap180 } from './nav/geo';
+import type { Phase } from './sim/recorder';
+
+// ------------------------------------------------------------------ state
+const sim = new Sim(SCENARIOS[1]);
+sim.paused = true;
+const pfdSt = newPfdState();
+const mfdSt = newMfdState();
+pfdSt.svt = store.get('ifr.svt', true);
+let lastScenario: Scenario = SCENARIOS[1];
+let lastWx: WxPreset = WX_PRESETS[0];
+let otwMode = store.get<'normal' | 'big' | 'none'>('ifr.otw', 'normal');
+let debriefShown = false;
+let endTimer = 0;
+
+const input = new InputManager({ onAction: (a) => doAction(a) });
+
+// ------------------------------------------------------------------ toasts
+const toasts = h('div', { class: 'toasts', 'aria-live': 'polite' });
+function toast(msg: string, kind: 'info' | 'good' | 'warn' | 'bad' = 'info', ms = 3800) {
+  const t = h('div', { class: `toast ${kind}` }, msg);
+  toasts.append(t);
+  while (toasts.children.length > 4) toasts.firstChild?.remove();
+  setTimeout(() => t.remove(), ms);
+}
+sim.rec.onEvent = (e) => {
+  if (e.kind !== 'info' || /Crossed FAF|Minimums|Liftoff/.test(e.text)) toast(e.text, e.kind);
+};
+
+// ------------------------------------------------------------------ modals
+const launcher = new Launcher((sc, wx) => startScenario(sc, wx));
+const weatherModal = new WeatherModal(sim);
+const procModal = new ProcModal(sim, (m) => toast(m, 'good'));
+const directModal = new DirectModal(sim, (m) => toast(m, 'good'));
+const joyModal = new JoystickModal(input);
+const debrief = new DebriefModal(sim, () => startScenario(lastScenario, lastWx), () => launcher.open());
+const help = new HelpModal();
+const charts = new ChartsDrawer(sim);
+
+function startScenario(sc: Scenario, wx: WxPreset) {
+  lastScenario = sc;
+  lastWx = wx;
+  sim.load(sc);
+  Object.assign(sim.weather, wx.wx);
+  sim.paused = false;
+  debriefShown = false;
+  endTimer = 0;
+  input.keys.clear();
+  updateHeader();
+  if (charts.isOpen || sc.approachId) {
+    if (sc.approachId) charts.show(sc.approachId);
+  }
+  toast(`${sc.name} — good luck!`, 'info');
+}
+
+// ------------------------------------------------------------------ layout
+const icon = (d: string) => {
+  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  s.setAttribute('viewBox', '0 0 24 24');
+  s.innerHTML = `<path d="${d}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+  return s;
+};
+const I = {
+  plane: 'M2 16l20-6-20-6 4 6-4 6zM6 10h8',
+  cloud: 'M7 18h10a4 4 0 0 0 0-8 6 6 0 0 0-11.5 1.5A3.5 3.5 0 0 0 7 18z',
+  map: 'M9 4L3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14',
+  route: 'M5 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM19 9a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM7 17l10-10',
+  joy: 'M12 3v9M9 3h6M6 16h12a2 2 0 0 1 2 2v2H4v-2a2 2 0 0 1 2-2zM12 12v4',
+  chart: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
+  help: 'M12 18h.01M9.1 9a3 3 0 1 1 4.2 2.7c-.8.4-1.3 1.2-1.3 2.1v.2',
+  pause: 'M8 5v14M16 5v14',
+  play: 'M7 5l12 7-12 7z',
+  proc: 'M4 6h16M4 12h10M4 18h7',
+  ga: 'M12 20V5M5 12l7-7 7 7',
+};
+const scnName = h('b', {}, '');
+const scnSub = h('span', {}, '');
+const phaseChip = h('span', { class: 'chip live' }, 'Ready');
+const wxChip = h('span', { class: 'chip' }, '');
+const pauseBtn = h('button', { class: 'btn', title: 'Pause (Esc)', onclick: () => togglePause() }, icon(I.pause), h('span', { class: 'lbl' }, 'Pause'));
+const rateSeg = h('div', { class: 'seg', title: 'Simulation rate' }, ...[1, 2, 4].map((r) => h('button', { class: r === 1 ? 'on' : '', onclick: () => setRate(r) }, `${r}×`)));
+const viewSeg = h('div', { class: 'seg', title: 'Outside view (Tab)' }, ...(['normal', 'big', 'none'] as const).map((m) => h('button', { 'data-m': m, onclick: () => setOtw(m) }, m === 'normal' ? 'View' : m === 'big' ? 'Big' : 'Panel')));
+
+const topbar = h('header', { class: 'topbar' },
+  h('div', { class: 'brand' }, h('img', { class: 'logo', src: '/favicon.svg', alt: '' }), 'IFR Trainer', h('small', {}, 'G1000 · ARDENT ISLANDS')),
+  h('div', { class: 'scn' }, scnName, scnSub),
+  phaseChip,
+  wxChip,
+  h('div', { class: 'spacer' }),
+  h('div', { class: 'tb-actions' },
+    h('button', { class: 'btn primary', onclick: () => launcher.open(), title: 'Choose a scenario' }, icon(I.plane), h('span', { class: 'lbl' }, 'Scenarios')),
+    h('button', { class: 'btn', onclick: () => procModal.open(), title: 'Load an approach (X)' }, icon(I.proc), h('span', { class: 'lbl' }, 'Procedures')),
+    h('button', { class: 'btn', onclick: () => directModal.open(), title: 'Direct-To (D)' }, icon(I.route), h('span', { class: 'lbl' }, 'D→')),
+    h('button', { class: 'btn', onclick: () => charts.toggle(), title: 'Charts (K)' }, icon(I.map), h('span', { class: 'lbl' }, 'Charts')),
+    h('button', { class: 'btn', onclick: () => weatherModal.open(), title: 'Weather' }, icon(I.cloud), h('span', { class: 'lbl' }, 'Weather')),
+    h('button', { class: 'btn', onclick: () => joyModal.open(), title: 'Joystick setup' }, icon(I.joy), h('span', { class: 'lbl' }, 'Controls')),
+    h('button', { class: 'btn', onclick: () => openDebrief(), title: 'Debrief (Shift+D)' }, icon(I.chart), h('span', { class: 'lbl' }, 'Debrief')),
+    viewSeg,
+    rateSeg,
+    pauseBtn,
+    h('button', { class: 'btn ghost', onclick: () => help.open(), title: 'Help (?)' }, icon(I.help)),
+  ),
+);
+
+// outside view
+const otwCanvas = h('canvas', { 'aria-label': 'Outside view' });
+const coach = h('div', { class: `coach${store.get('ifr.coachMin', false) ? ' min' : ''}` });
+const badges = h('div', { class: 'otw-badges' });
+const otw = h('section', { class: 'otw' }, otwCanvas, coach, badges, toasts);
+
+// PFD bezel
+const pfdCanvas = h('canvas', { 'aria-label': 'Primary flight display' });
+const mfdCanvas = h('canvas', { 'aria-label': 'Multi-function display' });
+const hdgBy = (d: number, coarse: boolean) => (sim.ap.hdgBug = ((((sim.ap.hdgBug + d * (coarse ? 10 : 1)) % 360) + 360) % 360) || 360);
+const altBy = (d: number, coarse: boolean) => (sim.ap.altSel = Math.max(0, Math.min(18000, sim.ap.altSel + d * (coarse ? 1000 : 100))));
+const tune = (r: { standby: number }, d: number, coarse: boolean, min: number, max: number, fine: number) => {
+  let v = r.standby;
+  if (coarse) {
+    v += d;
+    if (v > max) v -= max - min;
+    if (v < min) v += max - min;
+  } else {
+    const mhz = Math.floor(v + 1e-6);
+    let k = Math.round((v - mhz) / fine) + d;
+    const steps = Math.round(1 / fine);
+    k = ((k % steps) + steps) % steps;
+    v = mhz + k * fine;
+  }
+  r.standby = Math.round(v * 1000) / 1000;
+};
+const swap = (r: { active: number; standby: number }) => ([r.active, r.standby] = [r.standby, r.active]);
+
+const apKeys = () => {
+  const d = () => sim.ac.data;
+  const n = () => sim.navInputs();
+  const k = (label: string, fn: () => void, title: string) => {
+    const b = bkey(label, fn, title);
+    b.dataset.ap = label;
+    return b;
+  };
+  return h('div', { class: 'ap-col' },
+    k('AP', () => doAction('apToggle'), 'Autopilot (A)'),
+    k('FD', () => sim.ap.toggleFd(d()), 'Flight director (Shift+A)'),
+    k('HDG', () => sim.ap.pressHdg(d()), 'Heading mode (H)'),
+    k('ALT', () => sim.ap.pressAlt(d()), 'Altitude hold (L)'),
+    k('NAV', () => sim.ap.pressNav(d(), n()), 'Nav mode (N)'),
+    k('VNV', () => toast('VNAV not available in this unit — use VS/FLC or APR', 'warn'), 'Vertical navigation'),
+    k('APR', () => sim.ap.pressApr(d(), n()), 'Approach mode (R)'),
+    k('BC', () => sim.ap.pressApr(d(), n()), 'Back course (auto via APR)'),
+    k('VS', () => sim.ap.pressVs(d()), 'Vertical speed (V)'),
+    k('FLC', () => sim.ap.pressFlc(d()), 'Flight level change (K)'),
+    k('UP', () => sim.ap.nose(1), 'Nose up'),
+    k('DN', () => sim.ap.nose(-1), 'Nose down'),
+  );
+};
+
+const pfdBezel = h('div', { class: 'bezel pfd' },
+  h('div', { class: 'brand-mark' }, 'PFD'),
+  h('div', { class: 'side left' },
+    knob({ label: 'NAV', sub: 'NAV1 STBY', dual: true, onTurn: (d, c) => tune(sim.av.nav1, d, c, 108, 118, 0.05) }),
+    bkey('NAV ⇆', () => swap(sim.av.nav1), 'Swap NAV1 active/standby'),
+    knob({ label: 'HDG', sub: 'PUSH SYNC', onTurn: hdgBy, onPush: () => (sim.ap.hdgBug = Math.round(sim.ac.data.hdgTrue) || 360) }),
+    apKeys(),
+    knob({ label: 'ALT', sub: 'PUSH = CUR', dual: true, onTurn: altBy, onPush: () => (sim.ap.altSel = Math.round(sim.indicatedAlt() / 100) * 100) }),
+  ),
+  h('div', { class: 'screen' }, pfdCanvas),
+  h('div', { class: 'side right' },
+    knob({ label: 'COM', sub: 'COM1 STBY', dual: true, onTurn: (d, c) => tune(sim.av.com1, d, c, 118, 137, 0.025) }),
+    bkey('COM ⇆', () => swap(sim.av.com1), 'Swap COM1'),
+    knob({ label: 'CRS', sub: 'PUSH CTR', onTurn: (d, c) => sim.setCourse(sim.course() + d * (c ? 10 : 1)), onPush: () => centerCdi() }),
+    knob({ label: 'BARO', sub: 'PUSH QNH', onTurn: (d, c) => (sim.av.baro = Math.round((sim.av.baro + d * (c ? 0.1 : 0.01)) * 100) / 100), onPush: () => setQnh() }),
+    knob({ label: 'MINS', sub: 'BARO MIN', onTurn: (d, c) => (sim.av.minimums = Math.max(0, (sim.av.minimums ?? Math.round(sim.indicatedAlt() / 100) * 100) + d * (c ? 100 : 10))), onPush: () => (sim.av.minimums = null) }),
+    h('div', { class: 'bkey-grid' },
+      bkey('D→', () => directModal.open(), 'Direct-To (D)'),
+      bkey('PROC', () => procModal.open(), 'Procedures (X)'),
+      bkey('FPL', () => (mfdSt.showFpl = !mfdSt.showFpl), 'Flight plan'),
+      bkey('TOGA', () => goAround(), 'Go-around (G)'),
+    ),
+  ),
+);
+const mfdBezel = h('div', { class: 'bezel mfd' },
+  h('div', { class: 'brand-mark' }, 'MFD'),
+  h('div', { class: 'side left' },
+    knob({ label: 'NAV2', sub: 'STBY', dual: true, onTurn: (d, c) => tune(sim.av.nav2, d, c, 108, 118, 0.05) }),
+    bkey('NAV2 ⇆', () => swap(sim.av.nav2), 'Swap NAV2'),
+    knob({ label: 'ADF', sub: 'kHz', dual: true, onTurn: (d, c) => (sim.av.adf.active = Math.max(190, Math.min(1750, sim.av.adf.active + d * (c ? 100 : 1)))) }),
+    bkey('CDI', () => doAction('cdi'), 'Cycle CDI (C)'),
+    bkey('CHARTS', () => charts.toggle(), 'Charts (K)'),
+    bkey('MISSED', () => goAround(), 'Activate missed approach'),
+  ),
+  h('div', { class: 'screen' }, mfdCanvas),
+  h('div', { class: 'side right' },
+    knob({ label: 'RANGE', sub: 'MAP', onTurn: (d) => (mfdSt.rangeIdx = Math.max(0, Math.min(8, mfdSt.rangeIdx - d))) }),
+    h('div', { class: 'bkey-grid' },
+      bkey('D→', () => directModal.open()),
+      bkey('PROC', () => procModal.open()),
+      bkey('FPL', () => (mfdSt.showFpl = !mfdSt.showFpl)),
+      bkey('ACT', () => { sim.fp.activateApproach(sim.ac.s); toast('Approach activated', 'good'); }, 'Activate approach'),
+      bkey('VTF', () => { sim.fp.vectorsToFinal(); toast('Vectors to final', 'good'); }, 'Vectors to final'),
+      bkey('CLR', () => Modal.closeAll()),
+    ),
+    knob({ label: 'FMS', sub: 'LEG', onTurn: (d) => sim.fp.activateLeg(Math.max(1, Math.min(sim.fp.wpts.length - 1, sim.fp.active + d))), title: 'Select active leg' }),
+  ),
+);
+const panel = h('section', { class: 'panel' }, pfdBezel, mfdBezel);
+const cockpit = h('main', { class: 'cockpit' }, otw, panel);
+
+// footer
+const thr = h('input', { type: 'range', min: 0, max: 100, value: 60, 'aria-label': 'Throttle' }) as HTMLInputElement;
+let thrDragging = false;
+thr.addEventListener('pointerdown', () => (thrDragging = true));
+window.addEventListener('pointerup', () => (thrDragging = false));
+thr.addEventListener('input', () => (sim.controls.throttle = Number(thr.value) / 100));
+const thrVal = h('span', {}, '');
+const flapBtns = [0, 1, 2, 3].map((i) => h('button', { onclick: () => (sim.controls.flaps = i), title: `Flaps ${i * 10}°` }, String(i * 10)));
+const trimMeter = h('div', { class: 'meter center', title: 'Elevator trim' }, h('i', {}));
+const elevMeter = h('div', { class: 'meter center', title: 'Elevator' }, h('i', {}));
+const ailMeter = h('div', { class: 'meter center', title: 'Aileron' }, h('i', {}));
+const stickDot = h('i', {});
+const stick = h('div', { class: 'stick', title: 'Touch yoke: drag' }, stickDot);
+const joyDot = h('span', { class: 'joy-dot' });
+const joyLbl = h('span', {}, 'Keyboard');
+const footer = h('footer', { class: 'footer' },
+  h('div', { class: 'ctl' }, h('label', {}, 'Throttle'), thr, thrVal),
+  h('div', { class: 'ctl' }, h('label', {}, 'Flaps'), h('div', { class: 'flaps' }, ...flapBtns)),
+  h('div', { class: 'ctl' }, h('label', {}, 'Trim'), h('button', { class: 'btn', style: 'height:24px;padding:0 6px', onclick: () => (sim.controls.trim = Math.max(-1, sim.controls.trim - 0.05)), title: 'Nose down (Home)' }, '▼'), trimMeter, h('button', { class: 'btn', style: 'height:24px;padding:0 6px', onclick: () => (sim.controls.trim = Math.min(1, sim.controls.trim + 0.05)), title: 'Nose up (End)' }, '▲')),
+  h('div', { class: 'ctl' }, h('label', {}, 'Yoke'), elevMeter, ailMeter, stick),
+  h('div', { class: 'ctl', style: 'cursor:pointer', onclick: () => joyModal.open() }, joyDot, joyLbl),
+  h('div', { class: 'spacer' }),
+  h('div', { class: 'ctl' }, h('kbd', {}, '?'), ' shortcuts · ', h('kbd', {}, 'G'), ' go-around · ', h('kbd', {}, 'K'), ' charts'),
+);
+
+document.getElementById('app')!.append(topbar, cockpit, footer);
+document.body.append(charts.el);
+
+// touch stick
+{
+  let active = false;
+  const move = (e: PointerEvent) => {
+    const r = stick.getBoundingClientRect();
+    const x = Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width) * 2 - 1));
+    const y = Math.max(-1, Math.min(1, ((e.clientY - r.top) / r.height) * 2 - 1));
+    input.virtual.roll = x * 0.7;
+    input.virtual.pitch = y * 0.7;
+    stickDot.style.left = `${50 + x * 40}%`;
+    stickDot.style.top = `${50 + y * 40}%`;
+  };
+  stick.addEventListener('pointerdown', (e) => { active = true; stick.setPointerCapture(e.pointerId); move(e); });
+  stick.addEventListener('pointermove', (e) => active && move(e));
+  const end = () => { active = false; input.virtual.roll = input.virtual.pitch = 0; stickDot.style.left = stickDot.style.top = '50%'; };
+  stick.addEventListener('pointerup', end);
+  stick.addEventListener('pointercancel', end);
+}
+
+// softkeys
+function canvasPoint(c: HTMLCanvasElement, e: MouseEvent, W: number, H: number) {
+  const r = c.getBoundingClientRect();
+  return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H };
+}
+pfdCanvas.addEventListener('click', (e) => {
+  const p = canvasPoint(pfdCanvas, e, PFD_W, PFD_H);
+  const i = softkeyAt(p.x, p.y);
+  if (i === null) return;
+  pfdSt.softkeyFlash = i;
+  setTimeout(() => (pfdSt.softkeyFlash = null), 150);
+  const av = sim.av;
+  switch (PFD_SOFTKEYS[i]) {
+    case 'INSET': av.inset = !av.inset; break;
+    case 'SVT': pfdSt.svt = !pfdSt.svt; store.set('ifr.svt', pfdSt.svt); break;
+    case 'BRG1': { const o = ['OFF', 'NAV1', 'GPS', 'ADF'] as const; av.bearing1 = o[(o.indexOf(av.bearing1) + 1) % o.length]; break; }
+    case 'BRG2': { const o = ['OFF', 'NAV2', 'GPS', 'ADF'] as const; av.bearing2 = o[(o.indexOf(av.bearing2) + 1) % o.length]; break; }
+    case 'CDI': doAction('cdi'); break;
+    case 'DME': pfdSt.dmeWindow = !pfdSt.dmeWindow; break;
+    case 'TMR/REF': toggleTimer(); break;
+    case 'XPDR': { const o = ['STBY', 'ON', 'ALT'] as const; av.xpdrMode = o[(o.indexOf(av.xpdrMode) + 1) % 3]; break; }
+    case 'IDENT': toast('IDENT — squawking ' + av.xpdr, 'info'); break;
+    case 'MINS': cycleMins(); break;
+    case 'ALERTS': toast(sim.ac.s.fuelGal < 10 ? 'LOW FUEL' : 'No alerts', 'info'); break;
+  }
+});
+pfdCanvas.addEventListener('wheel', (e) => {
+  // wheel over the HSI adjusts heading bug, over the altimeter adjusts ALT SEL
+  const p = canvasPoint(pfdCanvas, e, PFD_W, PFD_H);
+  const d = e.deltaY < 0 ? 1 : -1;
+  if (p.x > 760 && p.y < 470) altBy(d, e.shiftKey);
+  else if (p.y > 450 && p.y < 740 && Math.abs(p.x - 512) < 160) hdgBy(d, e.shiftKey);
+  else if (p.x < 240 && p.y < 470 && sim.ap.vert === 'FLC') sim.ap.iasSel += d;
+  else if (p.x > 880 && p.y < 470 && sim.ap.vert === 'VS') sim.ap.vsSel += d * 100;
+  else return;
+  e.preventDefault();
+}, { passive: false });
+mfdCanvas.addEventListener('click', (e) => {
+  const p = canvasPoint(mfdCanvas, e, MFD_W, MFD_H);
+  const i = softkeyAt(p.x, p.y, MFD_H, MFD_W);
+  if (i === null) return;
+  mfdSt.softkeyFlash = i;
+  setTimeout(() => (mfdSt.softkeyFlash = null), 150);
+  switch (MFD_SOFTKEYS[i]) {
+    case 'TERRAIN': mfdSt.terrain = !mfdSt.terrain; break;
+    case 'NORTH UP': mfdSt.northUp = !mfdSt.northUp; break;
+    case 'DCLTR': mfdSt.declutter = (mfdSt.declutter + 1) % 3; break;
+    case 'FPL': mfdSt.showFpl = !mfdSt.showFpl; break;
+    case 'PROC': procModal.open(); break;
+    case 'CHKLIST': showChecklist(); break;
+    case 'ENGINE': toast('Engine: all parameters normal', 'good'); break;
+    case 'MAP': mfdSt.rangeIdx = 4; break;
+  }
+});
+mfdCanvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  mfdSt.rangeIdx = Math.max(0, Math.min(8, mfdSt.rangeIdx + (e.deltaY > 0 ? 1 : -1)));
+}, { passive: false });
+
+// ------------------------------------------------------------------ actions
+function togglePause() {
+  sim.paused = !sim.paused;
+  pauseBtn.replaceChildren(icon(sim.paused ? I.play : I.pause), h('span', { class: 'lbl' }, sim.paused ? 'Resume' : 'Pause'));
+}
+function setRate(r: number) {
+  sim.rate = r;
+  rateSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.textContent === `${r}×`));
+  toast(`Sim rate ${r}×`);
+}
+function setOtw(m: 'normal' | 'big' | 'none') {
+  otwMode = m;
+  store.set('ifr.otw', m);
+  cockpit.classList.toggle('big-otw', m === 'big');
+  cockpit.classList.toggle('no-otw', m === 'none');
+  viewSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', (b as HTMLElement).dataset.m === m));
+}
+function setQnh() {
+  sim.av.baro = sim.weather.qnh;
+  toast(`Altimeter ${sim.weather.qnh.toFixed(2)}`, 'good');
+}
+function centerCdi() {
+  const n = sim.navInputs();
+  if (n.cdi === 'GPS') return;
+  if (n.nav.valid && !n.nav.isLoc) {
+    sim.setCourse(n.nav.toFrom === 'FROM' ? n.nav.radial : n.nav.bearingTo);
+    toast(`CRS ${Math.round(sim.course())}° — needle centred`);
+  }
+}
+function toggleTimer() {
+  sim.av.timerStart = sim.av.timerStart === null ? sim.time : null;
+  toast(sim.av.timerStart !== null ? 'Timer started' : 'Timer stopped');
+}
+function cycleMins() {
+  const ap = sim.fp.approach;
+  const opts: (number | null)[] = ap ? ap.minimums.map((m) => (m.da ?? m.mda) as number) : [];
+  opts.push(null);
+  const i = opts.indexOf(sim.av.minimums);
+  sim.av.minimums = opts[(i + 1) % opts.length];
+  const label = ap?.minimums.find((m) => (m.da ?? m.mda) === sim.av.minimums)?.label;
+  toast(sim.av.minimums === null ? 'Minimums off' : `Minimums ${sim.av.minimums} ${label ? '(' + label + ')' : ''}`);
+}
+function goAround() {
+  sim.ap.disconnect();
+  sim.ap.fd = true;
+  sim.ap.lat = 'ROL';
+  sim.ap.rollRef = 0;
+  sim.ap.vert = 'PIT';
+  sim.ap.pitchRef = 7;
+  sim.ap.latArmed = null;
+  sim.ap.apprMode = false;
+  sim.ap.vertArmed = { alts: true, gs: false, gp: false };
+  sim.controls.throttle = 1;
+  if (sim.controls.flaps > 1) sim.controls.flaps = 1;
+  if (sim.fp.approachId) {
+    sim.fp.activateMissed();
+    const mahp = sim.fp.wpts.find((w) => w.role === 'MAHP');
+    if (mahp?.altMin) sim.ap.altSel = mahp.altMin;
+    sim.setCdi('GPS');
+  }
+  toast('GO-AROUND: full power, pitch 7°, flaps 10. Missed approach active — press NAV, then AP.', 'warn', 6000);
+}
+function showChecklist() {
+  const ph = sim.rec.phase(sim);
+  const lists: Record<string, string> = {
+    ground: 'Before takeoff: flaps 0–10 · trim T/O · transponder ALT · altimeter set · heading bug runway hdg · ALT SEL 3000',
+    final: 'Before landing: fuel selector both · mixture rich · flaps as required · 90 KIAS · landing light',
+    initial: 'Approach: ATIS · altimeter · approach loaded & activated · NAV tuned/identified · CRS set · minimums set · missed approach briefed',
+    missed: 'Missed: power full · pitch 7° · flaps 10 then 0 · positive rate · NAV · climb to MAHP altitude',
+  };
+  toast(lists[ph] ?? lists.initial, 'info', 9000);
+}
+function openDebrief() {
+  debriefShown = true;
+  debrief.open();
+}
+
+function doAction(a: ButtonAction) {
+  const d = sim.ac.data;
+  switch (a) {
+    case 'apDisc': sim.ap.disconnect(); break;
+    case 'apToggle': sim.ap.toggleAp(d); break;
+    case 'toga': goAround(); break;
+    case 'flapsDn': sim.controls.flaps = Math.min(3, sim.controls.flaps + 1); toast(`Flaps ${sim.controls.flaps * 10}°`); break;
+    case 'flapsUp': sim.controls.flaps = Math.max(0, sim.controls.flaps - 1); toast(`Flaps ${sim.controls.flaps * 10}°`); break;
+    case 'cdi': sim.cycleCdi(); toast(`CDI ${sim.av.cdi === 'GPS' ? 'GPS' : sim.av.cdi + (sim.navInputs().nav.isLoc ? ' (LOC)' : ' (VOR)')}`); break;
+    case 'pause': togglePause(); break;
+    case 'hdgSync': sim.ap.hdgBug = Math.round(d.hdgTrue) || 360; break;
+    default: break;
+  }
+}
+
+// ------------------------------------------------------------------ keyboard
+const HOLD_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ',', '.', '<', '>', '=', '+', '-', '_', 'PageUp', 'PageDown', 'Home', 'End', ' ']);
+window.addEventListener('keydown', (e) => {
+  const tgt = e.target as HTMLElement;
+  if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'SELECT' || tgt.tagName === 'TEXTAREA')) return;
+  if (Modal.anyOpen()) {
+    if (e.key === 'Escape') Modal.closeAll();
+    return;
+  }
+  const k = e.key;
+  const d = sim.ac.data;
+  if (e.shiftKey && (k === 'ArrowUp' || k === 'ArrowDown') && sim.ap.engaged) {
+    sim.ap.nose(k === 'ArrowUp' ? 1 : -1);
+    e.preventDefault();
+    return;
+  }
+  if (HOLD_KEYS.has(k)) {
+    input.keys.add(k);
+    e.preventDefault();
+    return;
+  }
+  if (e.ctrlKey || e.metaKey) {
+    if (k === '1' || k === '2' || k === '4') { setRate(Number(k)); e.preventDefault(); }
+    return;
+  }
+  const n = sim.navInputs();
+  const lower = k.toLowerCase();
+  if (/^[0-9]$/.test(k)) { sim.controls.throttle = k === '0' ? 1 : Number(k) / 10; return; }
+  switch (lower) {
+    case 'a': if (e.shiftKey) sim.ap.toggleFd(d); else doAction('apToggle'); break;
+    case 'h': sim.ap.pressHdg(d); break;
+    case 'n': sim.ap.pressNav(d, n); break;
+    case 'r': sim.ap.pressApr(d, n); break;
+    case 'l': sim.ap.pressAlt(d); break;
+    case 'v': sim.ap.pressVs(d); break;
+    case 'k': if (e.shiftKey) sim.ap.pressFlc(d); else charts.toggle(); break;
+    case 'q': hdgBy(-1, e.shiftKey); break;
+    case 'e': hdgBy(1, e.shiftKey); break;
+    case 'w': altBy(1, e.shiftKey); break;
+    case 's': altBy(-1, e.shiftKey); break;
+    case 'o': sim.setCourse(sim.course() - (e.shiftKey ? 10 : 1)); break;
+    case 'p': sim.setCourse(sim.course() + (e.shiftKey ? 10 : 1)); break;
+    case 'c': doAction('cdi'); break;
+    case 'd': if (e.shiftKey) openDebrief(); else directModal.open(); e.preventDefault(); break;
+    case 'x': procModal.open(); break;
+    case 'g': goAround(); break;
+    case 'b': setQnh(); break;
+    case 't': toggleTimer(); break;
+    case 'f': doAction(e.shiftKey ? 'flapsUp' : 'flapsDn'); break;
+    case 'escape': case 'pause': togglePause(); break;
+    case 'tab': setOtw(otwMode === 'normal' ? 'big' : otwMode === 'big' ? 'none' : 'normal'); e.preventDefault(); break;
+    case '?': case '/': help.open(); break;
+    default: return;
+  }
+});
+window.addEventListener('keyup', (e) => {
+  input.keys.delete(e.key);
+  // shifted variants
+  if (e.key === 'Shift') input.keys.clear();
+});
+window.addEventListener('blur', () => input.keys.clear());
+
+// ------------------------------------------------------------------ header / coach
+const PHASE_LABEL: Record<Phase, string> = { ground: 'On ground', departure: 'Departure', enroute: 'Enroute', initial: 'Approach', final: 'Final approach', missed: 'Missed approach', landed: 'Landed' };
+function updateHeader() {
+  scnName.textContent = sim.scenario?.name ?? 'Free flight';
+  scnSub.textContent = sim.fp.approach ? `${sim.fp.approach.airport} ${sim.fp.approach.name}` : sim.scenario?.description ?? '';
+}
+let coachKey = '';
+function updateCoach() {
+  const d = sim.ac.data;
+  const ph = sim.rec.phase(sim);
+  phaseChip.textContent = sim.ac.s.crashed ? 'Crashed' : sim.paused ? 'Paused' : PHASE_LABEL[ph];
+  phaseChip.className = `chip ${sim.ac.s.crashed ? 'warn' : sim.paused ? '' : 'live'}`;
+  const imc = inCloud(sim);
+  const w = sim.weather;
+  wxChip.textContent = `${imc ? 'IMC' : 'VMC'} · ${w.ceilingFt >= 15000 ? 'CLR' : 'OVC' + String(Math.round(w.ceilingFt / 100)).padStart(3, '0')} · ${w.visibilitySm}SM · ${String(w.windDir).padStart(3, '0')}/${w.windKt}${w.gustKt ? 'G' + w.gustKt : ''}`;
+  wxChip.className = `chip${imc ? ' warn' : ''}`;
+
+  const fp = sim.fp;
+  const g = fp.out;
+  const to = fp.wpts[fp.active];
+  let next = '';
+  const hints: string[] = [];
+  if (sim.ac.s.crashed) {
+    next = 'Flight ended';
+    hints.push('Your debrief is ready. Press Shift+D or fly it again.');
+  } else if (ph === 'ground' && !sim.rec.touchdown) {
+    next = 'Ready for departure';
+    hints.push('Throttle full (0 key), release brakes, rotate at 55 KIAS.', 'Climb at 74 KIAS (Vy). AP: HDG + VS at 1000 ft AGL.');
+  } else if (ph === 'landed') {
+    next = d.gsKt > 2 ? 'Rollout — brakes (Space)' : 'Stopped. Nice work.';
+    hints.push('Debrief opens automatically when you stop.');
+  } else if (g.valid && to) {
+    const ete = g.eteMin !== null ? ` · ${fmtTime(g.eteMin * 60)}` : '';
+    next = `${g.holding ? 'Holding at' : 'Next'} <em>${to.ident}</em>${to.altMin ? ` · ≥ ${to.altMin} ft` : ''} · ${g.distNm.toFixed(1)} nm${ete}`;
+    const ap = fp.approach;
+    if (ap && !fp.approachActive) hints.push('Approach loaded but not active — ACT/VTF on the MFD bezel, or Procedures.');
+    if (ap && fp.approachActive && !fp.missedActive) {
+      const navBased = ap.type === 'ILS' || ap.type === 'LOC' || ap.type === 'LOCBC' || ap.type === 'VOR';
+      const faf = fp.wpts.find((x) => x.role === 'FAF' && x.appr === 'final');
+      const dFaf = faf ? distanceNm(sim.ac.s, faf) : 99;
+      if (navBased && sim.av.cdi === 'GPS' && dFaf < 12) hints.push(`Switch the CDI to ${ap.type === 'VOR' ? 'VOR1' : 'LOC1'} before the FAF (C key).`);
+      if (ap.type === 'NDB' && sim.av.bearing1 !== 'ADF') hints.push('Set BRG1 to ADF (PFD softkey) to see the NDB needle.');
+      if (sim.ap.engaged && !sim.ap.apprMode && dFaf < 15 && (ap.gsAngle || navBased)) hints.push('Press APR to arm the approach mode.');
+      if (to.altMin && sim.indicatedAlt() > to.altMin + 300 && g.distNm < 6 && ph === 'initial') hints.push(`Descend: you are ${Math.round(sim.indicatedAlt() - to.altMin)} ft above the ${to.ident} crossing altitude.`);
+      if (ph === 'final') {
+        const mins = sim.av.minimums;
+        if (mins !== null) {
+          const above = Math.round(sim.indicatedAlt() - mins);
+          hints.push(above > 0 ? `Minimums ${mins}: ${above} ft to go.` : 'AT MINIMUMS — runway in sight? Land. Otherwise go around (G).');
+        }
+        if (d.iasKt > 105) hints.push('Fast: reduce power, target 90 KIAS.');
+        if (d.flapsDeg < 5 && d.aglFt < 1200) hints.push('Configure: flaps 10 (F).');
+      }
+      if (Math.abs(wrap180(sim.av.baro - sim.weather.qnh)) > 0.005) hints.push(`Altimeter not set (QNH ${sim.weather.qnh.toFixed(2)}) — press B.`);
+    }
+    if (fp.missedActive) hints.push('Climb to the missed approach altitude, then NAV + AP to fly the hold.');
+    if (g.suspended) hints.push('SUSP at the MAP — press G / MISSED to sequence the missed approach.');
+  } else {
+    next = 'No flight plan';
+    hints.push('Press D for Direct-To, or Procedures to load an approach.');
+  }
+  if (d.stallWarn) hints.unshift('STALL WARNING — lower the nose, add power!');
+  if (sim.paused && !sim.ac.s.crashed) hints.unshift('Paused — Esc to resume.');
+  const key = next + hints.join('|');
+  if (key === coachKey) return;
+  coachKey = key;
+  coach.innerHTML = '';
+  const minBtn = h('button', { onclick: () => { coach.classList.toggle('min'); store.set('ifr.coachMin', coach.classList.contains('min')); }, title: 'Minimise' }, '▾');
+  coach.append(h('h4', {}, 'Coach', minBtn), h('div', { class: 'next', html: next }));
+  if (hints.length) coach.append(h('ul', {}, ...hints.slice(0, 4).map((t) => h('li', {}, t))));
+}
+
+// ------------------------------------------------------------------ loop
+let last = performance.now();
+let coachAcc = 0;
+function frame(now: number) {
+  const dt = Math.min(0.1, (now - last) / 1000);
+  last = now;
+  const override = input.update(dt, sim.controls, sim.ap.ap && !sim.paused);
+  if (override) {
+    sim.ap.disconnect();
+    toast('Autopilot disconnected — control input', 'warn');
+  }
+  sim.step(dt);
+
+  // auto debrief at the end of a flight
+  if (!debriefShown && (sim.ac.s.crashed || (sim.rec.touchdown && sim.ac.s.onGround && sim.ac.data.gsKt < 2))) {
+    endTimer += dt;
+    if (endTimer > (sim.ac.s.crashed ? 2.5 : 1.5)) openDebrief();
+  }
+
+  const otwH = otw.clientHeight;
+  if (otwH > 10) {
+    const octx = otwCanvas.getContext('2d')!;
+    const rect = otwCanvas.getBoundingClientRect();
+    const dpr = Math.min(1.5, window.devicePixelRatio || 1);
+    const W = Math.round(rect.width * dpr);
+    const Hh = Math.round(rect.height * dpr);
+    if (otwCanvas.width !== W || otwCanvas.height !== Hh) {
+      otwCanvas.width = W;
+      otwCanvas.height = Hh;
+    }
+    octx.setTransform(1, 0, 0, 1, 0, 0);
+    drawOtw(octx, sim, W, Hh, now / 1000);
+  }
+  fitCanvas(pfdCanvas, PFD_W, PFD_H);
+  drawPfd(pfdCanvas.getContext('2d')!, sim, pfdSt, sim.paused ? 0 : dt);
+  fitCanvas(mfdCanvas, MFD_W, MFD_H);
+  drawMfd(mfdCanvas.getContext('2d')!, sim, mfdSt);
+  charts.update();
+
+  // footer
+  if (!thrDragging) thr.value = String(Math.round(sim.controls.throttle * 100));
+  thrVal.textContent = `${Math.round(sim.controls.throttle * 100)}% · ${Math.round(sim.ac.data.rpm / 10) * 10} RPM`;
+  flapBtns.forEach((b, i) => b.classList.toggle('on', Math.round(sim.controls.flaps) === i));
+  const setMeter = (m: HTMLElement, v: number) => {
+    const i = m.firstChild as HTMLElement;
+    i.style.left = v < 0 ? `${50 + v * 50}%` : '50%';
+    i.style.width = `${Math.abs(v) * 50}%`;
+  };
+  setMeter(trimMeter, sim.controls.trim);
+  setMeter(elevMeter, sim.controls.elevator);
+  setMeter(ailMeter, sim.controls.aileron);
+  joyDot.classList.toggle('on', !!input.current());
+  joyLbl.textContent = input.current() ? input.current()!.id.split('(')[0].trim().slice(0, 28) || 'Joystick' : 'Keyboard (connect a joystick)';
+  pfdBezel.querySelectorAll<HTMLElement>('[data-ap]').forEach((b) => {
+    const l = b.dataset.ap;
+    const ap = sim.ap;
+    const on = (l === 'AP' && ap.ap) || (l === 'FD' && ap.fd) || (l === 'HDG' && ap.engaged && ap.lat === 'HDG') || (l === 'ALT' && ap.engaged && ap.vert === 'ALT') || (l === 'NAV' && ap.engaged && (['GPS', 'VOR', 'LOC'].includes(ap.lat) || !!ap.latArmed)) || (l === 'APR' && ap.apprMode) || (l === 'BC' && ap.lat === 'BC') || (l === 'VS' && ap.engaged && ap.vert === 'VS') || (l === 'FLC' && ap.engaged && ap.vert === 'FLC');
+    b.classList.toggle('on', !!on);
+  });
+  coachAcc += dt;
+  if (coachAcc > 0.25) {
+    coachAcc = 0;
+    updateCoach();
+  }
+  requestAnimationFrame(frame);
+}
+
+// ------------------------------------------------------------------ boot
+setOtw(otwMode);
+updateHeader();
+updateCoach();
+requestAnimationFrame(frame);
+launcher.open();
+// deep link: ?scenario=ils27-vtf&wx=mins
+{
+  const q = new URLSearchParams(location.search);
+  const sc = SCENARIOS.find((s) => s.id === q.get('scenario'));
+  if (sc) {
+    Modal.closeAll();
+    startScenario(sc, WX_PRESETS.find((w) => w.id === q.get('wx')) ?? WX_PRESETS[0]);
+  }
+}
