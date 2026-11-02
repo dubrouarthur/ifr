@@ -333,26 +333,41 @@ const apKeys = () => {
   );
 };
 
+const pad3 = (n: number) => String(Math.round(((n % 360) + 360) % 360) || 360).padStart(3, '0');
+const softRow = (fn: (i: number) => void) => h('div', { class: 'softrow' }, ...Array.from({ length: 12 }, (_, i) => h('button', { 'aria-label': `Softkey ${i + 1}`, onclick: () => fn(i) })));
 const pfdBezel = h('div', { class: 'bezel pfd' },
   h('div', { class: 'brand-mark', 'data-l': '1' }, 'PFD'),
   h('div', { class: 'side left' },
-    knob({ label: 'NAV', sub: 'NAV1 STBY', dual: true, onTurn: (d, c) => tune(sim.av.nav1, d, c, 108, 118, 0.05) }),
+    knob({ label: 'NAV', sub: 'MHz · kHz', dual: true, size: 'sm', onTurn: (d, c) => tune(sim.av.nav1, d, c, 108, 118, 0.05), readout: () => `NAV1 SBY ${sim.av.nav1.standby.toFixed(2)}` }),
     bkey('NAV ⇆', () => swap(sim.av.nav1), 'Swap NAV1 active/standby'),
-    knob({ label: 'HDG', sub: 'PUSH SYNC', onTurn: hdgBy, onPush: () => (sim.ap.hdgBug = Math.round(sim.ac.data.hdgTrue) || 360) }),
+    knob({ label: 'HDG', sub: 'Push sync', size: 'sm', onTurn: hdgBy, onPush: () => (sim.ap.hdgBug = Math.round(sim.ac.data.hdgTrue) || 360), readout: () => `HDG ${pad3(sim.ap.hdgBug)}°` }),
     apKeys(),
-    knob({ label: 'ALT', sub: 'PUSH = CUR', dual: true, onTurn: altBy, onPush: () => (sim.ap.altSel = Math.round(sim.indicatedAlt() / 100) * 100) }),
+    knob({ label: 'ALT', sub: '1000 · 100', dual: true, size: 'sm', onTurn: altBy, onPush: () => (sim.ap.altSel = Math.round(sim.indicatedAlt() / 100) * 100), readout: () => `ALT ${sim.ap.altSel} FT` }),
   ),
   h('div', { class: 'screen' }, pfdCanvas),
+  softRow((i) => pfdSoftkey(i)),
   h('div', { class: 'side right' },
-    knob({ label: 'COM', sub: 'COM1 STBY', dual: true, onTurn: (d, c) => tune(sim.av.com1, d, c, 118, 137, 0.025) }),
+    knob({ label: 'COM', sub: 'MHz · kHz', dual: true, onTurn: (d, c) => tune(sim.av.com1, d, c, 118, 137, 0.025), readout: () => `COM1 SBY ${sim.av.com1.standby.toFixed(3)}` }),
     bkey('COM ⇆', () => swap(sim.av.com1), 'Swap COM1'),
-    knob({ label: 'CRS', sub: 'PUSH CTR', onTurn: (d, c) => sim.setCourse(sim.course() + d * (c ? 10 : 1)), onPush: () => centerCdi() }),
-    knob({ label: 'BARO', sub: 'PUSH QNH', onTurn: (d, c) => (sim.av.baro = Math.round((sim.av.baro + d * (c ? 0.1 : 0.01)) * 100) / 100), onPush: () => setQnh() }),
-    knob({ label: 'MINS', sub: 'BARO MIN', onTurn: (d, c) => (sim.av.minimums = Math.max(0, (sim.av.minimums ?? Math.round(sim.indicatedAlt() / 100) * 100) + d * (c ? 100 : 10))), onPush: () => (sim.av.minimums = null) }),
+    knob({
+      label: 'CRS',
+      sub: 'Outer BARO',
+      dual: true,
+      onTurn: (d, c) => {
+        if (c) sim.av.baro = Math.round((sim.av.baro + d * 0.01) * 100) / 100;
+        else sim.setCourse(sim.course() + d);
+      },
+      onPush: () => centerCdi(),
+      readout: () => `CRS ${pad3(sim.course())}° · ${sim.av.baro.toFixed(2)} IN`,
+      title: 'CRS/BARO — inner knob: course (push = centre CDI) · outer ring: altimeter setting',
+    }),
+    knob({ label: 'MINS', sub: 'Push off', size: 'sm', onTurn: (d, c) => (sim.av.minimums = Math.max(0, (sim.av.minimums ?? Math.round(sim.indicatedAlt() / 100) * 100) + d * (c ? 100 : 10))), onPush: () => (sim.av.minimums = null), readout: () => (sim.av.minimums === null ? 'MINS OFF' : `BARO MIN ${sim.av.minimums}`) }),
     h('div', { class: 'bkey-grid' },
       bkey('D→', () => directModal.open(), 'Direct-To (D)'),
       bkey('PROC', () => procModal.open(), 'Procedures (X)'),
       bkey('FPL', () => (mfdSt.showFpl = !mfdSt.showFpl), 'Flight plan'),
+      bkey('BARO', () => setQnh(), 'Set altimeter to QNH (B)'),
+      bkey('CLR', () => Modal.closeAll(), 'Clear'),
       bkey('TOGA', () => goAround(), 'Go-around (G)'),
     ),
   ),
@@ -360,25 +375,26 @@ const pfdBezel = h('div', { class: 'bezel pfd' },
 const mfdBezel = h('div', { class: 'bezel mfd' },
   h('div', { class: 'brand-mark', 'data-r': '1' }, 'MFD'),
   h('div', { class: 'side left' },
-    knob({ label: 'NAV2', sub: 'STBY', dual: true, onTurn: (d, c) => tune(sim.av.nav2, d, c, 108, 118, 0.05) }),
+    knob({ label: 'NAV2', sub: 'MHz · kHz', dual: true, onTurn: (d, c) => tune(sim.av.nav2, d, c, 108, 118, 0.05), readout: () => `NAV2 SBY ${sim.av.nav2.standby.toFixed(2)}` }),
     bkey('NAV2 ⇆', () => swap(sim.av.nav2), 'Swap NAV2'),
-    knob({ label: 'ADF', sub: 'kHz', dual: true, onTurn: (d, c) => (sim.av.adf.active = Math.max(190, Math.min(1750, sim.av.adf.active + d * (c ? 100 : 1)))) }),
+    knob({ label: 'ADF', sub: '100 · 1 kHz', dual: true, onTurn: (d, c) => (sim.av.adf.active = Math.max(190, Math.min(1750, sim.av.adf.active + d * (c ? 100 : 1)))), readout: () => `ADF ${sim.av.adf.active} kHz` }),
     bkey('CDI', () => doAction('cdi'), 'Cycle CDI (C)'),
     bkey('CHARTS', () => charts.toggle(), 'Charts (K)'),
     bkey('MISSED', () => goAround(), 'Activate missed approach'),
   ),
   h('div', { class: 'screen' }, mfdCanvas),
+  softRow((i) => mfdSoftkey(i)),
   h('div', { class: 'side right' },
-    knob({ label: 'RANGE', sub: 'MAP', onTurn: (d) => (mfdSt.rangeIdx = Math.max(0, Math.min(8, mfdSt.rangeIdx - d))) }),
+    knob({ label: 'RANGE', sub: 'Map', onTurn: (d) => (mfdSt.rangeIdx = Math.max(0, Math.min(8, mfdSt.rangeIdx - d))), readout: () => `RANGE ${mfdRange(mfdSt)} NM` }),
     h('div', { class: 'bkey-grid' },
       bkey('D→', () => directModal.open()),
       bkey('PROC', () => procModal.open()),
       bkey('FPL', () => (mfdSt.showFpl = !mfdSt.showFpl)),
       bkey('ACT', () => { sim.fp.activateApproach(sim.ac.s); toast('Approach activated', 'good'); }, 'Activate approach'),
       bkey('VTF', () => { sim.fp.vectorsToFinal(); toast('Vectors to final', 'good'); }, 'Vectors to final'),
-      bkey('CLR', () => Modal.closeAll()),
+      bkey('ENT', () => undefined, 'Enter'),
     ),
-    knob({ label: 'FMS', sub: 'LEG', onTurn: (d) => sim.fp.activateLeg(Math.max(1, Math.min(sim.fp.wpts.length - 1, sim.fp.active + d))), title: 'Select active leg' }),
+    knob({ label: 'FMS', sub: 'Leg select', dual: true, onTurn: (d) => sim.fp.activateLeg(Math.max(1, Math.min(sim.fp.wpts.length - 1, sim.fp.active + d))), readout: () => (sim.fp.out.valid ? `ACTV ${sim.fp.out.toIdent}` : 'NO FPL'), title: 'FMS — select the active leg' }),
   ),
 );
 const panel = h('section', { class: 'panel' }, pfdBezel, mfdBezel);
@@ -471,11 +487,8 @@ function canvasPoint(c: HTMLCanvasElement, e: MouseEvent, W: number, H: number) 
   const r = c.getBoundingClientRect();
   return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H };
 }
-pfdCanvas.addEventListener('click', (e) => {
+function pfdSoftkey(i: number) {
   if (cockpitType !== 'g1000') return;
-  const p = canvasPoint(pfdCanvas, e, PFD_W, PFD_H);
-  const i = softkeyAt(p.x, p.y);
-  if (i === null) return;
   pfdSt.softkeyFlash = i;
   setTimeout(() => (pfdSt.softkeyFlash = null), 150);
   const av = sim.av;
@@ -492,6 +505,12 @@ pfdCanvas.addEventListener('click', (e) => {
     case 'MINS': cycleMins(); break;
     case 'ALERTS': toast(sim.ac.s.fuelGal < 10 ? 'LOW FUEL' : 'No alerts', 'info'); break;
   }
+}
+pfdCanvas.addEventListener('click', (e) => {
+  if (cockpitType !== 'g1000') return;
+  const p = canvasPoint(pfdCanvas, e, PFD_W, PFD_H);
+  const i = softkeyAt(p.x, p.y);
+  if (i !== null) pfdSoftkey(i);
 });
 pfdCanvas.addEventListener('wheel', (e) => {
   // wheel over the HSI adjusts heading bug, over the altimeter adjusts ALT SEL
@@ -504,11 +523,8 @@ pfdCanvas.addEventListener('wheel', (e) => {
   else return;
   e.preventDefault();
 }, { passive: false });
-mfdCanvas.addEventListener('click', (e) => {
+function mfdSoftkey(i: number) {
   if (cockpitType !== 'g1000') return;
-  const p = canvasPoint(mfdCanvas, e, MFD_W, MFD_H);
-  const i = softkeyAt(p.x, p.y, MFD_H, MFD_W);
-  if (i === null) return;
   mfdSt.softkeyFlash = i;
   setTimeout(() => (mfdSt.softkeyFlash = null), 150);
   switch (MFD_SOFTKEYS[i]) {
@@ -521,6 +537,12 @@ mfdCanvas.addEventListener('click', (e) => {
     case 'ENGINE': toast('Engine: all parameters normal', 'good'); break;
     case 'MAP': mfdSt.rangeIdx = 4; break;
   }
+}
+mfdCanvas.addEventListener('click', (e) => {
+  if (cockpitType !== 'g1000') return;
+  const p = canvasPoint(mfdCanvas, e, MFD_W, MFD_H);
+  const i = softkeyAt(p.x, p.y, MFD_H, MFD_W);
+  if (i !== null) mfdSoftkey(i);
 });
 mfdCanvas.addEventListener('wheel', (e) => {
   e.preventDefault();
@@ -913,6 +935,21 @@ function frame(now: number) {
 setOtw(otwMode);
 setCockpit(cockpitType, false);
 requestAnimationFrame(() => setTimeout(() => void initOutside(), 50));
+// keep the bezel controls inside the bezel whatever the window size
+{
+  const fitSides = () => {
+    for (const side of document.querySelectorAll<HTMLElement>('.bezel .side')) {
+      side.style.zoom = '1';
+      const bezel = side.parentElement as HTMLElement;
+      const avail = bezel.clientHeight - 16;
+      const need = side.scrollHeight;
+      side.style.zoom = need > avail && avail > 50 ? String(Math.max(0.55, avail / need)) : '1';
+    }
+  };
+  new ResizeObserver(fitSides).observe(panel);
+  window.addEventListener('resize', fitSides);
+  setTimeout(fitSides, 100);
+}
 updateHeader();
 updateCoach();
 requestAnimationFrame(frame);

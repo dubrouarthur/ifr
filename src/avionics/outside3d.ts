@@ -186,12 +186,14 @@ void main() {
   float fog = exp(-dist / (uVis * 1.7));
   vAlpha = a * clamp(fog * 1.4, 0.0, 1.0) * mix(1.0, 0.55, uDay);
   vColor = c;
-  gl_PointSize = clamp(size * uScale * (1800.0 / max(dist, 30.0)), 1.5, 26.0) * mix(1.0, 0.7, uDay);
+  gl_PointSize = clamp(size * uScale * (4200.0 / max(dist, 40.0)), 2.6, 34.0) * mix(1.25, 0.75, uDay);
   gl_Position = projectionMatrix * mv;
 }`;
 const lightFrag = `
 uniform sampler2D uMap; varying vec3 vColor; varying float vAlpha;
-void main() { vec4 t = texture2D(uMap, gl_PointCoord); gl_FragColor = vec4(vColor, t.a * vAlpha); if (gl_FragColor.a < 0.01) discard; }`;
+void main() { vec4 t = texture2D(uMap, gl_PointCoord); gl_FragColor = vec4(vColor, t.a * vAlpha); if (gl_FragColor.a < 0.01) discard;
+  #include <colorspace_fragment>
+}`;
 
 // ------------------------------------------------------------------ the view
 export class Outside3D {
@@ -217,8 +219,8 @@ export class Outside3D {
     this.quality = quality;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality === 'high', powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(quality === 'high' ? 1.6 : 1, window.devicePixelRatio || 1));
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    // no tone mapping: fog, sky dome and clear colour must produce the exact same grey in cloud
+    this.renderer.toneMapping = THREE.NoToneMapping;
     this.scene.fog = this.fog;
     this.camera.rotation.order = 'YXZ';
     this.sun.position.set(-30000, 40000, -20000);
@@ -244,7 +246,10 @@ export class Outside3D {
         void main(){ float h = max(vDir.y, 0.0); vec3 c = mix(uHorizon, uTop, pow(h, 0.55));
           float s = max(dot(normalize(vDir), normalize(uSunDir)), 0.0); c += uSunCol * (pow(s, 600.0) * 4.0 + pow(s, 12.0) * 0.25);
           if (vDir.y < 0.0) c = mix(uHorizon, uHorizon * 0.8, min(-vDir.y * 4.0, 1.0));
-          c = mix(c, uGrey, uOvercast); gl_FragColor = vec4(c, 1.0); }`,
+          c = mix(c, uGrey, uOvercast); gl_FragColor = vec4(c, 1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`,
     });
     const sky = new THREE.Mesh(new THREE.SphereGeometry(200000, 32, 16), this.skyMat);
     sky.renderOrder = -10;
@@ -540,9 +545,9 @@ export class Outside3D {
     const sky = this.skyMat.uniforms;
     if (t === 'day') {
       this.sun.position.set(-30000, 40000, -20000);
-      this.sun.intensity = 2.2;
+      this.sun.intensity = 1.6;
       this.sun.color.set(0xfff4e0);
-      this.hemi.intensity = 1.2;
+      this.hemi.intensity = 1.0;
       sky.uTop.value.set(0x2a62b8);
       sky.uHorizon.value.set(0xbcd4ee);
       sky.uSunCol.value.set(0xfff2d0);
@@ -599,7 +604,7 @@ export class Outside3D {
     const grey = new THREE.Color(night ? 0x0a0c10 : dusk ? 0x6b5a5a : 0x9aa1a8);
     const haze = new THREE.Color(night ? 0x0c1220 : dusk ? 0xc08a6a : overcast ? 0x9ea6ad : 0xb6c6d6);
     if (inside) {
-      this.fog.color.copy(grey).multiplyScalar(night ? 1 : 1.08);
+      this.fog.color.copy(grey).multiplyScalar(night ? 1 : 1.12);
       this.fog.near = 5;
       this.fog.far = 70;
     } else if (above) {
@@ -621,8 +626,8 @@ export class Outside3D {
     this.skyMat.uniforms.uOvercast.value = overcast && !above ? 1 : 0;
     this.skyMat.uniforms.uGrey.value.copy(inside ? this.fog.color : grey);
     this.renderer.setClearColor(this.fog.color);
-    this.hemi.intensity = (night ? 0.14 : dusk ? 0.9 : 1.2) * (overcast && !above ? 0.8 : 1);
-    this.sun.intensity = (night ? 0.12 : dusk ? 1.3 : 2.2) * (overcast && !above ? 0.25 : 1);
+    this.hemi.intensity = (night ? 0.14 : dusk ? 0.8 : 1.0) * (overcast && !above ? 0.85 : 1);
+    this.sun.intensity = (night ? 0.12 : dusk ? 1.1 : 1.6) * (overcast && !above ? 0.25 : 1);
     // lights
     const u = this.lightsMat.uniforms;
     u.uTime.value = t;

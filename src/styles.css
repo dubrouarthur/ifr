@@ -535,3 +535,67 @@ td.acs.INCOMPLETE, .acs-badge.INCOMPLETE { color: var(--warn); font-weight: 800;
 .set-row b { display: block; font-size: 14px; margin-bottom: 2px; }
 .set-row span { color: var(--muted); font-size: 12.5px; line-height: 1.4; }
 body.pro .coach:not(.lesson) { display: none; }
+
+/* ---------------------------------------------------------------- pro knobs & bezel keys */
+.pknob { position: relative; width: 60px; height: 60px; flex: none; cursor: grab; touch-action: none; user-select: none; border-radius: 50%; outline: none; }
+.pknob.sm { width: 48px; height: 48px; }
+.pknob.lg { width: 68px; height: 68px; }
+.pknob:focus-visible { box-shadow: 0 0 0 3px rgba(0,228,255,.55); }
+.pknob.grab { cursor: grabbing; }
+.pknob::before { content: ''; position: absolute; inset: -5px; border-radius: 50%; background: radial-gradient(circle, rgba(0,0,0,.55) 58%, rgba(0,0,0,0) 72%); }
+.pknob .ring, .pknob .cap { position: absolute; border-radius: 50%; transition: transform .06s linear; will-change: transform; }
+.pknob .ring { inset: 0; background:
+  radial-gradient(circle at 50% 50%, transparent 54%, rgba(0,0,0,.35) 56%, transparent 60%),
+  radial-gradient(circle at 32% 22%, rgba(255,255,255,.28), rgba(255,255,255,0) 46%),
+  repeating-conic-gradient(from 0deg, #1d1f22 0deg 5deg, #3d4146 5deg 7deg, #2a2d31 7deg 10deg);
+  box-shadow: 0 5px 10px rgba(0,0,0,.75), 0 1px 0 rgba(255,255,255,.08) inset, 0 0 0 1.5px #0c0d0e inset; }
+.pknob.single .ring { background:
+  radial-gradient(circle at 32% 22%, rgba(255,255,255,.3), rgba(255,255,255,0) 50%),
+  repeating-conic-gradient(from 0deg, #1d1f22 0deg 4deg, #3f4348 4deg 6deg, #2b2e32 6deg 8deg); }
+.pknob.single .cap { inset: 8px; }
+.pknob.dual .cap { inset: 15px; }
+.pknob .cap { background:
+  radial-gradient(circle at 34% 26%, #7a8088 0%, #3d4248 38%, #1e2124 72%, #121416 100%);
+  box-shadow: 0 3px 6px rgba(0,0,0,.8), inset 0 1px 1px rgba(255,255,255,.25), inset 0 -2px 3px rgba(0,0,0,.6); }
+.pknob.dual .cap::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: repeating-conic-gradient(from 0deg, rgba(0,0,0,.35) 0deg 4deg, rgba(255,255,255,.04) 4deg 8deg); mask: radial-gradient(circle, transparent 62%, #000 64%); -webkit-mask: radial-gradient(circle, transparent 62%, #000 64%); }
+.pknob .mk { position: absolute; left: 50%; top: 3px; width: 3px; height: 9px; margin-left: -1.5px; border-radius: 2px; background: #e9edf1; box-shadow: 0 0 4px rgba(255,255,255,.5); }
+.pknob.dual .ring .mk { height: 7px; top: 2px; opacity: .8; }
+.pknob .cap .push { position: absolute; left: 50%; top: 50%; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #555b61, #1a1c1f); box-shadow: inset 0 1px 2px rgba(0,0,0,.8); }
+.pknob.pushed .cap { transform: scale(.94) !important; filter: brightness(.85); }
+.pknob.g-ring .ring { filter: brightness(1.18); }
+.pknob.g-cap .cap { filter: brightness(1.18); }
+.pknob .bubble { position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%) translateY(4px); padding: 4px 9px; border-radius: 7px; background: #05080b; border: 1px solid #2a3c4a; color: #00e4ff; font: 700 13px 'Roboto Mono', 'Roboto Condensed', monospace; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity .15s, transform .15s; z-index: 5; box-shadow: 0 6px 16px rgba(0,0,0,.6); }
+.pknob.show .bubble { opacity: 1; transform: translateX(-50%) translateY(0); }
+.pknob .bubble:empty { display: none; }
+.knob-wrap { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.knob-label { font: 700 10px 'Roboto Condensed'; color: #d9dee3; letter-spacing: .8px; text-align: center; line-height: 1.1; text-transform: uppercase; }
+.knob-label small { display: block; color: #7f8992; font-weight: 600; font-size: 8.5px; letter-spacing: .4px; }
+.bkey { position: relative; width: 62px; height: 26px; border-radius: 5px; border: 1px solid #050606; background: linear-gradient(#2d3035, #17191c 55%, #121315); color: #eef2f5; font: 700 10.5px 'Roboto Condensed'; letter-spacing: .4px; box-shadow: 0 2px 0 #050606, 0 3px 5px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.12); cursor: pointer; flex: none; text-shadow: 0 0 6px rgba(255,255,255,.35); transition: transform .05s, box-shadow .05s; }
+.bkey:hover { background: linear-gradient(#34383d, #1b1d20 55%, #141517); }
+.bkey:active { transform: translateY(2px); box-shadow: 0 0 0 #050606, 0 1px 2px rgba(0,0,0,.6), inset 0 1px 3px rgba(0,0,0,.6); }
+.bkey.on { color: #7dffa6; text-shadow: 0 0 8px rgba(80,255,140,.7); }
+.bkey.on::after { content: none; }
+.ap-col .bkey, .bkey-grid .bkey { width: 32px; height: 24px; font-size: 9px; padding: 0; }
+/* physical softkeys under the G1000 screens */
+.softrow { display: none; grid-column: 2; grid-template-columns: repeat(12, 1fr); gap: 4px; padding: 2px 4px 0; }
+.panel.theme-g1000 .softrow { display: grid; }
+.softrow button { height: 16px; border-radius: 3px; border: 1px solid #050606; background: linear-gradient(#2a2d31, #141618); box-shadow: 0 2px 0 #050606, inset 0 1px 0 rgba(255,255,255,.1); cursor: pointer; }
+.softrow button:active { transform: translateY(1px); box-shadow: inset 0 1px 2px rgba(0,0,0,.7); }
+.panel.theme-g1000 .bezel { grid-template-rows: 1fr auto; background:
+  radial-gradient(120% 80% at 50% 0%, rgba(255,255,255,.05), transparent 60%),
+  linear-gradient(160deg, #2b2e32, #18191b); border: 1px solid #0b0c0d; box-shadow: inset 0 1px 0 rgba(255,255,255,.08), inset 0 -2px 6px rgba(0,0,0,.6), 0 10px 30px rgba(0,0,0,.6); }
+.panel.theme-g1000 .bezel .side { grid-row: 1 / span 2; }
+.panel.theme-g1000 .bezel .screen { box-shadow: inset 0 0 0 2px #000, 0 0 0 3px #0b0c0d, 0 0 0 4px #33373b; }
+.bezel > .side.left { grid-column: 1; grid-row: 1 / -1; }
+.bezel > .screen { grid-column: 2; grid-row: 1; }
+.bezel > .softrow { grid-column: 2; grid-row: 2; }
+.bezel > .side.right { grid-column: 3; grid-row: 1 / -1; }
+.panel.theme-g1000 .bezel { height: min(100%, calc((50vw - 210px) * 0.75 + 40px)); }
+@media (max-width: 640px) { .bezel > .side.left, .bezel > .screen, .bezel > .softrow, .bezel > .side.right { grid-column: 1; grid-row: auto; } }
+.bezel .side { overflow: visible; gap: 6px; }
+.pknob.sm .cap { inset: 7px; }
+.pknob.dual.sm .cap { inset: 12px; }
+.ap-col { gap: 4px; }
+.ap-col .bkey { height: 22px; }
+.knob-wrap:has(.pknob.show) { z-index: 10; position: relative; }
+.bezel .side { justify-content: flex-start; align-self: stretch; }

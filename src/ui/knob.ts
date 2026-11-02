@@ -3,76 +3,109 @@ import { h } from './dom';
 export interface KnobOpts {
   label: string;
   sub?: string;
+  /** concentric outer ring (coarse) + inner knob (fine) */
   dual?: boolean;
-  /** delta = ±1 per detent; coarse when outer ring / shift */
+  /** delta = ±1 per detent; coarse = outer ring (or Shift) */
   onTurn: (delta: number, coarse: boolean) => void;
   onPush?: () => void;
+  /** live value shown in a bubble while turning */
+  readout?: () => string;
   title?: string;
+  size?: 'sm' | 'md' | 'lg';
 }
 
+const DETENT_PX = 14;
+
 /**
- * Rotary knob: mouse wheel, drag left/right, click left/right half, or tap the centre to push.
- * For dual knobs, the outer ring (outside 60% radius) or Shift gives the coarse value.
+ * Rotary encoder. Drag (any direction) or scroll to turn; the outer ring of a dual knob is coarse,
+ * the inner knob fine. A click without movement on the inner knob pushes it.
  */
 export function knob(o: KnobOpts): HTMLElement {
-  const tick = h('i', { class: 'tick' });
-  const el = h('div', { class: `knob${o.dual ? ' dual' : ''}`, title: o.title ?? `${o.label}: scroll / drag / click sides${o.onPush ? ', click centre to push' : ''}`, role: 'slider', tabindex: 0, 'aria-label': o.label }, tick);
-  let angle = 0;
+  const ringMark = h('i', { class: 'mk' });
+  const capMark = h('i', { class: 'mk' });
+  const ring = h('div', { class: 'ring' }, ringMark);
+  const cap = h('div', { class: 'cap' }, capMark, o.onPush ? h('b', { class: 'push' }) : null);
+  const bubble = h('div', { class: 'bubble' });
+  const el = h('div', { class: `pknob ${o.dual ? 'dual' : 'single'} ${o.size ?? 'md'}`, tabindex: 0, role: 'slider', 'aria-label': o.label, title: o.title ?? `${o.label} — drag or scroll${o.dual ? ' (outer ring = coarse, inner knob = fine)' : ''}${o.onPush ? ', click to push' : ''}` }, ring, cap, bubble);
+  let ringA = 0;
+  let capA = 0;
+  let hideT = 0;
+  const show = () => {
+    if (!o.readout) return;
+    bubble.textContent = o.readout();
+    el.classList.add('show');
+    clearTimeout(hideT);
+    hideT = window.setTimeout(() => el.classList.remove('show'), 1300);
+  };
   const turn = (d: number, coarse: boolean) => {
-    angle += d * 15;
-    tick.style.transform = `translateX(-50%) rotate(${angle}deg)`;
+    if (o.dual && coarse) {
+      ringA += d * 18;
+      ring.style.transform = `rotate(${ringA}deg)`;
+    } else {
+      capA += d * 18;
+      cap.style.transform = `rotate(${capA}deg)`;
+      if (!o.dual) {
+        ringA += d * 18;
+        ring.style.transform = `rotate(${ringA}deg)`;
+      }
+    }
+    el.classList.add('tick');
+    setTimeout(() => el.classList.remove('tick'), 60);
     o.onTurn(d, coarse);
+    show();
   };
   const isOuter = (e: MouseEvent) => {
+    if (!o.dual) return e.shiftKey;
     const r = el.getBoundingClientRect();
     const dx = e.clientX - (r.left + r.width / 2);
     const dy = e.clientY - (r.top + r.height / 2);
-    return Math.hypot(dx, dy) > r.width * 0.3;
+    return Math.hypot(dx, dy) > r.width * 0.3 || e.shiftKey;
   };
   el.addEventListener(
     'wheel',
     (e) => {
       e.preventDefault();
-      turn(e.deltaY < 0 ? 1 : -1, e.shiftKey || (!!o.dual && isOuter(e)));
+      turn(e.deltaY < 0 ? 1 : -1, isOuter(e));
     },
     { passive: false },
   );
-  let dragX: number | null = null;
-  let acc = 0;
-  let moved = false;
-  let coarseDrag = false;
+  let drag: { x: number; y: number; acc: number; coarse: boolean; moved: boolean } | null = null;
   el.addEventListener('pointerdown', (e) => {
-    dragX = e.clientX;
-    acc = 0;
-    moved = false;
-    coarseDrag = e.shiftKey || (!!o.dual && isOuter(e));
+    e.preventDefault();
+    el.focus({ preventScroll: true });
+    drag = { x: e.clientX, y: e.clientY, acc: 0, coarse: isOuter(e), moved: false };
+    el.classList.add('grab', drag.coarse ? 'g-ring' : 'g-cap');
     el.setPointerCapture(e.pointerId);
   });
   el.addEventListener('pointermove', (e) => {
-    if (dragX === null) return;
-    acc += e.clientX - dragX;
-    dragX = e.clientX;
-    while (Math.abs(acc) > 12) {
-      moved = true;
-      const d = Math.sign(acc);
-      acc -= d * 12;
-      turn(d, coarseDrag);
+    if (!drag) return;
+    // clockwise feel: right or up = increase
+    drag.acc += e.clientX - drag.x - (e.clientY - drag.y);
+    drag.x = e.clientX;
+    drag.y = e.clientY;
+    while (Math.abs(drag.acc) >= DETENT_PX) {
+      drag.moved = true;
+      const d = Math.sign(drag.acc);
+      drag.acc -= d * DETENT_PX;
+      turn(d, drag.coarse);
     }
   });
-  el.addEventListener('pointerup', (e) => {
-    if (dragX !== null && !moved) {
-      const r = el.getBoundingClientRect();
-      const x = e.clientX - r.left;
-      const center = Math.abs(x - r.width / 2) < r.width * 0.16 && Math.abs(e.clientY - r.top - r.height / 2) < r.height * 0.16;
-      if (center && o.onPush) o.onPush();
-      else turn(x < r.width / 2 ? -1 : 1, e.shiftKey || (!!o.dual && isOuter(e)));
-    }
-    dragX = null;
-  });
+  const end = () => {
+    if (drag && !drag.moved && !drag.coarse && o.onPush) {
+      el.classList.add('pushed');
+      setTimeout(() => el.classList.remove('pushed'), 140);
+      o.onPush();
+      show();
+    } else if (drag && !drag.moved) show();
+    drag = null;
+    el.classList.remove('grab', 'g-ring', 'g-cap');
+  };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
   el.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowRight' || e.key === 'ArrowUp') turn(1, e.shiftKey);
     else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') turn(-1, e.shiftKey);
-    else if (e.key === 'Enter') o.onPush?.();
+    else if (e.key === 'Enter' || e.key === ' ') o.onPush?.();
     else return;
     e.preventDefault();
     e.stopPropagation();
@@ -81,5 +114,5 @@ export function knob(o: KnobOpts): HTMLElement {
 }
 
 export function bkey(label: string, onClick: () => void, title?: string): HTMLButtonElement {
-  return h('button', { class: 'bkey', onclick: (e: Event) => { onClick(); (e.currentTarget as HTMLElement).blur(); }, title: title ?? label }, label);
+  return h('button', { class: 'bkey', onclick: (e: Event) => { onClick(); (e.currentTarget as HTMLElement).blur(); }, title: title ?? label }, h('span', {}, label));
 }

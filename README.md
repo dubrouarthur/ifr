@@ -6,6 +6,10 @@ G1000-style glass cockpit (PFD + MFD with bezel knobs/softkeys), GFC700-class au
 
 **IFR flights:** gate-to-gate cross-country flights with CRAFT clearance, departure, route, approach clearance and landing; localizer/LDA/radial interception drills.
 
+**3D outside view (WebGL)** — the Ardent Islands with terrain relief, coastline and sea, towns and forests; runways with full markings (threshold bars, numbers, TDZ, aiming points, centreline), taxiways, aprons, tower and hangars; **ALSF-II / MALSR approach lights with sequenced flashers**, edge / threshold / end / TDZ / centreline lights, REIL strobes and **PAPI driven by your actual glide angle**; sky dome with sun, overcast base and tops, visibility fog and the break-out at minimums; **day, dusk and night**; mouse look-around.
+
+**Professional controls** — concentric dual encoders (knurled outer ring = coarse, inner knob = fine, push), live value read-outs, CRS/BARO dual knob, backlit bezel keys and physical softkeys under the G1000 screens. Settings: cockpit, time of day, graphics quality, **Pro mode** (no coach or info pop-ups), sound, SVT.
+
 **Three cockpits** — G1000 glass (PFD/MFD, GFC 700), classic **steam gauges** (six-pack, wet compass, CDI with GS, RMI/ADF, KX155 / KR87 / KN62 / KAP 140 / KT76 stack, GPS), and an **airliner** layout (Boeing-style PFD with FMA, tapes and ILS scales, map-mode ND, MCP).
 
 **Flight Center** — every flight in one place, classified by type (Approaches · Procedures · IFR flights · Instrument basics · Abnormal · Checkride · Free flight) with sub-types, search, level/airport/autopilot filters, a briefing pane with the plate, and cockpit choice.
