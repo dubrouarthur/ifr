@@ -1,6 +1,7 @@
 // Point-mass + attitude flight model tuned to feel like a C172-class trainer.
 import { destination, DEG, norm360, type LatLon } from '../nav/geo';
-import { density, FT, G, KT, oatC, pressureAltitude, Turbulence, type Weather } from './environment';
+import { density, FT, G, KT, oatC, pressureAltitude, type Weather } from './environment';
+import { WindModel, components, type WindSample } from './wind';
 
 export interface Controls {
   elevator: number; // -1 (nose down) .. 1 (nose up)
@@ -85,6 +86,16 @@ export interface FlightData {
   oatC: number;
   windDir: number;
   windKt: number;
+  /** current gust increment above the mean wind (kt) */
+  gustKt: number;
+  /** headwind (+) / tailwind (−) component (kt) */
+  headwindKt: number;
+  /** crosswind component (kt), + = from the right */
+  crosswindKt: number;
+  /** drift / wind correction angle: track − heading (deg) */
+  driftDeg: number;
+  /** vertical air-mass motion (fpm) */
+  updraftFpm: number;
   fuelFlowGph: number;
   rpm: number;
   flapsDeg: number;
@@ -93,7 +104,8 @@ export interface FlightData {
 export class Aircraft {
   s: AircraftState;
   data!: FlightData;
-  private turb = new Turbulence();
+  private windModel = new WindModel();
+  private lastWind: WindSample | null = null;
   private lastPsi = 0;
   private lastAlt = 0;
   private vsFilt = 0;
@@ -125,13 +137,19 @@ export class Aircraft {
     this.lastAlt = this.s.altFt;
   }
 
-  /** Wind vector (m/s, east & north components the air moves TOWARD) at the current altitude. */
+  /** Wind vector (m/s, east & north components the air moves TOWARD) — the last sampled value. */
   wind(w: Weather): { e: number; n: number; speedKt: number; dirFrom: number } {
-    const agl = this.s.altFt - this.groundElev(this.s);
-    const scale = Math.min(1.5, 0.7 + Math.max(0, agl) / 5000);
-    const speedKt = w.windKt * scale;
-    const to = (w.windDir + 180) * DEG;
-    return { e: Math.sin(to) * speedKt * KT, n: Math.cos(to) * speedKt * KT, speedKt, dirFrom: w.windDir };
+    if (!this.lastWind) this.sampleWind(0.01, w);
+    const l = this.lastWind!;
+    return { e: l.e, n: l.n, speedKt: l.kt, dirFrom: l.dir };
+  }
+
+  private sampleWind(dt: number, w: Weather): WindSample {
+    const agl = Math.max(0, this.s.altFt - this.groundElev(this.s));
+    const pAlt = this.s.altFt;
+    const ws = this.windModel.sample(dt, w, pAlt, agl, this.s.tas, this.s.onGround);
+    this.lastWind = ws;
+    return ws;
   }
 
   step(dtTotal: number, c: Controls, w: Weather): void {
@@ -149,8 +167,15 @@ export class Aircraft {
     const pAlt = pressureAltitude(s.altFt, w.qnh);
     const rho = density(pAlt, w.oatSeaLevelC);
     const sigma = rho / RHO0;
-    const wind = this.wind(w);
+    const prevWind = this.lastWind;
+    const wind = this.sampleWind(dt, w);
     const m = A.massKg;
+    // a change of the air-mass velocity changes the airspeed (inertia): headwind gust => more IAS
+    if (prevWind && !s.onGround) {
+      const dE = wind.e - prevWind.e;
+      const dN = wind.n - prevWind.n;
+      s.tas = Math.max(1, s.tas - (dE * Math.sin(s.psi) + dN * Math.cos(s.psi)) * Math.cos(s.gamma));
+    }
 
     // Flaps travel ~ 3 s per 10 deg
     const flapTarget = Math.max(0, Math.min(3, Math.round(c.flaps))) / 3;
@@ -163,7 +188,8 @@ export class Aircraft {
     const qbar = 0.5 * rho * V * V;
     const qf = qbar / QBAR_REF;
 
-    const alpha = s.theta - s.gamma;
+    // vertical gusts change the angle of attack
+    const alpha = s.theta - s.gamma + (s.onGround ? 0 : wind.up / Math.max(15, V));
     const alphaStall = A.alphaStall - 2 * DEG * f;
     let cl = A.cl0 + 0.55 * f + A.cla * alpha;
     if (alpha > alphaStall) {
@@ -183,8 +209,7 @@ export class Aircraft {
     s.rpm += (targetRpm - s.rpm) * Math.min(1, dt * 2);
     s.fuelGal = Math.max(0, s.fuelGal - ((1.5 + thr * 9) / 3600) * dt);
 
-    // Turbulence only in the air
-    const tb = s.onGround ? { vert: 0, roll: 0, pitch: 0, gust: 0 } : this.turb.sample(dt, w.turbulence);
+    const tb = { roll: s.onGround ? 0 : wind.p, pitch: s.onGround ? 0 : wind.q };
 
     // ---- Pitch: elevator commands an equilibrium angle of attack
     const u = Math.max(-1.3, Math.min(1.3, c.elevator + c.trim));
@@ -209,7 +234,7 @@ export class Aircraft {
       s.tas += ((T * Math.cos(alpha) - D) / m - G * Math.sin(s.gamma)) * dt;
       s.tas = Math.max(1, s.tas);
       const Vn = Math.max(5, s.tas);
-      s.gamma += ((Ltot * Math.cos(s.phi)) / (m * Vn) - (G * Math.cos(s.gamma)) / Vn + tb.vert / Vn * 0.6) * dt;
+      s.gamma += ((Ltot * Math.cos(s.phi)) / (m * Vn) - (G * Math.cos(s.gamma)) / Vn) * dt;
       s.gamma = Math.max(-80 * DEG, Math.min(80 * DEG, s.gamma));
       s.psi += ((Ltot * Math.sin(s.phi)) / (m * Vn * Math.max(0.2, Math.cos(s.gamma))) - 0.5 * s.beta * qf) * dt;
 
@@ -218,7 +243,7 @@ export class Aircraft {
       const ve = vh * Math.sin(s.psi) + wind.e;
       const vnn = vh * Math.cos(s.psi) + wind.n;
       this.move(ve, vnn, dt);
-      s.altFt += (s.tas * Math.sin(s.gamma) * dt) / FT;
+      s.altFt += ((s.tas * Math.sin(s.gamma) + wind.up) * dt) / FT;
 
       if (s.altFt <= ground) {
         const vs = (s.tas * Math.sin(s.gamma)) / FT * 60;
@@ -250,7 +275,10 @@ export class Aircraft {
       s.p = 0;
       // nosewheel steering
       const steer = c.rudder * 0.35 * Math.min(1, s.tas / 4) * (1 - Math.min(0.7, qf * 0.5));
-      s.psi += steer * dt + (c.aileron * 0.0) * dt;
+      // weathervaning: the tail is pushed downwind, the nose swings into a crosswind
+      const xw = components(wind.dir, wind.kt, s.psi / DEG).cross;
+      const vane = xw * 0.004 * Math.min(1, s.tas / 8) * (1 - Math.min(0.8, qf));
+      s.psi += (steer + vane * (s.tas > 0.5 ? 1 : 0)) * dt;
       if (s.theta < 0) {
         s.theta = 0;
         s.q = Math.max(0, s.q);
@@ -335,6 +363,11 @@ export class Aircraft {
       oatC: oatC(s.altFt, w.oatSeaLevelC),
       windDir: wind.dirFrom,
       windKt: wind.speedKt,
+      gustKt: this.lastWind?.gust ?? 0,
+      headwindKt: components(wind.dirFrom, wind.speedKt, norm360(s.psi / DEG)).head,
+      crosswindKt: components(wind.dirFrom, wind.speedKt, norm360(s.psi / DEG)).cross,
+      driftDeg: Math.hypot(ve, vn) > 5 ? ((((Math.atan2(ve, vn) / DEG - s.psi / DEG) % 360) + 540) % 360) - 180 : 0,
+      updraftFpm: ((this.lastWind?.up ?? 0) / FT) * 60,
       fuelFlowGph: 1.5 + Math.max(0, Math.min(1, c.throttle)) * 9,
       rpm: s.rpm,
       flapsDeg: s.flapPos * 30,

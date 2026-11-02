@@ -13,6 +13,10 @@ export interface Weather {
   ceilingFt: number; // cloud base AGL-ish (MSL simplification)
   cloudTopFt: number;
   visibilitySm: number;
+  /** winds aloft (MSL); defaults to a veering/strengthening profile from the surface wind */
+  aloft?: import('./wind').WindLayer[];
+  /** low-level wind shear: loss of wind (kt) over the lowest 500 ft AGL */
+  shearKt?: number;
 }
 
 export const defaultWeather = (): Weather => ({
