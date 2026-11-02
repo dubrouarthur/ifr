@@ -215,7 +215,9 @@ export class Autopilot {
           break;
         }
         const intercept = clamp(-g.xtkNm * (g.holding ? 70 : 45), -45, 45);
-        bank = clamp(trackErr(g.dtk + intercept) * 1.3, -22, 22);
+        const err = trackErr(g.dtk + intercept);
+        if (g.turnDir && Math.abs(err) > 100) bank = g.turnDir === 'R' ? 22 : -22;
+        else bank = clamp(err * 1.3, -22, 22);
         break;
       }
       case 'VOR':

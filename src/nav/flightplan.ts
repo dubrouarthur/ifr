@@ -13,7 +13,8 @@ import {
   type LatLon,
 } from './geo';
 import type { Approach, Fix, LegRole } from './types';
-import { airport, approach as getApproach, runway } from './data';
+import { airport, approach as getApproach, runway, findFix } from './data';
+import { holdEntry, holdFrame, teardropCourse, type HoldEntry } from './holding';
 
 export interface Waypoint extends LatLon {
   ident: string;
@@ -22,6 +23,11 @@ export interface Waypoint extends LatLon {
   hold?: { inbound: number; turn: 'R' | 'L'; legMin: number };
   /** waypoint belongs to the approach part of the plan */
   appr?: 'trans' | 'final' | 'missed';
+  hilpt?: boolean;
+  /** leg TO this waypoint is a DME arc */
+  arc?: { center: LatLon & { ident: string }; radius: number; dir: 'L' | 'R' };
+  /** generated procedure-turn point */
+  ptPoint?: boolean;
 }
 
 export type CdiMode = 'ENR' | 'TERM' | 'APR' | 'MAPR';
@@ -43,6 +49,10 @@ export interface GpsOutput {
   gpDev: number; // + = fly up
   gpDistNm: number;
   holding: boolean;
+  holdEntry: HoldEntry | null;
+  holdPhase: 'entry-out' | 'entry-back' | 'racetrack' | null;
+  /** forced turn direction for big heading changes (hold entries) */
+  turnDir: 'L' | 'R' | null;
   suspended: boolean;
   approachName: string | null;
   msg: string | null;
@@ -59,6 +69,9 @@ export class FlightPlan {
   missedActive = false;
   /** Hold state for the waypoint at index `active` once reached */
   holdActive = false;
+  holdEntryType: HoldEntry | null = null;
+  private hilptArmed = false;
+  holdPhase: 'entry-out' | 'entry-back' | 'racetrack' = 'racetrack';
   directFrom: LatLon | null = null;
   out: GpsOutput = {
     valid: false,
@@ -77,6 +90,9 @@ export class FlightPlan {
     gpDev: 0,
     gpDistNm: 0,
     holding: false,
+    holdEntry: null,
+    holdPhase: null,
+    turnDir: null,
     suspended: false,
     approachName: null,
     msg: null,
@@ -84,6 +100,18 @@ export class FlightPlan {
 
   get approach(): Approach | null {
     return this.approachId ? getApproach(this.approachId) : null;
+  }
+
+  /** Non-published hold (ATC clearance): proceed direct to the fix and hold. */
+  setHold(fix: Waypoint, inbound: number, turn: 'R' | 'L', legMin: number, from: LatLon, altFt?: number) {
+    this.wpts = [{ ...fix, hold: { inbound, turn, legMin }, altMin: altFt }];
+    this.active = 0;
+    this.approachId = null;
+    this.approachActive = false;
+    this.missedActive = false;
+    this.holdActive = false;
+    this.holdEntryType = null;
+    this.directFrom = { lat: from.lat, lon: from.lon };
   }
 
   setEnroute(points: Waypoint[]) {
@@ -97,6 +125,7 @@ export class FlightPlan {
   directTo(target: Waypoint, from: LatLon) {
     const idx = this.wpts.findIndex((w) => w.ident === target.ident);
     this.holdActive = false;
+    this.holdEntryType = null;
     if (idx >= 0) {
       this.active = idx;
     } else {
@@ -120,8 +149,29 @@ export class FlightPlan {
       } else pts.push(w);
     };
     const tr = ap.transitions.find((t) => t.name === transition);
-    if (tr) for (const l of tr.legs) push(fromFix(l.fix, { role: l.role, altMin: l.altMin, appr: 'trans' }));
-    for (const l of ap.final) push(fromFix(l.fix, { role: l.role, altMin: l.altMin, hold: undefined, appr: 'final' }));
+    if (tr)
+      for (const l of tr.legs) {
+        const extra: Partial<Waypoint> = { role: l.role, altMin: l.altMin, appr: 'trans' };
+        if (l.hilpt && l.hold) Object.assign(extra, { hold: l.hold, hilpt: true });
+        if (l.arc) {
+          const c = findFix(l.arc.center);
+          if (c) extra.arc = { center: { ident: c.ident, lat: c.lat, lon: c.lon }, radius: l.arc.radius, dir: l.arc.dir };
+        }
+        push(fromFix(l.fix, extra));
+        if (l.pt) {
+          // barbed procedure turn: outbound 3 nm, 45° for 1.5 nm, back to intercept inbound 1.8 nm out
+          const o = l.pt.outbound;
+          const s45 = o + (l.pt.side === 'L' ? -45 : 45);
+          const p1 = destination(l.fix, o, 3.2);
+          const p2 = destination(p1, s45, 1.6);
+          const p3 = destination(l.fix, o, 2.0);
+          push({ ident: 'PT-OUT', ...p1, appr: 'trans', ptPoint: true, altMin: l.altMin });
+          push({ ident: 'PT-45', ...p2, appr: 'trans', ptPoint: true, altMin: l.altMin });
+          push({ ident: 'PT-IN', ...p3, appr: 'trans', ptPoint: true, altMin: l.altMin });
+        }
+      }
+    const finalLegs = tr?.joinFaf ? ap.final.slice(ap.final.findIndex((l) => l.role === 'FAF')) : ap.final;
+    for (const l of finalLegs) push(fromFix(l.fix, { role: l.role, altMin: l.altMin, appr: 'final' }));
     for (const l of ap.missed.slice(1)) push(fromFix(l.fix, { role: l.role, altMin: l.altMin, hold: l.hold, appr: 'missed' }));
     const firstApp = keep.length;
     this.wpts = pts;
@@ -214,11 +264,22 @@ export class FlightPlan {
       const r = Math.max(0.3, gsKt / (60 * Math.PI)); // standard-rate radius (nm)
       turnAnt = Math.min(2, Math.max(0.2, r * Math.tan((dTurn * DEG) / 2)));
     }
-    const passed = along >= legLen - (next ? turnAnt : 0) || distTo < (next ? turnAnt : 0.05);
+    let passed = along >= legLen - (next ? turnAnt : 0) || distTo < (next ? turnAnt : 0.05);
+    if (to.arc) {
+      const th = bearingDeg(to.arc.center, ac);
+      const thT = bearingDeg(to.arc.center, to);
+      const remaining = wrap180(thT - th) * (to.arc.dir === 'R' ? 1 : -1);
+      const leadDeg = ((turnAnt * 0.6) / to.arc.radius) * (180 / Math.PI);
+      passed = remaining < leadDeg && distanceNm(ac, to) < 3;
+    }
     o.suspended = false;
     if (!this.holdActive && passed) {
-      if (nextHold && (to.appr === 'missed' || !to.appr)) {
+      if (nextHold && (to.appr === 'missed' || !to.appr || to.hilpt)) {
+        this.hilptArmed = false;
         this.holdActive = true;
+        this.holdEntryType = holdEntry(nextHold.inbound + magVar, nextHold.turn, trackTrue);
+        this.holdPhase = this.holdEntryType === 'DIRECT' ? 'racetrack' : 'entry-out';
+        o.msg = `Hold entry: ${this.holdEntryType}`;
       } else if (isMap && !this.missedActive) {
         o.suspended = true; // SUSP at the MAP until missed approach is activated
       } else if (next) {
@@ -234,14 +295,56 @@ export class FlightPlan {
     // ---------- Steering
     let dtkTrue: number;
     let xtk: number;
+    o.turnDir = null;
     if (this.holdActive && to.hold) {
-      const h = holdSteer(to, to.hold.inbound + magVar, to.hold.turn, gsKt, to.hold.legMin, ac);
-      dtkTrue = h.dtk;
-      xtk = h.xtk;
+      const inb = to.hold.inbound + magVar;
+      const hd = { fix: { ...to }, inbound: inb, turn: to.hold.turn, legMin: to.hold.legMin, altFt: 0 };
+      const fr = holdFrame(hd, ac);
+      const L = Math.max(1.5, (gsKt * to.hold.legMin) / 60);
+      const opp = to.hold.turn === 'R' ? 'L' : 'R';
+      if (this.holdPhase === 'entry-out') {
+        dtkTrue = this.holdEntryType === 'TEARDROP' ? teardropCourse(inb, to.hold.turn) : norm360(inb + 180);
+        xtk = crossTrackNm(to, destination(to, dtkTrue, 10), ac);
+        if (fr.x <= -L) this.holdPhase = 'entry-back';
+      } else if (this.holdPhase === 'entry-back') {
+        if (this.holdEntryType === 'TEARDROP') {
+          const start = destination(to, inb + 180, 10);
+          dtkTrue = inb;
+          xtk = crossTrackNm(start, to, ac);
+          o.turnDir = to.hold.turn;
+          if (Math.abs(xtk) < 0.3 && Math.abs(wrap180(trackTrue - inb)) < 40) this.holdPhase = 'racetrack';
+        } else {
+          dtkTrue = bearingDeg(ac, to);
+          xtk = 0;
+          o.turnDir = opp;
+          if (distanceNm(ac, to) < 0.4 || fr.x > -0.2) this.holdPhase = 'racetrack';
+        }
+      } else {
+        const h = holdSteer(to, inb, to.hold.turn, gsKt, to.hold.legMin, ac);
+        dtkTrue = h.dtk;
+        xtk = h.xtk;
+        o.turnDir = to.hold.turn;
+        // hold-in-lieu of PT: after one circuit, continue inbound when crossing the fix
+        if (to.hilpt) {
+          if (fr.x < -0.8) this.hilptArmed = true;
+          if (this.hilptArmed && fr.x > -0.15 && Math.abs(wrap180(trackTrue - inb)) < 45 && next) {
+            this.holdActive = false;
+            this.hilptArmed = false;
+            this.directFrom = null;
+            this.active++;
+            o.msg = `Course reversal complete — ${next.ident}`;
+          }
+        }
+      }
       o.holding = true;
     } else {
       o.holding = false;
-      if (distanceNm(from, to) < 0.01) {
+      if (to.arc && !this.directFrom) {
+        const th = bearingDeg(to.arc.center, ac);
+        const r = distanceNm(to.arc.center, ac);
+        dtkTrue = norm360(th + (to.arc.dir === 'R' ? 90 : -90));
+        xtk = to.arc.dir === 'R' ? -(r - to.arc.radius) : r - to.arc.radius;
+      } else if (distanceNm(from, to) < 0.01) {
         dtkTrue = bearingDeg(ac, to);
         xtk = 0;
       } else {
@@ -303,6 +406,8 @@ export class FlightPlan {
     o.fromIdent = this.directFrom && !this.holdActive ? 'DCT' : this.wpts[this.active - 1]?.ident ?? '';
     o.toIdent = to.ident;
     o.dtk = norm360(dtkTrue - magVar);
+    o.holdEntry = this.holdActive ? this.holdEntryType : null;
+    o.holdPhase = this.holdActive ? this.holdPhase : null;
     o.xtkNm = xtk;
     o.fullScaleNm = fs;
     o.mode = mode;

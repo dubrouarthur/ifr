@@ -1,6 +1,6 @@
 // Procedurally generated instrument approach plates (SVG) built from the nav database.
 import { airport, navaid, NAVAIDS, runway, AIRPORTS, APPROACHES } from '../nav/data';
-import { destination, distanceNm, toLocal, norm360, type LatLon } from '../nav/geo';
+import { destination, distanceNm, toLocal, norm360, bearingDeg, type LatLon } from '../nav/geo';
 import type { Approach, Fix, ProcLeg } from '../nav/types';
 
 const W = 600;
@@ -203,12 +203,43 @@ export function approachPlate(ap: Approach): string {
   }
   // transitions
   for (const t of ap.transitions) {
-    for (let i = 1; i < t.legs.length; i++) {
-      const a = proj(t.legs[i - 1].fix);
-      const b = proj(t.legs[i].fix);
-      parts.push(arrowLine(a, b, { width: 1.4 }));
+    for (let i = 0; i < t.legs.length; i++) {
       const l = t.legs[i];
-      parts.push(legLabel(a, b, `${t.legs[0].role === 'IAF' && i === 1 ? '' : ''}${l.altMin ?? ''} NoPT ${pad3(l.course ?? 0)}° (${(l.dist ?? 0).toFixed(1)})`));
+      if (l.pt) {
+        // barbed procedure turn
+        const o = l.pt.outbound;
+        const s45 = o + (l.pt.side === 'L' ? -45 : 45);
+        const p0 = proj(l.fix);
+        const p1 = proj(destination(l.fix, o, 4.5));
+        const b0 = destination(l.fix, o, 2.6);
+        const b1 = proj(destination(b0, s45, 1.8));
+        const bb = proj(b0);
+        parts.push(`<line x1="${f2(p0.x)}" y1="${f2(p0.y)}" x2="${f2(p1.x)}" y2="${f2(p1.y)}" stroke="#000" stroke-width="1.6"/>`);
+        parts.push(arrowLine(bb, b1, { width: 1.6 }));
+        parts.push(arrowLine(b1, proj(destination(destination(b0, s45, 1.8), s45 + 180, 0.01)), { width: 1.6, arrow: false }));
+        const back = proj(destination(destination(b0, s45, 1.8), o + 180 + (l.pt.side === 'L' ? 45 : -45), 1.2));
+        parts.push(arrowLine(b1, back, { width: 1.6 }));
+        parts.push(legLabel(bb, b1, `${pad3(s45)}°`));
+        parts.push(legLabel(b1, back, `${pad3(s45 + 180)}°`, -1));
+        parts.push(`<text x="${f2((p0.x + p1.x) / 2)}" y="${f2((p0.y + p1.y) / 2 + 26)}" font-size="9" text-anchor="middle" font-weight="700">PROCEDURE TURN — REMAIN WITHIN ${l.pt.withinNm} NM · ${l.altMin}</text>`);
+      }
+      if (l.hilpt && l.hold) parts.push(holdPath(proj, l.fix, l.hold.inbound, l.hold.turn, false));
+      if (i === 0) continue;
+      const a = proj(t.legs[i - 1].fix);
+      const b = proj(l.fix);
+      if (l.arc) {
+        const c = NAVAIDS.find((n) => n.ident === l.arc!.center);
+        if (c) {
+          const r = l.arc.radius * proj.scale;
+          // SVG y is flipped relative to bearings: CCW in bearing = sweep 0
+          parts.push(`<path d="M${f2(a.x)},${f2(a.y)} A${f2(r)},${f2(r)} 0 0 ${l.arc.dir === 'R' ? 1 : 0} ${f2(b.x)},${f2(b.y)}" fill="none" stroke="#000" stroke-width="1.6"/>`);
+          const mid = proj(destination(c, (bearingDeg(c, t.legs[i - 1].fix) + bearingDeg(c, l.fix)) / 2, l.arc.radius + 1.2));
+          parts.push(`<text x="${f2(mid.x)}" y="${f2(mid.y)}" font-size="10" font-weight="700" text-anchor="middle">${l.arc.radius} DME ARC · ${l.altMin ?? ''}</text>`);
+        }
+        continue;
+      }
+      parts.push(arrowLine(a, b, { width: 1.4 }));
+      parts.push(legLabel(a, b, `${l.altMin ?? ''} NoPT ${pad3(l.course ?? 0)}° (${(l.dist ?? 0).toFixed(1)})`));
     }
   }
   // final

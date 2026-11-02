@@ -226,9 +226,9 @@ export class Recorder {
         );
       }
       // stabilized approach below 500 AGL
-      if (d.aglFt < 500 && !s.onGround) {
+      if (d.aglFt < 500 && d.aglFt > 150 && !s.onGround) {
         const lat = Math.abs(this.latDots(sim) ?? 0);
-        const vert = Math.abs(this.vertDots(sim) ?? 0);
+        const vert = sim.hasVisual() ? 0 : Math.abs(this.vertDots(sim) ?? 0);
         const unstable = d.iasKt < 60 || d.iasKt > 105 || d.vsFpm < -1000 || lat > 1 || vert > 1 || Math.abs(d.rollDeg) > 15;
         if (unstable) {
           this.unstableSec += dt;
@@ -290,8 +290,9 @@ export class Recorder {
     if (!to || !fp.approachActive || fp.missedActive) return null;
     if (to.role === 'MAP') {
       const ap = fp.approach;
-      const precision = ap && (ap.type === 'ILS' || (ap.type === 'RNAV' && ap.gsAngle)) && this.vertDots(sim) !== null;
-      if (precision) return null; // flying a glidepath: DA applies instead
+      const precision = ap && ((ap.type === 'ILS' && !sim.failures.gs) || (ap.type === 'RNAV' && ap.gsAngle));
+      if (precision) return null; // glidepath: DA discipline is checked separately
+      if (sim.hasVisual()) return null; // below MDA with the runway environment in sight is legal
       return sim.av.minimums;
     }
     return to.altMin ?? null;

@@ -71,6 +71,12 @@ export interface ProcLeg {
   dist?: number;
   /** Hold at this fix (missed approach / course reversal) */
   hold?: { inbound: number; turn: 'R' | 'L'; legMin: number };
+  /** Hold-in-lieu of procedure turn: one circuit then continue */
+  hilpt?: boolean;
+  /** The leg TO this fix is a DME arc around `center` (navaid/fix ident) */
+  arc?: { center: string; radius: number; dir: 'L' | 'R' };
+  /** Barbed procedure turn starting at this fix: outbound course, side of the 45° turn */
+  pt?: { outbound: number; side: 'L' | 'R'; withinNm: number };
 }
 
 export interface Minimums {
@@ -95,7 +101,8 @@ export interface Approach {
   finalCourse: number; // magnetic
   /** Navaid used for final (LOC/VOR ident) */
   navaid?: string;
-  transitions: { name: string; legs: ProcLeg[] }[];
+  /** `direct`: the transition joins the final at the FAF (course reversal transitions) */
+  transitions: { name: string; legs: ProcLeg[]; joinFaf?: boolean }[];
   final: ProcLeg[]; // IF/FAF ... MAP (runway)
   missed: ProcLeg[];
   missedText: string;

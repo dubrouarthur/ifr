@@ -140,6 +140,7 @@ const TALUS = fix('TALUS', destination(FENNY, 120, 6));
 const SCREE = fix('SCREE', destination(FENNY, 300, 6));
 // VOR 21 at MSVL
 const GALEN = fix('GALEN', destination(MSV_POS, 30, 10));
+const TOMAS = fix('TOMAS', destination(MSV_POS, 100, 10));
 const DOPPS = fix('DOPPS', destination(MSV_POS, 210, 2.5));
 // Enroute
 fix('ORCAS', destination(PARD_REF, 160, 22));
@@ -220,6 +221,7 @@ export const APPROACHES: Approach[] = [
     transitions: [
       { name: 'LUNKS', legs: legs({ fix: LUNKS, role: 'IAF', altMin: 3500 }, { fix: WILLO, role: 'IF', altMin: 3000 }) },
       { name: 'BRAVR', legs: legs({ fix: BRAVR, role: 'IAF', altMin: 3500 }, { fix: WILLO, role: 'IF', altMin: 3000 }) },
+      { name: 'WILLO (HILPT)', legs: [{ fix: WILLO, role: 'IAF', altMin: 3000, hold: { inbound: 90, turn: 'L', legMin: 1 }, hilpt: true }] },
     ],
     final: legs(
       { fix: WILLO, role: 'IAF', altMin: 3000, hold: { inbound: 90, turn: 'L', legMin: 1 } },
@@ -249,7 +251,17 @@ export const APPROACHES: Approach[] = [
     runway: '21',
     finalCourse: 210,
     navaid: 'MSV',
-    transitions: [{ name: 'GALEN', legs: legs({ fix: GALEN, role: 'IAF', altMin: 4500 }, { fix: MSV, role: 'FAF', altMin: 3200 }) }],
+    transitions: [
+      { name: 'GALEN', legs: legs({ fix: GALEN, role: 'IAF', altMin: 4500 }, { fix: MSV, role: 'FAF', altMin: 3200 }) },
+      {
+        name: 'TOMAS (10 DME ARC)',
+        legs: legs(
+          { fix: TOMAS, role: 'IAF', altMin: 4500 },
+          { fix: GALEN, role: 'IF', altMin: 4500, arc: { center: 'MSV', radius: 10, dir: 'L' }, dist: (70 * Math.PI * 10) / 180 },
+          { fix: MSV, role: 'FAF', altMin: 3200 },
+        ),
+      },
+    ],
     final: legs(
       { fix: MSV, role: 'FAF', altMin: 3200 },
       { fix: DOPPS, role: 'STEPDOWN', altMin: 2100, course: 210 },
@@ -262,7 +274,7 @@ export const APPROACHES: Approach[] = [
       { label: 'CIRCLING', mda: 1740, vis: '1 1/4', hat: 590 },
     ],
     msa: { center: 'MSV', alt: 5200 },
-    notes: ['Simulated procedure. Not for navigation.', 'MAP at 5.0 DME / RW21.'],
+    notes: ['Simulated procedure. Not for navigation.', 'TOMAS: 10 DME arc MSV R-100 to R-030 (lead R-035).', 'MAP at 5.0 DME / RW21.'],
   },
   {
     id: 'PARD-B09',
@@ -306,6 +318,7 @@ export const APPROACHES: Approach[] = [
     transitions: [
       { name: 'TOBEY', legs: legs({ fix: TOBEY, role: 'IAF', altMin: 4000 }, { fix: KEDDY, role: 'IF', altMin: 3000 }) },
       { name: 'SANDR', legs: legs({ fix: SANDR, role: 'IAF', altMin: 4000 }, { fix: KEDDY, role: 'IF', altMin: 3000 }) },
+      { name: 'PA (PROC TURN)', joinFaf: true, legs: [{ fix: PA, role: 'IAF', altMin: 2500, pt: { outbound: 90, side: 'L', withinNm: 10 } }] },
     ],
     final: legs(
       { fix: KEDDY, role: 'IF', altMin: 3000 },
@@ -319,7 +332,7 @@ export const APPROACHES: Approach[] = [
       { label: 'CIRCLING', mda: 1080, vis: '1 1/2', hat: 660 },
     ],
     msa: { center: 'PA', alt: 3100 },
-    notes: ['Simulated procedure. Not for navigation.', 'ADF required. MAP 4.5 NM from PA NDB (FAF to MAP 3:00 @ 90 KT).'],
+    notes: ['Simulated procedure. Not for navigation.', 'ADF required. Procedure turn N of crs, 045°/225°, remain within 10 NM.', 'MAP 4.5 NM from PA NDB (FAF to MAP 3:00 @ 90 KT).'],
   },
   {
     id: 'MSVL-R03',
