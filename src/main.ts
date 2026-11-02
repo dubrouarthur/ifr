@@ -4,6 +4,7 @@ import { InputManager, type ButtonAction } from './sim/input';
 import { drawPfd, newPfdState, PFD_W, PFD_H, softkeyAt, PFD_SOFTKEYS } from './avionics/pfd';
 import { drawMfd, newMfdState, MFD_W, MFD_H, MFD_SOFTKEYS } from './avionics/mfd';
 import { drawOtw, inCloud } from './avionics/otw';
+import type { Outside3D, TimeOfDay, Quality } from './avionics/outside3d';
 import { drawSixPack, drawStack } from './avionics/steam';
 import { drawAirlinerPfd, drawNd } from './avionics/airliner';
 import { mfdRange } from './avionics/mfd';
@@ -14,6 +15,7 @@ import { ChartsDrawer } from './ui/charts';
 import { InstructorDrawer, HistoryModal } from './ui/instructor';
 import { LearnModal, BriefingModal, LessonResultModal, HoldDrillModal } from './ui/learn';
 import { FlightCenter } from './ui/flightcenter';
+import { SettingsModal } from './ui/settings';
 import { CircuitBuilder, decodeCircuit } from './ui/circuitBuilder';
 import { circuitToExercise, type Circuit } from './train/circuits';
 import type { LessonRun, Exercise } from './train/engine';
@@ -45,7 +47,10 @@ window.addEventListener('keydown', () => audio.start(), { once: true });
 
 // ------------------------------------------------------------------ toasts
 const toasts = h('div', { class: 'toasts', 'aria-live': 'polite' });
+let proMode = store.get('ifr.pro', false);
+document.body.classList.toggle('pro', proMode);
 function toast(msg: string, kind: 'info' | 'good' | 'warn' | 'bad' = 'info', ms = 3800) {
+  if (proMode && (kind === 'info' || kind === 'good') && !/FAILURE|CRASH/.test(msg)) return;
   const t = h('div', { class: `toast ${kind}` }, msg);
   toasts.append(t);
   while (toasts.children.length > 4) toasts.firstChild?.remove();
@@ -147,6 +152,7 @@ const I = {
   ga: 'M12 20V5M5 12l7-7 7 7',
   sound: 'M4 9v6h4l5 4V5L8 9H4zM17 8a5 5 0 0 1 0 8M19.5 5.5a9 9 0 0 1 0 13',
   mute: 'M4 9v6h4l5 4V5L8 9H4zM17 9l5 6M22 9l-5 6',
+  gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
   more: 'M5 12h.01M12 12h.01M19 12h.01',
   learn: 'M2 9l10-5 10 5-10 5-10-5zM6 11v5c3 2 9 2 12 0v-5M22 9v6',
   ios: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0',
@@ -167,10 +173,38 @@ function toggleMute() {
   store.set('ifr.muted', audio.muted);
   muteBtn.replaceChildren(icon(audio.muted ? I.mute : I.sound));
 }
+const settings = new SettingsModal(
+  () => ({ cockpit: cockpitType, tod: timeOfDay, gfx, pro: proMode, sound: !audio.muted, svt: pfdSt.svt, otw: otwMode }),
+  (p) => {
+    if (p.cockpit) setCockpit(p.cockpit);
+    if (p.tod) {
+      timeOfDay = p.tod;
+      store.set('ifr.tod', p.tod);
+      outside?.setTime(p.tod);
+    }
+    if (p.gfx) {
+      gfx = p.gfx;
+      store.set('ifr.gfx', p.gfx);
+      rebuildOutside();
+    }
+    if (p.pro !== undefined) {
+      proMode = p.pro;
+      store.set('ifr.pro', p.pro);
+      document.body.classList.toggle('pro', p.pro);
+    }
+    if (p.sound !== undefined && p.sound === audio.muted) toggleMute();
+    if (p.svt !== undefined) {
+      pfdSt.svt = p.svt;
+      store.set('ifr.svt', p.svt);
+    }
+    if (p.otw) setOtw(p.otw);
+  },
+);
 const moreMenu = h('div', { class: 'menu', role: 'menu' });
 const moreItem = (ic: string, label: string, kbd: string, fn: () => void) =>
   h('button', { class: 'menu-item', role: 'menuitem', onclick: () => { moreMenu.classList.remove('open'); fn(); } }, icon(ic), h('span', {}, label), kbd ? h('kbd', {}, kbd) : null);
 moreMenu.append(
+  moreItem(I.gear, 'Settings', ',', () => settings.open()),
   moreItem(I.cloud, 'Weather', '', () => weatherModal.open()),
   moreItem(I.joy, 'Joystick & controls', '', () => joyModal.open()),
   moreItem(I.chart, 'Debrief', 'Shift D', () => openDebrief()),
@@ -209,7 +243,49 @@ const topbar = h('header', { class: 'topbar' },
 const otwCanvas = h('canvas', { 'aria-label': 'Outside view' });
 const coach = h('div', { class: `coach${store.get('ifr.coachMin', false) ? ' min' : ''}` });
 const badges = h('div', { class: 'otw-badges' });
-const otw = h('section', { class: 'otw' }, otwCanvas, coach, badges, toasts);
+const glCanvas = h('canvas', { 'aria-label': 'Outside view (3D)', class: 'gl' });
+const glare = h('div', { class: 'glare' });
+const lookHint = h('div', { class: 'look-hint' }, 'Drag to look around · double-click to recentre');
+const otw = h('section', { class: 'otw' }, otwCanvas, glCanvas, glare, lookHint, coach, badges, toasts);
+let outside: Outside3D | null = null;
+let timeOfDay = store.get<TimeOfDay>('ifr.tod', 'day');
+let gfx = store.get<Quality>('ifr.gfx', 'high');
+let outsideLoading = false;
+async function initOutside() {
+  if (outside || outsideLoading) return;
+  outsideLoading = true;
+  try {
+    const mod = await import('./avionics/outside3d');
+    if (!mod.webglAvailable()) return;
+    outside = new mod.Outside3D(glCanvas, gfx, timeOfDay);
+    otw.classList.add('has-gl');
+  } catch (e) {
+    console.warn('WebGL outside view unavailable', e);
+    outside = null;
+  } finally {
+    outsideLoading = false;
+  }
+}
+function rebuildOutside() {
+  outside?.renderer.dispose();
+  outside = null;
+  otw.classList.remove('has-gl');
+  glCanvas.dataset.size = '';
+  void initOutside();
+}
+// mouse look
+{
+  let drag: { x: number; y: number } | null = null;
+  glCanvas.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; glCanvas.setPointerCapture(e.pointerId); otw.classList.add('looked'); });
+  glCanvas.addEventListener('pointermove', (e) => {
+    if (!drag || !outside) return;
+    outside.lookYaw = Math.max(-2.6, Math.min(2.6, outside.lookYaw + (e.clientX - drag.x) * 0.005));
+    outside.lookPitch = Math.max(-0.8, Math.min(0.8, outside.lookPitch + (e.clientY - drag.y) * 0.004));
+    drag = { x: e.clientX, y: e.clientY };
+  });
+  glCanvas.addEventListener('pointerup', () => (drag = null));
+  glCanvas.addEventListener('dblclick', () => { if (outside) outside.lookYaw = outside.lookPitch = 0; });
+}
 
 // PFD bezel
 const pfdCanvas = h('canvas', { 'aria-label': 'Primary flight display' });
@@ -592,6 +668,7 @@ window.addEventListener('keydown', (e) => {
     case 'j': learn.open(); break;
     case 'f2': fc.open(); break;
     case 'u': builder.edit(); break;
+    case ',': settings.open(); break;
     case 'm': toggleMute(); break;
     case 'g': goAround(); break;
     case 'b': setQnh(); break;
@@ -750,7 +827,20 @@ function frame(now: number) {
   }
 
   const otwH = otw.clientHeight;
-  if (otwH > 10) {
+  if (otwH > 10 && outside) {
+    const rect = glCanvas.getBoundingClientRect();
+    const key = `${Math.round(rect.width)}x${Math.round(rect.height)}`;
+    if (glCanvas.dataset.size !== key) {
+      glCanvas.dataset.size = key;
+      outside.resize(rect.width, rect.height);
+    }
+    // ease the view back to centre when not dragging
+    if (!otw.matches(':active')) {
+      outside.lookYaw *= 0.995;
+      outside.lookPitch *= 0.995;
+    }
+    outside.render(sim, now / 1000);
+  } else if (otwH > 10) {
     const octx = otwCanvas.getContext('2d')!;
     const rect = otwCanvas.getBoundingClientRect();
     const dpr = Math.min(1.5, window.devicePixelRatio || 1);
@@ -817,11 +907,12 @@ function frame(now: number) {
 }
 
 // test/automation hook
-(window as unknown as { __ifr: unknown }).__ifr = { sim };
+(window as unknown as { __ifr: unknown }).__ifr = { sim, get outside() { return outside; } };
 
 // ------------------------------------------------------------------ boot
 setOtw(otwMode);
 setCockpit(cockpitType, false);
+requestAnimationFrame(() => setTimeout(() => void initOutside(), 50));
 updateHeader();
 updateCoach();
 requestAnimationFrame(frame);

@@ -165,7 +165,7 @@ export function drawMap(
           const ey = lx * Math.sin(-rot) + ly * Math.cos(-rot);
           const p = destination(destination(s, 90, ex), 0, ey);
           const e = groundElevation(p);
-          o.fillStyle = s.altFt - e < 100 ? '#7a1010' : s.altFt - e < 1000 ? '#6b5d10' : e > 1200 ? '#20311d' : e > 700 ? '#1b2a19' : '#14211a';
+          o.fillStyle = e < 1 ? '#0a1f33' : s.altFt - e < 100 ? '#7a1010' : s.altFt - e < 1000 ? '#6b5d10' : e > 1200 ? '#20311d' : e > 700 ? '#1b2a19' : '#14211a';
           o.fillRect(px, py, step, step);
         }
       }

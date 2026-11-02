@@ -472,7 +472,34 @@ export function approach(id: string): Approach {
 }
 
 // ---------------------------------------------------------------- Terrain
-/** Ground elevation in ft MSL. Flat near airports, gentle hills elsewhere. */
+// The Ardent Islands: two main islands joined by an isthmus, a ridge north-east of Mistral Valley,
+// flat ground around each airport, sea (0 ft) elsewhere.
+const ISLANDS: { c: LatLon; r: number }[] = [
+  { c: PARD_REF, r: 15 },
+  { c: destination(PARD_REF, 45, 26), r: 17 },
+  { c: destination(PARD_REF, 45, 13), r: 9 },
+  { c: destination(PARD_REF, 200, 14), r: 7 },
+  { c: destination(PARD_REF, 300, 12), r: 6 },
+];
+const RIDGE = { c: destination(destination(PARD_REF, 45, 26), 352, 16), along: 80, len: 8, width: 3, peak: 2000 };
+
+function smooth(e0: number, e1: number, x: number) {
+  const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+}
+
+/** 0 = open sea, 1 = inland. */
+export function landMask(p: LatLon): number {
+  let m = 0;
+  const wob = Math.sin(p.lat * 61.7 + p.lon * 13.1) * 1.4 + Math.sin(p.lon * 47.3 - p.lat * 21.9) * 1.1;
+  for (const is of ISLANDS) {
+    const d = distanceNm(p, is.c);
+    m = Math.max(m, smooth(is.r + wob + 1.5, is.r + wob - 2.5, d));
+  }
+  return m;
+}
+
+/** Ground elevation in ft MSL. Flat near airports, hills and a ridge elsewhere, sea beyond the coast. */
 export function groundElevation(p: LatLon): number {
   let wSum = 0;
   let eSum = 0;
@@ -485,9 +512,18 @@ export function groundElevation(p: LatLon): number {
     eSum += w * a.elevFt;
   }
   const base = eSum / wSum;
-  // Rolling hills fading out within 4 nm of any airport
   const fade = Math.min(1, Math.max(0, (nearest - 4) / 6));
   const hills =
-    250 * (1 + Math.sin(p.lat * 37.1) * Math.cos(p.lon * 23.3)) + 150 * (1 + Math.sin(p.lat * 91 + p.lon * 57));
-  return Math.max(0, base + fade * hills * 0.9);
+    250 * (1 + Math.sin(p.lat * 37.1) * Math.cos(p.lon * 23.3)) + 150 * (1 + Math.sin(p.lat * 91 + p.lon * 57)) + 60 * Math.sin(p.lat * 310 + p.lon * 170);
+  // ridge: elongated gaussian with a rough crest
+  const dr = distanceNm(p, RIDGE.c);
+  const br = (bearingDeg(RIDGE.c, p) - RIDGE.along) * (Math.PI / 180);
+  const u = dr * Math.cos(br);
+  const v = dr * Math.sin(br);
+  const ridge = RIDGE.peak * Math.exp(-((u / RIDGE.len) ** 2) - (v / RIDGE.width) ** 2) * (0.85 + 0.15 * Math.sin(u * 3.1));
+  const land = Math.max(0, base + fade * hills * 0.9);
+  const m = landMask(p);
+  const airportFlat = nearest < 3.5;
+  if (airportFlat) return land;
+  return Math.max(0, land * m + ridge * m - (1 - m) * 40);
 }
