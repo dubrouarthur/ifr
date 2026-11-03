@@ -1,6 +1,7 @@
 // Instructor-configurable IFR circuits (pro-simulator style): start, legs, weather, failures.
 import { S, startAt, devCheck, fmtHdg, type Exercise, type Step, type Ctx } from './engine';
 import { HoldEvaluator } from './holdEval';
+import { approachSetup } from './setupAssist';
 import { findFix, runway, approach as getApproach, APPROACHES, AIRPORTS } from '../nav/data';
 import { destination, bearingDeg, distanceNm } from '../nav/geo';
 import type { Waypoint } from '../nav/flightplan';
@@ -141,6 +142,7 @@ function approachStep(l: Extract<CircuitLeg, { type: 'approach' }>, last: boolea
     {
       text: `ATC: "Cleared ${ap.name} approach${l.transition ? ` via ${l.transition}` : ', vectors to final'}." Fly it${l.outcome === 'missed' ? ' and execute the published missed approach at minimums' : ' and land'}.`,
       hint: 'Brief the plate · tune & identify · CRS · minimums · missed approach.',
+      setup: (c) => approachSetup(c.sim, l.approachId),
       onStart: (c) => {
         c.mem.t0 = c.sim.time;
         c.sim.loadApproach(l.approachId, l.transition, l.transition ? 'activate' : 'vtf');

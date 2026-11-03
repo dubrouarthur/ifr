@@ -1,5 +1,6 @@
 // Lesson engine: an exercise is a sequence of steps with completion conditions and tolerances.
 import type { Sim, Scenario, Failures } from '../sim/sim';
+import { holdSetup, approachSetup, type SetupItem } from './setupAssist';
 import type { FlightData } from '../sim/aircraft';
 import type { Weather } from '../sim/environment';
 import { wrap180, distanceNm, bearingDeg, destination, DEG, type LatLon } from '../nav/geo';
@@ -29,6 +30,8 @@ export interface Step {
   graceSec?: number;
   /** live readouts for the HUD */
   readout?: (c: Ctx) => string;
+  /** setup assistant: what to configure for this step (source, frequency, course, altitude, entry), checked live */
+  setup?: (c: Ctx) => SetupItem[];
 }
 
 export interface Quiz {
@@ -353,6 +356,7 @@ export const S = {
       text: `Enter and fly the hold at ${def.fix.ident}: ${laps} complete circuits, ${def.altFt} ft, ${def.legMin}-minute inbound legs`,
       hint: 'Six Ts at the fix: Turn, Time, Twist (CRS), Throttle, Talk, Track. Adjust the outbound time to get 1:00 inbound.',
       done: (c) => (c.run.holdEval?.laps ?? 0) >= laps,
+      setup: (c) => holdSetup(c.sim, def),
       check: (c) => devCheck(c, { alt: def.altFt }),
       readout: (c) => {
         const h = c.run.holdEval;
@@ -368,6 +372,7 @@ export const S = {
     return {
       text: goAround ? 'Fly the approach to minimums and execute the missed approach if not visual' : 'Fly the approach and land (or go around if not visual at minimums)',
       hint: 'Brief the plate: frequencies, course, FAF altitude, minimums, missed approach. Stabilized by 1000 ft AGL.',
+      setup: (c) => (c.sim.fp.approachId ? approachSetup(c.sim, c.sim.fp.approachId) : []),
       done: (c) => {
         const r = c.sim.rec;
         if (r.touchdown && c.sim.ac.s.onGround && c.d.gsKt < 5) return true;
@@ -387,6 +392,11 @@ export const S = {
     return {
       text: `Intercept the localizer (CRS ${fmtHdg(course)}) and track it to ${fix.ident} at ${alt} ft — no overshoot`,
       hint: 'Start the turn when the CDI comes alive (≈ 1 dot): lead the turn by the needle rate, not its position.',
+      setup: (c) => [
+        { label: `NAV1 ${freq.toFixed(2)}`, detail: 'Localizer tuned and identified.', ok: Math.abs(c.sim.av.nav1.active - freq) < 0.006 && c.sim.nav1.valid },
+        { label: `CRS ${fmtHdg(course)}`, detail: 'Front course of the localizer.', ok: Math.abs(((c.sim.av.obs1 - course + 540) % 360) - 180) <= 2 },
+        { label: 'CDI on NAV1', ok: c.sim.av.cdi === 'NAV1' },
+      ],
       onStart: (c) => {
         c.sim.av.nav1.active = freq;
         c.sim.av.obs1 = course;
