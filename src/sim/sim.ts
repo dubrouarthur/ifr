@@ -145,6 +145,8 @@ export class Sim {
   equip: Equipment = fullEquipment();
   /** true while the debrief replay drives the aircraft */
   replaying = false;
+  /** pilot eye height above the wheels (ft): 7 for a C172, ~18 in the airliner cockpit */
+  cockpitEyeFt = 7;
   rate = 1;
   scenario: Scenario | null = null;
   private lastPitch = 0;

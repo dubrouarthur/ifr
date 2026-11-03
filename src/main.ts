@@ -27,6 +27,7 @@ import type { Path } from './train/curriculum';
 import type { AssessSettings } from './sim/sim';
 import { Launcher, ProcModal, DirectModal, JoystickModal, DebriefModal, HelpModal, Modal, WX_PRESETS, type WxPreset } from './ui/modals';
 import { distanceNm, wrap180 } from './nav/geo';
+import { runway } from './nav/data';
 import type { Phase } from './sim/recorder';
 import { CockpitAudio } from './sim/audio';
 
@@ -545,6 +546,7 @@ function startTour() {
 function setCockpit(t: CockpitType, announce = true) {
   cockpitType = t;
   store.set('ifr.cockpit', t);
+  sim.cockpitEyeFt = t === 'airliner' ? 18 : 7;
   panel.classList.remove('theme-g1000', 'theme-steam', 'theme-airliner');
   panel.classList.add(`theme-${t}`);
   cockpit.classList.toggle('with-mcp', t === 'airliner');
@@ -1110,7 +1112,7 @@ function frame(now: number) {
 }
 
 // test/automation hook
-(window as unknown as { __ifr: unknown }).__ifr = { sim, get outside() { return outside; } };
+(window as unknown as { __ifr: unknown }).__ifr = { sim, get outside() { return outside; }, thr27: runway('PARD', '27').threshold };
 
 // ------------------------------------------------------------------ boot
 setOtw(otwMode);

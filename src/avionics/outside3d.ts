@@ -5,6 +5,7 @@ import type { Sim } from '../sim/sim';
 import { AIRPORTS, NAVAIDS, groundElevation, landMask } from '../nav/data';
 import { toLocal, destination, bearingDeg, distanceNm, FT_PER_NM, DEG, type LatLon } from '../nav/geo';
 import type { Runway } from '../nav/types';
+import { buildAirports } from './airport3d';
 import { cloudLayer } from './otw';
 
 const NM = 1852;
@@ -85,63 +86,6 @@ function cloudTexture(): THREE.Texture {
   return t;
 }
 
-function runwayTexture(r: Runway, opposite: Runway, precision: boolean, precisionOpp: boolean): THREE.Texture {
-  const W = 256;
-  const L = Math.round((W * r.lengthFt) / r.widthFt / 4); // 4:1 squeeze, compensated by repeat=1 on a long quad
-  const c = document.createElement('canvas');
-  c.width = W;
-  c.height = Math.min(4096, L);
-  const H = c.height;
-  const g = c.getContext('2d')!;
-  // asphalt
-  const asph = noiseCanvas(256, [62, 64, 66], 0.35, 8, 11);
-  for (let y = 0; y < H; y += 256) g.drawImage(asph, 0, y);
-  const pxPerFt = H / r.lengthFt;
-  g.fillStyle = 'rgba(240,240,236,0.92)';
-  // edge stripes
-  g.fillRect(4, 0, 5, H);
-  g.fillRect(W - 9, 0, 5, H);
-  // centreline dashes (120 ft stripe + 80 ft gap)
-  for (let ft = 400; ft < r.lengthFt - 400; ft += 200) g.fillRect(W / 2 - 3, H - (ft + 120) * pxPerFt, 6, 120 * pxPerFt);
-  const end = (atBottom: boolean, id: string, prec: boolean) => {
-    g.save();
-    if (!atBottom) {
-      g.translate(W, H);
-      g.rotate(Math.PI);
-    }
-    // threshold bars
-    const nb = 8;
-    const bw = (W - 40) / (nb * 2);
-    for (let i = 0; i < nb * 2; i++) if (i % 2 === 0) g.fillRect(20 + i * bw + bw * 0.1, H - 150 * pxPerFt - 6, bw * 1.6, 150 * pxPerFt);
-    // number
-    g.font = `800 ${Math.round(W * 0.42)}px Arial`;
-    g.textAlign = 'center';
-    g.textBaseline = 'alphabetic';
-    g.save();
-    g.translate(W / 2, H - 200 * pxPerFt);
-    g.scale(1, 1.9);
-    g.fillText(id, 0, 0);
-    g.restore();
-    if (prec) {
-      // aiming point (1000 ft) and TDZ marks
-      g.fillRect(28, H - 1150 * pxPerFt, 30, 150 * pxPerFt);
-      g.fillRect(W - 58, H - 1150 * pxPerFt, 30, 150 * pxPerFt);
-      for (const [d, n] of [[500, 3], [1500, 2], [2000, 2], [2500, 1]] as const)
-        for (let k = 0; k < n; k++) {
-          g.fillRect(36 + k * 14, H - (d + 75) * pxPerFt, 9, 75 * pxPerFt);
-          g.fillRect(W - 45 - k * 14, H - (d + 75) * pxPerFt, 9, 75 * pxPerFt);
-        }
-    }
-    g.restore();
-  };
-  end(true, r.id, precision);
-  end(false, opposite.id, precisionOpp);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 8;
-  return t;
-}
-
 function glowSprite(): THREE.Texture {
   const c = document.createElement('canvas');
   c.width = c.height = 64;
@@ -186,7 +130,7 @@ void main() {
   float fog = exp(-dist / (uVis * 1.7));
   vAlpha = a * clamp(fog * 1.4, 0.0, 1.0) * mix(1.0, 0.55, uDay);
   vColor = c;
-  gl_PointSize = clamp(size * uScale * (4200.0 / max(dist, 40.0)), 2.6, 34.0) * mix(1.25, 0.75, uDay);
+  gl_PointSize = clamp(size * uScale * (2600.0 / max(dist, 60.0)), 2.2, 22.0) * mix(1.25, 0.7, uDay);
   gl_Position = projectionMatrix * mv;
 }`;
 const lightFrag = `
@@ -335,77 +279,12 @@ export class Outside3D {
   private buildAirports() {
     const lights: LightSpec[] = [];
     const ilsRunways = new Set(NAVAIDS.filter((n) => n.type === 'ILS').map((n) => `${n.airport}-${n.runway}`));
-    const asphalt = new THREE.MeshLambertMaterial({ color: 0x55585b });
-    const concrete = new THREE.MeshLambertMaterial({ color: 0x8c8f90 });
-    for (const a of AIRPORTS) {
-      for (let i = 0; i < a.runways.length; i += 2) {
-        const r = a.runways[i];
-        const o = a.runways[i + 1];
-        const precA = ilsRunways.has(`${a.icao}-${r.id}`);
-        const precB = ilsRunways.has(`${a.icao}-${o.id}`);
-        const len = r.lengthFt * FT;
-        const wid = r.widthFt * FT;
-        const geo = new THREE.PlaneGeometry(wid, len);
-        geo.rotateX(-Math.PI / 2);
-        const mat = new THREE.MeshLambertMaterial({ map: runwayTexture(r, o, precA, precB), polygonOffset: true, polygonOffsetFactor: -2 });
-        const m = new THREE.Mesh(geo, mat);
-        const mid = { lat: (r.threshold.lat + r.end.lat) / 2, lon: (r.threshold.lon + r.end.lon) / 2 };
-        m.position.copy(w(mid, r.elevFt + 0.6));
-        m.rotation.y = -r.heading * DEG + Math.PI; // texture bottom = threshold of r
-        this.scene.add(m);
-        // shoulders / blast pads
-        const sh = new THREE.Mesh(new THREE.PlaneGeometry(wid * 1.5, len + 300).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x6b6f60, polygonOffset: true, polygonOffsetFactor: -1 }));
-        sh.position.copy(w(mid, r.elevFt + 0.3));
-        sh.rotation.y = -r.heading * DEG;
-        this.scene.add(sh);
-        // parallel taxiway + connectors
-        const tw = new THREE.Mesh(new THREE.PlaneGeometry(22, len * 0.92).rotateX(-Math.PI / 2), asphalt);
-        tw.position.copy(w(destination(mid, r.heading + 90, 0.12), r.elevFt + 0.4));
-        tw.rotation.y = -r.heading * DEG;
-        this.scene.add(tw);
-        for (const f of [0.08, 0.5, 0.92]) {
-          const c = new THREE.Mesh(new THREE.PlaneGeometry(20, 0.12 * NM).rotateX(-Math.PI / 2), asphalt);
-          const p = destination(destination(r.threshold, r.heading, (r.lengthFt / FT_PER_NM) * f), r.heading + 90, 0.06);
-          c.position.copy(w(p, r.elevFt + 0.4));
-          c.rotation.y = -(r.heading + 90) * DEG;
-          this.scene.add(c);
-        }
-        // runway lights for both directions
-        for (const [rw, prec] of [[r, precA], [o, precB]] as const) this.runwayLights(rw, prec, lights);
-      }
-      // apron, terminal, hangars, tower
-      const longest = [...a.runways].sort((x, y) => y.lengthFt - x.lengthFt)[0];
-      const apronC = destination(destination(a, longest.heading + 90, 0.28), longest.heading, 0.1);
-      const apron = new THREE.Mesh(new THREE.PlaneGeometry(260, 160).rotateX(-Math.PI / 2), concrete);
-      apron.position.copy(w(apronC, a.elevFt + 0.35));
-      apron.rotation.y = -longest.heading * DEG;
-      this.scene.add(apron);
-      const bmat = new THREE.MeshLambertMaterial({ color: 0xb9bcbf });
-      const hmat = new THREE.MeshLambertMaterial({ color: 0x9aa3ab });
-      const term = new THREE.Mesh(new THREE.BoxGeometry(160, 14, 40), bmat);
-      term.position.copy(w(destination(apronC, longest.heading + 90, 0.07), a.elevFt + 7 / FT * FT));
-      term.position.y = a.elevFt * FT + 7;
-      term.rotation.y = -longest.heading * DEG;
-      this.scene.add(term);
-      for (let k = 0; k < 3; k++) {
-        const hg = new THREE.Mesh(new THREE.BoxGeometry(46, 12, 40), hmat);
-        const p = destination(destination(apronC, longest.heading, 0.12 + k * 0.035), longest.heading + 90, 0.05);
-        hg.position.copy(w(p));
-        hg.position.y = a.elevFt * FT + 6;
-        hg.rotation.y = -longest.heading * DEG;
-        this.scene.add(hg);
-      }
-      const tower = new THREE.Mesh(new THREE.CylinderGeometry(3, 4, 34, 10), bmat);
-      const tp = destination(apronC, longest.heading + 180, 0.11);
-      tower.position.copy(w(tp));
-      tower.position.y = a.elevFt * FT + 17;
-      const cab = new THREE.Mesh(new THREE.CylinderGeometry(7, 6, 6, 10), new THREE.MeshPhongMaterial({ color: 0x223344, emissive: 0x112233, shininess: 90 }));
-      cab.position.copy(tower.position);
-      cab.position.y += 20;
-      this.scene.add(tower, cab);
-      // rotating beacon (green/white)
-      lights.push({ p: new THREE.Vector3(cab.position.x, cab.position.y + 5, cab.position.z), color: [0.4, 1, 0.5], size: 5, seq: 2, papi: -1 });
-    }
+    const apt = buildAirports(AIRPORTS, ilsRunways, w, this.quality);
+    this.scene.add(apt.group);
+    lights.push(...apt.lights);
+    for (const a of AIRPORTS)
+      for (let i = 0; i < a.runways.length; i += 2)
+        for (const rw of [a.runways[i], a.runways[i + 1]]) this.runwayLights(rw, ilsRunways.has(`${a.icao}-${rw.id}`), lights);
     // navaid shelters
     for (const n of NAVAIDS) {
       if (n.type !== 'VORDME') continue;
@@ -443,7 +322,7 @@ export class Outside3D {
     const e = r.elevFt;
     const halfW = r.widthFt / 2 / FT_PER_NM + 10 / FT_PER_NM;
     const lenNm = r.lengthFt / FT_PER_NM;
-    const L = (p: LatLon, color: [number, number, number], size: number, seq = -1, papi = -1, h = 1.5) => out.push({ p: w(p, e + h / FT), color, size, seq, papi });
+    const L = (p: LatLon, color: [number, number, number], size: number, seq = -1, papi = -1, h = 1.5) => out.push({ p: w(p, groundElevation(p) + h / FT), color, size, seq, papi });
     const white: [number, number, number] = [1, 0.96, 0.86];
     // edge lights every 200 ft (last 2000 ft amber for instrument runways)
     for (let ft = 0; ft <= r.lengthFt; ft += 200) {
@@ -463,7 +342,7 @@ export class Outside3D {
     const nFlash = Math.floor((appLen - 1000) / 100);
     for (let ft = 100; ft <= appLen; ft += 100) {
       const c = destination(r.threshold, r.heading + 180, ft / FT_PER_NM);
-      const h = ft * 0.02 + 2; // gently rising light stands
+      const h = 1.2 + ft * 0.0004; // light bars on short stands (m), a touch higher further out
       for (let k = -2; k <= 2; k++) L(destination(c, r.heading + 90, (k * 3.5) / FT_PER_NM), white, 2.4, -1, -1, h);
       if (ft === 1000) for (let k = -10; k <= 10; k++) if (Math.abs(k) > 2) L(destination(c, r.heading + 90, (k * 5) / FT_PER_NM), white, 2.4, -1, -1, h);
       if (precision && ft <= 1000 && ft >= 100 && ft % 100 === 0) for (const s of [-1, 1]) for (let k = 1; k <= 3; k++) L(destination(c, r.heading + 90 * s, (30 + k * 5) / FT_PER_NM), [1, 0.15, 0.08], 2, -1, -1, h);
@@ -585,7 +464,7 @@ export class Outside3D {
   render(sim: Sim, t: number) {
     const s = sim.ac.s;
     const d = sim.ac.data;
-    const eye = w(s, s.altFt + 5);
+    const eye = w(s, s.altFt + sim.cockpitEyeFt);
     this.camera.position.copy(eye);
     this.camera.rotation.set((d.pitchDeg - 4) * DEG + this.lookPitch, -d.hdgTrue * DEG + this.lookYaw, -d.rollDeg * DEG);
     // weather
