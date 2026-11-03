@@ -169,6 +169,26 @@ export class CockpitAudio {
     o.stop(c.currentTime + delay + dur + 0.05);
   }
 
+  /** radio squelch: short band-limited noise burst */
+  squelch() {
+    if (!this.ctx || this.muted) return;
+    const c = this.ctx;
+    const n = c.createBufferSource();
+    const len = Math.floor(c.sampleRate * 0.09);
+    const buf = c.createBuffer(1, len, c.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    n.buffer = buf;
+    const bp = c.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1800;
+    bp.Q.value = 0.8;
+    const g = c.createGain();
+    g.gain.value = 0.12;
+    n.connect(bp).connect(g).connect(this.master);
+    n.start();
+  }
+
   /** soft two-tone chime (chronometer minute marks) */
   chime() {
     this.beep(1175, 0.12, 0.07);

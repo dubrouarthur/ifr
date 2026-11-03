@@ -4,6 +4,7 @@ import { chartIndex, planProjection, type ChartEntry } from '../plates/plates';
 import { approach } from '../nav/data';
 import type { Sim } from '../sim/sim';
 import { DEG } from '../nav/geo';
+import { airportPage, navlogPage, weatherPage, checklistPage, clearancePage } from './efb';
 
 export class ChartsDrawer {
   el: HTMLElement;
@@ -18,6 +19,30 @@ export class ChartsDrawer {
   private panY = 0;
   private night = store.get('ifr.charts.night', false);
   private airportSel: string;
+  /** EFB applications: the chart viewer plus airport / navlog / weather / checklists / clearance pages */
+  private app: 'charts' | 'airport' | 'navlog' | 'weather' | 'checklists' | 'clearance' = 'charts';
+  private appBar = h('nav', { class: 'efb-apps', role: 'tablist' });
+  private page = h('div', { class: 'efb-pagehost' });
+  private renderApps() {
+    clear(this.appBar);
+    const apps: [typeof this.app, string][] = [['charts', 'Charts'], ['airport', 'Airport'], ['navlog', 'NavLog'], ['weather', 'Weather'], ['checklists', 'Checklists'], ['clearance', 'Clearance']];
+    for (const [id, label] of apps) this.appBar.append(h('button', { class: id === this.app ? 'on' : '', role: 'tab', onclick: () => this.setApp(id) }, label));
+  }
+  setApp(id: typeof this.app) {
+    this.app = id;
+    this.renderApps();
+    const charts = id === 'charts';
+    this.tabs.style.display = charts ? '' : 'none';
+    this.view.style.display = charts ? '' : 'none';
+    this.page.style.display = charts ? 'none' : '';
+    clear(this.page);
+    if (id === 'airport') this.page.append(airportPage(this.airportSel, this.sim));
+    if (id === 'navlog') this.page.append(navlogPage(this.sim));
+    if (id === 'weather') this.page.append(weatherPage(this.sim));
+    if (id === 'checklists') this.page.append(checklistPage());
+    if (id === 'clearance') this.page.append(clearancePage());
+    if (charts) requestAnimationFrame(() => this.fit());
+  }
   private aptSel = h('select', { class: 'chart-apt', 'aria-label': 'Airport' }) as HTMLSelectElement;
   /** airports offered: those with procedures first, then the rest of the loaded region */
   private fillAirports() {
@@ -51,16 +76,20 @@ export class ChartsDrawer {
     const airportSeg = this.aptSel;
     this.aptSel.addEventListener('change', () => {
       this.airportSel = this.aptSel.value;
+      if (this.app === 'airport') this.setApp('airport');
       this.renderTabs();
       const first = this.entries.find((x) => x.airport === this.airportSel && x.kind === 'IAP') ?? this.entries.find((x) => x.airport === this.airportSel);
       if (first) this.show(first.id);
     });
     this.fillAirports();
     this.el = h('aside', { class: 'drawer', 'aria-label': 'Charts' },
-      h('header', {}, h('h3', {}, 'Charts'), airportSeg, h('button', { class: 'x', onclick: () => this.toggle(false), title: 'Close (K)' }, '×')),
+      h('header', {}, h('h3', {}, 'EFB'), airportSeg, h('button', { class: 'x', onclick: () => this.toggle(false), title: 'Close (K)' }, '×')),
+      this.appBar,
       this.tabs,
       this.view,
+      this.page,
     );
+    this.renderApps();
     this.renderTabs();
     this.bindPanZoom();
   }

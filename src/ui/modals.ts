@@ -4,7 +4,7 @@ import type { Weather } from '../sim/environment';
 import { APPROACHES, FIXES, runway, airport } from '../nav/data';
 import { approachPlate } from '../plates/plates';
 import { computeDebrief, evaluateAcs, type Recorder } from '../sim/recorder';
-import { history } from './instructor';
+import { history } from './history';
 import { webhookCfg, postWebhook } from '../connect/webhook';
 import { trackGpx, trackKml, download } from '../connect/exports';
 import { AXIS_LABELS, BUTTON_LABELS, AxisDetector, type AxisName, type ButtonAction, type InputManager } from '../sim/input';

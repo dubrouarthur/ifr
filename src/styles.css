@@ -1029,3 +1029,111 @@ input[type='range'], input[type='checkbox'], input[type='radio'] { accent-color:
 .ap-status { font-size: 12.5px; color: var(--good); margin: 6px 0 0; min-height: 18px; }
 .ap-status.bad { color: var(--bad); }
 .chart-apt { height: 32px; font-weight: 700; }
+
+/* ---------------------------------------------------------------- FMC CDU (hardware look) */
+.cdu { position: fixed; right: 18px; bottom: 92px; z-index: 40; width: 372px; display: none; flex-direction: column; gap: 8px; padding: 10px 12px 14px; border-radius: 10px; color: #e8ecef;
+  background: linear-gradient(180deg, #4a4f55, #3a3e43 40%, #33373b); box-shadow: 0 20px 60px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.18), inset 0 -2px 4px rgba(0,0,0,.35); font-family: var(--font-cond); user-select: none; }
+.cdu.open { display: flex; }
+.cdu-head { display: flex; justify-content: space-between; align-items: center; cursor: move; font: 700 10px var(--font-cond); letter-spacing: 2px; color: #b9c0c6; }
+.cdu-close { background: none; border: 0; color: #c8ced3; font-size: 18px; cursor: pointer; line-height: 1; }
+.cdu-top { display: grid; grid-template-columns: 26px 1fr 26px; gap: 6px; align-items: stretch; }
+.cdu-glass { background: #050807; border-radius: 4px; padding: 6px 6px; box-shadow: inset 0 0 0 2px #111, inset 0 2px 10px rgba(0,0,0,.9), 0 1px 0 rgba(255,255,255,.12); }
+.cdu-lcd { font: 600 16px/1 'Roboto Mono', ui-monospace, monospace; letter-spacing: 0; display: grid; grid-template-rows: repeat(14, 18px); align-items: center; }
+.cdu-ln { white-space: pre; display: block; height: 18px; line-height: 18px; overflow: hidden; }
+.cdu-ln span { font-size: 15.5px; }
+.cdu-ln span.s { font-size: 11.5px; }
+.cdu-ln.sm { line-height: 18px; }
+.c-w { color: #f2f5f2; } .c-g { color: #34e26a; } .c-c { color: #39d7ff; } .c-m { color: #ff5cf2; } .c-a { color: #ffb53b; } .c-k { color: #b7c2bd; }
+.cdu-lsks { display: grid; grid-template-rows: 18px repeat(6, 36px) 18px; }
+.cdu-lsks::before { content: ''; }
+.cdu-lsk { align-self: center; height: 16px; width: 24px; border-radius: 3px; border: 1px solid #1d2023; cursor: pointer; background: linear-gradient(180deg, #8d949a, #61676d); box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 1px 2px rgba(0,0,0,.6); }
+.cdu-lsk:active { transform: translateY(1px); box-shadow: inset 0 1px 2px rgba(0,0,0,.5); }
+.cdu-lsks .cdu-lsk:nth-child(n) { margin-top: 18px; }
+.cdu-pages { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.cdu-k { height: 32px; border-radius: 5px; border: 1px solid #16181a; cursor: pointer; white-space: pre-line; line-height: 1.05; color: #f4f6f7; font: 700 10px var(--font-cond); letter-spacing: .3px;
+  background: linear-gradient(180deg, #3d4247, #23272b); box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 2px 3px rgba(0,0,0,.55); }
+.cdu-k:active { transform: translateY(1px); box-shadow: inset 0 2px 3px rgba(0,0,0,.6); }
+.cdu-k.pg { font-size: 9.5px; }
+.cdu-exec { position: relative; display: flex; }
+.cdu-exec .cdu-k { width: 100%; }
+.cdu-exec-light { position: absolute; left: 22%; right: 22%; top: 3px; height: 3px; border-radius: 2px; background: #3b3a2a; z-index: 1; pointer-events: none; }
+.cdu-exec-light.on { background: #fff2b0; box-shadow: 0 0 6px #ffe27a; }
+.cdu-brt { font: 700 9px var(--font-cond); color: #aab1b7; display: grid; place-items: center; }
+.cdu-keys { display: grid; grid-template-columns: 112px 1fr; gap: 10px; }
+.cdu-num { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; align-content: start; }
+.cdu-alpha { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.cdu-k.n, .cdu-k.a { height: 30px; font-size: 13px; border-radius: 15px; }
+.cdu-k.a { border-radius: 6px; }
+/* the top bar hosts dropdowns: never clip them, keep it above the cockpit */
+.topbar { overflow: visible !important; position: relative; z-index: 45; }
+.menu { z-index: 80 !important; max-height: calc(100dvh - 80px); overflow-y: auto; }
+.tb-actions { min-width: 0; }
+/* coach / lesson panel: always fully inside the outside view, scrolls instead of hiding behind the panel */
+.coach { z-index: 12; max-height: calc(100% - 72px); overflow-y: auto; background: rgba(8, 12, 17, 0.9); color: #eef3f7; border-color: rgba(255,255,255,.12); box-shadow: 0 10px 30px rgba(0,0,0,.45); scrollbar-width: thin; }
+.coach.lesson { width: min(400px, 46%); max-width: none; bottom: 12px; }
+.coach ul { color: #d3dbe3; }
+.coach .next { color: #fff; }
+.cockpit.vis-otw .coach { max-height: calc(100% - 100px); }
+.otw-badges { z-index: 11; }
+
+/* ---------------------------------------------------------------- EFB tablet */
+.drawer[aria-label='Charts'] { width: min(720px, 100vw); }
+.efb-apps { display: flex; gap: 2px; padding: 8px 12px 0; border-bottom: 1px solid var(--line); background: var(--surface); overflow-x: auto; }
+.efb-apps button { border: 0; background: none; padding: 9px 12px 10px; font: 600 13px var(--font); color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
+.efb-apps button.on { color: var(--accent); border-bottom-color: var(--accent); }
+.efb-pagehost { flex: 1; overflow-y: auto; display: none; background: var(--surface-2); }
+.efb-page { padding: 16px 18px 28px; color: var(--text); font-size: 13px; }
+.efb-page h4 { margin: 18px 0 8px; font-size: 11.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--muted); }
+.efb-empty { padding: 40px 24px; color: var(--muted); text-align: center; }
+.efb-hero { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.efb-icao { font: 800 28px var(--font); letter-spacing: -.5px; }
+.efb-name { font-weight: 650; font-size: 14px; }
+.efb-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.efb-cat { color: #fff; font: 800 12px var(--font); padding: 4px 10px; border-radius: 6px; letter-spacing: .5px; }
+.efb-metar, .efb-wx code { display: block; font: 600 12.5px 'Roboto Mono', ui-monospace, monospace; background: #0f1722; color: #e6edf3; border-radius: 8px; padding: 10px 12px; margin-top: 10px; white-space: pre-wrap; }
+.efb-t { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; font-size: 12.5px; }
+.efb-t th { text-align: left; font: 700 10.5px var(--font); letter-spacing: .6px; color: var(--muted); background: var(--surface-3); padding: 7px 10px; }
+.efb-t td { padding: 7px 10px; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.efb-t tr.inuse td { background: #f2f8ff; }
+.efb-t td em { font-style: normal; font-size: 10px; font-weight: 700; color: var(--accent); margin-left: 6px; }
+.efb-t td.bad { color: var(--bad); font-weight: 700; }
+.efb-t.navlog tr.active td { background: #fdf0fb; color: #8b1675; font-weight: 700; }
+.efb-t.navlog tr.past td { color: var(--muted); }
+.efb-freqs { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.efb-freqs div { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; display: flex; justify-content: space-between; }
+.efb-freqs span { color: var(--muted); font-size: 12px; } .efb-freqs b { font-family: var(--font-cond); font-size: 15px; }
+.efb-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.efb-ap { font: 600 12px var(--font); padding: 4px 9px; border-radius: 7px; background: var(--surface); border: 1px solid var(--line); }
+.efb-ap.t-ils { border-color: #b9d4f5; background: #eef5ff; color: #0b4ea2; }
+.efb-ap.t-rnav { border-color: #d5c7f2; background: #f5f0ff; color: #5b2ca8; }
+.efb-atis { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; line-height: 1.55; }
+.efb-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
+.efb-kpis div { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+.efb-kpis span { display: block; font-size: 11px; color: var(--muted); } .efb-kpis b { font-size: 17px; }
+.efb-note { color: var(--muted); font-size: 12px; }
+.efb-wx { margin-bottom: 14px; } .efb-wx-h { display: flex; gap: 10px; align-items: center; }
+.efb-cl section { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px 10px; margin-bottom: 10px; }
+.efb-cl section.done { border-color: #bfe3d2; }
+.efb-cl-h { display: flex; align-items: center; gap: 10px; padding: 4px 0 6px; } .efb-cl-h b { flex: 1; font-size: 14px; } .efb-cl-h span { color: var(--muted); font-size: 12px; }
+.efb-ci { display: grid; grid-template-columns: 22px auto 1fr auto; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px dashed var(--line); cursor: pointer; font-size: 13px; }
+.efb-ci i { border-bottom: 1px dotted var(--line-strong); height: 1px; margin-top: 6px; }
+.efb-ci b { font-family: var(--font-cond); letter-spacing: .4px; }
+.efb-ci.on span, .efb-ci.on b { color: var(--good); text-decoration: line-through; text-decoration-color: rgba(18,122,82,.4); }
+.efb-craft { display: grid; grid-template-columns: 34px 120px 1fr; gap: 10px; align-items: center; margin-bottom: 8px; }
+.efb-craft b { font: 800 22px var(--font); color: var(--accent); text-align: center; }
+.efb-craft span { color: var(--muted); font-size: 12.5px; }
+.efb-craft input { height: 38px; padding: 0 10px; font: 600 14px 'Roboto Mono', monospace; }
+/* ATC radio strip */
+.atc-radio { position: absolute; left: 50%; transform: translateX(-50%); top: 58px; z-index: 13; width: min(640px, 64%); display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 10px 12px; border-radius: 12px; background: rgba(6, 10, 14, 0.9); border: 1px solid rgba(120, 200, 255, 0.22); box-shadow: 0 10px 30px rgba(0,0,0,.45); color: #eaf2f8; }
+.atc-radio.empty { display: none; }
+.atc-head { display: flex; align-items: center; gap: 8px; font: 700 11px var(--font); letter-spacing: .8px; text-transform: uppercase; color: #8fd3ff; }
+.atc-led { width: 8px; height: 8px; border-radius: 50%; background: #2bd576; box-shadow: 0 0 8px #2bd576; }
+.atc-freq { font-family: var(--font-cond); color: #c8d6e2; letter-spacing: .5px; }
+.atc-msg { font: 600 15px/1.4 var(--font); color: #fff; margin-top: 3px; }
+.atc-tools { display: flex; flex-direction: column; gap: 4px; }
+.atc-b { border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06); color: #dbe6ef; font: 700 9.5px var(--font-cond); letter-spacing: .6px; padding: 4px 8px; border-radius: 6px; cursor: pointer; }
+.atc-b:hover { background: rgba(255,255,255,.14); }
+.atc-hist { grid-column: 1 / -1; display: none; flex-direction: column; gap: 6px; max-height: 140px; overflow-y: auto; border-top: 1px solid rgba(255,255,255,.1); padding-top: 6px; }
+.atc-radio.show-hist .atc-hist { display: flex; }
+.atc-hist div { font-size: 12.5px; color: #c4d0da; } .atc-hist b { color: #8fd3ff; font-size: 10.5px; margin-right: 8px; }
+.cockpit.vis-otw .atc-radio { top: 58px; }

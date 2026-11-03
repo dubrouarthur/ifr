@@ -20,6 +20,8 @@ import { SettingsModal } from './ui/settings';
 import { WeatherStation } from './ui/weather';
 import { ExplainOverlay, Tour } from './ui/explain';
 import { ConnectModal } from './ui/connect';
+import { CduPanel } from './ui/cduPanel';
+import { AtcRadio } from './ui/atcRadio';
 import { CircuitBuilder, decodeCircuit } from './ui/circuitBuilder';
 import { circuitToExercise, type Circuit } from './train/circuits';
 import type { LessonRun, Exercise } from './train/engine';
@@ -204,9 +206,14 @@ function startLesson(run: LessonRun) {
   scnSub.textContent = run.ex.summary;
   if (run.ex.plate) charts.show(run.ex.plate);
   toast(`Exercise started: ${run.ex.title}`, 'info');
+  atc.clear();
+  lastAtcStep = -1;
+  if (run.rt.clearance) atc.say(run.rt.clearance);
   maybeTour();
 }
 const help = new HelpModal();
+const cduPanel = new CduPanel(sim);
+document.body.append(cduPanel.el);
 const charts = new ChartsDrawer(sim);
 const ios = new InstructorDrawer(sim, (m, k) => toast(m, k ?? 'info'));
 ios.onBuilder = () => builder.edit();
@@ -338,6 +345,7 @@ const topbar = h('header', { class: 'topbar' },
       h('button', { class: 'btn', onclick: () => charts.toggle(), title: 'Charts (K)' }, icon(I.map), h('span', { class: 'lbl' }, 'Charts')),
       h('button', { class: 'btn', onclick: () => procModal.open(), title: 'Load an approach (X)' }, icon(I.proc), h('span', { class: 'lbl' }, 'Procedures')),
       h('button', { class: 'btn', onclick: () => directModal.open(), title: 'Direct-To (D)' }, icon(I.route), h('span', { class: 'lbl' }, 'D→')),
+      h('button', { class: 'btn', onclick: () => cduPanel.toggle(), title: 'FMC CDU (F3)' }, h('span', { class: 'lbl', style: 'display:inline' }, 'CDU')),
     ),
     h('button', { class: 'btn', onclick: () => ios.toggle(), title: 'Instructor station (I)' }, icon(I.ios), h('span', { class: 'lbl' }, 'Instructor')),
     cockpitSeg,
@@ -357,7 +365,8 @@ const lookHint = h('div', { class: 'look-hint' }, 'Drag to look around · double
 const sitbar = h('div', { class: 'sitbar', role: 'status', 'aria-label': 'Flight situation' });
 const pauseVeil = h('div', { class: 'pause-veil' }, h('b', {}, 'Paused'), h('span', {}, 'Press Esc or ▶ to resume'));
 const replayBar = h('div', { class: 'replay' });
-const otw = h('section', { class: 'otw' }, otwCanvas, glCanvas, glare, lookHint, sitbar, pauseVeil, coach, badges, toasts, replayBar);
+const atc = new AtcRadio(sim, () => audio.squelch());
+const otw = h('section', { class: 'otw' }, otwCanvas, glCanvas, glare, lookHint, sitbar, pauseVeil, coach, badges, toasts, replayBar, atc.el);
 let outside: Outside3D | null = null;
 let timeOfDay = store.get<TimeOfDay>('ifr.tod', 'day');
 let gfx = store.get<Quality>('ifr.gfx', 'high');
@@ -825,6 +834,8 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   const n = sim.navInputs();
+  if (cduPanel.keydown(e)) return;
+  if (k === 'F3') { cduPanel.toggle(); e.preventDefault(); return; }
   const lower = k.toLowerCase();
   if (k === 'N' && e.shiftKey) { setup.start(); e.preventDefault(); return; }
   // throttle by digit: use the physical key so AZERTY keyboards (à, &, é…) work without Shift
@@ -923,6 +934,10 @@ function updateCoach() {
   if (lesson) {
     const run = lesson;
     const st = run.step;
+    if (st && run.idx !== lastAtcStep) {
+      lastAtcStep = run.idx;
+      if (ATC_LIKE.test(st.text) && !(run.idx === 0 && run.rt.clearance)) atc.say(st.text.replace(/\.$/, ''));
+    }
     const ctx = run.ctx(0);
     const ro = st?.readout ? st.readout(ctx) : '';
     const key = `lesson|${run.idx}|${run.currentViolation}|${ro}|${sim.paused}|${!!run.finished}`;
@@ -1021,6 +1036,10 @@ function updateCoach() {
 let last = performance.now();
 let coachAcc = 0;
 let lastTouchdown: unknown = null;
+let lastAtcStep = -1;
+/** lesson steps that read as ATC instructions are transmitted on the radio */
+const ATC_LIKE = /^(fly|turn|climb|descend|maintain|cleared|hold|proceed|intercept|join|expect|contact|cross|reduce|increase|go around|track|enter)\b/i;
+let cduTick = 0;
 function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
@@ -1112,6 +1131,7 @@ function frame(now: number) {
   ios.update(dt);
   audio.update(sim, dt);
   updateChrono();
+  if ((cduTick = (cduTick + 1) % 15) === 0) cduPanel.tick();
   connect.link.update(sim, dt);
 
   // pedestal
