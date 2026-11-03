@@ -28,6 +28,7 @@ import type { AssessSettings } from './sim/sim';
 import { Launcher, ProcModal, DirectModal, JoystickModal, DebriefModal, HelpModal, Modal, WX_PRESETS, type WxPreset } from './ui/modals';
 import { distanceNm, wrap180 } from './nav/geo';
 import { runway } from './nav/data';
+import { chartIndex } from './plates/plates';
 import type { Phase } from './sim/recorder';
 import { CockpitAudio } from './sim/audio';
 
@@ -1112,7 +1113,7 @@ function frame(now: number) {
 }
 
 // test/automation hook
-(window as unknown as { __ifr: unknown }).__ifr = { sim, get outside() { return outside; }, thr27: runway('PARD', '27').threshold };
+(window as unknown as { __ifr: unknown }).__ifr = { sim, get outside() { return outside; }, thr27: runway('PARD', '27').threshold, charts: (id: string) => chartIndex().find((c) => c.id === id)?.render() ?? '' };
 
 // ------------------------------------------------------------------ boot
 setOtw(otwMode);
