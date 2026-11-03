@@ -1,5 +1,5 @@
 // Equal-angle projection of world points into the attitude frame (used by SVT and the outside view).
-import { AIRPORTS } from '../nav/data';
+import { AIRPORTS, groundElevation } from '../nav/data';
 import { DEG, distanceNm, FT_PER_NM, toLocal, destination, type LatLon } from '../nav/geo';
 
 export interface Cam extends LatLon {
@@ -8,6 +8,12 @@ export interface Cam extends LatLon {
 }
 
 /** Returns azimuth/elevation (deg) of a world point relative to the level heading frame, or null if behind. */
+/** project a point on the ground: the same surface the aircraft rolls on and the 3D view draws (a sloped runway
+ *  or the airport flattening may differ from the published threshold elevation by tens of feet) */
+function onGround(cam: Cam, p: LatLon) {
+  return project(cam, p, groundElevation(p));
+}
+
 export function project(cam: Cam, p: LatLon, altFt: number): { az: number; el: number; dist: number } | null {
   const l = toLocal(cam, p); // nm east/north
   const h = cam.hdgTrue * DEG;
@@ -41,8 +47,8 @@ export function runwaysInView(cam: Cam, rangeNm = 18): RunwayQuad[] {
       const right: { az: number; el: number }[] = [];
       for (let k = 0; k <= 40; k++) {
         const base = destination(r.threshold, r.heading, (len * k) / 40);
-        const pl = project(cam, destination(base, r.heading - 90, halfW), r.elevFt);
-        const pr = project(cam, destination(base, r.heading + 90, halfW), r.elevFt);
+        const pl = onGround(cam, destination(base, r.heading - 90, halfW));
+        const pr = onGround(cam, destination(base, r.heading + 90, halfW));
         if (pl && pr && pl.dist > 0.02 && pr.dist > 0.02) {
           left.push(pl);
           right.push(pr);
@@ -52,7 +58,7 @@ export function runwaysInView(cam: Cam, rangeNm = 18): RunwayQuad[] {
       const pts = [...left, ...right.reverse()];
       const center: { az: number; el: number }[] = [];
       for (let k = 0; k <= 20; k++) {
-        const p = project(cam, destination(r.threshold, r.heading, (len * k) / 20), r.elevFt);
+        const p = onGround(cam, destination(r.threshold, r.heading, (len * k) / 20));
         if (p) center.push(p);
       }
       const lights: RunwayQuad['lights'] = [];
@@ -62,18 +68,18 @@ export function runwaysInView(cam: Cam, rangeNm = 18): RunwayQuad[] {
       ] as const) {
         void other;
         for (let k = 1; k <= 12; k++) {
-          const p = project(cam, destination(thr, hdg + 180, (k * 200) / FT_PER_NM), r.elevFt);
+          const p = onGround(cam, destination(thr, hdg + 180, (k * 200) / FT_PER_NM));
           if (p) lights.push({ ...p, kind: 'app' });
         }
         for (let k = -4; k <= 4; k++) {
-          const p = project(cam, destination(thr, hdg + 90, (k * halfW) / 4), r.elevFt);
+          const p = onGround(cam, destination(thr, hdg + 90, (k * halfW) / 4));
           if (p) lights.push({ ...p, kind: 'thr' });
         }
       }
       for (let k = 0; k <= 30; k++) {
         for (const side of [-1, 1]) {
           const base = destination(r.threshold, r.heading, (len * k) / 30);
-          const p = project(cam, destination(base, r.heading + 90 * side, halfW), r.elevFt);
+          const p = onGround(cam, destination(base, r.heading + 90 * side, halfW));
           if (p) lights.push({ ...p, kind: 'edge' });
         }
       }

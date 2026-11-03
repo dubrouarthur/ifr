@@ -762,6 +762,7 @@ export async function loadRegion(
     p: a as LatLon,
     e: Math.min(...a.runways.map((r) => r.elevFt)),
     r: Math.max(1.2, ...a.runways.map((r) => r.lengthFt / FT_PER_NM / 2 + 0.6)),
+    size: Math.max(...a.runways.map((r) => r.lengthFt)),
   }));
   const gb = { minLat: minLat - 0.5, maxLat: maxLat + 0.5, minLon: minLon - 0.6 / k, maxLon: maxLon + 0.6 / k };
   const build = () => {
@@ -793,7 +794,7 @@ export async function loadRegion(
 }
 
 /** Elevation grid in simulator coordinates (~330 m), raw metres (sea < 0), airports flattened (ft). */
-function buildGrid(gb: { minLat: number; maxLat: number; minLon: number; maxLon: number }, flat: { p: LatLon; e: number; r: number }[]) {
+function buildGrid(gb: { minLat: number; maxLat: number; minLon: number; maxLon: number }, flat: { p: LatLon; e: number; r: number; size?: number }[]) {
   const dLat = 0.003;
   const dLon = dLat / Math.cos(((gb.minLat + gb.maxLat) / 2) * DEG);
   const nx = Math.ceil((gb.maxLon - gb.minLon) / dLon) + 1;
@@ -805,7 +806,11 @@ function buildGrid(gb: { minLat: number; maxLat: number; minLon: number; maxLon:
       const m = demMeters(toReal(p));
       g[j * nx + i] = m === null ? 1 : m;
     }
-  // flatten airport surfaces (stored as metres)
+  // flatten airport surfaces (stored as metres). Where the surfaces of two airports overlap, the airport whose
+  // flat zone the cell is deepest in wins — never "last one written" (a small strip next to a large field would
+  // otherwise sink the big field's runways below their published elevation).
+  const base = g.slice();
+  const wBest = new Float32Array(nx * ny);
   for (const f of flat) {
     const rad = f.r + 1;
     const j0 = Math.max(0, Math.floor((f.p.lat - gb.minLat - rad / 60) / dLat)), j1 = Math.min(ny - 1, Math.ceil((f.p.lat - gb.minLat + rad / 60) / dLat));
@@ -816,9 +821,13 @@ function buildGrid(gb: { minLat: number; maxLat: number; minLon: number; maxLon:
         const p = { lat: gb.minLat + j * dLat, lon: gb.minLon + i * dLon };
         const d = distanceNm(p, f.p);
         if (d >= rad) continue;
+        const k = j * nx + i;
+        // 1 at the reference point, 0 at the edge of the blend ring; longer runways win ties (bigger airport)
+        const depth = 1 - d / rad + Math.min(0.5, (f.size ?? 0) / 24000);
+        if (depth <= wBest[k]) continue;
+        wBest[k] = depth;
         const w = d < f.r ? 1 : 1 - (d - f.r);
-        const cur = g[j * nx + i];
-        g[j * nx + i] = Math.max(0.6, cur) * (1 - w) + f.e * 0.3048 * w;
+        g[k] = Math.max(0.6, base[k]) * (1 - w) + f.e * 0.3048 * w;
       }
   }
   return {
