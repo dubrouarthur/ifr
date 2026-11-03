@@ -1,6 +1,7 @@
 // Screenshot helper for UI reviews.
 // node tools/shoot.cjs <out.png> [--w 1600] [--h 1000] [--url "/?scenario=ils27-vtf"] [--js "<code run in page>"]
 //                     [--wait 1200] [--clip ".selector"] [--gl] [--keep-modal] [--dpr 1]
+// IFR_BASE=http://localhost:<port> serves another build (default http://localhost:4173).
 // The page is opened with the guided tour disabled; unless --keep-modal, open modals are closed and the sim paused
 // before --js runs. --gl enables software WebGL (3D outside view; slow). window.__ifr exposes { sim, outside,
 // charts(id), world(), lesson(id) }. Prints page errors.
@@ -18,7 +19,7 @@ const flag = (k) => a.includes(`--${k}`);
   });
   const errs = [];
   p.on('pageerror', (e) => errs.push(String(e).slice(0, 300)));
-  await p.goto(`http://localhost:4173${opt('url', '/?scenario=ils27-vtf')}`);
+  await p.goto(`${process.env.IFR_BASE || 'http://localhost:4173'}${opt('url', '/?scenario=ils27-vtf')}`);
   await p.waitForTimeout(1500);
   if (!flag('keep-modal')) await p.evaluate(() => { document.querySelectorAll('.modal-bg.open .modal header .x').forEach((x) => x.click()); if (window.__ifr) window.__ifr.sim.paused = true; });
   const js = opt('js', '');
