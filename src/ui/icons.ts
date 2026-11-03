@@ -53,6 +53,9 @@ const P = {
   flag: 'M5 21V4M5 4h11l-2 4 2 4H5',
   eye: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6',
   rate: 'M12 13l4-5M5 18a8 8 0 1 1 14 0',
+  chevDown: 'M6 9l6 6 6-6',
+  chevUp: 'M6 15l6-6 6 6',
+  arrow: 'M5 12h14M13 6l6 6-6 6',
 };
 /** icon names, for `svgIcon(I.check)` */
 export const I = Object.fromEntries(Object.keys(P).map((k) => [k, k])) as { [K in keyof typeof P]: K };

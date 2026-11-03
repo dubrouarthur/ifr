@@ -40,6 +40,7 @@ import { currentRegion, leaveRealWorld } from './nav/world';
 import { chartIndex } from './plates/plates';
 import type { Phase } from './sim/recorder';
 import { CockpitAudio } from './sim/audio';
+import { Intro, introWanted } from './ui/intro';
 
 // ------------------------------------------------------------------ state
 const sim = new Sim(SCENARIOS[1]);
@@ -197,6 +198,8 @@ const setup = new FlightSetup({
   },
 });
 setup.toast = (m) => toast(m, 'good');
+/** full-screen start page at launch (before the Flight Center) */
+const intro = new Intro({ start: () => setup.start('route', 'real'), flightCenter: () => fc.open(), get resume() { return lastFlight(); } });
 function applySetupPrefs(st: import('./ui/flightsetup').FlightSetupState) {
   if (st.cockpit !== cockpitType) setCockpit(st.cockpit);
   pfdSt.svt = st.svt;
@@ -235,7 +238,9 @@ function startLesson(run: LessonRun) {
   atc.clear();
   lastAtcStep = -1;
   if (run.rt.clearance) atc.say(run.rt.clearance);
+  try { if (exercise(run.ex.id) === run.ex) rememberFlight({ k: 'ex', id: run.ex.id, name: run.ex.title }); } catch { /* a circuit or generated exercise */ }
   maybeTour();
+  chromeAfterStart();
 }
 const help = new HelpModal();
 const cduPanel = new CduPanel(sim);
@@ -244,10 +249,29 @@ const charts = new ChartsDrawer(sim);
 const ios = new InstructorDrawer(sim, (m, k) => toast(m, k ?? 'info'));
 ios.onBuilder = () => builder.edit();
 
+/** the last flight that can be resumed from the intro (built-in scenarios and catalogue exercises only) */
+type LastFlight = { k: 'sc'; id: string; wx: string; name: string } | { k: 'ex'; id: string; name: string };
+function rememberFlight(f: LastFlight) { store.set('ifr.lastFlight', f); }
+function lastFlight(): { label: string; go: () => void } | null {
+  const f = store.get<LastFlight | null>('ifr.lastFlight', null);
+  if (!f) return null;
+  if (f.k === 'sc') {
+    const sc = SCENARIOS.find((x) => x.id === f.id);
+    return sc ? { label: sc.name, go: () => startScenario(sc, WX_PRESETS.find((w) => w.id === f.wx) ?? WX_PRESETS[0]) } : null;
+  }
+  try {
+    const ex = exercise(f.id);
+    return { label: ex.title, go: () => pickExercise(ex, null) };
+  } catch { return null; }
+}
 function startScenario(sc: Scenario, wx: WxPreset, a: AssessSettings = launcher.assess) {
   hideCrash();
   lesson = null;
   lastLessonEx = null;
+  // a new flight starts with a quiet radio: no transmission of the previous flight stays on screen
+  atc.clear();
+  lastAtcStep = -1;
+  if (SCENARIOS.includes(sc)) rememberFlight({ k: 'sc', id: sc.id, wx: wx.id, name: sc.name });
   lastScenario = sc;
   lastWx = wx;
   sim.assess = { ...a };
@@ -263,6 +287,7 @@ function startScenario(sc: Scenario, wx: WxPreset, a: AssessSettings = launcher.
   }
   toast(`${sc.name} — good luck!`, 'info');
   maybeTour();
+  chromeAfterStart();
 }
 function maybeTour() {
   if (!store.get('ifr.tour.v1', false)) setTimeout(() => { if (!Modal.anyOpen()) startTour(); }, 900);
@@ -350,7 +375,7 @@ const moreItem = (ic: string, label: string, kbd: string, fn: () => void) =>
   h('button', { class: 'menu-item', role: 'menuitem', onclick: () => { moreMenu.classList.remove('open'); fn(); } }, icon(ic), h('span', {}, label), kbd ? h('kbd', {}, kbd) : null);
 const menuHead = (t: string) => h('div', { class: 'menu-h', role: 'presentation' }, t);
 const autoHideSw = h('i', { class: 'sw', 'aria-hidden': 'true' });
-const autoHideItem = h('button', { class: 'menu-item', role: 'menuitemcheckbox', 'aria-checked': 'true', onclick: () => { setAutoHide(!autoHide); toast(autoHide ? 'Top bar hides in flight — move the mouse to the top edge to show it' : 'Top bar always visible'); } }, icon(I.eye), h('span', {}, 'Auto-hide top bar'), autoHideSw);
+const autoHideItem = h('button', { class: 'menu-item', role: 'menuitemcheckbox', 'aria-checked': 'true', onclick: () => { setAutoHide(!autoHide); toast(autoHide ? 'Top bar hides in flight — touch the top edge of the screen or press F10 to show it' : 'Top bar always visible'); } }, icon(I.eye), h('span', {}, 'Auto-hide top bar'), autoHideSw);
 moreMenu.append(
   menuHead('Flight'),
   moreItem(I.approach, 'Procedures', 'X', () => procModal.open()),
@@ -371,37 +396,90 @@ moreMenu.append(
   moreItem(I.joystick, 'Controllers', '', () => joyModal.open()),
   autoHideItem,
 );
-// auto-hiding top bar in flight (game-style HUD): reveal near the top edge, while a menu/window is open
+// auto-hiding top bar in flight (game-style HUD). It comes back only on purpose: the pointer touches the very top
+// edge of the screen (a short dwell, so crossing the edge on the way to the browser tabs does nothing), the handle
+// at the top centre is clicked, or F10 / a tap on Alt. It hides again once the pointer leaves it. The logo pins it.
 let autoHide = store.get('ifr.autohide', true);
+let revealTimer = 0;
 let hideTimer = 0;
+let revealedAt = 0;
+const EDGE_PX = 4;
+const DWELL_MS = 250;
+const chromeHidden = () => document.body.classList.contains('chrome-hidden');
+/** Instruments layout: the bar stays docked so the layout switch is always one click away */
 function chromeShow(on: boolean) {
-  document.body.classList.toggle('chrome-hidden', autoHide && !on && otwMode !== 'none');
+  const hide = autoHide && !on && otwMode !== 'none' && !intro.isOpen;
+  if (!hide && chromeHidden()) revealedAt = performance.now();
+  document.body.classList.toggle('chrome-hidden', hide);
 }
-function scheduleHide() {
+/** something in the top bar is in use: an open menu or window, the pointer on it, the keyboard focus in it */
+const chromeBusy = () => Modal.anyOpen() || !!document.querySelector('.menu.open') || topbar.matches(':hover') || topbar.contains(document.activeElement);
+function scheduleHide(ms = 700) {
   clearTimeout(hideTimer);
-  hideTimer = window.setTimeout(() => {
-    const busy = Modal.anyOpen() || document.querySelector('.menu.open') || document.querySelector('.topbar:hover');
-    chromeShow(!!busy);
-  }, 2000);
+  if (!autoHide) return;
+  hideTimer = window.setTimeout(() => { if (!chromeBusy()) chromeShow(false); else scheduleHide(ms); }, ms);
+}
+/** a flight just started: give the bar a moment, then get out of the way */
+function chromeAfterStart() {
+  if (autoHide) scheduleHide(1600);
+}
+function revealChrome() {
+  clearTimeout(revealTimer);
+  revealTimer = 0;
+  chromeShow(true);
+  scheduleHide(2600);
 }
 document.body.classList.toggle('chrome-auto', autoHide);
-window.addEventListener('mousemove', (e) => {
-  if (!autoHide) return;
-  if (e.clientY < 64) { chromeShow(true); clearTimeout(hideTimer); } else scheduleHide();
+window.addEventListener('pointermove', (e) => {
+  if (!autoHide || e.pointerType === 'touch') return;
+  if (chromeHidden()) {
+    if (e.clientY <= EDGE_PX) { if (!revealTimer) revealTimer = window.setTimeout(revealChrome, DWELL_MS); }
+    else if (revealTimer) { clearTimeout(revealTimer); revealTimer = 0; }
+    return;
+  }
+  const bottom = topbar.getBoundingClientRect().bottom;
+  if (e.clientY <= bottom + 24) clearTimeout(hideTimer);
+  else if (performance.now() - revealedAt > 400) scheduleHide();
 });
+document.documentElement.addEventListener('pointerleave', () => { clearTimeout(revealTimer); revealTimer = 0; });
+// keyboard: F10 toggles; a tap on Alt alone (no other key between press and release) shows it
+let altTap = false;
+window.addEventListener('keydown', (e) => {
+  altTap = e.key === 'Alt' && !e.repeat;
+  if (e.key !== 'F10' || intro.isOpen) return;
+  e.preventDefault();
+  if (chromeHidden()) revealChrome();
+  else if (autoHide) chromeShow(false);
+}, true);
+window.addEventListener('keyup', (e) => {
+  if (e.key === 'Alt' && altTap && autoHide && chromeHidden() && !intro.isOpen) { e.preventDefault(); revealChrome(); }
+  altTap = false;
+}, true);
+window.addEventListener('pointerdown', () => (altTap = false), true);
+/** small handle at the top centre while the bar is hidden, so everyone can find it again */
+const chromeHandle = h('button', { class: 'tb-handle', type: 'button', title: 'Show the top bar (F10, or touch the top edge of the screen)', 'aria-label': 'Show the top bar', onclick: () => revealChrome() }, svgIcon(I.chevDown, 14));
 function setAutoHide(on: boolean) {
   autoHide = on;
   store.set('ifr.autohide', on);
   document.body.classList.toggle('chrome-auto', on);
   chromeShow(true);
-  if (on) scheduleHide();
+  if (on) scheduleHide(1200);
   syncAutoHide();
 }
 function syncAutoHide() {
   autoHideItem.setAttribute('aria-checked', String(autoHide));
   autoHideSw.classList.toggle('on', autoHide);
+  brandBtn.title = autoHide ? 'Keep the top bar shown' : 'Hide the top bar in flight (F10 shows it again)';
+  brandBtn.setAttribute('aria-pressed', String(!autoHide));
 }
-syncAutoHide();
+/** the logo pins / unpins the top bar */
+function toggleChromePin() {
+  setAutoHide(!autoHide);
+  if (autoHide && otwMode === 'none') toast('Top bar hides in flight — in the Instruments layout it stays docked', 'info', 3600);
+  else if (autoHide) { chromeShow(false); toast('Top bar hidden — touch the top edge of the screen or press F10 to show it', 'info', 4200); }
+  else toast('Top bar pinned — click the logo again to hide it', 'info', 3000);
+}
+const brandBtn = h('button', { class: 'brand', type: 'button', onclick: () => toggleChromePin() }, h('img', { class: 'logo', src: '/favicon.svg', alt: '' }), h('span', { class: 'brand-t' }, h('b', {}, 'IFR'), h('span', {}, ' Trainer')));
 flightMenu.append(
   flightItem(I.restart, 'Restart this flight', '', () => restartFlight()),
   flightItem(I.flag, 'End flight & debrief', 'Shift D', () => endFlight()),
@@ -412,7 +490,7 @@ flightMenu.append(
 const moreBtn = h('button', { class: 'btn tb-icon', title: 'More', 'aria-label': 'More', 'aria-haspopup': 'menu', onclick: (e: Event) => { e.stopPropagation(); moreMenu.classList.toggle('open'); } }, icon(I.more));
 document.addEventListener('click', (e) => { if (!moreMenu.contains(e.target as Node)) moreMenu.classList.remove('open'); });
 const topbar = h('header', { class: 'topbar' },
-  h('div', { class: 'brand' }, h('img', { class: 'logo', src: '/favicon.svg', alt: '' }), h('span', { class: 'brand-t' }, h('b', {}, 'IFR'), h('span', {}, ' Trainer'))),
+  brandBtn,
   h('div', { class: 'menu-wrap scn-wrap' }, scnBtn, flightMenu),
   h('div', { class: 'spacer' }),
   h('div', { class: 'tb-actions' },
@@ -430,6 +508,7 @@ const topbar = h('header', { class: 'topbar' },
     h('div', { class: 'menu-wrap' }, moreBtn, moreMenu),
   ),
 );
+syncAutoHide();
 
 // outside view
 const otwCanvas = h('canvas', { 'aria-label': 'Outside view' });
@@ -714,7 +793,7 @@ const footer = h('footer', { class: 'footer pedestal' },
 );
 
 document.getElementById('app')!.append(topbar, cockpit, footer);
-document.body.append(charts.el, ios.el);
+document.body.append(charts.el, ios.el, chromeHandle);
 
 // touch stick
 {
@@ -1035,6 +1114,15 @@ function updateSitbar() {
 }
 /** lesson panel: hint and step list behind "Details" when the space for the panel is short */
 let coachDetails = store.get('ifr.coachDetails', false);
+/** the lesson panel folds to its header and the current instruction (never to a bare pill) */
+let coachCollapsed = store.get('ifr.coachCollapsed', false);
+function setCoachCollapsed(on: boolean) {
+  coachCollapsed = on;
+  store.set('ifr.coachCollapsed', on);
+  coachKey = '';
+  updateCoach();
+}
+const foldBtn = (collapsed: boolean, fn: () => void, what: string) => h('button', { class: 'coach-fold', type: 'button', 'aria-expanded': String(!collapsed), 'aria-label': collapsed ? `Expand ${what}` : `Collapse ${what}`, title: collapsed ? `Expand ${what}` : `Collapse ${what}`, onclick: fn }, svgIcon(collapsed ? I.chevDown : I.chevUp, 15));
 let coachTimer: HTMLElement | null = null;
 const coachBtn = (label: string, fn: () => void, cls = '', title = '') => h('button', { class: `btn ${cls}`, type: 'button', title: title || label, onclick: fn }, label);
 function updateCoach() {
@@ -1051,22 +1139,30 @@ function updateCoach() {
     const ctx = run.ctx(0);
     const ro = st?.readout ? st.readout(ctx) : '';
     if (coachTimer) setText(coachTimer, fmtTime(run.totalT));
-    const key = `lesson|${run.idx}|${run.currentViolation}|${ro}|${!!run.finished}|${coachDetails}`;
+    const key = `lesson|${run.idx}|${run.currentViolation}|${ro}|${!!run.finished}|${coachDetails}|${coachCollapsed}`;
     if (key === coachKey) return;
     coachKey = key;
     coach.innerHTML = '';
     coach.classList.add('lesson');
     coach.classList.remove('empty', 'min');
     coach.classList.toggle('details', coachDetails);
+    coach.classList.toggle('collapsed', coachCollapsed);
     const ride = sim.assess.mode === 'checkride';
     const n = run.rt.steps.length;
-    coachTimer = h('span', { class: 'coach-time' }, fmtTime(run.totalT));
+    coachTimer = h('span', { class: 'coach-time', title: 'Exercise time' }, fmtTime(run.totalT));
     coach.append(
-      h('h4', { class: 'coach-k' }, h('span', {}, run.finished ? 'Exercise complete' : n > 1 ? `Step ${run.idx + 1} of ${n}` : 'Exercise'), coachTimer),
-      h('div', { class: 'next' }, st ? st.text : run.finished ? 'Complete' : ''),
+      h('h4', { class: 'coach-k' },
+        h('span', { class: 'coach-step' }, run.finished ? 'Exercise complete' : n > 1 ? `Step ${run.idx + 1} of ${n}` : 'Exercise'),
+        h('span', { class: 'coach-title', title: run.ex.title }, run.ex.title),
+        coachTimer,
+        foldBtn(coachCollapsed, () => setCoachCollapsed(!coachCollapsed), 'the lesson panel'),
+      ),
     );
-    if (ro) coach.append(h('div', { class: 'ro' }, ro));
+    if (n > 1) coach.append(h('div', { class: 'coach-prog', role: 'progressbar', 'aria-label': 'Exercise progress', 'aria-valuemin': 0, 'aria-valuemax': n, 'aria-valuenow': run.idx }, h('i', { style: `width:${Math.round(((run.finished ? n : run.idx) / n) * 100)}%` })));
+    coach.append(h('div', { class: 'next' }, st ? st.text : run.finished ? 'Complete' : ''));
     if (run.currentViolation && !ride) coach.append(h('div', { class: 'viol' }, svgIcon(I.warning, 14), h('span', {}, run.currentViolation)));
+    if (coachCollapsed) return;
+    if (ro) coach.append(h('div', { class: 'ro' }, ro));
     const more = h('div', { class: 'coach-more' });
     if (st?.hint && !ride) more.append(h('div', { class: 'hint' }, st.hint));
     if (n > 1) {
@@ -1150,11 +1246,11 @@ function updateCoach() {
   coachKey = key;
   coach.innerHTML = '';
   const isMin = coach.classList.contains('min');
-  const minBtn = h('button', { class: 'coach-min', type: 'button', 'aria-expanded': String(!isMin), title: isMin ? 'Show the coach tips' : 'Hide the coach tips', onclick: () => { coach.classList.toggle('min'); store.set('ifr.coachMin', coach.classList.contains('min')); coachKey = ''; updateCoach(); } }, isMin ? 'Show' : 'Hide');
+  const minBtn = foldBtn(isMin, () => { coach.classList.toggle('min'); store.set('ifr.coachMin', coach.classList.contains('min')); coachKey = ''; updateCoach(); }, 'the coach tips');
   const shown = hints.filter((t) => !t.startsWith('Paused'));
   coach.classList.toggle('empty', shown.length === 0);
-  coach.classList.remove('details');
-  coach.append(h('h4', { class: 'coach-k' }, h('span', {}, 'Coach · what to do now'), minBtn));
+  coach.classList.remove('details', 'collapsed');
+  coach.append(h('h4', { class: 'coach-k' }, h('span', { class: 'coach-step' }, 'Coach'), h('span', { class: 'coach-title' }, 'What to do now'), minBtn));
   if (shown.length) coach.append(h('ul', {}, ...shown.slice(0, 4).map((t) => h('li', {}, t))));
   void next;
 }
@@ -1246,6 +1342,7 @@ function frameBody(now: number) {
   perfT = performance.now();
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
+  if (intro.isOpen) return; // the start page covers everything: no sim, no drawing
   if (sim.ac.s.crashed && !crashShown && !sim.replaying) showCrash(sim.ac.s.crashed);
   if (!sim.ac.s.crashed && crashShown) hideCrash();
   // touchdown feedback (rate, g, speed, position on the runway)
@@ -1420,7 +1517,8 @@ setTimeout(fitSides, 100);
 updateHeader();
 updateCoach();
 requestAnimationFrame(frame);
-fc.open();
+if (introWanted()) intro.show();
+else fc.open();
 // shared circuit: #circuit=<base64>
 if (location.hash.startsWith('#circuit=')) {
   try {
