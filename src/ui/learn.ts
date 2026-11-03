@@ -149,7 +149,7 @@ export class BriefingModal extends Modal {
     this.body.append(
       h('div', { class: 'muted', style: 'font-size:12px;text-transform:uppercase;letter-spacing:1px' }, stage?.title ?? ''),
       h('h2', { style: 'margin:4px 0 6px' }, ex.title),
-      h('p', { style: 'margin:0 0 12px;color:#c9d3dc' }, ex.summary),
+      h('p', { style: 'margin:0 0 12px;color:var(--text-2)' }, ex.summary),
     );
     if (run.rt.clearance) this.body.append(h('div', { class: 'atc' }, h('b', {}, 'ATC CLEARANCE'), h('span', {}, `“${run.rt.clearance}”`)));
     this.body.append(

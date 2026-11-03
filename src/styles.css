@@ -1160,3 +1160,10 @@ input[type='range'], input[type='checkbox'], input[type='radio'] { accent-color:
 .cockpit > .panel, .cockpit > .mcp { position: relative; z-index: 1; }
 .toasts { z-index: 30 !important; }
 .coach, .atc-radio { z-index: 25 !important; }
+/* lesson on the left, ATC on the right: never on top of each other */
+.atc-radio { left: auto; right: 14px; transform: none; width: min(520px, calc(54% - 40px)); }
+.coach.lesson { width: min(400px, calc(46% - 20px)); }
+@media (max-width: 1100px) { .atc-radio { top: auto; bottom: 14px; width: min(520px, calc(100% - 28px)); } }
+/* condensed top bar on narrower screens */
+@media (max-width: 1440px) { .tb-actions > .seg { display: none; } .scn { flex-basis: 260px; } }
+@media (max-width: 1180px) { .tb-actions .btn .lbl { display: none !important; } .tb-actions .btn.primary .lbl { display: inline !important; } #wx-chip, .topbar .chip { display: none; } }
