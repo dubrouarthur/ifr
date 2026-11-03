@@ -169,6 +169,8 @@ export class InputManager {
    * Updates the control state from keyboard/joystick. Returns true if the pilot is
    * overpowering the autopilot (caller should disconnect).
    */
+  private lastThrAxis: number | null = null;
+
   update(dt: number, c: Controls, apEngaged: boolean): boolean {
     const k = this.keys;
     const has = (...names: string[]) => names.some((n) => k.has(n));
@@ -213,7 +215,15 @@ export class InputManager {
       if (r !== null) ail = Math.max(-1, Math.min(1, ail + r));
       if (e !== null) elev = Math.max(-1, Math.min(1, elev + e)); // stick forward (axis -1) = nose down
       if (y !== null) rud = Math.max(-1, Math.min(1, rud + y));
-      if (t !== null) c.throttle = (t + 1) / 2;
+      // last mover wins: the hardware throttle only takes over when it actually moves, so the on-screen
+      // lever and the keyboard keep working with a stick whose throttle axis is idle or absent
+      if (t !== null) {
+        const v = (t + 1) / 2;
+        if (this.lastThrAxis === null || Math.abs(v - this.lastThrAxis) > 0.015) {
+          if (this.lastThrAxis !== null) c.throttle = v;
+          this.lastThrAxis = v;
+        }
+      }
       if (b !== null) c.brake = Math.max(c.brake, (b + 1) / 2);
       this.joyActive = r !== null || e !== null;
       // standard gamepad triggers for throttle

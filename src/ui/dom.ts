@@ -1,3 +1,4 @@
+import { leadingEmoji, svgIcon } from './icons';
 type Attrs = Record<string, string | number | boolean | ((e: Event) => void) | undefined | null>;
 type Child = Node | string | number | null | undefined | false | Child[];
 
@@ -20,7 +21,16 @@ function append(el: Element, children: Child[]) {
   for (const c of children) {
     if (c === null || c === undefined || c === false) continue;
     if (Array.isArray(c)) append(el, c);
-    else el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+    else if (c instanceof Node) el.append(c);
+    else {
+      // emoji glyphs in UI copy are rendered as line icons
+      const e = typeof c === 'string' ? leadingEmoji(c) : null;
+      if (e) {
+        el.append(svgIcon(e[0], 16));
+        if (e[1]) el.append(document.createTextNode(e[1]));
+        el.classList.add('has-ico');
+      } else el.append(document.createTextNode(String(c)));
+    }
   }
 }
 
