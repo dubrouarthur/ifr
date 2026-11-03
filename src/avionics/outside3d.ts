@@ -6,6 +6,7 @@ import { AIRPORTS, NAVAIDS, groundElevation, landMask } from '../nav/data';
 import { toLocal, destination, bearingDeg, distanceNm, FT_PER_NM, DEG, type LatLon } from '../nav/geo';
 import type { Runway } from '../nav/types';
 import { buildAirports } from './airport3d';
+import { CloudLayers } from './clouds3d';
 import { cloudLayer } from './otw';
 
 const NM = 1852;
@@ -149,6 +150,7 @@ export class Outside3D {
   private skyMat!: THREE.ShaderMaterial;
   private cloudBase!: THREE.Mesh;
   private cloudTop!: THREE.Mesh;
+  private clouds!: CloudLayers;
   private lightsMat!: THREE.ShaderMaterial;
   private fog = new THREE.Fog(0xaab4bf, 1000, 30000);
   private stars!: THREE.Points;
@@ -412,11 +414,14 @@ export class Outside3D {
   // ---------------------------------------------------------------- clouds
   private buildClouds() {
     const tex = cloudTexture();
-    tex.repeat.set(40, 40);
+    tex.repeat.set(60, 60);
     const geo = new THREE.PlaneGeometry(260000, 260000, 1, 1).rotateX(-Math.PI / 2);
-    this.cloudBase = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: tex, color: 0x9aa1a8, side: THREE.DoubleSide, transparent: true, opacity: 0.98 }));
-    this.cloudTop = new THREE.Mesh(geo.clone(), new THREE.MeshLambertMaterial({ map: tex, color: 0xffffff, emissive: 0x666a70, side: THREE.DoubleSide }));
+    // unlit: colours follow the time of day (a Lambert underside would pick up the hemisphere ground colour)
+    this.cloudBase = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, color: 0x9aa1a8, side: THREE.DoubleSide }));
+    this.cloudTop = new THREE.Mesh(geo.clone(), new THREE.MeshBasicMaterial({ map: tex, color: 0xf4f6f8, side: THREE.DoubleSide }));
     this.scene.add(this.cloudBase, this.cloudTop);
+    this.clouds = new CloudLayers(this.quality);
+    this.scene.add(this.clouds.group);
   }
 
   setTime(t: TimeOfDay) {
@@ -476,8 +481,8 @@ export class Outside3D {
     const visM = Math.max(150, wx.visibilitySm * 1609);
     this.cloudBase.visible = overcast;
     this.cloudTop.visible = overcast;
-    this.cloudBase.position.set(eye.x, base * FT, eye.z);
-    this.cloudTop.position.set(eye.x, top * FT, eye.z);
+    this.cloudBase.position.set(eye.x, base * FT + 30, eye.z);
+    this.cloudTop.position.set(eye.x, top * FT - 260, eye.z);
     const night = this.time === 'night';
     const dusk = this.time === 'dusk';
     const grey = new THREE.Color(night ? 0x0a0c10 : dusk ? 0x6b5a5a : 0x9aa1a8);
@@ -501,6 +506,13 @@ export class Outside3D {
         this.fog.far = Math.min(this.fog.far, 60 + toBase * 6);
         this.fog.near = 5;
       }
+    }
+    {
+      const lit = new THREE.Color(night ? 0x3a4250 : dusk ? 0xffd9b8 : 0xffffff);
+      const shade = new THREE.Color(night ? 0x14171c : dusk ? 0x6a5a62 : overcast && !above ? 0x737b85 : 0x8d96a2);
+      this.clouds.update(eye, overcast ? { baseFt: base, topFt: top } : null, this.fog.color, this.fog.far, lit, shade, inside);
+      (this.cloudBase.material as THREE.MeshBasicMaterial).color.copy(shade).multiplyScalar(1.12);
+      (this.cloudTop.material as THREE.MeshBasicMaterial).color.copy(lit).multiplyScalar(0.94);
     }
     this.skyMat.uniforms.uOvercast.value = overcast && !above ? 1 : 0;
     this.skyMat.uniforms.uGrey.value.copy(inside ? this.fog.color : grey);
