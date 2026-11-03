@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#14467f"/>
+      <stop offset="1" stop-color="#0a2547"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#g)"/>
+  <!-- horizon -->
+  <path d="M8 30.5h48" stroke="#ffffff" stroke-opacity=".35" stroke-width="1.6" stroke-linecap="round"/>
+  <!-- runway in perspective -->
+  <path d="M29.2 33h5.6l7.4 23H21.8z" fill="#ffffff"/>
+  <path d="M32 37v3.2M32 43.5v4M32 51v3.5" stroke="#0a2547" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- flight director chevron -->
+  <path d="M17 24.5l15-7 15 7" fill="none" stroke="#7cc4ff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

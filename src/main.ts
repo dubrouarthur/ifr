@@ -317,7 +317,7 @@ moreMenu.append(
 const moreBtn = h('button', { class: 'btn', title: 'More', 'aria-haspopup': 'menu', onclick: (e: Event) => { e.stopPropagation(); moreMenu.classList.toggle('open'); } }, icon(I.more), h('span', { class: 'lbl' }, 'More'));
 document.addEventListener('click', (e) => { if (!moreMenu.contains(e.target as Node)) moreMenu.classList.remove('open'); });
 const topbar = h('header', { class: 'topbar' },
-  h('div', { class: 'brand' }, h('img', { class: 'logo', src: '/favicon.svg', alt: '' }), h('span', { class: 'brand-t' }, 'IFR Trainer')),
+  h('div', { class: 'brand' }, h('img', { class: 'logo', src: '/favicon.svg', alt: '' }), h('span', { class: 'brand-t' }, h('b', {}, 'IFR'), h('span', {}, ' Trainer'))),
   h('div', { class: 'scn' }, scnName, scnSub),
   phaseChip,
   wxChip,
