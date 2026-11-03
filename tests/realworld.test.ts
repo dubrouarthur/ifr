@@ -70,3 +70,24 @@ describe('real-world flight planning', () => {
     leaveRealWorld();
   }, 30000);
 });
+
+describe('real-world flight plan in the GPS', () => {
+  it('graded LFPN → LFPO: the route and the approach are loaded in the flight plan', async () => {
+    const { loadRegion, leaveRealWorld } = await import('../src/nav/world');
+    const { defaultSetup, adaptSetupToRegion, setupToCircuit } = await import('../src/train/setup');
+    const { circuitToExercise } = await import('../src/train/circuits');
+    const { LessonRun } = await import('../src/train/engine');
+    await loadRegion(['LFPN', 'LFPO']);
+    const st = { ...defaultSetup(), world: 'real' as const, dep: 'LFPN', arr: 'LFPO', type: 'route' as const, route: [] as string[] };
+    adaptSetupToRegion(st);
+    const c = setupToCircuit(st);
+    const sim = new Sim();
+    const run = new LessonRun(circuitToExercise(c), sim);
+    void run;
+    const ids = sim.fp.wpts.map((w) => w.ident);
+    console.log('FPL', ids.join(' '), 'approach', sim.fp.approachId);
+    expect(ids).toContain(st.route[0]);
+    expect(sim.fp.approachId).toBe(st.arrival.approachId);
+    leaveRealWorld();
+  }, 30000);
+});

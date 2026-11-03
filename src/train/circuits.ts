@@ -3,6 +3,7 @@ import { S, startAt, devCheck, fmtHdg, type Exercise, type Step, type Ctx } from
 import { HoldEvaluator } from './holdEval';
 import { findFix, runway, approach as getApproach, APPROACHES, AIRPORTS } from '../nav/data';
 import { destination, bearingDeg, distanceNm } from '../nav/geo';
+import type { Waypoint } from '../nav/flightplan';
 import { clearanceText, type HoldDef, type Turn } from '../nav/holding';
 import { FAILURE_LABELS, fullEquipment, type Failures, type Equipment } from '../sim/sim';
 import type { Weather } from '../sim/environment';
@@ -217,8 +218,10 @@ export function circuitToExercise(c: Circuit): Exercise {
             text: `Proceed direct ${l.ident}${l.alt ? `, maintain ${alt}` : ''}`,
             onStart: (cx: Ctx) => {
               const fp = cx.sim.fp;
-              const inPlan = fp.wpts[fp.active]?.ident === l.ident && !fp.approachId;
-              if (!inPlan) fp.setEnroute([{ ident: 'PPOS', lat: cx.sim.ac.s.lat, lon: cx.sim.ac.s.lon }, ...route.map((r) => { const x = findFix(r)!; return { ident: x.ident, lat: x.lat, lon: x.lon }; })]);
+              // already in the filed plan (at or after the active leg): keep it — it carries the loaded approach
+              const k = fp.wpts.findIndex((w, j) => j >= fp.active && w.ident === l.ident);
+              if (k > fp.active && !fp.approachActive) fp.activateLeg(k);
+              if (k < 0) fp.setEnroute([{ ident: 'PPOS', lat: cx.sim.ac.s.lat, lon: cx.sim.ac.s.lon }, ...route.map((r) => { const x = findFix(r)!; return { ident: x.ident, lat: x.lat, lon: x.lon }; })]);
             },
             done: (cx) => distanceNm(cx.sim.ac.s, f) < 0.8 || (cx.t > 5 && cx.sim.fp.out.valid && cx.sim.fp.out.toIdent !== l.ident && cx.sim.fp.wpts.findIndex((w) => w.ident === l.ident) < cx.sim.fp.active),
             check: (cx) => {
@@ -250,6 +253,20 @@ export function circuitToExercise(c: Circuit): Exercise {
           steps.push(...approachStep(l, last));
         }
       });
+      // the filed flight plan is in the GPS before departure, like a real FMS: the route up to the first
+      // approach, then that approach (loaded, not activated). Hold / approach steps refine it in flight.
+      if (sim.equip.gps) {
+        const route: Waypoint[] = [];
+        for (const l of c.legs) {
+          if (l.type === 'approach') break;
+          if (l.type !== 'fix') continue;
+          const f = findFix(l.ident);
+          if (f && route[route.length - 1]?.ident !== f.ident) route.push({ ident: f.ident, lat: f.lat, lon: f.lon });
+        }
+        const firstAp = c.legs.find((l) => l.type === 'approach') as Extract<CircuitLeg, { type: 'approach' }> | undefined;
+        if (route.length) sim.fp.setEnroute([{ ident: 'PPOS', lat: sim.ac.s.lat, lon: sim.ac.s.lon }, ...route]);
+        if (firstAp) sim.loadApproach(firstAp.approachId, firstAp.transition, 'load');
+      }
       const fired = new Set<number>();
       return {
         steps,
