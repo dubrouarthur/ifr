@@ -1,4 +1,5 @@
 // Point-mass + attitude flight model tuned to feel like a C172-class trainer.
+import { simRandom } from './rng';
 import { destination, DEG, norm360, type LatLon } from '../nav/geo';
 import { density, FT, G, KT, oatC, pressureAltitude, type Weather } from './environment';
 import { WindModel, components, type WindSample } from './wind';
@@ -233,8 +234,8 @@ export class Aircraft {
     if (!s.onGround && alpha > alphaStall - 2.5 * DEG) {
       const k = Math.min(1, (alpha - alphaStall + 2.5 * DEG) / (2.5 * DEG));
       this.buffet = k;
-      s.q += (Math.random() - 0.5) * 0.9 * k * dt * 10;
-      s.p += (Math.random() - 0.5) * 0.7 * k * dt * 10;
+      s.q += (simRandom() - 0.5) * 0.9 * k * dt * 10;
+      s.p += (simRandom() - 0.5) * 0.7 * k * dt * 10;
     } else this.buffet = 0;
     s.theta += s.q * dt;
 

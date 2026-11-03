@@ -1,4 +1,5 @@
 // ISA atmosphere and weather.
+import { simRandom } from './rng';
 export const KT = 0.514444; // m/s per knot
 export const FT = 0.3048; // m per foot
 export const G = 9.80665;
@@ -56,7 +57,7 @@ export class Turbulence {
   sample(dt: number, intensity: number): { vert: number; roll: number; pitch: number; gust: number } {
     this.t += dt;
     const t = this.t;
-    this.gustState += (Math.random() - 0.5 - this.gustState * 0.5) * dt * 4;
+    this.gustState += (simRandom() - 0.5 - this.gustState * 0.5) * dt * 4;
     const k = intensity;
     return {
       vert: k * (Math.sin(t * 0.7) * 0.6 + Math.sin(t * 2.3 + 1) * 0.4 + this.gustState) * 2.5, // m/s

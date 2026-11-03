@@ -1,4 +1,5 @@
 // The simulation world: aircraft + weather + avionics state.
+import { seedSim } from './rng';
 import { Aircraft, neutralControls, type Controls } from './aircraft';
 import { defaultWeather, KT, type Weather } from './environment';
 import { Autopilot, type CdiSource, type NavInputs } from '../avionics/autopilot';
@@ -158,6 +159,7 @@ export class Sim {
   }
 
   load(sc: Scenario) {
+    seedSim(sc.id);
     this.scenario = sc;
     this.ap = new Autopilot();
     this.fp = new FlightPlan();

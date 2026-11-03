@@ -1,5 +1,6 @@
 // Wind & turbulence model: winds aloft by layer with veering, surface boundary layer,
 // gust surges with direction swing, Dryden-style filtered turbulence, mechanical turbulence near the ground.
+import { simRandom } from './rng';
 import { DEG } from '../nav/geo';
 
 export const KT = 0.514444;
@@ -85,8 +86,8 @@ export function steadyWind(w: WindInputs, altMsl: number, agl: number): { e: num
 /** Gaussian random (Box–Muller) */
 function gauss() {
   let u = 0;
-  while (u === 0) u = Math.random();
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * Math.random());
+  while (u === 0) u = simRandom();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * simRandom());
 }
 
 export interface WindSample {
@@ -127,9 +128,9 @@ export class WindModel {
       case 'idle':
         if (gustSpan > 0 && this.gustTimer <= 0) {
           this.gustPhase = 'rise';
-          this.gustTarget = gustSpan * (0.55 + Math.random() * 0.45);
-          this.gustDirSwing = (Math.random() - 0.5) * 30;
-          this.gustTimer = 1.5 + Math.random() * 1.5;
+          this.gustTarget = gustSpan * (0.55 + simRandom() * 0.45);
+          this.gustDirSwing = (simRandom() - 0.5) * 30;
+          this.gustTimer = 1.5 + simRandom() * 1.5;
         }
         this.gust += (0 - this.gust) * Math.min(1, dt * 0.8);
         break;
@@ -137,20 +138,20 @@ export class WindModel {
         this.gust += (this.gustTarget - this.gust) * Math.min(1, dt * 2.2);
         if (this.gustTimer <= 0) {
           this.gustPhase = 'hold';
-          this.gustTimer = 1 + Math.random() * 2;
+          this.gustTimer = 1 + simRandom() * 2;
         }
         break;
       case 'hold':
         if (this.gustTimer <= 0) {
           this.gustPhase = 'decay';
-          this.gustTimer = 2 + Math.random() * 2;
+          this.gustTimer = 2 + simRandom() * 2;
         }
         break;
       case 'decay':
         this.gust += (0 - this.gust) * Math.min(1, dt * 0.9);
         if (this.gustTimer <= 0) {
           this.gustPhase = 'idle';
-          this.gustTimer = 3 + Math.random() * 9;
+          this.gustTimer = 3 + simRandom() * 9;
         }
         break;
     }
