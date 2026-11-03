@@ -36,7 +36,7 @@ export class ChartsDrawer {
     const charts = id === 'charts';
     this.tabs.style.display = charts ? '' : 'none';
     this.view.style.display = charts ? '' : 'none';
-    this.page.style.display = charts ? 'none' : '';
+    this.page.style.display = charts ? 'none' : 'block';
     clear(this.page);
     if (id === 'airport') this.page.append(airportPage(this.airportSel, this.sim));
     if (id === 'navlog') this.page.append(navlogPage(this.sim));

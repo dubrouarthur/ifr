@@ -140,6 +140,9 @@ export class FlightSetup extends Modal {
     return h('datalist', { id: 'fs-fixes' }, ...fixIds().map((f) => h('option', { value: f }, `${findFix(f)!.kind}`)));
   }
   private loadedKey = '';
+  private progress = '';
+  private terrainNote = '';
+  private triedKey = '';
   private loading = false;
   private loadErr = '';
   /** load (or leave) the real-world region for the chosen airports */
@@ -152,11 +155,17 @@ export class FlightSetup extends Modal {
     const key = `${st.dep}|${st.arr}`;
     if (!force && key === this.loadedKey && currentRegion()) return;
     this.loading = true;
+    this.triedKey = key;
     this.loadErr = '';
     this.render();
     try {
-      const r = await loadRegion([st.dep, st.arr].filter(Boolean));
+      const r = await loadRegion([st.dep, st.arr].filter(Boolean), undefined, (pr) => {
+        this.progress = pr.step === 'index' ? 'Airport index…' : pr.step === 'navdata' ? 'Airports, navaids & waypoints…' : pr.step === 'procedures' ? 'Instrument procedures…' : pr.step === 'terrain' ? `Terrain ${pr.done ?? 0}/${pr.total ?? 0} tiles…` : '';
+        const el = this.main.querySelector('.ap-status');
+        if (el && this.loading) el.textContent = `Loading — ${this.progress}`;
+      });
       this.loadedKey = key;
+      this.terrainNote = r.terrainComplete ? 'terrain loaded' : 'terrain still loading in the background (you can fly now)';
       // sensible defaults from the real data
       const dep = AIRPORTS.find((a) => a.icao === st.dep);
       if (dep) {
@@ -263,8 +272,10 @@ export class FlightSetup extends Modal {
           );
           this.main.append(pickers);
           const reg = currentRegion();
-          this.main.append(h('p', { class: `ap-status${this.loadErr ? ' bad' : ''}` }, this.loading ? 'Loading navigation data and terrain…' : this.loadErr ? `Could not load: ${this.loadErr}` : reg && this.loadedKey === `${st.dep}|${st.arr}` ? `${AIRPORTS.length} airports · ${APPROACHES.filter((a) => a.airport === st.arr).length} approaches at ${st.arr} · magnetic variation ${Math.abs(reg.magVar).toFixed(1)}° ${reg.magVar >= 0 ? 'E' : 'W'} · terrain loaded` : ''));
-          if (!this.loading && this.loadedKey !== `${st.dep}|${st.arr}`) void this.ensureRegion();
+          this.main.append(h('p', { class: `ap-status${this.loadErr ? ' bad' : ''}` }, this.loading ? `Loading — ${this.progress || 'starting…'}` : this.loadErr ? `Could not load: ${this.loadErr}` : reg && this.loadedKey === `${st.dep}|${st.arr}` ? `${AIRPORTS.length} airports · ${APPROACHES.filter((a) => a.airport === st.arr).length} approaches at ${st.arr} · magnetic variation ${Math.abs(reg.magVar).toFixed(1)}° ${reg.magVar >= 0 ? 'E' : 'W'} · ${this.terrainNote}` : ''));
+          // load once per airport pair (never in a loop after an error: the user retries explicitly)
+          if (!this.loading && this.loadedKey !== `${st.dep}|${st.arr}` && this.triedKey !== `${st.dep}|${st.arr}`) void this.ensureRegion();
+          if (this.loadErr && !this.loading) this.main.append(h('button', { class: 'btn', onclick: () => void this.ensureRegion(true) }, 'Retry'));
         }
         this.main.append(h('div', { class: 'section-t' }, 'Start'));
         const appIds = APPROACHES.filter((a) => st.equipment.gps || a.type !== 'RNAV');

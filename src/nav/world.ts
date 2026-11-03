@@ -117,12 +117,23 @@ type RawApproach = Omit<
 };
 
 const BASE = "/navdata";
+/** fetch with a timeout: a stalled request must never block the region load */
+async function fetchT(url: string, ms: number): Promise<Response> {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), ms);
+  try {
+    return await fetch(url, { signal: ac.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+export type LoadStep = { step: "index" | "navdata" | "procedures" | "terrain" | "done"; done?: number; total?: number };
 let indexCache: IndexRow[] | null = null;
 const tileCache = new Map<string, Promise<Tile | null>>();
 
 export async function airportIndex(): Promise<IndexRow[]> {
   if (!indexCache)
-    indexCache = await (await fetch(`${BASE}/index.json`)).json();
+    indexCache = await (await fetchT(`${BASE}/index.json`, 30000)).json();
   return indexCache!;
 }
 
@@ -159,7 +170,7 @@ function getTile(k: string): Promise<Tile | null> {
   if (!tileCache.has(k))
     tileCache.set(
       k,
-      fetch(`${BASE}/tiles/${k}.json`)
+      fetchT(`${BASE}/tiles/${k}.json`, 20000)
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null),
     );
@@ -215,12 +226,14 @@ async function loadDem(
   maxLat: number,
   minLon: number,
   maxLon: number,
+  onTile?: (done: number, total: number) => void,
 ) {
   const x0 = Math.floor(lon2x(minLon)),
     x1 = Math.floor(lon2x(maxLon));
   const y0 = Math.floor(lat2y(maxLat)),
     y1 = Math.floor(lat2y(minLat));
   const jobs: Promise<void>[] = [];
+  let doneTiles = 0;
   for (let x = x0; x <= x1; x++)
     for (let y = y0; y <= y1; y++) {
       const k = `${x}/${y}`;
@@ -228,8 +241,9 @@ async function loadDem(
       jobs.push(
         (async () => {
           try {
-            const r = await fetch(
+            const r = await fetchT(
               `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${Z}/${x}/${y}.png`,
+              15000,
             );
             if (!r.ok) return;
             const bmp = await createImageBitmap(await r.blob());
@@ -243,11 +257,14 @@ async function loadDem(
                 px[i * 4] * 256 + px[i * 4 + 1] + px[i * 4 + 2] / 256 - 32768;
             dem.set(k, { x, y, data });
           } catch {
-            /* offline: flat terrain */
+            /* offline / blocked: that tile stays flat */
+          } finally {
+            onTile?.(++doneTiles, jobs.length);
           }
         })(),
       );
     }
+  onTile?.(0, jobs.length);
   await Promise.all(jobs);
 }
 function demMeters(p: LatLon): number | null {
@@ -354,6 +371,8 @@ function missedText(m: ProcLeg[]): string {
 }
 
 export interface LoadedRegion {
+  /** false while terrain tiles are still streaming in the background */
+  terrainComplete?: boolean;
   airports: string[];
   approaches: number;
   magVar: number;
@@ -367,8 +386,10 @@ export interface LoadedRegion {
  */
 export async function loadRegion(
   icaos: string[],
-  marginDeg = 1.6,
+  marginDeg = 1.2,
+  onProgress?: (s: LoadStep) => void,
 ): Promise<LoadedRegion> {
+  onProgress?.({ step: "index" });
   const idx = await airportIndex();
   const pick = icaos
     .map((c) => idx.find((r) => r[0] === c.toUpperCase()))
@@ -390,6 +411,7 @@ export async function loadRegion(
   for (let la = Math.floor(minLat / 5) * 5; la <= maxLat; la += 5)
     for (let lo = Math.floor(minLon / 5) * 5; lo <= maxLon; lo += 5)
       keys.add(tileKey(la, lo));
+  onProgress?.({ step: "navdata" });
   const tiles = (await Promise.all([...keys].map(getTile))).filter(
     Boolean,
   ) as Tile[];
@@ -549,9 +571,10 @@ export async function loadRegion(
           (p) => Math.abs(p[4] - r[4]) < 0.5 && Math.abs(p[5] - r[5]) < 0.7,
         )),
   );
+  onProgress?.({ step: "procedures" });
   const lists = await Promise.all(
     procAirports.map((r) =>
-      fetch(`${BASE}/proc/${r[0]}.json`)
+      fetchT(`${BASE}/proc/${r[0]}.json`, 20000)
         .then((x) => (x.ok ? x.json() : []))
         .catch(() => []),
     ),
@@ -628,40 +651,80 @@ export async function loadRegion(
     }
   }
   replaceNavData({ airports, navaids, fixes, approaches });
-  // terrain
-  await loadDem(minLat - 0.3, maxLat + 0.3, minLon - 0.4, maxLon + 0.4);
+  // terrain: precomputed elevation grid (sim coordinates) with airport surfaces flattened. Navigation is
+  // usable immediately; terrain tiles stream in (bounded wait), the grid is rebuilt when late tiles arrive.
   const flat = airports.map((a) => ({
     p: a as LatLon,
     e: Math.min(...a.runways.map((r) => r.elevFt)),
     r: Math.max(1.2, ...a.runways.map((r) => r.lengthFt / FT_PER_NM / 2 + 0.6)),
   }));
-  setTerrainProvider({
-    elev(p) {
-      const real = toReal(p);
-      const m = demMeters(real);
-      let e = m === null ? 0 : Math.max(0, m / 0.3048);
-      // flatten airport surfaces to the published elevation, blending over ~1 NM
-      for (const f of flat) {
-        if (Math.abs(p.lat - f.p.lat) * 60 > f.r + 1) continue;
-        const d = distanceNm(p, f.p);
-        if (d < f.r + 1) {
-          const w = d < f.r ? 1 : 1 - (d - f.r);
-          e = e * (1 - w) + f.e * w;
-        }
+  const gb = { minLat: minLat - 0.5, maxLat: maxLat + 0.5, minLon: minLon - 0.6 / k, maxLon: maxLon + 0.6 / k };
+  const build = () => {
+    const grid = buildGrid(gb, flat);
+    setTerrainProvider({
+      elev: (p) => grid.sample(p, true),
+      land: (p) => (grid.sample(p, false) > 0.5 ? 1 : 0),
+    });
+  };
+  const demJob = loadDem(minLat - 0.3, maxLat + 0.3, minLon - 0.4, maxLon + 0.4, (d, t) => onProgress?.({ step: "terrain", done: d, total: t }));
+  const ready = await Promise.race([demJob.then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), 12000))]);
+  build();
+  if (!ready)
+    void demJob.then(() => {
+      if (frame && frame.center === center) {
+        build();
+        window.dispatchEvent(new CustomEvent("ifr-terrain-updated"));
       }
-      return e;
-    },
-    land(p) {
-      const m = demMeters(toReal(p));
-      return m === null ? 1 : m > 0.5 ? 1 : 0;
-    },
-  });
+    });
+  onProgress?.({ step: "done" });
   return {
     airports: airports.map((a) => a.icao),
     approaches: approaches.length,
     magVar: frame.magVar,
     center,
     demTiles: dem.size,
+    terrainComplete: ready,
+  };
+}
+
+/** Elevation grid in simulator coordinates (~330 m), raw metres (sea < 0), airports flattened (ft). */
+function buildGrid(gb: { minLat: number; maxLat: number; minLon: number; maxLon: number }, flat: { p: LatLon; e: number; r: number }[]) {
+  const dLat = 0.003;
+  const dLon = dLat / Math.cos(((gb.minLat + gb.maxLat) / 2) * DEG);
+  const nx = Math.ceil((gb.maxLon - gb.minLon) / dLon) + 1;
+  const ny = Math.ceil((gb.maxLat - gb.minLat) / dLat) + 1;
+  const g = new Float32Array(nx * ny);
+  for (let j = 0; j < ny; j++)
+    for (let i = 0; i < nx; i++) {
+      const p = { lat: gb.minLat + j * dLat, lon: gb.minLon + i * dLon };
+      const m = demMeters(toReal(p));
+      g[j * nx + i] = m === null ? 1 : m;
+    }
+  // flatten airport surfaces (stored as metres)
+  for (const f of flat) {
+    const rad = f.r + 1;
+    const j0 = Math.max(0, Math.floor((f.p.lat - gb.minLat - rad / 60) / dLat)), j1 = Math.min(ny - 1, Math.ceil((f.p.lat - gb.minLat + rad / 60) / dLat));
+    const di = rad / 60 / Math.cos(f.p.lat * DEG) / dLon;
+    const ic = (f.p.lon - gb.minLon) / dLon;
+    for (let j = j0; j <= j1; j++)
+      for (let i = Math.max(0, Math.floor(ic - di)); i <= Math.min(nx - 1, Math.ceil(ic + di)); i++) {
+        const p = { lat: gb.minLat + j * dLat, lon: gb.minLon + i * dLon };
+        const d = distanceNm(p, f.p);
+        if (d >= rad) continue;
+        const w = d < f.r ? 1 : 1 - (d - f.r);
+        const cur = g[j * nx + i];
+        g[j * nx + i] = Math.max(0.6, cur) * (1 - w) + f.e * 0.3048 * w;
+      }
+  }
+  return {
+    sample(p: LatLon, asFeet: boolean): number {
+      const fx = (p.lon - gb.minLon) / dLon, fy = (p.lat - gb.minLat) / dLat;
+      if (fx < 0 || fy < 0 || fx >= nx - 1 || fy >= ny - 1) return asFeet ? 0 : 1;
+      const i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j;
+      const a = g[j * nx + i], b = g[j * nx + i + 1], c = g[(j + 1) * nx + i], d = g[(j + 1) * nx + i + 1];
+      const m = a * (1 - u) * (1 - v) + b * u * (1 - v) + c * (1 - u) * v + d * u * v;
+      return asFeet ? Math.max(0, m) / 0.3048 : m;
+    },
   };
 }
 

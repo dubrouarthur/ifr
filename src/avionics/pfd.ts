@@ -21,6 +21,7 @@ export interface PfdState {
   iasTrend: number;
   altTrend: number;
   lastIas: number;
+  lastT: number;
   lastAlt: number;
   flash: number;
   softkeyFlash: number | null;
@@ -32,6 +33,7 @@ export const newPfdState = (): PfdState => ({
   iasTrend: 0,
   altTrend: 0,
   lastIas: 0,
+  lastT: 0,
   lastAlt: 0,
   flash: 0,
   softkeyFlash: null,
@@ -40,11 +42,18 @@ export const newPfdState = (): PfdState => ({
 export function drawPfd(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState, dt: number) {
   const d = sim.ac.data;
   st.flash += dt;
-  if (dt > 0) {
-    st.iasTrend += (((d.iasKt - st.lastIas) / dt) * 6 - st.iasTrend) * Math.min(1, dt * 2);
-    st.altTrend += ((d.vsFpm / 10) - st.altTrend) * Math.min(1, dt * 2);
-  }
-  st.lastIas = d.iasKt;
+  // trend vectors on the SIM clock (immune to frame drops, pause, sim rate and replay):
+  // airspeed predicted 6 s ahead (G1000), filtered, capped
+  const simDt = sim.time - st.lastT;
+  if (simDt > 0 && simDt < 1 && !sim.replaying) {
+    const accel = (d.iasKt - st.lastIas) / simDt; // kt/s
+    const target = Math.max(-40, Math.min(40, accel * 6));
+    st.iasTrend += (target - st.iasTrend) * Math.min(1, simDt / 0.8);
+    st.altTrend += ((d.vsFpm / 10) - st.altTrend) * Math.min(1, simDt * 2);
+  } else if (simDt >= 1 || simDt < 0) st.iasTrend = 0;
+  if (simDt !== 0) st.lastT = sim.time;
+  if (simDt !== 0) st.lastIas = d.iasKt;
+  void dt;
   st.lastAlt = d.altFt;
 
   ctx.save();
@@ -362,7 +371,7 @@ function drawAirspeed(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
     if (y > top && y < bot) text(ctx, l, x + w + 6, y, C.cyan, 14);
   }
   // trend vector
-  if (Math.abs(st.iasTrend) > 1) {
+  if (Math.abs(st.iasTrend) > 1.5 && d.iasKt >= 20) {
     line(ctx, x + w - 4, cy, x + w - 4, cy - st.iasTrend * kpx, C.magenta, 4);
   }
   // speed bug

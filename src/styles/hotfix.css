@@ -1,0 +1,30 @@
+/* filter chips (Flight Center): the selected chip was black text on black */
+.filter button { background: var(--surface); color: var(--text-2); border-color: var(--line-strong); }
+.filter button:hover { border-color: var(--accent); color: var(--text); }
+.filter button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+/* flight menu on the flight name */
+.scn-wrap { margin-left: 8px; padding-left: 14px; border-left: 1px solid var(--line); min-width: 0; flex: 0 1 380px; }
+.scn-wrap .scn { all: unset; display: flex; flex-direction: column; min-width: 0; cursor: pointer; padding: 4px 26px 4px 8px; border-radius: 8px; position: relative; max-width: 100%; }
+.scn-wrap .scn::after { content: '▾'; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 12px; }
+.scn-wrap .scn:hover { background: var(--surface-3); }
+.scn-wrap .scn b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.scn-wrap .scn span { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flight-menu { left: 0; right: auto; min-width: 260px; }
+.menu-item.danger span { color: var(--bad); }
+/* auto-hiding top bar: overlays the cockpit instead of taking a row, slides away in flight */
+/* the fixed top bar leaves the grid: cockpit + pedestal are the two rows */
+body.chrome-auto #app { grid-template-rows: minmax(0, 1fr) auto; }
+body.chrome-auto .topbar { position: fixed !important; top: 0; left: 0; right: 0; z-index: 70; transition: transform .22s ease, box-shadow .22s; box-shadow: 0 6px 24px rgba(15,23,32,.18); }
+body.chrome-auto.chrome-hidden .topbar { transform: translateY(-100%); box-shadow: none; }
+body.chrome-auto .cockpit .sitbar { transition: top .22s; }
+body.chrome-auto:not(.chrome-hidden) .cockpit .sitbar { top: 56px; }
+body.chrome-auto:not(.chrome-hidden) .coach, body.chrome-auto:not(.chrome-hidden) .atc-radio { margin-top: 56px; }
+body.chrome-auto .drawer { top: 56px; }
+/* layout picker */
+.layout-menu { right: 0; min-width: 320px; }
+.layout-item { display: grid !important; grid-template-columns: 44px 1fr; gap: 10px; align-items: center; padding: 8px 10px !important; }
+.layout-item b { display: block; font-size: 13px; color: var(--text); } .layout-item small { display: block; font-size: 11.5px; color: var(--muted); font-weight: 500; }
+.layout-item.on { background: #eef5ff; } .layout-item.on b { color: var(--accent); }
+.lay-ic { width: 44px; height: 30px; border-radius: 5px; border: 1.5px solid var(--line-strong); background: linear-gradient(#9cc2e8 0 var(--sky, 45%), #2b3036 var(--sky, 45%)); }
+.lay-big { --sky: 65%; } .lay-visual { --sky: 100%; position: relative; } .lay-none { --sky: 0%; }
+.lay-visual::after { content: ''; position: absolute; left: 3px; bottom: 3px; width: 14px; height: 10px; background: #2b3036; border-radius: 2px; }

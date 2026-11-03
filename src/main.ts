@@ -154,6 +154,8 @@ function applyReplay() {
   if (sl && R.playing) sl.value = String(R.pos);
 }
 
+// late terrain tiles of a real-world region: rebuild the 3D view with the real relief
+window.addEventListener('ifr-terrain-updated', () => rebuildOutside());
 /** Flight Center content lives in the built-in training region */
 function backToTraining() {
   if (!currentRegion()) return;
@@ -277,6 +279,22 @@ const wxChip = h('span', { class: 'chip', id: 'wx-chip' }, '');
 const pauseBtn = h('button', { class: 'btn', title: 'Pause (Esc)', onclick: () => togglePause() }, icon(I.pause), h('span', { class: 'lbl' }, 'Pause'));
 const rateSeg = h('div', { class: 'seg', title: 'Simulation rate' }, ...[1, 2, 4].map((r) => h('button', { class: r === 1 ? 'on' : '', onclick: () => setRate(r) }, `${r}×`)));
 const cockpitSeg = h('div', { class: 'seg', title: 'Cockpit type' }, ...([['g1000', 'G1000'], ['steam', 'Steam'], ['airliner', 'Airliner']] as const).map(([c, l]) => h('button', { 'data-c': c, onclick: () => setCockpit(c) }, l)));
+/** layout picker in the top bar: clearer than the More menu */
+const LAYOUTS = [
+  ['normal', 'Outside + panel', 'Outside view above the full instrument panel'],
+  ['big', 'Large view', 'Bigger outside view, smaller panel'],
+  ['visual', 'Immersive', 'Full-screen outside view with a floating PFD'],
+  ['none', 'Instruments only', 'Instrument panel only (pure IFR)'],
+] as const;
+const layoutMenu = h('div', { class: 'menu layout-menu', role: 'menu' });
+const layoutLbl = h('span', { class: 'lbl' }, 'Layout');
+const layoutBtn = h('button', { class: 'btn', title: 'Screen layout (Tab cycles)', 'aria-haspopup': 'menu', onclick: (e: Event) => { e.stopPropagation(); renderLayoutMenu(); layoutMenu.classList.toggle('open'); } }, layoutLbl);
+function renderLayoutMenu() {
+  layoutMenu.innerHTML = '';
+  for (const [m, t, d] of LAYOUTS)
+    layoutMenu.append(h('button', { class: `menu-item layout-item${otwMode === m ? ' on' : ''}`, role: 'menuitemradio', onclick: () => { layoutMenu.classList.remove('open'); setOtw(m); } }, h('i', { class: `lay-ic lay-${m}` }), h('span', {}, h('b', {}, t), h('small', {}, d))));
+}
+document.addEventListener('click', (e) => { if (!layoutMenu.contains(e.target as Node) && e.target !== layoutBtn) layoutMenu.classList.remove('open'); });
 const viewSeg = h('div', { class: 'seg', title: 'Outside view (Tab)' }, ...(['normal', 'big', 'visual', 'none'] as const).map((m) => h('button', { 'data-m': m, onclick: () => setOtw(m), title: { normal: 'Outside view + full panel', big: 'Large outside view', visual: 'Immersive: full-screen view with a floating PFD', none: 'Instruments only' }[m] }, { normal: 'View', big: 'Big', visual: 'Visual', none: 'Panel' }[m])));
 
 const muteBtn = h('button', { class: 'btn ghost', title: 'Sound on/off (M)', onclick: () => toggleMute() }, icon(audio.muted ? I.mute : I.sound));
@@ -313,6 +331,20 @@ const settings = new SettingsModal(
   },
 );
 const moreMenu = h('div', { class: 'menu', role: 'menu' });
+/** flight menu (click the flight name): restart / end & debrief / plan a new flight / Flight Center */
+const flightMenu = h('div', { class: 'menu flight-menu', role: 'menu' });
+const flightItem = (label: string, hint: string, fn: () => void, danger = false) =>
+  h('button', { class: `menu-item${danger ? ' danger' : ''}`, role: 'menuitem', onclick: () => { flightMenu.classList.remove('open'); fn(); } }, h('span', {}, label), hint ? h('kbd', {}, hint) : null);
+function restartFlight() {
+  if (lesson) pickExercise(lesson.ex, lessonPath);
+  else startScenario(lastScenario, lastWx, sim.assess);
+}
+function endFlight() {
+  if (lesson) lesson.abort();
+  sim.paused = true;
+  openDebrief();
+}
+document.addEventListener('click', (e) => { if (!flightMenu.contains(e.target as Node)) flightMenu.classList.remove('open'); });
 const moreItem = (ic: string, label: string, kbd: string, fn: () => void) =>
   h('button', { class: 'menu-item', role: 'menuitem', onclick: () => { moreMenu.classList.remove('open'); fn(); } }, icon(ic), h('span', {}, label), kbd ? h('kbd', {}, kbd) : null);
 moreMenu.append(
@@ -330,15 +362,51 @@ moreMenu.append(
   moreItem(I.learn, 'Learning paths', 'J', () => learn.open()),
   moreItem(I.proc, 'IFR circuit builder', 'U', () => builder.edit()),
   moreItem(I.help, 'Keyboard shortcuts', '?', () => help.open()),
+  moreItem(I.gear, 'Auto-hide top bar in flight (on/off)', '', () => { setAutoHide(!autoHide); toast(autoHide ? 'Top bar hides in flight — move the mouse to the top edge to show it' : 'Top bar always visible'); }),
   h('div', { class: 'menu-sep' }),
   h('div', { class: 'menu-row' }, h('span', {}, 'Outside view'), viewSeg),
   h('div', { class: 'menu-row' }, h('span', {}, 'Sim rate'), rateSeg),
+);
+// auto-hiding top bar in flight (game-style HUD): reveal near the top edge, while a menu/window is open
+let autoHide = store.get('ifr.autohide', true);
+let hideTimer = 0;
+function chromeShow(on: boolean) {
+  document.body.classList.toggle('chrome-hidden', autoHide && !on);
+}
+function scheduleHide() {
+  clearTimeout(hideTimer);
+  hideTimer = window.setTimeout(() => {
+    const busy = Modal.anyOpen() || document.querySelector('.menu.open') || document.querySelector('.topbar:hover');
+    chromeShow(!!busy);
+  }, 2000);
+}
+document.body.classList.toggle('chrome-auto', autoHide);
+window.addEventListener('mousemove', (e) => {
+  if (!autoHide) return;
+  if (e.clientY < 64) { chromeShow(true); clearTimeout(hideTimer); } else scheduleHide();
+});
+function setAutoHide(on: boolean) {
+  autoHide = on;
+  store.set('ifr.autohide', on);
+  document.body.classList.toggle('chrome-auto', on);
+  chromeShow(true);
+  if (on) scheduleHide();
+}
+flightMenu.append(
+  flightItem('Restart this flight', '', () => restartFlight()),
+  flightItem('End flight & debrief', 'Shift D', () => endFlight()),
+  h('div', { class: 'menu-sep' }),
+  flightItem('Plan a new flight…', 'Shift N', () => setup.start()),
+  flightItem('Flight Center', 'F2', () => fc.open()),
 );
 const moreBtn = h('button', { class: 'btn', title: 'More', 'aria-haspopup': 'menu', onclick: (e: Event) => { e.stopPropagation(); moreMenu.classList.toggle('open'); } }, icon(I.more), h('span', { class: 'lbl' }, 'More'));
 document.addEventListener('click', (e) => { if (!moreMenu.contains(e.target as Node)) moreMenu.classList.remove('open'); });
 const topbar = h('header', { class: 'topbar' },
   h('div', { class: 'brand' }, h('img', { class: 'logo', src: '/favicon.svg', alt: '' }), h('span', { class: 'brand-t' }, h('b', {}, 'IFR'), h('span', {}, ' Trainer'))),
-  h('div', { class: 'scn' }, scnName, scnSub),
+  h('div', { class: 'menu-wrap scn-wrap' },
+    h('button', { class: 'scn', title: 'Flight: restart, end, plan a new one', 'aria-haspopup': 'menu', onclick: (e: Event) => { e.stopPropagation(); flightMenu.classList.toggle('open'); } }, scnName, scnSub),
+    flightMenu,
+  ),
   phaseChip,
   wxChip,
   h('div', { class: 'spacer' }),
@@ -350,6 +418,7 @@ const topbar = h('header', { class: 'topbar' },
       h('button', { class: 'btn', onclick: () => cduPanel.toggle(), title: 'FMC CDU — route, approach, legs, hold (F3)' }, icon(I.proc), h('span', { class: 'lbl' }, 'CDU')),
     ),
     h('button', { class: 'btn', onclick: () => ios.toggle(), title: 'Instructor station (I)' }, icon(I.ios), h('span', { class: 'lbl' }, 'Instructor')),
+    h('div', { class: 'menu-wrap' }, layoutBtn, layoutMenu),
     cockpitSeg,
     pauseBtn,
     muteBtn,
@@ -734,6 +803,7 @@ function setOtw(m: OtwMode) {
   cockpit.classList.toggle('vis-otw', m === 'visual');
   cockpit.classList.toggle('no-otw', m === 'none');
   viewSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', (b as HTMLElement).dataset.m === m));
+  layoutLbl.textContent = LAYOUTS.find((x) => x[0] === m)?.[1] ?? 'Layout';
 }
 function setQnh() {
   sim.av.baro = sim.weather.qnh;
