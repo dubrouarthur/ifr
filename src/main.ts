@@ -796,7 +796,9 @@ window.addEventListener('keydown', (e) => {
   }
   const n = sim.navInputs();
   const lower = k.toLowerCase();
-  if (/^[0-9]$/.test(k)) { sim.controls.throttle = k === '0' ? 1 : Number(k) / 10; return; }
+  // throttle by digit: use the physical key so AZERTY keyboards (à, &, é…) work without Shift
+  const dig = /^(Digit|Numpad)([0-9])$/.exec(e.code)?.[2] ?? (/^[0-9]$/.test(k) ? k : null);
+  if (dig !== null && !e.altKey) { sim.controls.throttle = dig === '0' ? 1 : Number(dig) / 10; return; }
   switch (lower) {
     case 'a': if (e.shiftKey) sim.ap.toggleFd(d); else doAction('apToggle'); break;
     case 'h': sim.ap.pressHdg(d); break;
@@ -937,7 +939,7 @@ function updateCoach() {
     hints.push('Your debrief is ready. Press Shift+D or fly it again.');
   } else if (ph === 'ground' && !sim.rec.touchdown) {
     next = 'Ready for departure';
-    hints.push('Throttle full (0 key), release brakes, rotate at 55 KIAS.', 'Climb at 74 KIAS (Vy). AP: HDG + VS at 1000 ft AGL.');
+    hints.push('Full throttle: key 0, PageUp or drag the THROTTLE lever. At 55 KIAS hold ↓ (pull) to rotate to ~8° nose-up.', 'Climb at 74 KIAS (Vy). AP: HDG + VS at 1000 ft AGL.');
   } else if (ph === 'landed') {
     next = d.gsKt > 2 ? 'Rollout — brakes (Space)' : 'Stopped. Nice work.';
     hints.push('Debrief opens automatically when you stop.');
