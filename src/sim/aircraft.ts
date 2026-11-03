@@ -71,6 +71,9 @@ export interface FlightData {
   iasKt: number;
   tasKt: number;
   gsKt: number;
+  /** ground speed and true track smoothed like a GPS/IRS output (tau 0.8 s) — for DISPLAYS (track line, GS readout) */
+  gsSmooth: number;
+  trackSmooth: number;
   altFt: number;
   pressAltFt: number;
   aglFt: number;
@@ -111,6 +114,9 @@ export class Aircraft {
   private lastAlt = 0;
   private vsFilt = 0;
   private iasFilt = -1;
+  /** GPS/IRS-smoothed ground velocity (m/s east/north): turbulence must not make track / GS jitter */
+  private gvE = NaN;
+  private gvN = NaN;
   private gFilt = 1;
   /** last wheel contact (for landing feedback and grading) */
   touchdown: { vsFpm: number; pitchDeg: number; bankDeg: number; ias: number; g: number; lat: number; lon: number; kind: 'smooth' | 'normal' | 'firm' | 'hard'; bounced: boolean; t: number } | null = null;
@@ -397,6 +403,11 @@ export class Aircraft {
     if (this.iasFilt < 0) this.iasFilt = iasRaw;
     this.iasFilt += (iasRaw - this.iasFilt) * Math.min(1, dt / 0.4);
     const ias = this.iasFilt;
+    if (!Number.isFinite(this.gvE)) { this.gvE = ve; this.gvN = vn; }
+    const kg = Math.min(1, dt / 0.8);
+    this.gvE += (ve - this.gvE) * kg;
+    this.gvN += (vn - this.gvN) * kg;
+    const gsMs = Math.hypot(this.gvE, this.gvN);
     const vsRaw = dt > 0 ? ((s.altFt - this.lastAlt) / dt) * 60 : 0;
     this.vsFilt += (vsRaw - this.vsFilt) * Math.min(1, dt * 4);
     let dpsi = s.psi - this.lastPsi;
@@ -413,6 +424,7 @@ export class Aircraft {
       iasKt: ias / KT,
       tasKt: tas / KT,
       gsKt: Math.hypot(ve, vn) / KT,
+      gsSmooth: gsMs / KT,
       altFt: s.altFt,
       pressAltFt: pAlt,
       aglFt: s.altFt - this.groundElev(s),
@@ -421,6 +433,7 @@ export class Aircraft {
       rollDeg: s.phi / DEG,
       hdgTrue: norm360(s.psi / DEG),
       trackTrue: Math.hypot(ve, vn) > 1 ? norm360(Math.atan2(ve, vn) / DEG) : norm360(s.psi / DEG),
+      trackSmooth: gsMs > 1 ? norm360(Math.atan2(this.gvE, this.gvN) / DEG) : norm360(s.psi / DEG),
       turnRateDps: turnRate,
       slip: Math.max(-1, Math.min(1, s.beta / (6 * DEG))),
       aoaDeg: alpha / DEG,
