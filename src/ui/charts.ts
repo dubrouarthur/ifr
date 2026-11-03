@@ -5,6 +5,8 @@ import { approach } from '../nav/data';
 import type { Sim } from '../sim/sim';
 import { DEG } from '../nav/geo';
 import { airportPage, navlogPage, weatherPage, checklistPage, clearancePage } from './efb';
+import { navigraphStatus, navigraphCharts, navigraphChartImage, chartPixel, onNavigraph, type NgChart } from '../connect/navigraph';
+import { toReal, currentRegion } from '../nav/world';
 
 export class ChartsDrawer {
   el: HTMLElement;
@@ -92,13 +94,53 @@ export class ChartsDrawer {
     this.renderApps();
     this.renderTabs();
     this.bindPanZoom();
+    onNavigraph(() => this.renderTabs());
   }
 
+  /** chart source: generated plates or the user's Navigraph subscription */
+  private source: 'builtin' | 'navigraph' = 'builtin';
+  private ngCharts: NgChart[] = [];
+  private ngCat: NgChart['category'] = 'APP';
+  private ngCurrent: NgChart | null = null;
+  private ngShip: HTMLElement | null = null;
   private renderTabs() {
     clear(this.tabs);
+    const signed = navigraphStatus() === 'signed-in';
+    if (signed) {
+      this.tabs.append(h('div', { class: 'seg chart-src' },
+        h('button', { class: this.source === 'builtin' ? 'on' : '', onclick: () => { this.source = 'builtin'; this.renderTabs(); if (this.current) this.show(this.current.id); } }, 'Built-in'),
+        h('button', { class: this.source === 'navigraph' ? 'on' : '', onclick: () => { this.source = 'navigraph'; void this.loadNavigraph(); } }, 'Navigraph'),
+      ));
+    }
+    if (this.source === 'navigraph' && signed) {
+      for (const c of ['APT', 'DEP', 'ARR', 'APP', 'REF'] as const) this.tabs.append(h('button', { class: this.ngCat === c ? 'on' : '', onclick: () => { this.ngCat = c; this.renderTabs(); } }, `${c} (${this.ngCharts.filter((x) => x.category === c).length})`));
+      const list = h('div', { class: 'ng-list' }, ...this.ngCharts.filter((x) => x.category === this.ngCat).map((c) => h('button', { class: this.ngCurrent?.id === c.id ? 'on' : '', onclick: () => void this.showNavigraph(c) }, h('b', {}, c.index_number), ` ${c.name}`)));
+      this.tabs.append(list);
+      return;
+    }
     for (const e of this.entries.filter((x) => x.airport === this.airportSel)) {
       this.tabs.append(h('button', { class: this.current?.id === e.id ? 'on' : '', onclick: () => this.show(e.id) }, e.kind === 'APD' ? 'Airport diagram' : e.title));
     }
+  }
+  private async loadNavigraph() {
+    this.ngCharts = await navigraphCharts(this.airportSel);
+    this.renderTabs();
+    const first = this.ngCharts.find((c) => c.category === this.ngCat) ?? this.ngCharts[0];
+    if (first) void this.showNavigraph(first);
+    else this.sheet.innerHTML = `<div class="ng-empty">No Navigraph charts for ${this.airportSel} (training-region airports are fictional).</div>`;
+  }
+  private async showNavigraph(c: NgChart) {
+    this.ngCurrent = c;
+    this.renderTabs();
+    const url = await navigraphChartImage(c, this.night);
+    if (!url) return;
+    this.sheet.innerHTML = '';
+    this.ship = null;
+    const wrap = h('div', { class: 'ng-sheet', style: `width:${c.width}px;height:${c.height}px` }, h('img', { src: url, width: c.width, height: c.height, alt: c.name }));
+    this.ngShip = c.is_georeferenced ? h('div', { class: 'ng-ship' }) : null;
+    if (this.ngShip) wrap.append(this.ngShip);
+    this.sheet.append(wrap);
+    requestAnimationFrame(() => this.fit());
   }
 
   get isOpen() {
@@ -138,6 +180,15 @@ export class ChartsDrawer {
 
   /** Update own-ship position on the plate. */
   update() {
+    if (this.isOpen && this.source === 'navigraph' && this.ngCurrent && this.ngShip) {
+      const real = toReal(this.sim.ac.s);
+      const p = chartPixel(this.ngCurrent, real.lat, real.lon);
+      const bb = this.ngCurrent.bounding_boxes!.planview.pixels;
+      const inside = p && p.x >= Math.min(bb.x1, bb.x2) && p.x <= Math.max(bb.x1, bb.x2) && p.y >= Math.min(bb.y1, bb.y2) && p.y <= Math.max(bb.y1, bb.y2);
+      this.ngShip.style.display = inside ? '' : 'none';
+      if (p) this.ngShip.style.transform = `translate(${p.x}px, ${p.y}px) rotate(${(this.sim.ac.s.psi / DEG + (currentRegion()?.magVar ?? 0)).toFixed(0)}deg)`;
+      return;
+    }
     if (!this.isOpen || !this.ship || !this.current?.approachId) return;
     const ap = approach(this.current.approachId);
     const { proj, box } = planProjection(ap);

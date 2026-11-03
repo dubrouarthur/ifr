@@ -53,6 +53,21 @@ G1000-style glass cockpit (PFD + MFD with bezel knobs/softkeys), GFC700-class au
 
 > The Ardent Islands region, navaids and procedures are **fictional**. Not for real-world navigation.
 
+## Real-world data & pro tools
+
+* **Real world** (Plan a flight → Real world): 6,900+ airports worldwide (OurAirports, public domain) and, for the
+  United States, the FAA CIFP (ARINC 424, public domain): runways, ILS/LOC, 32k waypoints and 8,000+ instrument
+  approaches with transitions and missed approaches. Real terrain from Terrarium elevation tiles. The region is
+  rotated to magnetic north so published courses match the instruments. Minimums are derived (CIFP has none).
+  Rebuild the data each AIRAC cycle: `node tools/navdata/build.mjs <ourairports-csv-dir> <FAACIFP18>`.
+* **FMC CDU** (F3): RTE, DEP/ARR, LEGS (direct-to, constraints), HOLD, PROG, INIT/REF pages with MOD/EXEC.
+* **EFB** (K): charts, airport data, navlog, METAR/TAF & winds aloft, checklists, CRAFT clearance pad.
+* **Navigraph**: sign in (device flow) to read your Navigraph charts in the EFB with own-ship on georeferenced
+  plates. Needs a Navigraph developer client: set `VITE_NAVIGRAPH_CLIENT_ID` / `VITE_NAVIGRAPH_CLIENT_SECRET`
+  at build time or enter them in Connections.
+* **ATC radio** with voice (radio phraseology), **aural callouts** (synthesised CC0 voice) and a chronometer.
+* `node tools/ui-audit.cjs <outDir>` clicks every button and window and reports clipping/occlusion issues.
+
 ## Develop
 
 ```bash

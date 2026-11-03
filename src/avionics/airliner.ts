@@ -20,13 +20,15 @@ export function drawAirlinerPfd(ctx: CanvasRenderingContext2D, sim: Sim) {
   const d = sim.ac.data;
   ctx.clearRect(0, 0, AL_W, AL_H);
   box(ctx, 0, 0, AL_W, AL_H, '#000');
-  const cx = 500;
-  const cy = 340;
-  const ppd = 8.5;
+  const cx = 488;
+  const cy = 350;
+  const ppd = 9.6;
+  const AW = 218; // ADI half-width
+  const AH = 218;
   // --- ADI
   ctx.save();
   ctx.beginPath();
-  ctx.roundRect(cx - 190, cy - 200, 380, 400, 34);
+  ctx.roundRect(cx - AW, cy - AH, 2 * AW, 2 * AH, 38);
   ctx.clip();
   ctx.translate(cx, cy);
   ctx.rotate(-d.rollDeg * DEG);
@@ -38,16 +40,16 @@ export function drawAirlinerPfd(ctx: CanvasRenderingContext2D, sim: Sim) {
   line(ctx, -900, 0, 900, 0, WHT, 2);
   ctx.save();
   ctx.beginPath();
-  ctx.rect(-130, -d.pitchDeg * ppd - 150, 260, 270);
+  ctx.rect(-150, -d.pitchDeg * ppd - 165, 300, 300);
   ctx.clip();
   for (let p = -30; p <= 30; p += 2.5) {
     if (!p) continue;
     const y = -p * ppd;
-    const w = p % 10 === 0 ? 70 : p % 5 === 0 ? 40 : 18;
-    line(ctx, -w / 2, y, w / 2, y, WHT, 2);
+    const w = p % 10 === 0 ? 84 : p % 5 === 0 ? 46 : 22;
+    line(ctx, -w / 2, y, w / 2, y, WHT, 2.4);
     if (p % 10 === 0) {
-      text(ctx, String(Math.abs(p)), -w / 2 - 16, y, WHT, 15, 'center');
-      text(ctx, String(Math.abs(p)), w / 2 + 16, y, WHT, 15, 'center');
+      text(ctx, String(Math.abs(p)), -w / 2 - 18, y, WHT, 17, 'center', 700);
+      text(ctx, String(Math.abs(p)), w / 2 + 18, y, WHT, 17, 'center', 700);
     }
   }
   ctx.restore();
@@ -58,25 +60,25 @@ export function drawAirlinerPfd(ctx: CanvasRenderingContext2D, sim: Sim) {
   for (const a of [-60, -45, -30, -20, -10, 10, 20, 30, 45, 60]) {
     const ang = (a - 90) * DEG;
     const l = Math.abs(a) % 30 === 0 ? 18 : 10;
-    line(ctx, Math.cos(ang) * 170, Math.sin(ang) * 170, Math.cos(ang) * (170 + l), Math.sin(ang) * (170 + l), WHT, 2);
+    line(ctx, Math.cos(ang) * 196, Math.sin(ang) * 196, Math.cos(ang) * (196 + l), Math.sin(ang) * (196 + l), WHT, 2.4);
   }
   ctx.strokeStyle = WHT;
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(0, 0, 170, -150 * DEG, -30 * DEG);
+  ctx.arc(0, 0, 196, -150 * DEG, -30 * DEG);
   ctx.stroke();
-  poly(ctx, [[0, -172], [-9, -186], [9, -186]], undefined, WHT, 2);
+  poly(ctx, [[0, -198], [-10, -213], [10, -213]], undefined, WHT, 2.4);
   ctx.rotate(-d.rollDeg * DEG);
-  poly(ctx, [[0, -168], [-10, -150], [10, -150]], Math.abs(d.rollDeg) > 35 ? AMB : WHT);
+  poly(ctx, [[0, -194], [-11, -175], [11, -175]], Math.abs(d.rollDeg) > 35 ? AMB : WHT);
   const sl = d.slip * 16;
-  poly(ctx, [[-12 + sl, -146], [12 + sl, -146], [14 + sl, -139], [-14 + sl, -139]], Math.abs(d.slip) > 0.6 ? AMB : WHT);
+  poly(ctx, [[-13 + sl, -171], [13 + sl, -171], [15 + sl, -163], [-15 + sl, -163]], Math.abs(d.slip) > 0.6 ? AMB : WHT);
   ctx.restore();
   // flight director bars (Boeing crossbars)
   if (sim.ap.fd) {
-    const dx = Math.max(-1, Math.min(1, (sim.ap.bankCmd - d.rollDeg) / 25)) * 110;
-    const dy = Math.max(-1, Math.min(1, (sim.ap.pitchCmd - d.pitchDeg) / 10)) * 110;
-    line(ctx, cx + dx, cy - 110, cx + dx, cy + 110, MAG, 3.5);
-    line(ctx, cx - 110, cy - dy, cx + 110, cy - dy, MAG, 3.5);
+    const dx = Math.max(-1, Math.min(1, (sim.ap.bankCmd - d.rollDeg) / 25)) * 140;
+    const dy = Math.max(-1, Math.min(1, (sim.ap.pitchCmd - d.pitchDeg) / 10)) * 140;
+    line(ctx, cx + dx, cy - 140, cx + dx, cy + 140, MAG, 4);
+    line(ctx, cx - 140, cy - dy, cx + 140, cy - dy, MAG, 4);
   }
   // aircraft symbol
   const wing = (s: number) => {
@@ -94,29 +96,29 @@ export function drawAirlinerPfd(ctx: CanvasRenderingContext2D, sim: Sim) {
     ctx.strokeStyle = WHT;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(cx + k * 44, cy + 228, 5, 0, Math.PI * 2);
+    ctx.arc(cx + k * 48, cy + AH + 26, 5.5, 0, Math.PI * 2);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(cx + 222, cy + k * 44, 5, 0, Math.PI * 2);
+    ctx.arc(cx + AW + 24, cy + k * 48, 5.5, 0, Math.PI * 2);
     ctx.stroke();
   }
-  line(ctx, cx, cy + 216, cx, cy + 240, WHT, 2);
-  line(ctx, cx + 210, cy, cx + 234, cy, WHT, 2);
+  line(ctx, cx, cy + AH + 13, cx, cy + AH + 39, WHT, 2.4);
+  line(ctx, cx + AW + 11, cy, cx + AW + 37, cy, WHT, 2.4);
   if (latValid) {
-    const x = cx + Math.max(-1.2, Math.min(1.2, isGps ? n.gps.dev : n.nav.dev)) * 88;
-    poly(ctx, [[x, cy + 218], [x + 10, cy + 228], [x, cy + 238], [x - 10, cy + 228]], MAG, MAG);
+    const x = cx + Math.max(-1.2, Math.min(1.2, isGps ? n.gps.dev : n.nav.dev)) * 96;
+    poly(ctx, [[x, cy + AH + 14], [x + 11, cy + AH + 26], [x, cy + AH + 38], [x - 11, cy + AH + 26]], MAG, MAG);
   }
   if (vertValid) {
-    const y = cy - Math.max(-1.2, Math.min(1.2, isGps ? n.gps.gpDev : n.nav.gsDev)) * 88;
-    poly(ctx, [[cx + 222, y - 10], [cx + 232, y], [cx + 222, y + 10], [cx + 212, y]], MAG, MAG);
+    const y = cy - Math.max(-1.2, Math.min(1.2, isGps ? n.gps.gpDev : n.nav.gsDev)) * 96;
+    poly(ctx, [[cx + AW + 24, y - 11], [cx + AW + 35, y], [cx + AW + 24, y + 11], [cx + AW + 13, y]], MAG, MAG);
   }
   // ILS info top-left of ADI
   if (!isGps && n.nav.valid) {
-    text(ctx, `${n.nav.ident}/${(n.cdi === 'NAV2' ? sim.av.nav2 : sim.av.nav1).active.toFixed(2)}`, cx - 186, cy - 182, WHT, 15);
-    text(ctx, `${pad3(sim.course())}°`, cx - 186, cy - 164, WHT, 15);
-    if (n.nav.dmeNm !== null) text(ctx, `DME ${n.nav.dmeNm.toFixed(1)}`, cx - 186, cy - 146, WHT, 15);
+    text(ctx, `${n.nav.ident}/${(n.cdi === 'NAV2' ? sim.av.nav2 : sim.av.nav1).active.toFixed(2)}`, cx - AW + 6, cy - AH + 20, WHT, 15);
+    text(ctx, `${pad3(sim.course())}°`, cx - AW + 6, cy - AH + 40, WHT, 15);
+    if (n.nav.dmeNm !== null) text(ctx, `DME ${n.nav.dmeNm.toFixed(1)}`, cx - AW + 6, cy - AH + 60, WHT, 15);
   } else if (isGps && n.gps.valid) {
-    text(ctx, `FMC ${n.gps.mode}`, cx - 186, cy - 182, MAG, 15);
+    text(ctx, `FMC ${n.gps.mode}`, cx - AW + 6, cy - AH + 20, MAG, 15);
   }
   // marker
   if (sim.marker) {
@@ -124,11 +126,11 @@ export function drawAirlinerPfd(ctx: CanvasRenderingContext2D, sim: Sim) {
     text(ctx, 'OM', cx + 142, cy - 183, CYN, 16, 'center', 700);
   }
   // radio altitude & minimums
-  if (d.aglFt < 2500 && !sim.ac.s.onGround) text(ctx, String(Math.round(d.aglFt / 10) * 10), cx, cy + 170, d.aglFt < 1000 ? AMB : WHT, 22, 'center', 700);
+  if (d.aglFt < 2500 && !sim.ac.s.onGround) text(ctx, String(Math.round(d.aglFt / 10) * 10), cx, cy + AH - 36, d.aglFt < 1000 ? AMB : WHT, 22, 'center', 700);
   if (sim.av.minimums !== null) {
     const below = sim.indicatedAlt() < sim.av.minimums;
-    text(ctx, 'BARO', cx + 150, cy + 168, below ? AMB : GRN, 13, 'center');
-    text(ctx, String(sim.av.minimums), cx + 150, cy + 186, below ? AMB : GRN, 17, 'center', 700);
+    text(ctx, 'BARO', cx + AW - 50, cy + AH - 48, below ? AMB : GRN, 13, 'center');
+    text(ctx, String(sim.av.minimums), cx + AW - 50, cy + AH - 28, below ? AMB : GRN, 17, 'center', 700);
     if (below && Math.floor(performance.now() / 400) % 2 === 0) text(ctx, 'MINIMUMS', cx, cy - 120, AMB, 20, 'center', 700);
   }
   if (d.stallWarn) {
@@ -136,10 +138,10 @@ export function drawAirlinerPfd(ctx: CanvasRenderingContext2D, sim: Sim) {
     text(ctx, 'STALL', cx, cy + 93, C.red, 18, 'center', 700);
   }
   drawFma(ctx, sim, cx);
-  drawSpeedTape(ctx, sim, 110, cy);
-  drawAltTape(ctx, sim, 760, cy);
-  drawVsiAl(ctx, d.vsFpm, 900, cy);
-  drawHdgArc(ctx, sim, cx, 640);
+  drawSpeedTape(ctx, sim, cx - AW - 118, cy);
+  drawAltTape(ctx, sim, cx + AW + 52, cy);
+  drawVsiAl(ctx, d.vsFpm, cx + AW + 52 + 118, cy);
+  drawHdgArc(ctx, sim, cx, 668);
   if (sim.paused) {
     box(ctx, cx - 70, cy + 40, 140, 32, '#000', WHT);
     text(ctx, 'PAUSED', cx, cy + 56, WHT, 20, 'center', 700);
@@ -185,7 +187,7 @@ function drawSpeedTape(ctx: CanvasRenderingContext2D, sim: Sim, x: number, cy: n
   const h = 420;
   const kpx = 4.6;
   const ias = Math.max(30, d.iasKt);
-  box(ctx, x, top, w, h, '#3a3f45');
+  box(ctx, x, top, w, h, '#4b5157');
   ctx.save();
   ctx.beginPath();
   ctx.rect(x, top, w, h);
@@ -236,7 +238,7 @@ function drawAltTape(ctx: CanvasRenderingContext2D, sim: Sim, x: number, cy: num
   const top = cy - 210;
   const h = 420;
   const fpx = 0.42;
-  box(ctx, x, top, w, h, '#3a3f45');
+  box(ctx, x, top, w, h, '#4b5157');
   ctx.save();
   ctx.beginPath();
   ctx.rect(x, top, w, h);
@@ -270,7 +272,7 @@ function drawAltTape(ctx: CanvasRenderingContext2D, sim: Sim, x: number, cy: num
 }
 
 function drawVsiAl(ctx: CanvasRenderingContext2D, fpm: number, x: number, cy: number) {
-  poly(ctx, [[x, cy - 170], [x + 30, cy - 170], [x + 56, cy - 60], [x + 56, cy + 60], [x + 30, cy + 170], [x, cy + 170]], '#3a3f45');
+  poly(ctx, [[x, cy - 170], [x + 30, cy - 170], [x + 56, cy - 60], [x + 56, cy + 60], [x + 30, cy + 170], [x, cy + 170]], '#4b5157');
   const yOf = (v: number) => {
     const s = Math.sign(v);
     const a = Math.abs(v);

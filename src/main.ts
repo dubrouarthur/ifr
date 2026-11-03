@@ -25,7 +25,7 @@ import { AtcRadio } from './ui/atcRadio';
 import { CircuitBuilder, decodeCircuit } from './ui/circuitBuilder';
 import { circuitToExercise, type Circuit } from './train/circuits';
 import type { LessonRun, Exercise } from './train/engine';
-import type { Path } from './train/curriculum';
+import { exercise, type Path } from './train/curriculum';
 import type { AssessSettings } from './sim/sim';
 import { Launcher, ProcModal, DirectModal, JoystickModal, DebriefModal, HelpModal, Modal, WX_PRESETS, type WxPreset } from './ui/modals';
 import { distanceNm, wrap180 } from './nav/geo';
@@ -314,6 +314,8 @@ const moreMenu = h('div', { class: 'menu', role: 'menu' });
 const moreItem = (ic: string, label: string, kbd: string, fn: () => void) =>
   h('button', { class: 'menu-item', role: 'menuitem', onclick: () => { moreMenu.classList.remove('open'); fn(); } }, icon(ic), h('span', {}, label), kbd ? h('kbd', {}, kbd) : null);
 moreMenu.append(
+  moreItem(I.proc, 'Load an approach', 'X', () => procModal.open()),
+  moreItem(I.route, 'Direct-To', 'D', () => directModal.open()),
   moreItem(I.plane, 'Plan a flight…', 'Shift N', () => setup.start()),
   moreItem(I.gear, 'Settings', ',', () => settings.open()),
   moreItem(I.cloud, 'Weather station', '', () => weatherModal.open()),
@@ -342,10 +344,8 @@ const topbar = h('header', { class: 'topbar' },
     h('button', { class: 'btn primary', onclick: () => fc.open(), title: 'Flight Center — all flights, exercises and paths (F2)' }, icon(I.plane), h('span', { class: 'lbl' }, 'Flight Center')),
     h('button', { class: 'btn', onclick: () => setup.start(), title: 'Plan a flight — aircraft, instruments, route, weather (Shift N)' }, icon(I.route), h('span', { class: 'lbl' }, 'Plan')),
     h('div', { class: 'tb-group' },
-      h('button', { class: 'btn', onclick: () => charts.toggle(), title: 'Charts (K)' }, icon(I.map), h('span', { class: 'lbl' }, 'Charts')),
-      h('button', { class: 'btn', onclick: () => procModal.open(), title: 'Load an approach (X)' }, icon(I.proc), h('span', { class: 'lbl' }, 'Procedures')),
-      h('button', { class: 'btn', onclick: () => directModal.open(), title: 'Direct-To (D)' }, icon(I.route), h('span', { class: 'lbl' }, 'D→')),
-      h('button', { class: 'btn', onclick: () => cduPanel.toggle(), title: 'FMC CDU (F3)' }, h('span', { class: 'lbl', style: 'display:inline' }, 'CDU')),
+      h('button', { class: 'btn', onclick: () => charts.toggle(), title: 'EFB — charts, airport, navlog, weather, checklists (K)' }, icon(I.map), h('span', { class: 'lbl' }, 'EFB')),
+      h('button', { class: 'btn', onclick: () => cduPanel.toggle(), title: 'FMC CDU — route, approach, legs, hold (F3)' }, icon(I.proc), h('span', { class: 'lbl' }, 'CDU')),
     ),
     h('button', { class: 'btn', onclick: () => ios.toggle(), title: 'Instructor station (I)' }, icon(I.ios), h('span', { class: 'lbl' }, 'Instructor')),
     cockpitSeg,
@@ -557,7 +557,7 @@ const TOUR = [
   { sel: '.bezel.pfd .side.left', title: 'Knobs & autopilot', text: 'Drag or scroll a knob to turn it; on dual knobs the outer ring is coarse and the inner knob fine. Click without dragging to push. The keys are the autopilot: HDG, NAV, APR, ALT, VS, FLC.' },
   { sel: '.bezel.mfd', title: 'Multi-function display', text: 'Moving map with terrain and the active flight plan. RANGE zooms; PROC loads an approach; ACT/VTF activates it.' },
   { sel: '.footer', title: 'Flight controls', text: 'Throttle, flaps, trim and yoke position. Use a joystick or yoke (Controls in the menu), the keyboard (arrows, +/−, Home/End, F), or the touch stick.' },
-  { sel: '.tb-group', title: 'Charts, procedures & Direct-To', text: 'Open the approach plates (your aircraft is drawn on them), load an approach, or fly direct to any fix.' },
+  { sel: '.tb-group', title: 'EFB & CDU', text: 'EFB: approach plates (your aircraft is drawn on them), airport data, navlog, weather and checklists. CDU: the flight management computer — route, departure/arrival, legs, holds, progress.' },
   { sel: '.menu-wrap', title: 'Everything else', text: 'Settings (cockpit, night, Pro mode), the weather station with winds aloft and ATIS, the instructor station, debrief, training records and all keyboard shortcuts.' },
 ];
 function startTour() {
@@ -1169,7 +1169,7 @@ function frame(now: number) {
 }
 
 // test/automation hook
-(window as unknown as { __ifr: unknown }).__ifr = { sim, get outside() { return outside; }, thr27: runway('PARD', '27').threshold, charts: (id: string) => chartIndex().find((c) => c.id === id)?.render() ?? '', world: () => import('./nav/world') };
+(window as unknown as { __ifr: unknown }).__ifr = { sim, get outside() { return outside; }, thr27: runway('PARD', '27').threshold, charts: (id: string) => chartIndex().find((c) => c.id === id)?.render() ?? '', world: () => import('./nav/world'), lesson: (id: string) => pickExercise(exercise(id), null) };
 
 // ------------------------------------------------------------------ boot
 setOtw(otwMode);

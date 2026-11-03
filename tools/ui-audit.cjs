@@ -16,12 +16,17 @@ const fs = require('fs');
   const t0 = Date.now();
   const log = (m) => console.log(`[${((Date.now() - t0) / 1000).toFixed(0)}s] ${m}`);
   const p = await b.newPage({ viewport: { width: W, height: H } });
-  await p.addInitScript(() => localStorage.setItem('ifr.tour.v1', 'true'));
+  await p.addInitScript(() => {
+    localStorage.setItem('ifr.tour.v1', 'true');
+    // deterministic measurements: no animations/transitions
+    document.addEventListener('DOMContentLoaded', () => { const st = document.createElement('style'); st.textContent = '*,*::before,*::after{animation:none!important;transition:none!important}'; document.head.append(st); });
+  });
   const errors = [];
   p.on('pageerror', (e) => errors.push(`pageerror: ${String(e).slice(0, 200)}`));
   p.on('console', (m) => { if (m.type() === 'error' && !/404|Failed to load resource|WebGL/.test(m.text())) errors.push(`console: ${m.text().slice(0, 200)}`); });
   await p.goto(`${BASE}/?scenario=ils27-vtf`);
   await p.waitForTimeout(1500);
+  await p.evaluate(() => { window.__ifr.sim.paused = true; });
   const report = [];
   const closeAll = async () => {
     await p.evaluate(() => {
@@ -74,7 +79,7 @@ const fs = require('fs');
     const before = await p.evaluate(() => document.body.innerText.length);
     log(`topbar ${btn.t}`);
     await p.evaluate((i) => document.querySelectorAll('.topbar button')[i].click(), btn.i);
-    await p.waitForTimeout(350);
+    await p.waitForTimeout(700);
     const st = await inspect();
     const after = await p.evaluate(() => document.body.innerText.length);
     const toast = await p.evaluate(() => document.querySelectorAll('.toast').length);
@@ -105,8 +110,13 @@ const fs = require('fs');
     }
   }
 
-  // ---------------------------------------------------------------- lesson visibility
+  // ---------------------------------------------------------------- lesson visibility (start a real lesson)
   await closeAll();
+  await p.evaluate(() => window.__ifr.lesson('hold-teardrop'));
+  await p.waitForTimeout(600);
+  await p.evaluate(() => { const b = [...document.querySelectorAll('.modal-bg.open button')].find((x) => /Start/i.test(x.textContent)); b?.click(); });
+  await p.waitForTimeout(1500);
+  await p.screenshot({ path: `${OUT}/lesson.png` });
   const lesson = await p.evaluate(async () => {
     const c = document.querySelector('.coach');
     if (!c) return { problems: ['no coach element'] };

@@ -1086,71 +1086,50 @@ export function approachPlate(ap: Approach): string {
     });
   }
 
-  // ---------------------------------------------- minimums
+  // ---------------------------------------------- minimums (Jeppesen-style: straight-in | circle-to-land)
   const mnY = pr.y + pr.h;
-  const rows = ap.minimums.length;
-  const rowH = 19;
-  const catX = [10, 150, 262, 374, 486, W - 10];
-  o.push(
-    `<rect x="10" y="${mnY}" width="${W - 20}" height="20" fill="#e9e9e9" stroke="${INK}"/>`,
-  );
-  ["CATEGORY", "A", "B", "C", "D"].forEach((c, i) =>
-    o.push(
-      text(i ? (catX[i] + catX[i + 1]) / 2 : 18, mnY + 14, c, {
-        size: 10.5,
-        weight: 700,
-        anchor: i ? "middle" : "start",
-        halo: false,
-      }),
-    ),
-  );
-  ap.minimums.forEach((m, r) => {
-    const y = mnY + 20 + r * rowH;
-    o.push(line({ x: 10, y: y + rowH }, { x: W - 10, y: y + rowH }, 0.5));
-    o.push(text(18, y + 13, m.label, { size: 10, weight: 700, halo: false }));
-    const alt = m.da ?? m.mda ?? 0;
-    const circling = /CIRCL/i.test(m.label);
-    const same = !circling;
-    if (same) {
-      o.push(
-        text((catX[1] + catX[5]) / 2, y + 13, `${alt}-${m.vis}     ${m.hat}`, {
-          size: 10,
-          weight: 700,
-          anchor: "middle",
-          halo: false,
-        }),
-      );
-      o.push(
-        text(
-          (catX[1] + catX[5]) / 2 +
-            textW(`${alt}-${m.vis}     ${m.hat}`, 10, true) / 2 +
-            6,
-          y + 13,
-          `${m.da ? "DA" : "MDA"} · HAT`,
-          { size: 7.5, halo: false },
-        ),
-      );
-    } else
-      for (let i = 1; i <= 4; i++) {
-        const extra = (i - 1) * 40;
-        o.push(
-          text(
-            (catX[i] + catX[i + 1]) / 2,
-            y + 13,
-            `${alt + extra}-${i > 2 ? "1½" : m.vis}  ${m.hat + extra}`,
-            { size: 9.5, weight: 700, anchor: "middle", halo: false },
-          ),
-        );
-      }
-  });
-  for (let i = 1; i <= 4; i++) {
-    o.push(line({ x: catX[i], y: mnY }, { x: catX[i], y: mnY + 20 }, 0.6));
-    ap.minimums.forEach((m, r) => {
-      if (/CIRCL/i.test(m.label)) o.push(line({ x: catX[i], y: mnY + 20 + r * rowH }, { x: catX[i], y: mnY + 20 + (r + 1) * rowH }, 0.6));
-    });
+  const straight = ap.minimums.filter((m) => !/CIRCL/i.test(m.label));
+  const circle = ap.minimums.find((m) => /CIRCL/i.test(m.label));
+  const visTxt = (v: string) => ({ "1/4": "RVR 12 or ¼", "1/2": "RVR 18 or ½", "3/4": "RVR 40 or ¾", "1": "RVR 50 or 1", "1 1/4": "1¼", "1 1/2": "1½" } as Record<string, string>)[v] ?? (v.startsWith("RVR") ? v : `VIS ${v}`);
+  const alsOut = (v: string) => ({ "1/4": "RVR 24 or ½", "1/2": "RVR 40 or ¾", "3/4": "RVR 60 or 1¼", "1": "1½" } as Record<string, string>)[v] ?? v;
+  const MH = 92;
+  const split = circle ? W - 10 - 196 : W - 10;
+  o.push(rect(10, mnY, W - 20, MH, { sw: 1.2 }));
+  o.push(`<rect x="10" y="${mnY}" width="${W - 20}" height="17" fill="#e6e6e6" stroke="${INK}"/>`);
+  o.push(text((10 + split) / 2, mnY + 12.5, `STRAIGHT-IN LANDING RWY ${ap.runway}`, { size: 10, weight: 700, anchor: "middle", halo: false }));
+  if (circle) {
+    o.push(line({ x: split, y: mnY }, { x: split, y: mnY + MH }, 1.2));
+    o.push(text((split + W - 10) / 2, mnY + 12.5, "CIRCLE-TO-LAND", { size: 10, weight: 700, anchor: "middle", halo: false }));
   }
-  o.push(line({ x: catX[1], y: mnY }, { x: catX[1], y: mnY + 20 + rows * rowH }, 0.6));
-  o.push(rect(10, mnY, W - 20, 20 + rows * rowH));
+  const colW = (split - 10) / Math.max(1, straight.length);
+  straight.forEach((m, i) => {
+    const x0 = 10 + i * colW;
+    if (i) o.push(line({ x: x0, y: mnY + 17 }, { x: x0, y: mnY + MH }, 0.8));
+    const isDa = m.da !== undefined;
+    const alt = m.da ?? m.mda ?? 0;
+    const lbl = m.label.replace(/^S-/, "").replace(/ \d+[LRC]?$/, "");
+    o.push(text(x0 + colW / 2, mnY + 29, lbl + (/LOC/.test(lbl) && precision ? " (GS out)" : ""), { size: 9, weight: 700, anchor: "middle", halo: false }));
+    o.push(text(x0 + colW / 2, mnY + 45, `${isDa ? "DA(H)" : "MDA(H)"} ${alt}'(${m.hat}')`, { size: 11.5, weight: 700, anchor: "middle", halo: false }));
+    o.push(line({ x: x0 + 6, y: mnY + 52 }, { x: x0 + colW - 6, y: mnY + 52 }, 0.5));
+    o.push(text(x0 + 8, mnY + 66, "FULL", { size: 8, halo: false }));
+    o.push(text(x0 + colW - 8, mnY + 66, visTxt(m.vis), { size: 10, weight: 700, anchor: "end", halo: false }));
+    o.push(text(x0 + 8, mnY + 83, "ALS out", { size: 8, halo: false }));
+    o.push(text(x0 + colW - 8, mnY + 83, alsOut(m.vis), { size: 10, weight: 700, anchor: "end", halo: false }));
+  });
+  if (circle) {
+    const cx0 = split;
+    const base = circle.mda ?? 0;
+    ["A", "B", "C", "D"].forEach((c, i) => {
+      const y = mnY + 31 + i * 16;
+      const extra = i * 40;
+      o.push(text(cx0 + 10, y, c, { size: 10, weight: 700, halo: false }));
+      o.push(text(cx0 + 98, y, `${base + extra}'(${circle.hat + extra}')`, { size: 10, weight: 700, anchor: "middle", halo: false }));
+      o.push(text(cx0 + 186, y, i < 2 ? visTxt(circle.vis).replace(/^VIS /, "") : "1½", { size: 10, weight: 700, anchor: "end", halo: false }));
+    });
+    o.push(text(cx0 + 98, mnY + 21, "MDA(H)", { size: 7, anchor: "middle", halo: false }));
+  }
+  const rows = 4;
+  const rowH = (MH - 20) / rows;
 
   // ---------------------------------------------- bottom: timing table + airport sketch
   const bY = mnY + 20 + rows * rowH;

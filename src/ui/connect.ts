@@ -5,6 +5,7 @@ import type { Sim } from '../sim/sim';
 import { DataLink } from '../connect/datalink';
 import { garminFpl, xplaneFms, msfsPln, routeGpx, trackGpx, trackKml, trackCsv, download } from '../connect/exports';
 import bridgeSrc from '../../tools/efb-bridge.mjs?raw';
+import { navigraphConfig, setNavigraphConfig, navigraphSignIn, navigraphSignOut, navigraphRestore, onNavigraph } from '../connect/navigraph';
 
 import { webhookCfg, postWebhook } from '../connect/webhook';
 export { webhookCfg, postWebhook };
@@ -114,9 +115,33 @@ export class ConnectModal extends Modal {
           h('a', { class: 'btn', href: 'https://www.sia.aviation-civile.gouv.fr/', target: '_blank', rel: 'noopener' }, 'SIA (France) ↗'),
           h('a', { class: 'btn', href: 'https://www.simbrief.com/', target: '_blank', rel: 'noopener' }, 'SimBrief ↗'),
         ),
-        h('p', { class: 'muted cx-note' }, 'A built-in Navigraph integration (charts in the drawer, AIRAC navdata) needs a Navigraph developer client ID and OAuth sign-in; it is not enabled in this build. The training region’s own plates are in the Charts drawer (K).'),
       ),
     );
+    this.body.append(this.navigraphCard());
     this.foot.append(h('button', { class: 'btn primary', onclick: () => this.close() }, 'Done'));
+  }
+
+  /** Navigraph account: device-flow sign-in; charts then appear in the EFB (source: Navigraph) */
+  private navigraphCard(): HTMLElement {
+    const st = h('div', { class: 'ng-status' });
+    const code = h('div', { class: 'ng-code' });
+    const cfg = navigraphConfig();
+    const id = h('input', { type: 'text', placeholder: 'Client ID', value: cfg?.clientId ?? '', spellcheck: 'false' }) as HTMLInputElement;
+    const sec = h('input', { type: 'password', placeholder: 'Client secret', value: cfg?.clientSecret ?? '' }) as HTMLInputElement;
+    for (const i of [id, sec]) i.addEventListener('keydown', (e) => e.stopPropagation());
+    const creds = h('details', { class: 'ng-creds' }, h('summary', {}, 'Developer credentials'),
+      h('p', { class: 'muted cx-note' }, 'Navigraph requires an application client (developers.navigraph.com). Schools deploying this simulator set VITE_NAVIGRAPH_CLIENT_ID / VITE_NAVIGRAPH_CLIENT_SECRET at build time; or enter them here (stored in this browser).'),
+      h('div', { class: 'cx-row' }, id, sec, h('button', { class: 'btn', onclick: () => { setNavigraphConfig(id.value.trim() && sec.value.trim() ? { clientId: id.value.trim(), clientSecret: sec.value.trim() } : null); this.toast('Navigraph credentials saved', 'good'); void navigraphRestore(); } }, 'Save')));
+    const signIn = h('button', { class: 'btn primary', onclick: () => void navigraphSignIn((p) => { clear(code); code.append(h('span', {}, 'Open'), h('a', { href: p.url, target: '_blank', rel: 'noopener' }, p.url.replace(/^https?:\/\//, '').slice(0, 48)), h('span', {}, 'and confirm the code'), h('b', {}, p.code)); }) }, 'Sign in with Navigraph');
+    const signOut = h('button', { class: 'btn', onclick: () => void navigraphSignOut() }, 'Sign out');
+    onNavigraph((s, u) => {
+      clear(st);
+      st.append(h('span', { class: `ng-dot ${s}` }), h('b', {}, { unconfigured: 'Not configured', 'signed-out': 'Signed out', pending: 'Waiting for confirmation…', 'signed-in': `Signed in${u?.preferred_username ? ' as ' + u.preferred_username : ''}`, error: 'Sign-in failed' }[s]));
+      signIn.style.display = s === 'signed-in' || s === 'unconfigured' ? 'none' : '';
+      signOut.style.display = s === 'signed-in' ? '' : 'none';
+      if (s === 'signed-in') clear(code);
+    });
+    return this.card('Navigraph', 'Sign in with your Navigraph subscription to read the real charts (Jeppesen-based, worldwide) in the EFB — own-ship is drawn on georeferenced charts.',
+      st, h('div', { class: 'cx-row' }, signIn, signOut), code, creds);
   }
 }
