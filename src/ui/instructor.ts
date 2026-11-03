@@ -1,5 +1,6 @@
 // Instructor operating station: failures, reposition, freeze, weather and a live ACS monitor.
 import { h, clear, fmtTime } from './dom';
+import { svgIcon, I } from './icons';
 import { FAILURE_LABELS, type Failures, type Sim } from '../sim/sim';
 import { WX_PRESETS, Modal } from './modals';
 import { evaluateAcs, computeDebrief } from '../sim/recorder';
@@ -13,8 +14,8 @@ export class InstructorDrawer {
   constructor(private sim: Sim, private toast: (m: string, k?: 'info' | 'good' | 'warn' | 'bad') => void) {
     this.body = h('div', { class: 'ios-body' });
     this.live = h('div', { class: 'ios-live' });
-    this.el = h('aside', { class: 'drawer left', 'aria-label': 'Instructor station' },
-      h('header', {}, h('h3', {}, 'Instructor station'), h('button', { class: 'x', onclick: () => this.toggle(false), title: 'Close (I)' }, '×')),
+    this.el = h('aside', { class: 'drawer left ios', 'aria-label': 'Instructor station' },
+      h('header', {}, h('h3', {}, 'Instructor station'), h('button', { class: 'x', onclick: () => this.toggle(false), title: 'Close (I)', 'aria-label': 'Close' }, '×')),
       h('div', { class: 'ios-scroll' }, this.live, this.body),
     );
     this.render();
@@ -31,7 +32,6 @@ export class InstructorDrawer {
     clear(this.body);
     const sim = this.sim;
     const sec = (t: string) => h('div', { class: 'section-t' }, t);
-    this.body.append(h('button', { class: 'btn primary', style: 'width:100%;justify-content:center;margin-top:12px', onclick: () => { this.toggle(false); this.onBuilder?.(); } }, '🛠️ Build an IFR circuit'));
     this.body.append(sec('Failures'));
     const grid = h('div', { class: 'ios-grid' });
     for (const k of Object.keys(FAILURE_LABELS) as (keyof Failures)[]) {
@@ -53,7 +53,9 @@ export class InstructorDrawer {
     ));
     this.body.append(sec('Weather'));
     this.body.append(h('div', { class: 'ios-row' }, ...WX_PRESETS.slice(1).map((w) => h('button', { class: 'btn', onclick: () => { Object.assign(sim.weather, w.wx); sim.rec.log(sim.time, 'info', `Weather: ${w.name}`); this.toast(`Weather → ${w.name}`); } }, w.name))));
-    this.body.append(h('p', { class: 'muted', style: 'font-size:12px;margin-top:16px' }, 'All instructor actions are time-stamped in the flight record and appear in the debrief timeline.'));
+    this.body.append(sec('Training'));
+    this.body.append(h('button', { class: 'btn ios-builder', onclick: () => { this.toggle(false); this.onBuilder?.(); } }, svgIcon(I.tools, 16), 'Build an IFR circuit'));
+    this.body.append(h('p', { class: 'muted ios-foot' }, 'All instructor actions are time-stamped in the flight record and appear in the debrief timeline.'));
   }
   update(dt: number) {
     if (!this.isOpen || Modal.anyOpen()) return;
@@ -78,8 +80,8 @@ export class InstructorDrawer {
         h('div', {}, h('small', {}, 'IAS / ALT'), h('b', {}, `${Math.round(sim.ac.data.iasKt)} kt / ${Math.round(sim.indicatedAlt())} ft`)),
         h('div', {}, h('small', {}, 'Visual'), h('b', {}, sim.hasVisual() ? 'yes' : 'no (IMC)')),
       ),
-      h('div', { class: `ios-verdict ${acs.result}` }, `ACS: ${acs.result}`, h('span', {}, `Score ${db.score} · ${db.grade}`)),
-      h('div', { class: 'ios-acs' }, ...acs.items.map((i) => h('div', { class: i.result }, h('b', {}, i.result), h('span', {}, i.task), h('small', {}, i.actual)))),
+      h('div', { class: `ios-verdict ${acs.result}` }, `ACS: ${acs.result === 'INCOMPLETE' ? 'Incomplete' : acs.result}`, h('span', {}, db.graded ? `Score ${db.score} · ${db.grade}` : 'Not graded yet')),
+      h('div', { class: 'ios-acs' }, ...acs.items.map((i) => h('div', { class: i.result === 'N/A' ? 'NA' : i.result }, h('b', {}, i.result === 'N/A' ? '—' : i.result), h('span', {}, i.task), h('small', {}, i.actual)))),
     );
   }
 }
@@ -106,21 +108,40 @@ export class HistoryModal extends Modal {
     const sel = h('select', { onchange: (e: Event) => { this.filter = (e.target as HTMLSelectElement).value; this.render(); } }, h('option', { value: '' }, 'All students'), ...students.map((s) => h('option', { value: s, selected: s === this.filter }, s)));
     const passes = list.filter((a) => a.mode === 'checkride' && a.acs === 'PASS').length;
     const rides = list.filter((a) => a.mode === 'checkride').length;
+    const scored = list.filter((a) => a.graded !== false);
+    const pill = (k: string, v: string) => h('div', { class: 'hist-pill' }, h('small', {}, k), h('b', {}, v));
     this.body.append(
-      h('div', { class: 'ios-row', style: 'align-items:center' }, h('label', { class: 'field', style: 'min-width:220px' }, h('b', {}, 'Student'), sel), h('span', { class: 'chip' }, `${list.length} flights`), h('span', { class: 'chip' }, `Checkrides ${passes}/${rides} passed`), h('span', { class: 'chip' }, `Avg score ${list.length ? Math.round(list.reduce((a, b) => a + b.score, 0) / list.length) : '—'}`)),
+      h('div', { class: 'hist-bar' },
+        h('label', { class: 'field' }, h('b', {}, 'Student'), sel),
+        pill('Flights', String(list.length)),
+        pill('Checkrides passed', rides ? `${passes} / ${rides}` : '—'),
+        pill('Average score', scored.length ? String(Math.round(scored.reduce((a, b) => a + b.score, 0) / scored.length)) : '—'),
+      ),
     );
-    if (!list.length) this.body.append(h('p', { class: 'muted' }, 'No flights recorded yet. Every debrief is saved here automatically (in this browser).'));
+    const when = (d: string) => new Date(d).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    if (!list.length)
+      this.body.append(h('div', { class: 'hist-empty' }, svgIcon(I.records, 40), h('b', {}, 'No flights recorded yet'), h('span', {}, 'Every debrief of a flight longer than 30 seconds, and every exercise attempt, is saved here automatically (in this browser).')));
     else
       this.body.append(
         h('table', { class: 'items hist' },
-          h('tr', {}, ...['Date', 'Student', 'Scenario', 'Mode', 'ACS', 'Score', 'Failed tasks'].map((t) => h('th', {}, t))),
-          ...list.slice(0, 200).map((a) => h('tr', {}, h('td', {}, new Date(a.date).toLocaleString()), h('td', {}, a.student || '—'), h('td', {}, a.scenario), h('td', {}, a.mode), h('td', { class: `acs ${a.acs}` }, a.acs), h('td', {}, `${a.score} ${a.grade}`), h('td', { class: 'muted' }, a.failedTasks.join(', ') || '—'))),
+          h('tr', {}, ...['Date', 'Student', 'Flight', 'Mode', 'ACS', 'Score', 'Failed tasks'].map((t) => h('th', { class: t === 'Score' ? 'num' : '' }, t))),
+          ...list.slice(0, 200).map((a) =>
+            h('tr', {},
+              h('td', { class: 'nowrap' }, when(a.date)),
+              h('td', {}, a.student || '—'),
+              h('td', {}, h('div', {}, a.exerciseTitle ?? a.scenario), a.exercise ? h('small', { class: 'muted' }, a.passed ? 'Exercise · passed' : 'Exercise · not passed') : a.approach ? h('small', { class: 'muted' }, a.approach) : null),
+              h('td', {}, a.mode === 'checkride' ? 'Checkride' : 'Training'),
+              h('td', { class: `acs ${a.acs}` }, a.acs === 'INCOMPLETE' ? 'Incomplete' : a.acs),
+              h('td', { class: 'num' }, a.graded === false ? h('span', { class: 'muted' }, '—') : `${a.score} · ${a.grade}`),
+              h('td', { class: 'muted' }, a.failedTasks.join(', ') || '—'),
+            ),
+          ),
         ),
       );
     this.foot.append(
-      h('button', { class: 'btn danger', onclick: () => { if (confirm('Delete all training records stored in this browser?')) { history.clear(); this.render(); } } }, 'Clear records'),
-      h('span', { style: 'flex:1' }),
-      h('button', { class: 'btn primary', onclick: () => {
+      h('button', { class: 'btn link quiet', disabled: !all.length, onclick: () => { if (confirm('Delete all training records stored in this browser?')) { history.clear(); this.render(); } } }, 'Clear records'),
+      h('span', { class: 'grow' }),
+      h('button', { class: 'btn primary', disabled: !list.length, onclick: () => {
         const blob = new Blob([history.csv(list)], { type: 'text/csv' });
         const a = h('a', { href: URL.createObjectURL(blob), download: `ifr-training-records-${new Date().toISOString().slice(0, 10)}.csv` });
         a.click();

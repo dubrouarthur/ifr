@@ -111,10 +111,16 @@ export function hub(ctx: CanvasRenderingContext2D, cx: number, cy: number, r = 9
   ctx.fill();
 }
 
-export function flag(ctx: CanvasRenderingContext2D, x: number, y: number, text: string, color = G.red) {
+/** red warning flag (OFF, NAV, GS, HDG...); `k` scales it (0.8 for the small GS flag inside an HSI) */
+export function flag(ctx: CanvasRenderingContext2D, x: number, y: number, text: string, color = G.red, k = 1) {
+  const w = 46 * k;
+  const h = 20 * k;
   ctx.fillStyle = color;
-  ctx.fillRect(x - 22, y - 10, 44, 20);
-  gtext(ctx, text, x, y + 1, 13, '#fff', 'center', 700);
+  ctx.fillRect(x - w / 2, y - h / 2, w, h);
+  ctx.strokeStyle = 'rgba(0,0,0,.55)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x - w / 2 + 0.5, y - h / 2 + 0.5, w - 1, h - 1);
+  gtext(ctx, text, x, y + 1, Math.round(14 * k), '#fff', 'center', 800);
 }
 
 export function lcd(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {

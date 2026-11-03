@@ -1,0 +1,19 @@
+/* ui-cockpits: explain (F1) overlay on the instrument screens.
+   Outline at rest; the name tag and the explanation appear on hover or keyboard focus, placed outside
+   the outlined instrument so they never cover the readout they describe. */
+body .explain .hot { border: 1.5px dashed rgba(0, 228, 255, .55); background: transparent; border-radius: 6px; outline: none; transition: background-color .12s ease, border-color .12s ease; }
+body .explain .hot:hover, body .explain .hot:focus-visible { background: rgba(0, 228, 255, .08); border: 1.5px solid #00e4ff; z-index: 4; }
+body .explain .hot .tag { top: auto; bottom: calc(100% + 3px); left: -1px; right: auto; padding: 2px 7px; border-radius: 4px; background: #00e4ff; color: #00222a; font: 700 11px/1.35 var(--font); letter-spacing: .01em; opacity: 0; transition: opacity .12s ease; }
+body .explain .hot.tag-below .tag { bottom: auto; top: calc(100% + 3px); }
+body .explain .hot.tag-in .tag { bottom: auto; top: 3px; left: 3px; }
+body .explain .hot.tag-right .tag { left: auto; right: -1px; }
+body .explain .hot.tag-in.tag-right .tag { left: auto; right: 3px; }
+body .explain .hot:hover .tag, body .explain .hot:focus-visible .tag { opacity: 1; }
+body .explain .hot .tip { width: min(260px, 90%); min-width: 200px; top: calc(100% + 6px); bottom: auto; }
+body .explain .hot.up .tip { top: auto; bottom: calc(100% + 26px); }
+body .explain .hot.tag-below .tip { top: calc(100% + 26px); }
+body .explain .hot.tip-in .tip { top: 26px; bottom: auto; }
+body .explain .hot.tip-c .tip { left: 50%; right: auto; transform: translateX(-50%); }
+body .explain .hot.tip-l .tip { left: 0; right: auto; transform: none; }
+body .explain .hot.tip-r .tip { left: auto; right: 0; transform: none; }
+body .explain .hot:focus-visible .tip { display: block; }

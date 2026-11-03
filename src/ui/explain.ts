@@ -22,32 +22,43 @@ const G1000_MFD: R[] = [
   [718, 54, 306, 690, 'Active flight plan', 'Waypoints with desired track, distance and altitude constraints. Magenta arrow = active leg. Bottom: approach status and CDI scale (ENR 2 NM · TERM 1 NM · APR 0.3 NM).'],
 ];
 const STEAM_LEFT: R[] = [
-  [30, 90, 292, 292, 'Airspeed', 'Knots. White arc = flap range, green = normal, yellow = caution, red line = never exceed.'],
+  [30, 90, 292, 292, 'Airspeed', 'Knots. White arc = flap operating range, green = normal, yellow = caution (smooth air only), red line = never exceed.'],
   [366, 90, 292, 292, 'Attitude indicator', 'Miniature aircraft against the horizon; bank index at the top. Vacuum-driven: tumbles on a vacuum (AHRS) failure — use the turn coordinator and compass.'],
-  [702, 90, 292, 292, 'Altimeter', 'Long hand = hundreds, short = thousands, thin = ten-thousands. Kollsman window = altimeter setting.'],
+  [702, 90, 292, 292, 'Altimeter', 'Long hand = hundreds, short = thousands, thin = ten-thousands. Kollsman window (lower right) = altimeter setting.'],
   [30, 432, 292, 292, 'Turn coordinator', 'Wings on the L/R mark = standard-rate turn (3°/s, 2 minutes for 360°). Ball = coordination: step on the ball.'],
-  [366, 432, 292, 292, 'HSI / DG', 'Heading under the lubber line; orange heading bug. Course arrow + deviation bar; yellow side pointers = glideslope.'],
+  [366, 432, 292, 292, 'HSI / DG', 'Heading under the lubber line; orange heading bug. Course arrow + deviation bar; yellow side pointers = glideslope. The label under the aircraft shows the source (NAV 1, NAV 2 or GPS).'],
   [702, 432, 292, 292, 'Vertical speed', 'Hundreds of feet per minute, up or down.'],
-  [0, 0, 1024, 60, 'Markers, compass & warnings', 'Outer-marker light (blue, flashing over MARLO), wet magnetic compass (lags and leads in turns), warning lights.'],
+  [0, 0, 1024, 60, 'Markers, compass & warnings', 'Outer-marker light (blue, flashing over the outer marker), wet magnetic compass (lags and leads in turns), warning lights.'],
+  [0, 734, 1024, 34, 'Status strip', 'Outside air temperature, flap position, minimums and the flight timer / chronometer.'],
 ];
 const STEAM_RIGHT: R[] = [
-  [46, 60, 300, 300, 'CDI (VOR / LOC / GS)', 'OBS card set with CRS. Vertical needle = course deviation, horizontal needle = glideslope. TO/FROM flag. Follows the CDI source (NAV1, NAV2 or GPS).'],
-  [46, 410, 300, 300, 'RMI', 'Compass card turns with heading. Yellow single needle = ADF (points to the NDB), green double needle = VOR2.'],
+  [46, 60, 300, 340, 'NAV 2 head (VOR / LOC / GS)', 'Always shows NAV 2: OBS card set with CRS, vertical needle = course deviation, horizontal needle = glideslope, TO/FROM flag. The HSI on the left follows the CDI source.'],
+  [46, 410, 300, 340, 'RMI', 'Compass card turns with heading. Yellow single needle = ADF (points to the NDB), green double needle = VOR 2.'],
   [400, 54, 610, 236, 'GPS', 'Mini-map plus next waypoint, distance, DTK, track, ground speed and ETE.'],
-  [400, 298, 610, 142, 'NAV/COM radios', 'Active (bright) and standby (dim) frequencies. NAV identifier shown when a station is received.'],
+  [400, 298, 610, 142, 'NAV/COM radios', 'Active (bright) and standby (dim) frequencies. NAV identifier shown when a station is received; CDI marks the receiver that drives the HSI.'],
   [400, 446, 610, 110, 'ADF & DME', 'ADF frequency/timer; DME distance, ground speed and time to the station (NAV1).'],
-  [400, 562, 610, 76, 'Autopilot (KAP 140 style)', 'Active lateral/vertical modes and armed modes; selected altitude or VS.'],
-  [400, 644, 610, 116, 'Transponder & engine', 'Squawk code and mode; tachometer, fuel flow, oil temperature and fuel.'],
+  [400, 562, 610, 52, 'Autopilot (KAP 140 style)', 'Active lateral/vertical modes and armed modes; selected altitude or VS. AP OFF when disengaged.'],
+  [400, 620, 610, 140, 'Transponder & engine', 'Squawk code, reported pressure altitude (FL) and mode; tachometer, fuel flow and fuel quantity.'],
 ];
 const AL_PFD: R[] = [
-  [200, 6, 600, 92, 'Flight mode annunciator', 'Thrust · roll · pitch modes: green = engaged, white = armed. CMD = autopilot engaged, FD = flight director only.'],
-  [110, 120, 110, 460, 'Speed tape', 'IAS box, magenta selected speed (bug), red/black barber pole above VNE and red low-speed band.'],
-  [300, 130, 400, 420, 'Attitude (ADI)', 'Aircraft symbol, magenta FD bars, LOC scale below and GS scale on the right (magenta diamonds), radio altitude, BARO minimums.'],
-  [740, 110, 150, 470, 'Altitude tape', 'Altitude box, magenta selected altitude on top, altimeter setting below, green minimums line.'],
-  [890, 150, 80, 380, 'Vertical speed', 'Pointer from the left edge; value shown above 400 fpm.'],
-  [220, 600, 560, 160, 'Heading', 'Heading box, magenta selected heading, white track line.'],
+  [174, 4, 600, 96, 'Flight mode annunciator', 'Thrust · roll · pitch modes: green = engaged (boxed for 10 s after a change), white = armed. CMD = autopilot engaged, FD = flight director only.'],
+  [52, 100, 168, 530, 'Speed tape', 'IAS with rolling digits. Magenta = selected speed and bug. Red/black barber poles = minimum and maximum speed, amber bars = manoeuvre margins. Green arrow = speed in 10 s. Green bugs = V1/VR/V2 or flap manoeuvre speeds. Mach and ground speed below.'],
+  [258, 140, 432, 460, 'Attitude (ADI)', 'Aircraft symbol, magenta FD bars, LOC scale below and G/S scale on the right (magenta diamonds), radio altitude, BARO minimums. ILS identifier, course and DME above left.'],
+  [738, 100, 146, 512, 'Altitude tape', 'Altitude with a 20-ft drum, magenta selected altitude and bug, altimeter setting below, green minimums pointer, amber hatching = ground.'],
+  [886, 160, 96, 400, 'Vertical speed', 'Pointer from the right; value shown above 400 fpm. Magenta bug = selected V/S.'],
+  [220, 616, 520, 152, 'Heading', 'Heading box, magenta selected heading (bug and readout), white track line.'],
 ];
-const AL_ND: R[] = [[0, 0, 1024, 768, 'Navigation display (MAP)', 'Heading-up arc: route (magenta = active), waypoints with constraints, navaids, ILS course (dashed). Top left: ground speed, TAS and wind; top right: next waypoint, ETA and distance.']];
+const AL_ND: R[] = [
+  [0, 0, 240, 124, 'Speeds & wind', 'Ground speed and true airspeed; wind direction/speed and an arrow showing the wind relative to the map.'],
+  [400, 58, 224, 80, 'Heading', 'Heading-up map: heading in the box, white pointer at the top, magenta selected-heading bug, dashed track line.'],
+  [784, 0, 240, 96, 'Active waypoint', 'Next waypoint (magenta), ETA in UTC and distance to go.'],
+  [240, 160, 544, 470, 'Map', 'Route: magenta = active leg, white = rest of the plan, dashed = missed approach; turns drawn as flown (fly-by arcs, fly-over turns). Cyan = navaids, fixes and airports (green when tuned). Green arc = where you reach the selected altitude. Half-range ring with its range.'],
+  [0, 676, 210, 92, 'VOR / ADF L', 'Left bearing pointer source: identifier (or frequency) and DME.'],
+  [814, 676, 210, 92, 'VOR / ADF R', 'Right bearing pointer source: identifier (or frequency) and DME.'],
+];
+
+/** every explain region, per screen (logical 1024 × 768 coordinates) */
+export const EXPLAIN_REGIONS = { G1000_PFD, G1000_MFD, STEAM_LEFT, STEAM_RIGHT, AL_PFD, AL_ND };
 
 export class ExplainOverlay {
   on = false;
@@ -60,8 +71,18 @@ export class ExplainOverlay {
     for (const [screen, regions] of sets) {
       const layer = h('div', { class: 'explain' });
       for (const [x, y, w, hh, title, text] of regions) {
+        // tag outside the hotspot (above, or below when there is no room above), never over the readout;
+        // tip below / above / inside, anchored so it stays on the screen
+        const cls = ['hot'];
+        if (y < 40) cls.push(y + hh + 40 <= 768 ? 'tag-below' : 'tag-in');
+        if (x + w / 2 > 700) cls.push('tag-right');
+        if (y + hh + 230 <= 768) cls.push('tip-below');
+        else if (y >= 230) cls.push('up');
+        else cls.push('tip-in');
+        const cxr = x + w / 2;
+        cls.push(cxr < 300 ? 'tip-l' : cxr > 724 ? 'tip-r' : 'tip-c');
         layer.append(
-          h('div', { class: `hot${y + hh > 560 ? ' up' : ''}`, style: `left:${(x / 1024) * 100}%;top:${(y / 768) * 100}%;width:${(w / 1024) * 100}%;height:${(hh / 768) * 100}%` },
+          h('div', { class: cls.join(' '), tabindex: '0', role: 'note', 'aria-label': `${title}: ${text}`, style: `left:${(x / 1024) * 100}%;top:${(y / 768) * 100}%;width:${(w / 1024) * 100}%;height:${(hh / 768) * 100}%` },
             h('span', { class: 'tag' }, title),
             h('div', { class: 'tip' }, h('b', {}, title), h('span', {}, text)),
           ),

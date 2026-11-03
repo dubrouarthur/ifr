@@ -51,7 +51,7 @@ export class ConnectModal extends Modal {
     this.body.append(
       this.card('EFB live link', 'Show the simulated aircraft on ForeFlight, Garmin Pilot, SkyDemon, FltPlan Go, Avare… (GDL 90 + XGPS, like X-Plane).',
         h('ol', { class: 'cx-steps' },
-          h('li', {}, 'Download the bridge and run it on this computer (Node 18+, no install): ', h('code', {}, cmd), ' ', h('button', { class: 'btn', onclick: () => download(bridgeSrc, 'efb-bridge.mjs', 'text/javascript') }, 'Download bridge'), ' ', h('button', { class: 'btn ghost', onclick: () => { void navigator.clipboard?.writeText(cmd); this.toast('Command copied'); } }, 'Copy command')),
+          h('li', {}, 'Download the bridge and run it on this computer (Node 18+, no install): ', h('code', {}, cmd), ' ', h('button', { class: 'btn', onclick: () => download(bridgeSrc, 'efb-bridge.mjs', 'text/javascript') }, 'Download bridge'), ' ', h('button', { class: 'btn', onclick: () => { void navigator.clipboard?.writeText(cmd); this.toast('Command copied'); } }, 'Copy command')),
           h('li', {}, 'Connect the simulator to the bridge:'),
         ),
         h('div', { class: 'cx-row' },
@@ -72,10 +72,10 @@ export class ConnectModal extends Modal {
     this.body.append(
       this.card('Export the flight plan', hasPlan ? `${fp.wpts.length} waypoints: ${fp.wpts.map((w) => w.ident).join(' ')}` : 'Load a route or an approach first.',
         h('div', { class: 'cx-row wrap' },
-          h('button', { class: 'btn', disabled: !hasPlan, onclick: () => download(garminFpl(fp), `${name}.fpl`, 'application/xml') }, 'Garmin .fpl', h('small', {}, 'ForeFlight · Garmin Pilot · GTN')),
-          h('button', { class: 'btn', disabled: !hasPlan, onclick: () => download(xplaneFms(fp, this.sim.ap.altSel), `${name}.fms`, 'text/plain') }, 'X-Plane .fms', h('small', {}, 'X-Plane 11/12')),
-          h('button', { class: 'btn', disabled: !hasPlan, onclick: () => download(msfsPln(fp, this.sim.ap.altSel), `${name}.pln`, 'application/xml') }, 'MSFS .pln', h('small', {}, 'Flight Simulator')),
-          h('button', { class: 'btn', disabled: !hasPlan, onclick: () => download(routeGpx(fp), `${name}.gpx`, 'application/gpx+xml') }, 'GPX route', h('small', {}, 'any GPS / map app')),
+          h('button', { class: 'btn tile', disabled: !hasPlan, onclick: () => download(garminFpl(fp), `${name}.fpl`, 'application/xml') }, 'Garmin .fpl', h('small', {}, 'ForeFlight · Garmin Pilot · GTN')),
+          h('button', { class: 'btn tile', disabled: !hasPlan, onclick: () => download(xplaneFms(fp, this.sim.ap.altSel), `${name}.fms`, 'text/plain') }, 'X-Plane .fms', h('small', {}, 'X-Plane 11/12')),
+          h('button', { class: 'btn tile', disabled: !hasPlan, onclick: () => download(msfsPln(fp, this.sim.ap.altSel), `${name}.pln`, 'application/xml') }, 'MSFS .pln', h('small', {}, 'Flight Simulator')),
+          h('button', { class: 'btn tile', disabled: !hasPlan, onclick: () => download(routeGpx(fp), `${name}.gpx`, 'application/gpx+xml') }, 'GPX route', h('small', {}, 'any GPS / map app')),
         ),
       ),
     );
@@ -85,9 +85,9 @@ export class ConnectModal extends Modal {
     this.body.append(
       this.card('Export the flown track', hasTrack ? `${rec.samples.length} samples (2 Hz) of this flight.` : 'Fly a few minutes first.',
         h('div', { class: 'cx-row wrap' },
-          h('button', { class: 'btn', disabled: !hasTrack, onclick: () => download(trackGpx(rec.samples, iso), 'ifr_trainer_track.gpx', 'application/gpx+xml') }, 'GPX track', h('small', {}, 'CloudAhoy · ForeFlight · Garmin')),
-          h('button', { class: 'btn', disabled: !hasTrack, onclick: () => download(trackKml(rec.samples), 'ifr_trainer_track.kml', 'application/vnd.google-earth.kml+xml') }, 'KML 3D track', h('small', {}, 'Google Earth')),
-          h('button', { class: 'btn', disabled: !hasTrack, onclick: () => download(trackCsv(rec.samples), 'ifr_trainer_track.csv', 'text/csv') }, 'CSV data', h('small', {}, 'Excel · analysis')),
+          h('button', { class: 'btn tile', disabled: !hasTrack, onclick: () => download(trackGpx(rec.samples, iso), 'ifr_trainer_track.gpx', 'application/gpx+xml') }, 'GPX track', h('small', {}, 'CloudAhoy · ForeFlight · Garmin')),
+          h('button', { class: 'btn tile', disabled: !hasTrack, onclick: () => download(trackKml(rec.samples), 'ifr_trainer_track.kml', 'application/vnd.google-earth.kml+xml') }, 'KML 3D track', h('small', {}, 'Google Earth')),
+          h('button', { class: 'btn tile', disabled: !hasTrack, onclick: () => download(trackCsv(rec.samples), 'ifr_trainer_track.csv', 'text/csv') }, 'CSV data', h('small', {}, 'Excel · analysis')),
         ),
       ),
     );
@@ -100,7 +100,7 @@ export class ConnectModal extends Modal {
     const result = h('span', { class: 'muted' }, '');
     this.body.append(
       this.card('School webhook', 'POST every debrief (student, scenario, ACS result, score, failed tasks) as JSON to your school’s system — FlightLogger, Flight Schedule Pro via Zapier/Make, an LMS or a spreadsheet.',
-        h('div', { class: 'cx-row' }, wh, h('button', { class: 'btn', onclick: () => { store.set('ifr.webhook', { url: wh.value.trim(), auto: auto.checked }); this.toast('Webhook saved', 'good'); } }, 'Save'), h('button', { class: 'btn ghost', onclick: async () => { store.set('ifr.webhook', { url: wh.value.trim(), auto: auto.checked }); result.textContent = 'Sending…'; result.textContent = await postWebhook({ type: 'test', app: 'IFR Trainer', at: new Date().toISOString() }); } }, 'Send test')),
+        h('div', { class: 'cx-row' }, wh, h('button', { class: 'btn', onclick: () => { store.set('ifr.webhook', { url: wh.value.trim(), auto: auto.checked }); this.toast('Webhook saved', 'good'); } }, 'Save'), h('button', { class: 'btn', onclick: async () => { store.set('ifr.webhook', { url: wh.value.trim(), auto: auto.checked }); result.textContent = 'Sending…'; result.textContent = await postWebhook({ type: 'test', app: 'IFR Trainer', at: new Date().toISOString() }); } }, 'Send test')),
         h('label', { class: 'fc-check' }, auto, ' Send automatically after every debrief'),
         result,
       ),
@@ -110,7 +110,6 @@ export class ConnectModal extends Modal {
     this.body.append(
       this.card('Charts & planning services', 'Real-world chart subscriptions for study alongside the simulator.',
         h('div', { class: 'cx-row wrap' },
-          h('a', { class: 'btn', href: 'https://charts.navigraph.com/', target: '_blank', rel: 'noopener' }, 'Navigraph Charts ↗'),
           h('a', { class: 'btn', href: 'https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/dtpp/', target: '_blank', rel: 'noopener' }, 'FAA d-TPP ↗'),
           h('a', { class: 'btn', href: 'https://www.sia.aviation-civile.gouv.fr/', target: '_blank', rel: 'noopener' }, 'SIA (France) ↗'),
           h('a', { class: 'btn', href: 'https://www.simbrief.com/', target: '_blank', rel: 'noopener' }, 'SimBrief ↗'),
@@ -123,25 +122,38 @@ export class ConnectModal extends Modal {
 
   /** Navigraph account: device-flow sign-in; charts then appear in the EFB (source: Navigraph) */
   private navigraphCard(): HTMLElement {
-    const st = h('div', { class: 'ng-status' });
+    const chip = h('span', { class: 'ng-chip' });
+    const line = h('p', { class: 'muted cx-note ng-line' });
     const code = h('div', { class: 'ng-code' });
     const cfg = navigraphConfig();
     const id = h('input', { type: 'text', placeholder: 'Client ID', value: cfg?.clientId ?? '', spellcheck: 'false' }) as HTMLInputElement;
     const sec = h('input', { type: 'password', placeholder: 'Client secret', value: cfg?.clientSecret ?? '' }) as HTMLInputElement;
     for (const i of [id, sec]) i.addEventListener('keydown', (e) => e.stopPropagation());
-    const creds = h('details', { class: 'ng-creds' }, h('summary', {}, 'Developer credentials'),
+    const creds = h('div', { class: 'ng-creds', hidden: true },
       h('p', { class: 'muted cx-note' }, 'Navigraph requires an application client (developers.navigraph.com). Schools deploying this simulator set VITE_NAVIGRAPH_CLIENT_ID / VITE_NAVIGRAPH_CLIENT_SECRET at build time; or enter them here (stored in this browser).'),
       h('div', { class: 'cx-row' }, id, sec, h('button', { class: 'btn', onclick: () => { setNavigraphConfig(id.value.trim() && sec.value.trim() ? { clientId: id.value.trim(), clientSecret: sec.value.trim() } : null); this.toast('Navigraph credentials saved', 'good'); void navigraphRestore(); } }, 'Save')));
+    const credBtn = h('button', { class: 'btn link', 'aria-expanded': 'false', onclick: () => { creds.hidden = !creds.hidden; credBtn.setAttribute('aria-expanded', String(!creds.hidden)); if (!creds.hidden) id.focus(); } }, 'Enter developer credentials…');
     const signIn = h('button', { class: 'btn primary', onclick: () => void navigraphSignIn((p) => { clear(code); code.append(h('span', {}, 'Open'), h('a', { href: p.url, target: '_blank', rel: 'noopener' }, p.url.replace(/^https?:\/\//, '').slice(0, 48)), h('span', {}, 'and confirm the code'), h('b', {}, p.code)); }) }, 'Sign in with Navigraph');
     const signOut = h('button', { class: 'btn', onclick: () => void navigraphSignOut() }, 'Sign out');
+    const charts = h('a', { class: 'btn', href: 'https://charts.navigraph.com/', target: '_blank', rel: 'noopener' }, 'Navigraph Charts ↗');
     onNavigraph((s, u) => {
-      clear(st);
-      st.append(h('span', { class: `ng-dot ${s}` }), h('b', {}, { unconfigured: 'Not configured', 'signed-out': 'Signed out', pending: 'Waiting for confirmation…', 'signed-in': `Signed in${u?.preferred_username ? ' as ' + u.preferred_username : ''}`, error: 'Sign-in failed' }[s]));
+      chip.className = `ng-chip ${s}`;
+      chip.textContent = { unconfigured: 'Not available', 'signed-out': 'Signed out', pending: 'Waiting for confirmation', 'signed-in': `Signed in${u?.preferred_username ? ' · ' + u.preferred_username : ''}`, error: 'Sign-in failed' }[s];
+      line.textContent = s === 'unconfigured' ? 'Navigraph sign-in is not enabled in this build. You can still open Navigraph Charts in a new tab.' : '';
+      line.hidden = s !== 'unconfigured';
       signIn.style.display = s === 'signed-in' || s === 'unconfigured' ? 'none' : '';
       signOut.style.display = s === 'signed-in' ? '' : 'none';
+      credBtn.style.display = s === 'signed-in' ? 'none' : '';
       if (s === 'signed-in') clear(code);
+      code.hidden = !code.childNodes.length;
     });
-    return this.card('Navigraph', 'Sign in with your Navigraph subscription to read the real charts (Jeppesen-based, worldwide) in the EFB — own-ship is drawn on georeferenced charts.',
-      st, h('div', { class: 'cx-row' }, signIn, signOut), code, creds);
+    new MutationObserver(() => (code.hidden = !code.childNodes.length)).observe(code, { childList: true });
+    return h('section', { class: 'cx-card ng-card' },
+      h('div', { class: 'cx-h' }, h('div', { class: 'ng-title' }, h('b', {}, 'Navigraph'), chip), h('span', {}, 'Sign in with your Navigraph subscription to read the real charts (Jeppesen-based, worldwide) in the EFB — own-ship is drawn on georeferenced charts.')),
+      line,
+      h('div', { class: 'cx-row wrap' }, signIn, signOut, charts, h('span', { class: 'grow' }), credBtn),
+      code,
+      creds,
+    );
   }
 }

@@ -75,6 +75,10 @@ export class Recorder {
   mode: 'training' | 'checkride' = 'training';
   student = '';
   handFlown = false;
+  /** identifies this flight (set at every start): one training record per flight */
+  startedAt = Date.now();
+  /** the exercise this flight belongs to (set when its result is shown); null = free flight / scenario */
+  lesson: { id: string; title: string; score?: number; passed?: boolean } | null = null;
   private stallActive = false;
   /** Live coaching callback (toast) */
   onEvent?: (e: FlightEvent) => void;
@@ -95,6 +99,8 @@ export class Recorder {
     this.minsUsed = null;
     this.missedAt = null;
     this.failuresInjected = [];
+    this.startedAt = Date.now();
+    this.lesson = null;
   }
 
   start(sim: Sim) {
@@ -104,7 +110,7 @@ export class Recorder {
     this.mode = sim.assess.mode;
     this.student = sim.assess.student;
     this.handFlown = sim.assess.handFlown;
-    this.log(sim.time, 'info', `${this.mode === 'checkride' ? 'CHECKRIDE' : 'Training'}: ${sim.scenario?.name ?? 'free flight'}${this.student ? ' — ' + this.student : ''}`);
+    this.log(sim.time, 'info', `${this.mode === 'checkride' ? 'CHECKRIDE' : 'Training'}: ${sim.scenario?.id === 'lesson' ? 'exercise' : sim.scenario?.name ?? 'free flight'}${this.student ? ' — ' + this.student : ''}`);
   }
 
   log(t: number, kind: FlightEvent['kind'], text: string) {
@@ -341,9 +347,13 @@ export interface ScoreItem {
   value: string;
   penalty: number;
   note?: string;
+  /** not flown / not applicable: shown with a neutral dash, never as a pass */
+  na?: boolean;
 }
 
 export interface Debrief {
+  /** false when too little was flown to grade (no final segment, no touchdown, no missed approach, no accident) */
+  graded: boolean;
   score: number;
   grade: 'A' | 'B' | 'C' | 'D' | 'F';
   headline: string;
@@ -383,8 +393,8 @@ export function computeDebrief(r: Recorder, minimums: number | null): Debrief {
     const sd = Math.sqrt(ias.reduce((a, b) => a + (b - mean) ** 2, 0) / ias.length);
     items.push({ label: 'Speed control (final)', value: `${Math.round(mean)} KIAS avg · σ ${sd.toFixed(1)} kt`, penalty: Math.min(10, Math.max(0, sd - 3) * 1.5) });
     if (sd > 5) tips.push('Speed: pick a power setting for the approach (≈ 1700 RPM, flaps 10) and trim for 90 KIAS before the FAF.');
-  } else {
-    items.push({ label: 'Final approach', value: 'not flown', penalty: 0, note: 'Fly past the FAF with an approach active to get tracking scores.' });
+  } else if (r.approach) {
+    items.push({ label: 'Final approach', value: 'not flown', penalty: 0, na: true, note: 'Fly past the FAF with an approach active to get tracking scores.' });
   }
 
   if (r.floorViolationSec > 0) {
@@ -436,19 +446,27 @@ export function computeDebrief(r: Recorder, minimums: number | null): Debrief {
   const penalty = items.reduce((a, b) => a + b.penalty, 0);
   const score = Math.max(0, Math.round(100 - penalty));
   const grade = r.crashed ? 'F' : score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 60 ? 'D' : 'F';
-  const headline = r.crashed
-    ? 'Flight ended in an accident.'
-    : grade === 'A'
-      ? 'Checkride standard. Nicely flown.'
-      : grade === 'B'
-        ? 'Solid approach with a few things to polish.'
-        : grade === 'C'
-          ? 'Acceptable, but outside ACS tolerances in places.'
-          : 'Needs work — review the tips below and fly it again.';
+  const graded = final.length > 4 || !!td || r.missedAt !== null || !!r.crashed;
+  // "checkride standard" is a claim only a passed checkride can make
+  const checkridePass = r.mode === 'checkride' && evaluateAcs(r).result === 'PASS';
+  const headline = !graded
+    ? 'Not enough flight to grade'
+    : r.crashed
+      ? 'Flight ended in an accident.'
+      : grade === 'A'
+        ? checkridePass
+          ? 'Checkride standard. Nicely flown.'
+          : 'Nicely flown — within standards.'
+        : grade === 'B'
+          ? 'Solid flight with a few things to polish.'
+          : grade === 'C'
+            ? 'Acceptable, but outside ACS tolerances in places.'
+            : 'Needs work — review the notes below and fly it again.';
   if (minimums !== null && !tips.length && final.length > 4) tips.push('Try it again with lower ceilings and a gusty crosswind, hand-flown with the autopilot off.');
   const t0 = r.samples[0]?.t ?? 0;
   const t1 = r.samples[r.samples.length - 1]?.t ?? 0;
   return {
+    graded,
     score,
     grade,
     headline,

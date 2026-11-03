@@ -82,7 +82,7 @@ function topStrip(ctx: CanvasRenderingContext2D, sim: Sim, dt: number) {
     const x = 680 + i * 68;
     ctx.fillStyle = on ? c : '#26282a';
     ctx.fillRect(x, 14, 60, 28);
-    gtext(ctx, t, x + 30, 29, 13, on ? '#000' : '#666', 'center', 800);
+    gtext(ctx, t, x + 30, 29, 14, on ? '#000' : '#6b6e70', 'center', 800);
   });
   // wet compass
   let diff = d.hdgTrue - st.compass;
@@ -107,7 +107,6 @@ function topStrip(ctx: CanvasRenderingContext2D, sim: Sim, dt: number) {
   ctx.restore();
   ctx.fillStyle = G.red;
   ctx.fillRect(cx - 1.5, 4, 3, 46);
-  gtext(ctx, 'COMPASS', cx, 62 - 2, 9, '#666');
 }
 
 function bottomStrip(ctx: CanvasRenderingContext2D, sim: Sim) {
@@ -115,13 +114,11 @@ function bottomStrip(ctx: CanvasRenderingContext2D, sim: Sim) {
   ctx.fillStyle = '#121314';
   ctx.fillRect(0, STEAM_H - 34, STEAM_W, 34);
   const y = STEAM_H - 17;
-  gtext(ctx, `OAT ${Math.round(d.oatC)}°C`, 20, y, 15, G.dim, 'left');
-  gtext(ctx, `FLAPS ${Math.round(d.flapsDeg)}°`, 160, y, 15, G.dim, 'left');
-  const tr = sim.controls.trim;
-  gtext(ctx, `TRIM ${tr < -0.02 ? 'UP' : tr > 0.02 ? 'DN' : 'T/O'} ${Math.abs(Math.round(tr * 100))}`, 300, y, 15, G.dim, 'left');
+  gtext(ctx, `OAT ${Math.round(d.oatC)}°C`, 20, y, 16, G.dim, 'left');
+  gtext(ctx, `FLAPS ${Math.round(d.flapsDeg)}°`, 170, y, 16, G.dim, 'left');
   const tmr = sim.chrono() ?? sim.time;
-  gtext(ctx, `${sim.chrono() !== null ? 'TIMER' : 'ET'} ${String(Math.floor(tmr / 60)).padStart(2, '0')}:${String(Math.floor(tmr % 60)).padStart(2, '0')}`, STEAM_W - 20, y, 16, sim.av.timerStart !== null ? G.yellow : G.dim, 'right');
-  if (sim.av.minimums !== null) gtext(ctx, `MINS ${sim.av.minimums}`, 660, y, 15, sim.indicatedAlt() < sim.av.minimums ? G.yellow : G.dim, 'left');
+  gtext(ctx, `${sim.chrono() !== null ? 'TIMER' : 'ET'} ${String(Math.floor(tmr / 60)).padStart(2, '0')}:${String(Math.floor(tmr % 60)).padStart(2, '0')}`, STEAM_W - 20, y, 17, sim.av.timerStart !== null ? G.yellow : G.dim, 'right');
+  if (sim.av.minimums !== null) gtext(ctx, `MINS ${sim.av.minimums}`, 660, y, 16, sim.indicatedAlt() < sim.av.minimums ? G.yellow : G.dim, 'left');
 }
 
 function asi(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, kt: number) {
@@ -142,8 +139,8 @@ function asi(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, k
       gtext(ctx, String(k), cx + Math.cos(a) * (r - 50), cy + Math.sin(a) * (r - 50), 22, G.ink, 'center', 700);
     }
   }
-  gtext(ctx, 'AIRSPEED', cx, cy - 38, 12, G.dim);
-  gtext(ctx, 'KNOTS', cx, cy + 42, 13, G.dim);
+  gtext(ctx, 'AIRSPEED', cx, cy - 40, 14, G.dim);
+  gtext(ctx, 'KNOTS', cx, cy + 44, 14, G.dim);
   needle(ctx, cx, cy, ang(kt), r - 22, 11);
   hub(ctx, cx, cy);
   glass(ctx, cx, cy, r);
@@ -222,11 +219,17 @@ function alt(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, a
     if (i % 5 === 0) gtext(ctx, String(i / 5), cx + Math.cos(a) * (r - 46), cy + Math.sin(a) * (r - 46), 26, G.ink, 'center', 700);
   }
   // Kollsman window
+  // Kollsman window at about 4 o'clock, inside the numeral ring (clear of the 3 and the 4)
+  const kx = cx + Math.cos(36 * D) * r * 0.4;
+  const ky = cy + Math.sin(36 * D) * r * 0.4;
   ctx.fillStyle = '#000';
-  ctx.fillRect(cx + 30, cy - 13, 64, 26);
-  gtext(ctx, baro.toFixed(2), cx + 62, cy + 1, 16, G.white, 'center', 700);
-  gtext(ctx, 'ALT', cx, cy - 46, 13, G.dim);
-  gtext(ctx, '100 FEET', cx, cy + 46, 11, G.dim);
+  ctx.fillRect(kx - 32, ky - 13, 64, 26);
+  ctx.strokeStyle = '#3a3d40';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(kx - 32, ky - 13, 64, 26);
+  gtext(ctx, baro.toFixed(2), kx, ky + 1, 17, G.white, 'center', 700);
+  gtext(ctx, 'ALT', cx, cy + 28, 14, G.dim);
+  gtext(ctx, '100 FEET', cx, cy - 44, 14, G.dim);
   const a = Math.max(-1000, altFt);
   if (a < 10000) {
     // low-altitude crosshatch flag
@@ -259,9 +262,8 @@ function tc(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, tu
     tick(ctx, cx, cy, (s > 0 ? 0 : 180) * D, r - 30, r - 6, 5);
     gtext(ctx, s > 0 ? 'R' : 'L', cx + s * (r - 44), cy + 40, 22, G.ink, 'center', 800);
   }
-  gtext(ctx, 'TURN COORDINATOR', cx, cy - 62, 12, G.dim);
-  gtext(ctx, '2 MIN', cx, cy + 92, 12, G.dim);
-  gtext(ctx, 'NO PITCH', cx, cy + 108, 10, G.dim);
+  gtext(ctx, 'TURN COORDINATOR', cx, cy - 62, 14, G.dim);
+  gtext(ctx, '2 MIN', cx, cy + 96, 14, G.dim);
   // inclinometer
   ctx.save();
   ctx.strokeStyle = '#bbb';
@@ -379,9 +381,10 @@ function hsi(ctx: CanvasRenderingContext2D, sim: Sim, cx: number, cy: number, r:
   ctx.fillRect(cx - 18, cy - 4, 36, 4);
   ctx.fillRect(cx - 8, cy + 12, 16, 3);
   if (!valid) flag(ctx, cx - 50, cy - 40, 'NAV');
-  if (!isGps && n.nav.isLoc && !n.nav.gsValid) flag(ctx, cx + 70, cy - 20, 'GS');
+  if (!isGps && n.nav.isLoc && !n.nav.gsValid) flag(ctx, cx + r - 60, cy - 50, 'GS', G.red, 0.78);
   if (failed) flag(ctx, cx + 50, cy - 40, 'HDG');
-  gtext(ctx, isGps ? 'GPS' : n.cdi === 'NAV1' ? 'NAV1' : 'NAV2', cx, cy + r - 28, 11, isGps ? '#ff4df0' : G.dim);
+  // source label on the fixed face, under the aircraft symbol (never on the rotating card)
+  gtext(ctx, isGps ? 'GPS' : n.cdi === 'NAV1' ? 'NAV 1' : 'NAV 2', cx, cy + 44, 14, isGps ? '#ff4df0' : G.dim, 'center', 700);
   glass(ctx, cx, cy, r);
 }
 
@@ -399,14 +402,18 @@ function vsi(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, f
   gtext(ctx, '20', cx + Math.cos(ang(2000)) * (r - 46), cy + Math.sin(ang(2000)) * (r - 46) + 6, 18, G.ink);
   gtext(ctx, 'UP', cx - 50, cy - 40, 14, G.dim);
   gtext(ctx, 'DOWN', cx - 50, cy + 40, 14, G.dim);
-  gtext(ctx, 'VERTICAL SPEED', cx + 22, cy - 28, 10, G.dim);
-  gtext(ctx, '100 FT/MIN', cx + 22, cy + 28, 10, G.dim);
+  gtext(ctx, 'VERT SPEED', cx + 26, cy - 30, 14, G.dim);
+  gtext(ctx, '100 FT/MIN', cx + 26, cy + 30, 14, G.dim);
   needle(ctx, cx, cy, ang(fpm), r - 20, 10);
   hub(ctx, cx, cy);
   glass(ctx, cx, cy, r);
 }
 
 // ------------------------------------------------------------------ radio stack & nav heads
+const LED_COM = '#ffb347';
+const LED_NAV = '#6cff8a';
+const LED_DIM = '#b8823c';
+
 export function drawStack(ctx: CanvasRenderingContext2D, sim: Sim) {
   ctx.clearRect(0, 0, STEAM_W, STEAM_H);
   panelBg(ctx, STEAM_W, STEAM_H);
@@ -415,12 +422,18 @@ export function drawStack(ctx: CanvasRenderingContext2D, sim: Sim) {
   rmi(ctx, sim, 196, 560, 150, d.hdgTrue);
   const x = 400;
   const w = 610;
-  // audio panel
-  unit(ctx, x, 8, w, 40, 'AUDIO');
-  [['COM1', true], ['COM2', false], ['NAV1', true], ['NAV2', false], ['ADF', sim.av.bearing1 === 'ADF'], ['MKR', true]].forEach(([l, on], i) => {
-    ctx.fillStyle = on ? '#2c3a2c' : '#222';
-    ctx.fillRect(x + 70 + i * 74, 16, 66, 24);
-    gtext(ctx, l as string, x + 103 + i * 74, 29, 12, on ? '#9f9' : '#888', 'center', 700);
+  // audio panel: flat annunciators (lit label = selected), not buttons
+  unit(ctx, x, 8, w, 40, '');
+  const audio: [string, boolean][] = [['COM1', true], ['COM2', false], ['NAV1', true], ['NAV2', false], ['ADF', sim.av.bearing1 === 'ADF' || sim.av.bearing2 === 'ADF'], ['MKR', true]];
+  audio.forEach(([l, on], i) => {
+    const kx = x + 12 + i * 98;
+    ctx.fillStyle = '#121416';
+    ctx.fillRect(kx, 14, 90, 28);
+    if (on) {
+      ctx.fillStyle = '#7dff9a';
+      ctx.fillRect(kx + 30, 37, 30, 2);
+    }
+    gtext(ctx, l, kx + 45, 27, 14, on ? '#bff7c9' : '#5d6266', 'center', 700);
   });
   // GNS 430-like
   unit(ctx, x, 54, w, 236, 'GPS');
@@ -434,110 +447,117 @@ export function drawStack(ctx: CanvasRenderingContext2D, sim: Sim) {
   lcd(ctx, x + 368, 62, 232, 220);
   const g = sim.fp.out;
   const row = (k: string, v: string, y: number, c = '#ff4df0') => {
-    gtext(ctx, k, x + 380, y, 13, '#9fb', 'left', 700);
-    gtext(ctx, v, x + 590, y, 18, c, 'right', 700);
+    gtext(ctx, k, x + 380, y, 14, '#9fb', 'left', 700);
+    gtext(ctx, v, x + 590, y, 19, c, 'right', 700);
   };
-  gtext(ctx, g.valid ? `${g.holding ? 'HOLD ' : ''}${g.fromIdent ? g.fromIdent + ' → ' : ''}${g.toIdent}` : 'NO ACTV WPT', x + 380, 80, 15, '#ff4df0', 'left', 700);
-  row('DIS', g.valid ? `${g.distNm.toFixed(1)}nm` : '—', 112);
-  row('DTK', g.valid ? `${String(Math.round(g.dtk)).padStart(3, '0')}°` : '—', 140);
-  row('TRK', `${String(Math.round(d.trackTrue)).padStart(3, '0')}°`, 168, '#fff');
-  row('GS', `${Math.round(d.gsKt)}kt`, 196, '#fff');
-  row('ETE', g.eteMin !== null ? `${Math.floor(g.eteMin)}:${String(Math.round((g.eteMin % 1) * 60)).padStart(2, '0')}` : '—', 224, '#fff');
-  gtext(ctx, `${g.mode}${g.suspended ? '  SUSP' : ''}${g.gpValid ? '  LPV' : ''}`, x + 380, 262, 14, g.suspended ? G.yellow : '#9f9', 'left', 700);
-  // NAV/COM x2
-  navcom(ctx, x, 298, w, '1', sim.av.com1, sim.av.nav1, sim.av.cdi === 'NAV1');
-  navcom(ctx, x, 372, w, '2', sim.av.com2, sim.av.nav2, sim.av.cdi === 'NAV2');
+  gtext(ctx, g.valid ? `${g.holding ? 'HOLD ' : ''}${g.fromIdent ? g.fromIdent + ' → ' : ''}${g.toIdent}` : 'NO ACTV WPT', x + 380, 82, 16, '#ff4df0', 'left', 700);
+  row('DIS', g.valid ? `${g.distNm.toFixed(1)}nm` : '—', 114);
+  row('DTK', g.valid ? `${String(Math.round(g.dtk)).padStart(3, '0')}°` : '—', 142);
+  row('TRK', `${String(Math.round(d.trackSmooth)).padStart(3, '0')}°`, 170, '#fff');
+  row('GS', `${Math.round(d.gsSmooth)}kt`, 198, '#fff');
+  row('ETE', g.eteMin !== null ? `${Math.floor(g.eteMin)}:${String(Math.round((g.eteMin % 1) * 60)).padStart(2, '0')}` : '—', 226, '#fff');
+  gtext(ctx, `${g.mode}${g.suspended ? '  SUSP' : ''}${g.gpValid ? '  LPV' : ''}`, x + 380, 262, 15, g.suspended ? G.yellow : '#9f9', 'left', 700);
+  // NAV/COM x2 (both NAV actives in the same LED colour; the CDI source is tagged)
+  navcom(ctx, x, 298, w, sim.av.com1, sim.av.nav1, sim.av.cdi === 'NAV1');
+  navcom(ctx, x, 372, w, sim.av.com2, sim.av.nav2, sim.av.cdi === 'NAV2');
   // ADF
   unit(ctx, x, 446, w, 52, 'ADF');
   lcd(ctx, x + 60, 452, 260, 40);
-  led(ctx, `ADF ${sim.av.adf.active}`, x + 76, 473, 24, '#ffb347');
-  led(ctx, sim.adf.valid ? sim.adf.ident : '----', x + 300, 473, 20, '#ffb347', 'right');
+  led(ctx, `ADF ${sim.av.adf.active}`, x + 76, 473, 24, LED_COM);
+  led(ctx, sim.adf.valid ? sim.adf.ident : '----', x + 300, 473, 20, LED_COM, 'right');
   const tmr = sim.chrono() ?? sim.time;
   lcd(ctx, x + 340, 452, 260, 40);
-  led(ctx, `${sim.chrono() !== null ? 'CHR' : 'FLT'} ${String(Math.floor(tmr / 60)).padStart(2, '0')}:${String(Math.floor(tmr % 60)).padStart(2, '0')}`, x + 356, 473, 24, '#ffb347');
-  // DME
+  led(ctx, `${sim.chrono() !== null ? 'CHR' : 'FLT'} ${String(Math.floor(tmr / 60)).padStart(2, '0')}:${String(Math.floor(tmr % 60)).padStart(2, '0')}`, x + 356, 473, 24, LED_COM);
+  // DME (NAV1)
   unit(ctx, x, 504, w, 52, 'DME');
   lcd(ctx, x + 60, 510, 540, 40);
-  const n1 = sim.nav1;
-  const dme = n1.dmeNm;
+  const dme = sim.nav1.dmeNm;
   led(ctx, dme !== null ? `${dme.toFixed(1)} NM` : '--.- NM', x + 80, 531, 24, '#ff5a3c');
   led(ctx, dme !== null ? `${Math.round(d.gsKt)} KT` : '--- KT', x + 300, 531, 24, '#ff5a3c');
   led(ctx, dme !== null && d.gsKt > 30 ? `${Math.round((dme / d.gsKt) * 60)} MIN` : '-- MIN', x + 590, 531, 24, '#ff5a3c', 'right');
   // autopilot KAP 140
-  unit(ctx, x, 562, w, 76, 'AP');
-  lcd(ctx, x + 60, 568, 540, 64);
+  unit(ctx, x, 562, w, 52, 'AP');
+  lcd(ctx, x + 60, 567, 540, 42);
   const ap = sim.ap;
   const latLbl: Record<string, string> = { ROL: 'ROL', HDG: 'HDG', GPS: 'NAV', VOR: 'NAV', LOC: 'APR', BC: 'REV' };
+  const AP_ON = '#ffd34d';
+  const AP_ARM = '#cfa840';
   if (ap.engaged) {
-    led(ctx, ap.ap ? 'AP' : 'FD', x + 76, 588, 22, '#ffd34d');
-    led(ctx, latLbl[ap.lat] ?? ap.lat, x + 140, 588, 22, '#ffd34d');
-    if (ap.latArmed) led(ctx, `ARM ${latLbl[ap.latArmed] ?? ''}`, x + 140, 614, 15, '#cfa840');
+    led(ctx, ap.ap ? 'AP' : 'FD', x + 76, 588, 22, AP_ON);
+    led(ctx, latLbl[ap.lat] ?? ap.lat, x + 136, 588, 22, AP_ON);
+    if (ap.latArmed) led(ctx, `ARM ${latLbl[ap.latArmed] ?? ''}`, x + 196, 588, 16, AP_ARM);
     const vm = ap.vert === 'GS' || ap.vert === 'GP' ? 'GS' : ap.vert === 'FLC' ? 'VS' : ap.vert === 'PIT' ? 'VS' : ap.vert;
-    led(ctx, vm, x + 280, 588, 22, '#ffd34d');
-    if (ap.vertArmed.gs || ap.vertArmed.gp) led(ctx, 'ARM GS', x + 280, 614, 15, '#cfa840');
-    else if (ap.vertArmed.alts) led(ctx, 'ARM ALT', x + 280, 614, 15, '#cfa840');
-  } else if (ap.inhibited) led(ctx, ap.inhibited, x + 76, 600, 20, '#cfa840');
-  led(ctx, ap.vert === 'VS' ? `${ap.vsSel >= 0 ? '+' : ''}${ap.vsSel} FPM` : `${ap.altSel} FT`, x + 590, 600, 26, '#ffd34d', 'right');
-  // transponder
-  unit(ctx, x, 644, w, 50, 'XPDR');
-  lcd(ctx, x + 60, 650, 300, 38);
-  led(ctx, sim.av.xpdr, x + 80, 670, 28, '#ffb347');
-  led(ctx, sim.av.xpdrMode, x + 340, 670, 18, '#ffb347', 'right');
-  ctx.fillStyle = Math.floor(performance.now() / 900) % 3 === 0 && sim.av.xpdrMode !== 'STBY' ? '#ffb347' : '#3a2c1a';
+    led(ctx, vm, x + 300, 588, 22, AP_ON);
+    if (ap.vertArmed.gs || ap.vertArmed.gp) led(ctx, 'ARM GS', x + 348, 588, 16, AP_ARM);
+    else if (ap.vertArmed.alts) led(ctx, 'ARM ALT', x + 348, 588, 16, AP_ARM);
+  } else if (ap.inhibited) led(ctx, ap.inhibited, x + 76, 588, 18, AP_ARM);
+  else gtext(ctx, 'AP OFF', x + 76, 588, 18, '#5a4a20', 'left', 700);
+  led(ctx, ap.vert === 'VS' && ap.engaged ? `${ap.vsSel >= 0 ? '+' : ''}${ap.vsSel} FPM` : `${ap.altSel} FT`, x + 590, 588, 24, AP_ON, 'right');
+  // transponder (squawk, pressure altitude reported in ALT, mode, reply light)
+  unit(ctx, x, 620, w, 50, 'XPDR');
+  lcd(ctx, x + 60, 626, 420, 38);
+  led(ctx, sim.av.xpdr, x + 80, 646, 28, LED_COM);
+  if (sim.av.xpdrMode === 'ALT') led(ctx, `FL${String(Math.max(0, Math.round(d.pressAltFt / 100))).padStart(3, '0')}`, x + 220, 646, 22, LED_COM);
+  led(ctx, sim.av.xpdrMode, x + 466, 646, 20, LED_COM, 'right');
+  ctx.fillStyle = Math.floor(performance.now() / 900) % 3 === 0 && sim.av.xpdrMode !== 'STBY' ? LED_COM : '#3a2c1a';
   ctx.beginPath();
-  ctx.arc(x + 390, 669, 7, 0, Math.PI * 2);
+  ctx.arc(x + 508, 645, 7, 0, Math.PI * 2);
   ctx.fill();
-  gtext(ctx, 'R', x + 408, 670, 12, '#888');
-  // engine
-  unit(ctx, x, 700, w, 60, 'ENG');
-  const rpm = d.rpm;
-  const bar = (lbl: string, v: number, txt: string, bx: number) => {
-    gtext(ctx, lbl, bx, 716, 11, G.dim, 'left', 700);
-    ctx.fillStyle = '#111';
-    ctx.fillRect(bx, 726, 120, 10);
+  gtext(ctx, 'REPLY', x + 524, 646, 14, '#8a9096', 'left', 700);
+  // engine: tach, fuel flow, fuel quantity (the oil gauges are not simulated, so they are not shown)
+  unit(ctx, x, 676, w, 84, 'ENG');
+  const bar = (lbl: string, v: number, txt: string, bx: number, g0: number, g1: number) => {
+    const bw = 160;
+    gtext(ctx, lbl, bx, 694, 14, G.dim, 'left', 700);
+    gtext(ctx, txt, bx + bw, 694, 18, G.ink, 'right', 700);
+    ctx.fillStyle = '#0d0e0f';
+    ctx.fillRect(bx, 714, bw, 12);
     ctx.fillStyle = '#1fa64a';
-    ctx.fillRect(bx + 20, 726, 80, 10);
+    ctx.fillRect(bx + g0 * bw, 714, (g1 - g0) * bw, 12);
     ctx.fillStyle = '#fff';
-    ctx.fillRect(bx + Math.max(0, Math.min(1, v)) * 118, 722, 3, 18);
-    gtext(ctx, txt, bx + 120, 750, 12, G.ink, 'right', 700);
+    ctx.fillRect(bx + Math.max(0, Math.min(1, v)) * (bw - 3), 708, 3, 24);
   };
-  bar('TACH', rpm / 2800, `${Math.round(rpm / 10) * 10} RPM`, x + 60);
-  bar('FUEL FLOW', d.fuelFlowGph / 14, `${d.fuelFlowGph.toFixed(1)} GPH`, x + 200);
-  bar('OIL T', 0.55, '185°F', x + 340);
-  bar('FUEL', sim.ac.s.fuelGal / 53, `${Math.round(sim.ac.s.fuelGal)} GAL`, x + 480);
+  bar('TACH', d.rpm / 2800, `${Math.round(d.rpm / 10) * 10} RPM`, x + 66, 2100 / 2800, 2700 / 2800);
+  bar('FUEL FLOW', d.fuelFlowGph / 14, `${d.fuelFlowGph.toFixed(1)} GPH`, x + 252, 0.1, 0.9);
+  bar('FUEL', sim.ac.s.fuelGal / 53, `${Math.round(sim.ac.s.fuelGal)} GAL`, x + 438, 8 / 53, 1);
 }
 
 function unit(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, label: string) {
-  const g = ctx.createLinearGradient(0, y, 0, y + h);
-  g.addColorStop(0, '#2f3236');
-  g.addColorStop(1, '#1f2124');
-  ctx.fillStyle = g;
+  ctx.fillStyle = '#26292c';
   ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = 'rgba(255,255,255,.04)';
+  ctx.fillRect(x, y, w, 2);
   ctx.strokeStyle = '#0c0d0e';
   ctx.lineWidth = 2;
   ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
-  gtext(ctx, label, x + 30, y + h / 2, 11, '#8a9096', 'center', 800);
+  if (label) gtext(ctx, label, x + 30, y + h / 2, 14, '#8a9096', 'center', 800);
 }
 
-function navcom(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, n: string, com: { active: number; standby: number }, nav: { active: number; standby: number }, sel: boolean) {
-  unit(ctx, x, y, w, 68, `N/C ${n}`);
-  lcd(ctx, x + 60, y + 8, 260, 52);
-  led(ctx, com.active.toFixed(3), x + 72, y + 28, 22, '#ffb347');
-  led(ctx, com.standby.toFixed(3), x + 72, y + 50, 16, '#b8823c');
-  gtext(ctx, 'COM', x + 300, y + 28, 11, '#b8823c', 'right', 700);
-  lcd(ctx, x + 340, y + 8, 260, 52);
-  led(ctx, nav.active.toFixed(2), x + 352, y + 28, 22, sel ? '#6cff8a' : '#ffb347');
-  led(ctx, nav.standby.toFixed(2), x + 352, y + 50, 16, '#b8823c');
+function navcom(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, com: { active: number; standby: number }, nav: { active: number; standby: number }, cdi: boolean) {
+  unit(ctx, x, y, w, 68, '');
+  lcd(ctx, x + 12, y + 8, 290, 52);
+  gtext(ctx, 'COM', x + 24, y + 28, 14, LED_DIM, 'left', 700);
+  led(ctx, com.active.toFixed(3), x + 290, y + 28, 22, LED_COM, 'right');
+  led(ctx, com.standby.toFixed(3), x + 290, y + 50, 16, LED_DIM, 'right');
+  lcd(ctx, x + 310, y + 8, 290, 52);
+  gtext(ctx, 'NAV', x + 322, y + 28, 14, LED_DIM, 'left', 700);
+  led(ctx, nav.active.toFixed(2), x + 470, y + 28, 22, LED_NAV, 'right');
+  led(ctx, nav.standby.toFixed(2), x + 470, y + 50, 16, LED_DIM, 'right');
   const id = tunedNavaid(nav.active);
-  gtext(ctx, id ? id.ident : '', x + 590, y + 28, 14, '#6cff8a', 'right', 700);
+  gtext(ctx, id ? id.ident : '', x + 588, y + 28, 15, LED_NAV, 'right', 700);
+  if (cdi) {
+    ctx.strokeStyle = LED_NAV;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x + 548, y + 41, 40, 17);
+    gtext(ctx, 'CDI', x + 568, y + 50, 14, LED_NAV, 'center', 700);
+  }
 }
 
+/** second nav head: always NAV 2 (the HSI follows the CDI source) */
 function cdiHead(ctx: CanvasRenderingContext2D, sim: Sim, cx: number, cy: number, r: number) {
   bezel(ctx, cx, cy, r);
-  const n = sim.navInputs();
-  const isGps = n.cdi === 'GPS';
-  const nav = n.cdi === 'NAV2' ? sim.nav2 : sim.nav1;
-  const obs = isGps ? n.gps.dtk : n.cdi === 'NAV2' ? sim.av.obs2 : sim.av.obs1;
+  const nav = sim.nav2;
+  const obs = sim.av.obs2;
   // rotating OBS card
   ctx.save();
   ctx.translate(cx, cy);
@@ -575,13 +595,13 @@ function cdiHead(ctx: CanvasRenderingContext2D, sim: Sim, cx: number, cy: number
   ctx.beginPath();
   ctx.arc(cx, cy, 12, 0, Math.PI * 2);
   ctx.stroke();
-  const valid = isGps ? n.gps.valid : nav.valid;
-  const dev = isGps ? n.gps.dev : nav.dev;
+  const valid = nav.valid;
+  const dev = nav.dev;
   if (valid) {
     const dx = Math.max(-1.1, Math.min(1.1, dev)) * 85;
     ctx.fillStyle = G.white;
     ctx.fillRect(cx + dx - 3, cy - 88, 6, 176);
-    const tf = isGps ? n.gps.toFrom : nav.toFrom;
+    const tf = nav.toFrom;
     if (tf !== 'OFF') {
       ctx.fillStyle = G.white;
       ctx.beginPath();
@@ -590,17 +610,17 @@ function cdiHead(ctx: CanvasRenderingContext2D, sim: Sim, cx: number, cy: number
       ctx.lineTo(cx + 42, cy + ty * 28);
       ctx.lineTo(cx + 66, cy + ty * 28);
       ctx.fill();
-      gtext(ctx, tf, cx + 54, cy + ty * 58, 11, G.dim);
+      gtext(ctx, tf, cx + 54, cy + ty * 60, 14, G.dim, 'center', 700);
     }
   } else flag(ctx, cx - 50, cy - 40, 'NAV');
-  if (!isGps && nav.isLoc) {
+  if (nav.isLoc) {
     if (nav.gsValid) {
       ctx.fillStyle = G.white;
       ctx.fillRect(cx - 88, cy - Math.max(-1.1, Math.min(1.1, nav.gsDev)) * 75 - 3, 176, 6);
     } else flag(ctx, cx - 50, cy + 40, 'GS');
   }
-  gtext(ctx, isGps ? 'GPS' : n.cdi === 'NAV2' ? 'NAV 2' : 'NAV 1', cx, cy + r - 26, 12, isGps ? '#ff4df0' : G.dim, 'center', 700);
-  gtext(ctx, `OBS ${String(Math.round(obs) || 360).padStart(3, '0')}`, cx, cy + r + 22, 13, G.dim, 'center', 700);
+  // caption below the bezel (never on the rotating OBS card)
+  gtext(ctx, `NAV 2 · OBS ${String(Math.round(obs) || 360).padStart(3, '0')}`, cx, cy + r + 24, 15, G.dim, 'center', 700);
   glass(ctx, cx, cy, r);
 }
 
@@ -650,10 +670,11 @@ function rmi(ctx: CanvasRenderingContext2D, sim: Sim, cx: number, cy: number, r:
   ctx.lineTo(cx + 8, cy - r - 10);
   ctx.fill();
   hub(ctx, cx, cy, 12);
-  gtext(ctx, 'ADF', cx - 70, cy + r - 34, 12, G.yellow, 'center', 800);
-  gtext(ctx, 'VOR 2', cx + 70, cy + r - 34, 12, '#53d85a', 'center', 800);
   if (!sim.adf.valid) flag(ctx, cx - 50, cy + 40, 'ADF');
-  gtext(ctx, `RMI · ADF ${sim.av.adf.active} · NAV2 ${sim.av.nav2.active.toFixed(2)}`, cx, cy + r + 22, 12, G.dim, 'center', 700);
+  // caption below the bezel: needle legend in the needle colours
+  gtext(ctx, `ADF ${sim.av.adf.active}`, cx - 12, cy + r + 24, 15, G.yellow, 'right', 800);
+  gtext(ctx, '·', cx, cy + r + 24, 15, G.dim, 'center', 800);
+  gtext(ctx, `VOR 2 ${sim.av.nav2.active.toFixed(2)}`, cx + 12, cy + r + 24, 15, '#53d85a', 'left', 800);
   glass(ctx, cx, cy, r);
 }
 

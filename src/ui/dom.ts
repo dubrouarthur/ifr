@@ -17,6 +17,8 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Attrs = 
   return el;
 }
 
+const WRAP_TAGS = new Set(['TD', 'TH', 'TR', 'LI']);
+
 function append(el: Element, children: Child[]) {
   for (const c of children) {
     if (c === null || c === undefined || c === false) continue;
@@ -26,9 +28,12 @@ function append(el: Element, children: Child[]) {
       // emoji glyphs in UI copy are rendered as line icons
       const e = typeof c === 'string' ? leadingEmoji(c) : null;
       if (e) {
-        el.append(svgIcon(e[0], 16));
-        if (e[1]) el.append(document.createTextNode(e[1]));
-        el.classList.add('has-ico');
+        // table cells and list items keep their own display (a flex cell breaks the table layout): the icon and
+        // its text are wrapped in an inline-flex span instead
+        const wrap = WRAP_TAGS.has(el.tagName) ? el.appendChild(document.createElement('span')) : el;
+        wrap.append(svgIcon(e[0], 16));
+        if (e[1]) wrap.append(document.createTextNode(e[1]));
+        wrap.classList.add('has-ico');
       } else el.append(document.createTextNode(String(c)));
     }
   }

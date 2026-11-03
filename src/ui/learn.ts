@@ -1,12 +1,13 @@
 // Learning paths, exercise briefings, hold-entry drill and lesson results.
 import { h, clear, fmtTime, store } from './dom';
-import { Modal } from './modals';
+import { Modal, saveFlightRecord } from './modals';
 import { EXERCISES, PATHS, STAGES, exercise, type Path } from '../train/curriculum';
 import { LessonRun, type Exercise, type LessonResult } from '../train/engine';
 import { holdDiagramSvg } from '../train/diagram';
 import { holdEntry, clearanceText, type Turn } from '../nav/holding';
 import { approachPlate } from '../plates/plates';
 import { approach } from '../nav/data';
+import { svgIcon, I } from './icons';
 import type { Sim } from '../sim/sim';
 
 export interface Progress {
@@ -42,7 +43,7 @@ export class LearnModal extends Modal {
   private tab: 'paths' | 'stages' = 'paths';
   private path: Path | null = null;
   constructor(private onPick: (ex: Exercise, path: Path | null) => void, private onDrill: () => void) {
-    super('Learn IFR');
+    super('Learning paths');
   }
   open() {
     this.render();
@@ -75,7 +76,7 @@ export class LearnModal extends Modal {
         const done = p.exercises.filter((id) => all[id]?.passed).length;
         grid.append(
           h('button', { class: 'card', onclick: () => { this.path = p; this.render(); } },
-            h('span', { class: 'k Departure' }, `${p.exercises.length} exercises`),
+            h('span', { class: 'k count' }, `${p.exercises.length} exercises`),
             h('h3', {}, p.title),
             h('p', {}, p.desc),
             h('div', { class: 'lp-bar' }, h('i', { style: `width:${(done / p.exercises.length) * 100}%` })),
@@ -108,21 +109,18 @@ export class LearnModal extends Modal {
         for (const e of EXERCISES.filter((x) => x.stage === st.id)) {
           grid.append(
             h('button', { class: 'card', onclick: () => { this.close(); this.onPick(e, null); } },
-              h('div', { class: 'meta' }, h('span', { class: 'k Precision' }, e.allowAp ? 'AP allowed' : 'Hand-flown'), statusBadge(e.id)),
+              h('div', { class: 'meta' }, h('span', { class: 'k count' }, e.allowAp ? 'AP allowed' : 'Hand-flown'), statusBadge(e.id)),
               h('h3', {}, e.title),
               h('p', {}, e.summary),
-              h('div', { class: 'meta' }, h('span', {}, `~${e.minutes} min`), h('span', {}, e.plate ? 'Plate ✓' : '')),
+              h('div', { class: 'meta' }, h('span', {}, `~${e.minutes} min`), h('span', {}, e.plate ? 'Approach plate' : '')),
             ),
           );
         }
         this.body.append(grid);
       }
     }
-    this.foot.append(
-      h('button', { class: 'btn danger', onclick: () => { if (confirm('Reset all exercise progress in this browser?')) { progress.reset(); this.render(); } } }, 'Reset progress'),
-      h('span', { style: 'flex:1' }),
-      h('button', { class: 'btn', onclick: () => this.close() }, 'Close'),
-    );
+    if (passedCount || Object.keys(all).length)
+      this.body.append(h('div', { class: 'learn-reset' }, h('button', { class: 'btn link quiet', onclick: () => { if (confirm('Reset all exercise progress in this browser? Passed exercises and best scores are deleted.')) { progress.reset(); this.render(); } } }, 'Reset progress')));
   }
 }
 
@@ -136,6 +134,7 @@ export class BriefingModal extends Modal {
   show(ex: Exercise) {
     this.sim.paused = true;
     this.run = new LessonRun(ex, this.sim);
+    this.sim.rec.lesson = { id: ex.id, title: ex.title };
     this.answered = null;
     this.render();
     this.open();
@@ -147,9 +146,9 @@ export class BriefingModal extends Modal {
     clear(this.foot);
     const stage = STAGES.find((s) => s.id === ex.stage);
     this.body.append(
-      h('div', { class: 'muted', style: 'font-size:12px;text-transform:uppercase;letter-spacing:1px' }, stage?.title ?? ''),
-      h('h2', { style: 'margin:4px 0 6px' }, ex.title),
-      h('p', { style: 'margin:0 0 12px;color:var(--text-2)' }, ex.summary),
+      h('div', { class: 'section-t brief-kicker' }, stage?.title ?? ''),
+      h('h2', { class: 'brief-title' }, ex.title),
+      h('p', { class: 'brief-sum' }, ex.summary),
     );
     if (run.rt.clearance) this.body.append(h('div', { class: 'atc' }, h('b', {}, 'ATC CLEARANCE'), h('span', {}, `“${run.rt.clearance}”`)));
     this.body.append(
@@ -160,9 +159,9 @@ export class BriefingModal extends Modal {
         ),
         h('div', {},
           h('div', { class: 'section-t' }, 'Briefing'), h('ul', { class: 'tips' }, ...ex.briefing.map((o) => h('li', {}, o))),
-          h('div', { class: 'section-t' }, 'Steps'), h('ol', { class: 'tips' }, ...run.rt.steps.map((s) => h('li', {}, s.text))),
         ),
       ),
+      h('section', { class: 'brief-steps' }, h('div', { class: 'section-t' }, `Steps · ${run.rt.steps.length}`), h('ol', {}, ...run.rt.steps.map((s) => h('li', {}, s.text)))),
     );
     if (ex.plate) {
       const ap = approach(ex.plate);
@@ -191,7 +190,7 @@ export class BriefingModal extends Modal {
     this.foot.append(
       h('span', { class: 'muted', style: 'flex:1;align-self:center;font-size:12.5px' }, needQuiz ? 'Answer the knowledge check to start.' : 'The simulation starts paused at the briefing position.'),
       h('button', { class: 'btn', onclick: () => this.close() }, 'Cancel'),
-      h('button', { class: 'btn primary', disabled: needQuiz, onclick: () => { this.close(); this.onStart(run); } }, 'Start exercise ✈'),
+      h('button', { class: 'btn primary', disabled: needQuiz, onclick: () => { this.close(); this.onStart(run); } }, 'Start exercise'),
     );
   }
 }
@@ -204,6 +203,9 @@ export class LessonResultModal extends Modal {
   show(run: LessonRun, path: Path | null) {
     const r = run.finished!;
     progress.record(run.ex.id, r);
+    // the attempt goes into the training records (with the exercise and its score)
+    run.sim.rec.lesson = { id: run.ex.id, title: run.ex.title, score: r.score, passed: r.passed };
+    saveFlightRecord(run.sim);
     clear(this.body);
     clear(this.foot);
     this.body.append(
@@ -211,7 +213,9 @@ export class LessonResultModal extends Modal {
         h('div', { class: `grade ${r.passed ? 'A' : 'F'}` }, r.passed ? '✓' : '✗', h('small', {}, `${r.score}/100`)),
         h('div', {}, h('h2', { style: 'margin:0 0 4px' }, `${r.passed ? 'Passed' : 'Not yet'} — ${run.ex.title}`), h('p', { class: 'muted' }, `${r.reason} · ${fmtTime(r.durationSec)}`)),
       ),
-      h('table', { class: 'items' }, h('tr', {}, ...['Step', 'Done', 'Out of tolerance', 'First deviation'].map((t) => h('th', {}, t))), ...r.steps.map((s) => h('tr', {}, h('td', {}, s.text), h('td', {}, s.done ? '✓' : '—'), h('td', { class: `pen${s.violationSec < 1 ? ' zero' : ''}` }, s.violationSec < 1 ? '0 s' : `${Math.round(s.violationSec)} s`), h('td', { class: 'muted' }, s.worst ?? '')))),
+      h('table', { class: 'items res-steps' },
+        h('tr', {}, h('th', {}, 'Step'), h('th', {}, 'Done'), h('th', { class: 'num' }, 'Out of tolerance'), h('th', {}, 'First deviation')),
+        ...r.steps.map((s) => h('tr', {}, h('td', {}, s.text), h('td', { class: s.done ? 'done' : 'na' }, s.done ? svgIcon(I.check, 15) : 'Not completed'), h('td', { class: `pen${s.violationSec < 1 ? ' zero' : ''}` }, s.violationSec < 1 ? '0 s' : `${Math.round(s.violationSec)} s`), h('td', { class: 'muted' }, s.worst ?? '')))),
     );
     if (r.holdReport) this.body.append(h('div', { class: 'section-t' }, 'Holding'), h('table', { class: 'items acs-table' }, ...r.holdReport.map((i) => h('tr', { class: i.ok === null ? 'N/A' : i.ok ? 'PASS' : 'FAIL' }, h('td', {}, i.ok === null ? '—' : i.ok ? 'PASS' : 'FAIL'), h('td', {}, i.label), h('td', {}, i.value)))));
     if (run.rt.hold && run.holdEval?.correctEntry) this.body.append(h('div', { class: 'diagram', html: holdDiagramSvg(run.rt.hold.inbound, run.rt.hold.turn, run.rt.hold.fix.ident, run.holdEval.arrivalCourse) }));
@@ -221,8 +225,12 @@ export class LessonResultModal extends Modal {
     this.foot.append(
       h('button', { class: 'btn', onclick: () => { this.close(); this.onDebrief(); } }, 'Full debrief'),
       h('span', { style: 'flex:1' }),
-      h('button', { class: 'btn', onclick: () => { this.close(); this.onRetry(run.ex); } }, 'Retry ↻'),
-      nextId ? h('button', { class: 'btn primary', onclick: () => { this.close(); this.onNext(exercise(nextId)); } }, 'Next exercise →') : h('span', {}),
+      // the primary action sits on the right: Next exercise after a pass, Retry after a fail
+      ...(() => {
+        const retry = h('button', { class: `btn${r.passed ? '' : ' primary'}`, onclick: () => { this.close(); this.onRetry(run.ex); } }, 'Retry');
+        const next = nextId ? h('button', { class: `btn${r.passed ? ' primary' : ''}`, onclick: () => { this.close(); this.onNext(exercise(nextId)); } }, 'Next exercise') : null;
+        return next ? (r.passed ? [retry, next] : [next, retry]) : [retry];
+      })(),
     );
     this.open();
   }
@@ -287,7 +295,7 @@ export class HoldDrillModal extends Modal {
         h('span', { class: 'muted', style: 'flex:1;align-self:center' }, `Answered in ${this.times[this.times.length - 1].toFixed(1)} s`),
         last
           ? h('button', { class: 'btn primary', onclick: () => this.finish() }, 'See result')
-          : h('button', { class: 'btn primary', onclick: () => { this.n++; this.newQ(); } }, 'Next →'),
+          : h('button', { class: 'btn primary', onclick: () => { this.n++; this.newQ(); } }, 'Next question'),
       );
     }
   }
@@ -298,6 +306,6 @@ export class HoldDrillModal extends Modal {
     this.body.append(
       h('div', { class: 'grade-row' }, h('div', { class: `grade ${this.score >= 9 ? 'A' : this.score >= 7 ? 'B' : this.score >= 5 ? 'C' : 'F'}` }, `${this.score}`, h('small', {}, '/ 10')), h('div', {}, h('h2', {}, this.score >= 9 ? 'Entries are automatic.' : 'Keep drilling.'), h('p', { class: 'muted' }, `Average decision time ${avg.toFixed(1)} s — aim for under 5 s before flying it.`))),
     );
-    this.foot.append(h('button', { class: 'btn', onclick: () => this.close() }, 'Close'), h('button', { class: 'btn primary', onclick: () => this.open() }, 'Again ↻'));
+    this.foot.append(h('button', { class: 'btn', onclick: () => this.close() }, 'Close'), h('button', { class: 'btn primary', onclick: () => this.open() }, 'Drill again'));
   }
 }

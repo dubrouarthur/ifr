@@ -1,5 +1,6 @@
 // Weather station: surface wind, gusts, shear, winds aloft, clouds, pressure, runway wind calculator and ATIS.
 import { h, clear } from './dom';
+import { svgIcon, I } from './icons';
 import { Modal, WX_PRESETS } from './modals';
 import type { Sim } from '../sim/sim';
 import { defaultAloft, components, steadyWind, type WindLayer } from '../sim/wind';
@@ -26,11 +27,13 @@ export class WeatherStation extends Modal {
     const w = this.sim.weather;
     const rerender = () => this.render();
     const num = (label: string, get: () => number, set: (v: number) => void, o: { min: number; max: number; step: number; unit: string; fmt?: (v: number) => string }) => {
-      const out = h('b', {}, (o.fmt ?? String)(get()) + (o.unit ? ` ${o.unit}` : ''));
+      // the unit follows numbers only ('Gusts none', not 'none kt')
+      const show = (v: number) => { const t = (o.fmt ?? String)(v); return o.unit && /^[−-]?\d/.test(t) ? `${t} ${o.unit}` : t; };
+      const out = h('b', {}, show(get()));
       const r = h('input', { type: 'range', min: o.min, max: o.max, step: o.step, value: get() }) as HTMLInputElement;
       r.addEventListener('input', () => {
         set(Number(r.value));
-        out.textContent = (o.fmt ?? String)(Number(r.value)) + (o.unit ? ` ${o.unit}` : '');
+        out.textContent = show(Number(r.value));
         this.renderLive();
       });
       r.addEventListener('change', rerender);
@@ -54,7 +57,7 @@ export class WeatherStation extends Modal {
       h('button', { class: auto ? 'on' : '', onclick: () => { delete w.aloft; rerender(); } }, 'Auto (veer & strengthen)'),
       h('button', { class: !auto ? 'on' : '', onclick: () => { w.aloft = defaultAloft(w).map((l) => ({ ...l })); rerender(); } }, 'Custom'),
     )));
-    const tbl = h('table', { class: 'items wx-aloft' }, h('tr', {}, ...['Altitude (MSL)', 'Direction', 'Speed', 'Turbulence'].map((t) => h('th', {}, t))));
+    const tbl = h('table', { class: 'items wx-aloft' }, h('tr', {}, ...['Altitude (MSL)', 'Direction (°)', 'Speed (kt)', 'Turbulence (%)'].map((t) => h('th', {}, t))));
     layers.forEach((l) => {
       const cell = (val: number, set: (v: number) => void, step: number, max: number) => {
         const i = h('input', { type: 'number', value: val, step, min: 0, max, disabled: auto }) as HTMLInputElement;
@@ -98,7 +101,7 @@ export class WeatherStation extends Modal {
         h('td', {}, h('b', {}, `RWY ${r.id}`), r === inUse ? h('span', { class: 'chip live', style: 'margin-left:6px' }, 'in use') : null),
         h('td', {}, `${c.head >= 0 ? 'Head' : 'Tail'} ${Math.abs(Math.round(c.head))} kt`),
         h('td', {}, `${Math.abs(Math.round(c.cross))} kt from the ${c.cross >= 0 ? 'right' : 'left'}${w.gustKt > w.windKt ? ` (gust ${Math.round(xw)})` : ''}`),
-        h('td', { class: `xw ${status.replace(' ', '-')}` }, status === 'ok' ? '✓ within limits' : status === 'challenging' ? '⚠ challenging' : status === 'tailwind' ? '⚠ tailwind' : `✗ above ${C172_XWIND_DEMO} kt demonstrated`),
+        h('td', { class: `xw ${status.replace(' ', '-')}` }, h('span', { class: 'has-ico' }, svgIcon(status === 'ok' ? I.check : I.warning, 15), status === 'ok' ? 'Within limits' : status === 'challenging' ? 'Challenging' : status === 'tailwind' ? 'Tailwind' : `Above ${C172_XWIND_DEMO} kt demonstrated`)),
       );
     });
     const at3 = steadyWind(w, 3000, 3000 - a.elevFt);

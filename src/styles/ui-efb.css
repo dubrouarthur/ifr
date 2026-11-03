@@ -531,6 +531,8 @@
 .cl-row:focus-visible,
 .cl-chip:focus-visible,
 .cl-pin:focus-visible {
+  position: relative;
+  z-index: 1;
   outline: none;
   box-shadow: var(--ring);
 }
