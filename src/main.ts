@@ -28,6 +28,7 @@ import type { AssessSettings } from './sim/sim';
 import { Launcher, ProcModal, DirectModal, JoystickModal, DebriefModal, HelpModal, Modal, WX_PRESETS, type WxPreset } from './ui/modals';
 import { distanceNm, wrap180 } from './nav/geo';
 import { runway } from './nav/data';
+import { assessTouchdown } from './sim/landing';
 import { chartIndex } from './plates/plates';
 import type { Phase } from './sim/recorder';
 import { CockpitAudio } from './sim/audio';
@@ -995,9 +996,17 @@ function updateCoach() {
 // ------------------------------------------------------------------ loop
 let last = performance.now();
 let coachAcc = 0;
+let lastTouchdown: unknown = null;
 function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
+  // touchdown feedback (rate, g, speed, position on the runway)
+  const tdn = sim.ac.touchdown;
+  if (tdn && tdn !== lastTouchdown && !sim.replaying) {
+    lastTouchdown = tdn;
+    const rep = assessTouchdown(tdn, sim.ac.data.hdgTrue);
+    if (rep) sim.rec.log(sim.time, rep.tone, rep.text); // logged in the debrief and toasted
+  }
   const override = input.update(dt, sim.controls, sim.ap.ap && !sim.paused);
   if (override) {
     sim.ap.disconnect();

@@ -112,6 +112,8 @@ export class Aircraft {
   private vsFilt = 0;
   private iasFilt = -1;
   private gFilt = 1;
+  /** last wheel contact (for landing feedback and grading) */
+  touchdown: { vsFpm: number; pitchDeg: number; bankDeg: number; ias: number; g: number; lat: number; lon: number; kind: 'smooth' | 'normal' | 'firm' | 'hard'; bounced: boolean; t: number } | null = null;
   /** true while the wing is past the critical angle of attack */
   stalled = false;
   /** stall buffet intensity 0..1 (for audio / shake) */
@@ -229,7 +231,16 @@ export class Aircraft {
     // stall break: nose-down pitching moment once the wing has stalled
     if (over > 0 && !s.onGround) alphaCmd -= over * 2.6 + 2 * DEG;
     const wn = 3.2 * Math.sqrt(Math.max(0.02, qf));
-    s.q += (wn * wn * (alphaCmd - alpha) - 2 * 0.75 * wn * s.q) * dt + tb.pitch * dt * 4.5;
+    if (s.onGround) {
+      // nose-wheel on the runway: the elevator must overcome the nose-wheel load, which only happens
+      // with enough dynamic pressure (rotation near Vr; nose lowers by itself as the speed decays)
+      const auth = Math.max(0, Math.min(1, (qf - 0.12) / 0.15));
+      // ~9 deg rotation attitude for 0.35 back pressure near Vr; hands-off the nose stays on the runway
+      const thetaTgt = Math.max(0, Math.min(12 * DEG, u * 26 * DEG * auth));
+      const rate = thetaTgt > s.theta ? 4 * DEG : 3.5 * DEG;
+      const dth = Math.max(-rate * dt, Math.min(rate * dt, (thetaTgt - s.theta) * Math.min(1, dt * 3)));
+      s.q = dth / Math.max(dt, 1e-4);
+    } else s.q += (wn * wn * (alphaCmd - alpha) - 2 * 0.75 * wn * s.q) * dt + tb.pitch * dt * 4.5;
     // stall buffet in the last ~2 degrees before the critical angle
     if (!s.onGround && alpha > alphaStall - 2.5 * DEG) {
       const k = Math.min(1, (alpha - alphaStall + 2.5 * DEG) / (2.5 * DEG));
@@ -275,10 +286,20 @@ export class Aircraft {
         const bank = Math.abs(s.phi) / DEG;
         const pitch = s.theta / DEG;
         const onRunway = this.onRunwayCheck ? this.onRunwayCheck(s) : true;
-        if (vs < -900 || bank > 12 || pitch < -6) {
-          s.crashed = vs < -900 ? `Hard impact (${Math.round(vs)} fpm)` : 'Wing/nose strike on touchdown';
+        const g = 1 + Math.min(4, Math.abs(vs) / 300);
+        if (vs < -1100 || bank > 12 || pitch < -6) {
+          s.crashed = vs < -1100 ? `Hard impact (${Math.round(vs)} fpm)` : bank > 12 ? 'Wing strike on touchdown' : 'Nose-wheel strike (nose-low touchdown)';
         } else if (!onRunway && s.tas > 30) {
           s.crashed = 'Touched down off-airport';
+        }
+        this.touchdown = { vsFpm: vs, pitchDeg: pitch, bankDeg: s.phi / DEG, ias: V / KT, g, lat: s.lat, lon: s.lon, kind: vs < -600 ? 'hard' : vs < -360 ? 'firm' : vs < -120 ? 'normal' : 'smooth', bounced: false, t: s.hobbs };
+        // bounce: a firm/hard arrival with lift still available rebounds off the oleo/spring gear
+        if (!s.crashed && vs < -420 && L > m * G * 0.55) {
+          this.touchdown.bounced = true;
+          s.altFt = ground + 0.3;
+          s.gamma = Math.min(4 * DEG, (-s.gamma) * 0.35);
+          s.theta += 2 * DEG;
+          return;
         }
         s.altFt = ground;
         s.onGround = true;
