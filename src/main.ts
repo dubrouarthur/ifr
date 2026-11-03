@@ -1,4 +1,6 @@
 import './styles.css';
+// per-area overrides (src/styles/*.css), loaded after the base stylesheet in name order
+import.meta.glob('./styles/*.css', { eager: true });
 import { Sim, SCENARIOS, type Scenario } from './sim/sim';
 import { InputManager, type ButtonAction } from './sim/input';
 import { drawPfd, newPfdState, PFD_W, PFD_H, softkeyAt, PFD_SOFTKEYS } from './avionics/pfd';
