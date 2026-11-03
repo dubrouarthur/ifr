@@ -119,8 +119,8 @@ export class FlightSetup extends Modal {
   private f(label: string, ...els: (HTMLElement | string)[]) {
     return h('label', { class: 'cb-f' }, h('span', {}, label), ...els);
   }
-  private choice<T>(cur: T, items: { v: T; title: string; desc: string; icon?: string }[], on: (v: T) => void, cls = '') {
-    return h('div', { class: `fs-choices ${cls}` }, ...items.map((it) => h('button', { class: `fs-choice${it.v === cur ? ' on' : ''}`, onclick: () => { on(it.v); this.changed(); } }, it.icon ? h('span', { class: 'ic' }, it.icon) : null, h('b', {}, it.title), h('span', {}, it.desc))));
+  private choice<T>(cur: T, items: { v: T; title: string; desc: string; icon?: string; cls?: string }[], on: (v: T) => void, cls = '') {
+    return h('div', { class: `fs-choices ${cls}` }, ...items.map((it) => h('button', { class: `fs-choice${it.cls ? ' ' + it.cls : ''}${it.v === cur ? ' on' : ''}`, onclick: () => { on(it.v); this.changed(); } }, it.icon ? h('span', { class: 'ic' }, it.icon) : null, h('b', {}, it.title), h('span', {}, it.desc))));
   }
   private fixSel(v: string, on: (x: string) => void) {
     return this.sel(v, FIX_IDS.map((f) => [f, `${f} · ${findFix(f)!.kind.toUpperCase()}`] as [string, string]), on);
@@ -137,10 +137,10 @@ export class FlightSetup extends Modal {
       case 0:
         this.main.append(this.h2('What kind of flight?', 'Pick a type — every following step adapts to it. You can fly at any time from the bottom bar.'));
         this.main.append(this.choice(st.type, [
-          { v: 'route' as FlightType, icon: '🧭', title: 'IFR flight A → B', desc: 'Depart, fly a route you build fix by fix, then an approach at the destination.' },
-          { v: 'approach' as FlightType, icon: '🛬', title: 'Approach practice', desc: 'Start on final or before the IAF and fly one approach — ILS, LOC, LDA, VOR, NDB, RNAV.' },
-          { v: 'hold' as FlightType, icon: '🔁', title: 'Holding practice', desc: 'Any fix, any inbound course, left or right turns, with the entry to work out.' },
-          { v: 'free' as FlightType, icon: '✈️', title: 'Free flight', desc: 'Start anywhere with your aircraft and weather. No plan, no grading.' },
+          { v: 'route' as FlightType, cls: 'ft-route', icon: '🧭', title: 'IFR flight A → B', desc: 'Depart, fly a route you build fix by fix, then an approach at the destination.' },
+          { v: 'approach' as FlightType, cls: 'ft-approach', icon: '🛬', title: 'Approach practice', desc: 'Start on final or before the IAF and fly one approach — ILS, LOC, LDA, VOR, NDB, RNAV.' },
+          { v: 'hold' as FlightType, cls: 'ft-hold', icon: '🔁', title: 'Holding practice', desc: 'Any fix, any inbound course, left or right turns, with the entry to work out.' },
+          { v: 'free' as FlightType, cls: 'ft-free', icon: '✈️', title: 'Free flight', desc: 'Start anywhere with your aircraft and weather. No plan, no grading.' },
         ], (v) => this.applyType(v), 'big'));
         {
           const saved = circuitStore.list();
@@ -151,10 +151,10 @@ export class FlightSetup extends Modal {
         this.main.append(this.h2('Aircraft & instruments', 'Choose the panel and what is actually installed. Missing equipment is really missing: no GPS means VOR/NDB navigation only.'));
         this.main.append(h('div', { class: 'section-t' }, 'Cockpit'));
         this.main.append(this.choice(st.cockpit, [
-          { v: 'g1000' as const, icon: '🖥️', title: 'G1000 glass', desc: 'PFD + MFD, synthetic vision, GFC 700 autopilot.' },
-          { v: 'steam' as const, icon: '⏱️', title: 'Steam gauges', desc: 'Six-pack, CDI/GS, RMI, KAP 140, radio stack.' },
-          { v: 'airliner' as const, icon: '🛫', title: 'Airliner', desc: 'Boeing-style PFD/ND with MCP.' },
-        ], (v) => (st.cockpit = v)));
+          { v: 'g1000' as const, cls: 'ck-g1000', icon: '🖥️', title: 'G1000 glass', desc: 'PFD + MFD, synthetic vision, GFC 700 autopilot.' },
+          { v: 'steam' as const, cls: 'ck-steam', icon: '⏱️', title: 'Steam gauges', desc: 'Six-pack, CDI/GS, RMI, KAP 140, radio stack.' },
+          { v: 'airliner' as const, cls: 'ck-airliner', icon: '🛫', title: 'Airliner', desc: 'Boeing-style PFD/ND with MCP.' },
+        ], (v) => (st.cockpit = v), 'ck'));
         this.main.append(h('div', { class: 'section-t' }, 'Equipment presets'));
         this.main.append(h('div', { class: 'fs-chips' }, ...EQUIP_PRESETS.map((p) => h('button', { class: JSON.stringify(p.eq) === JSON.stringify(st.equipment) ? 'on' : '', onclick: () => { st.equipment = { ...p.eq }; if (p.cockpit) st.cockpit = p.cockpit; this.changed(); } }, h('b', {}, p.name), h('span', {}, p.desc)))));
         this.main.append(h('div', { class: 'section-t' }, 'Installed avionics'));

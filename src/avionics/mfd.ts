@@ -156,19 +156,46 @@ export function drawMap(
       off.width = r.w;
       off.height = r.h;
       const o = off.getContext('2d')!;
-      const step = 10;
-      for (let py = 0; py < r.h; py += step) {
-        for (let px = 0; px < r.w; px += step) {
+      const step = 5;
+      // relative (TAWS-style) colours only when airborne; absolute topo shading on the ground / low
+      const agl = s.altFt - groundElevation(s);
+      const relative = agl > 250;
+      const topo = (e: number): [number, number, number] => {
+        if (e < 1) return [9, 27, 46];
+        const t = Math.min(1, e / 2600);
+        // low greens → olive → brown highlands
+        return [Math.round(20 + 70 * t), Math.round(44 + 30 * t - 10 * t * t), Math.round(24 + 6 * t)];
+      };
+      const img = o.createImageData(Math.ceil(r.w / step), Math.ceil(r.h / step));
+      for (let j = 0; j < img.height; j++) {
+        for (let i = 0; i < img.width; i++) {
+          const px = i * step, py = j * step;
           const lx = (r.x + px + step / 2 - cx) / ppn;
           const ly = -(r.y + py + step / 2 - cy) / ppn;
           const ex = lx * Math.cos(-rot) - ly * Math.sin(-rot);
           const ey = lx * Math.sin(-rot) + ly * Math.cos(-rot);
           const p = destination(destination(s, 90, ex), 0, ey);
           const e = groundElevation(p);
-          o.fillStyle = e < 1 ? '#0a1f33' : s.altFt - e < 100 ? '#7a1010' : s.altFt - e < 1000 ? '#6b5d10' : e > 1200 ? '#20311d' : e > 700 ? '#1b2a19' : '#14211a';
-          o.fillRect(px, py, step, step);
+          let c = topo(e);
+          if (relative && e >= 1) {
+            if (s.altFt - e < 100) c = [150, 22, 22];
+            else if (s.altFt - e < 1000) c = [140, 118, 18];
+          }
+          const k = (j * img.width + i) * 4;
+          img.data[k] = c[0];
+          img.data[k + 1] = c[1];
+          img.data[k + 2] = c[2];
+          img.data[k + 3] = 255;
         }
       }
+      // draw the low-res grid smoothly scaled
+      const tmp = document.createElement('canvas');
+      tmp.width = img.width;
+      tmp.height = img.height;
+      tmp.getContext('2d')!.putImageData(img, 0, 0);
+      o.imageSmoothingEnabled = true;
+      o.imageSmoothingQuality = 'high';
+      o.drawImage(tmp, 0, 0, img.width * step, img.height * step);
       cache.canvas = off;
       cache.key = key;
     }
@@ -226,22 +253,40 @@ export function drawMap(
     }
     if (!inset || rangeNm <= 10) text(ctx, n.ident, p.x + 10, p.y + 12, n.type === 'NDB' ? C.magenta : C.cyan, 13);
   }
-  // airports
+  // airports: runways at true width (min 3 px), outlined; numbers + centreline when zoomed in
   for (const a of AIRPORTS) {
     const p = xy(a);
+    const big = rangeNm <= 10;
     for (let i = 0; i < a.runways.length; i += 2) {
-      const r1 = xy(a.runways[i].threshold);
-      const r2 = xy(a.runways[i].end);
-      line(ctx, r1.x, r1.y, r2.x, r2.y, '#ffffff', Math.max(2, ppn * 0.05));
+      const rw = a.runways[i];
+      const r1 = xy(rw.threshold);
+      const r2 = xy(rw.end);
+      const len = Math.hypot(r2.x - r1.x, r2.y - r1.y) || 1;
+      const ux = (r2.x - r1.x) / len, uy = (r2.y - r1.y) / len;
+      const halfW = Math.max(1.6, ((rw.widthFt / 6076) * ppn) / 2);
+      const nx = -uy * halfW, ny = ux * halfW;
+      const pts: [number, number][] = [[r1.x + nx, r1.y + ny], [r2.x + nx, r2.y + ny], [r2.x - nx, r2.y - ny], [r1.x - nx, r1.y - ny]];
+      poly(ctx, pts, big ? '#3b4148' : '#d7dde3', big ? '#e8ecef' : undefined, 1);
+      if (big && halfW > 3) {
+        ctx.setLineDash([6, 5]);
+        line(ctx, r1.x + ux * 8, r1.y + uy * 8, r2.x - ux * 8, r2.y - uy * 8, '#e8ecef', 1);
+        ctx.setLineDash([]);
+      }
+      if (!inset && rangeNm <= 5) {
+        for (const [q, id, sgn] of [[r1, rw.id, -1], [r2, a.runways[i + 1].id, 1]] as const) {
+          text(ctx, id, q.x + ux * sgn * 14, q.y + uy * sgn * 14 + 4, '#ffffff', 12, 'center', 700);
+        }
+      }
     }
-    if (ppn * 1.5 < 20) {
-      ctx.strokeStyle = C.cyan;
-      ctx.lineWidth = 2;
+    if (!big) {
+      // airport symbol at long ranges: ring around the runway pattern
+      ctx.strokeStyle = '#d7dde3';
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
       ctx.stroke();
     }
-    text(ctx, a.icao, p.x + 12, p.y - 12, C.white, 14, 'left', 700);
+    if (!inset || rangeNm <= 10) text(ctx, a.icao, p.x + (big ? 18 : 12), p.y - (big ? 18 : 12), C.white, 13, 'left', 700);
   }
   // flight plan
   const fp = sim.fp;

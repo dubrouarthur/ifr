@@ -8,7 +8,7 @@ export interface SettingsState {
   pro: boolean;
   sound: boolean;
   svt: boolean;
-  otw: 'normal' | 'big' | 'none';
+  otw: 'normal' | 'big' | 'visual' | 'none';
 }
 
 export class SettingsModal extends Modal {
@@ -33,7 +33,7 @@ export class SettingsModal extends Modal {
       h('div', { class: 'set-sec' }, 'Outside view'),
       row('Time of day', 'Night makes the approach lights, PAPI and runway lighting the only visual cues.', seg('tod', [['day', 'Day'], ['dusk', 'Dusk'], ['night', 'Night']])),
       row('Graphics quality', 'High: dense terrain, trees and anti-aliasing. Performance: lighter scene for laptops.', seg('gfx', [['high', 'High'], ['low', 'Performance']])),
-      row('Window size', 'Size of the outside view above the panel (Tab cycles).', seg('otw', [['normal', 'Normal'], ['big', 'Large'], ['none', 'Panel only']])),
+      row('Window size', 'Size of the outside view above the panel (Tab cycles).', seg('otw', [['normal', 'Normal'], ['big', 'Large'], ['visual', 'Immersive'], ['none', 'Panel only']])),
       h('div', { class: 'set-sec' }, 'Training'),
       row('Pro mode', 'No coach panel, no informational pop-ups — only failures and critical alerts. Lessons keep their step list.', seg('pro', [[false, 'Off'], [true, 'On']])),
       row('Cockpit audio', 'Engine, stall horn, marker beacons, AP disconnect, altitude alerter and minimums call-out.', seg('sound', [[true, 'On'], [false, 'Off']])),

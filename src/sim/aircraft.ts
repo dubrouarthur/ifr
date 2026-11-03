@@ -109,6 +109,7 @@ export class Aircraft {
   private lastPsi = 0;
   private lastAlt = 0;
   private vsFilt = 0;
+  private iasFilt = -1;
   private gFilt = 1;
   /** true while the wing is past the critical angle of attack */
   stalled = false;
@@ -369,7 +370,11 @@ export class Aircraft {
       ve = vh * Math.sin(s.psi) + wind.e;
       vn = vh * Math.cos(s.psi) + wind.n;
     }
-    const ias = tas * Math.sqrt(rho / RHO0);
+    const iasRaw = tas * Math.sqrt(rho / RHO0);
+    // pitot-static / air-data computer lag: the indication smooths turbulence like a real ASI (tau ~0.4 s)
+    if (this.iasFilt < 0) this.iasFilt = iasRaw;
+    this.iasFilt += (iasRaw - this.iasFilt) * Math.min(1, dt / 0.4);
+    const ias = this.iasFilt;
     const vsRaw = dt > 0 ? ((s.altFt - this.lastAlt) / dt) * 60 : 0;
     this.vsFilt += (vsRaw - this.vsFilt) * Math.min(1, dt * 4);
     let dpsi = s.psi - this.lastPsi;

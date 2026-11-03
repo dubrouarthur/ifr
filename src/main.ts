@@ -42,7 +42,8 @@ let lastScenario: Scenario = SCENARIOS[1];
 let lastWx: WxPreset = WX_PRESETS[0];
 export type CockpitType = 'g1000' | 'steam' | 'airliner';
 let cockpitType = store.get<CockpitType>('ifr.cockpit', 'g1000');
-let otwMode = store.get<'normal' | 'big' | 'none'>('ifr.otw', 'normal');
+type OtwMode = 'normal' | 'big' | 'visual' | 'none';
+let otwMode = store.get<OtwMode>('ifr.otw', 'normal');
 let debriefShown = false;
 let endTimer = 0;
 
@@ -257,7 +258,7 @@ const wxChip = h('span', { class: 'chip', id: 'wx-chip' }, '');
 const pauseBtn = h('button', { class: 'btn', title: 'Pause (Esc)', onclick: () => togglePause() }, icon(I.pause), h('span', { class: 'lbl' }, 'Pause'));
 const rateSeg = h('div', { class: 'seg', title: 'Simulation rate' }, ...[1, 2, 4].map((r) => h('button', { class: r === 1 ? 'on' : '', onclick: () => setRate(r) }, `${r}×`)));
 const cockpitSeg = h('div', { class: 'seg', title: 'Cockpit type' }, ...([['g1000', 'G1000'], ['steam', 'Steam'], ['airliner', 'Airliner']] as const).map(([c, l]) => h('button', { 'data-c': c, onclick: () => setCockpit(c) }, l)));
-const viewSeg = h('div', { class: 'seg', title: 'Outside view (Tab)' }, ...(['normal', 'big', 'none'] as const).map((m) => h('button', { 'data-m': m, onclick: () => setOtw(m) }, m === 'normal' ? 'View' : m === 'big' ? 'Big' : 'Panel')));
+const viewSeg = h('div', { class: 'seg', title: 'Outside view (Tab)' }, ...(['normal', 'big', 'visual', 'none'] as const).map((m) => h('button', { 'data-m': m, onclick: () => setOtw(m), title: { normal: 'Outside view + full panel', big: 'Large outside view', visual: 'Immersive: full-screen view with a floating PFD', none: 'Instruments only' }[m] }, { normal: 'View', big: 'Big', visual: 'Visual', none: 'Panel' }[m])));
 
 const muteBtn = h('button', { class: 'btn ghost', title: 'Sound on/off (M)', onclick: () => toggleMute() }, icon(audio.muted ? I.mute : I.sound));
 function toggleMute() {
@@ -690,10 +691,11 @@ function setRate(r: number) {
   rateSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.textContent === `${r}×`));
   toast(`Sim rate ${r}×`);
 }
-function setOtw(m: 'normal' | 'big' | 'none') {
+function setOtw(m: OtwMode) {
   otwMode = m;
   store.set('ifr.otw', m);
   cockpit.classList.toggle('big-otw', m === 'big');
+  cockpit.classList.toggle('vis-otw', m === 'visual');
   cockpit.classList.toggle('no-otw', m === 'none');
   viewSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', (b as HTMLElement).dataset.m === m));
 }
@@ -832,7 +834,7 @@ window.addEventListener('keydown', (e) => {
     case 't': toggleTimer(); break;
     case 'f': doAction(e.shiftKey ? 'flapsUp' : 'flapsDn'); break;
     case 'escape': case 'pause': togglePause(); break;
-    case 'tab': setOtw(otwMode === 'normal' ? 'big' : otwMode === 'big' ? 'none' : 'normal'); e.preventDefault(); break;
+    case 'tab': setOtw(({ normal: 'big', big: 'visual', visual: 'none', none: 'normal' } as const)[otwMode]); e.preventDefault(); break;
     case '?': case '/': help.open(); break;
     default: return;
   }
