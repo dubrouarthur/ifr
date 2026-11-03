@@ -68,8 +68,12 @@ export class FlightSetup extends Modal {
     this.st = { ...defaultSetup(), ...this.st, equipment: { ...fullEquipment(), ...(this.st.equipment ?? {}) } };
   }
 
-  start(type?: FlightType) {
+  start(type?: FlightType, world?: 'real' | 'training') {
     if (type) this.applyType(type);
+    if (world && world !== this.st.world) {
+      this.st.world = world;
+      if (world === 'training' && currentRegion()) { leaveRealWorld(); this.loadedKey = ''; this.hooks.regionChanged(); }
+    }
     // a plan saved in another session may refer to procedures of a region that is not loaded now
     if (!this.needsRegion()) sanitizeSetup(this.st);
     this.step = 0;

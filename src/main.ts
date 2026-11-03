@@ -175,7 +175,7 @@ const fc = new FlightCenter({
   getCockpit: () => cockpitType,
   openBuilder: (c) => builder.edit(c),
   flyCircuit: (c) => { backToTraining(); flyCircuit(c); },
-  planFlight: (t) => setup.start(t),
+  planFlight: (t, world) => setup.start(t, world),
 });
 const builder = new CircuitBuilder((c) => flyCircuit(c), (m, k) => toast(m, k ?? 'info'));
 const setup = new FlightSetup({

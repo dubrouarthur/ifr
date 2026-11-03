@@ -22,7 +22,7 @@ export interface FcHooks {
   getCockpit: () => CockpitType;
   openBuilder: (c?: import('../train/circuits').Circuit) => void;
   flyCircuit: (c: import('../train/circuits').Circuit) => void;
-  planFlight: (t?: import('./flightsetup').FlightType) => void;
+  planFlight: (t?: import('./flightsetup').FlightType, world?: 'real' | 'training') => void;
 }
 
 type View = { type: 'home' } | { type: 'cat'; cat: CatId; sub: string | null } | { type: 'path'; path: Path } | { type: 'search' };
@@ -167,10 +167,14 @@ export class FlightCenter extends Modal {
       const passed = ir.exercises.filter((id) => all[id]?.passed).length;
       this.main.append(
         h('div', { class: 'fc-hero' },
-          h('div', {},
-            h('div', { class: 'fc-kicker' }, 'IFR TRAINER · ARDENT ISLANDS'),
+          h('div', { class: 'fc-start' },
+            h('div', { class: 'fc-kicker' }, 'IFR TRAINER'),
             h('h1', {}, 'What are we flying today?'),
-            h('p', { class: 'muted' }, `${this.items.length} flights: 9 approach procedures (ILS, LOC, LDA, back course, VOR/DME, NDB, RNAV LPV & LNAV/VNAV), holdings with every entry, DME arcs, procedure turns, intercepts, IFR cross-country flights, partial panel and checkride profiles — in three cockpits.`),
+            h('p', { class: 'muted' }, 'Any airport in the world, real procedures, your weather — or a guided lesson.'),
+            h('div', { class: 'fc-start-row' },
+              h('button', { class: 'btn primary fc-go', onclick: () => { this.close(); this.hooks.planFlight('route', 'real'); } }, '✈ Start a flight'),
+              h('span', { class: 'fc-start-hint' }, 'Departure → destination · real world'),
+            ),
           ),
           h('div', { class: 'fc-next' },
             h('small', {}, 'Continue your syllabus'),

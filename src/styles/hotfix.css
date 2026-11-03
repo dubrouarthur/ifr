@@ -50,3 +50,10 @@ body.chrome-auto:not(.chrome-hidden) .cockpit.no-otw > .panel { padding-top: 108
 .modal-bg { z-index: 75; }
 .crash-veil { z-index: 74; }
 .toasts { position: fixed !important; z-index: 90 !important; }
+
+/* Flight Center hero: one obvious way to start */
+.fc-start h1 { margin: 4px 0 6px; }
+.fc-start-row { display: flex; align-items: center; gap: 14px; margin-top: 16px; flex-wrap: wrap; }
+.fc-go { height: 52px; padding: 0 28px; font-size: 17px; font-weight: 700; border-radius: 14px; box-shadow: 0 8px 22px rgb(var(--accent-rgb) / 0.28); }
+.fc-start-hint { color: var(--muted); font-size: 13px; }
+.fc-hero .fc-start-hint { color: rgba(255,255,255,.82); }
