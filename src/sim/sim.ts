@@ -27,6 +27,8 @@ export interface Avionics {
   xpdr: string;
   xpdrMode: 'STBY' | 'ON' | 'ALT';
   timerStart: number | null;
+  /** chronometer value frozen when stopped (s), null when reset */
+  timerHold: number | null;
   bearing1: 'OFF' | 'NAV1' | 'GPS' | 'ADF';
   bearing2: 'OFF' | 'NAV2' | 'GPS' | 'ADF';
   adf: Radio;
@@ -119,6 +121,7 @@ export class Sim {
     xpdr: '1200',
     xpdrMode: 'ALT',
     timerStart: null,
+    timerHold: null,
     bearing1: 'OFF',
     bearing2: 'OFF',
     adf: { active: 344, standby: 344 },
@@ -146,6 +149,35 @@ export class Sim {
   equip: Equipment = fullEquipment();
   /** true while the debrief replay drives the aircraft */
   replaying = false;
+  /** chronometer elapsed seconds (running or stopped), null when reset */
+  chrono(): number | null {
+    return this.av.timerStart !== null ? this.time - this.av.timerStart : this.av.timerHold;
+  }
+  /** CHR button: start → stop → reset */
+  chronoButton(): 'start' | 'stop' | 'reset' {
+    if (this.av.timerStart !== null) {
+      this.av.timerHold = this.time - this.av.timerStart;
+      this.av.timerStart = null;
+      return 'stop';
+    }
+    if (this.av.timerHold !== null) {
+      this.av.timerHold = null;
+      return 'reset';
+    }
+    this.av.timerStart = this.time;
+    return 'start';
+  }
+  chronoStartStop(): void {
+    if (this.av.timerStart !== null) this.chronoButton();
+    else {
+      this.av.timerStart = this.time - (this.av.timerHold ?? 0);
+      this.av.timerHold = null;
+    }
+  }
+  chronoReset(): void {
+    this.av.timerStart = this.av.timerStart !== null ? this.time : null;
+    this.av.timerHold = null;
+  }
   /** pilot eye height above the wheels (ft): 7 for a C172, ~18 in the airliner cockpit */
   cockpitEyeFt = 7;
   rate = 1;

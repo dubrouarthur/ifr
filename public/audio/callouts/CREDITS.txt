@@ -1,0 +1,3 @@
+Aural callouts synthesised with Piper TTS (MIT) using the "joe" en_US voice (dataset licence: CC0),
+then processed (band-limited 220 Hz-5.2 kHz, compressed, loudness-normalised) to sound like a cockpit
+audio system. No manufacturer recordings are used.

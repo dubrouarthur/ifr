@@ -1,7 +1,66 @@
 // Cockpit audio: engine, stall horn, marker beacon, AP disconnect, altitude alerter, minimums callout.
 import type { Sim } from './sim';
 
+import { CalloutMonitor, type CalloutProfile } from './callouts';
+
+const PRIORITY: Record<string, number> = { pullup: 10, terrain: 9, toolowterrain: 9, windshear: 9, stall: 8, sinkrate: 7, glideslope: 6, bankangle: 6, minimums: 5, plus100: 4, retard: 4 };
+
 export class CockpitAudio {
+  /** automatic callouts (radio altitude, minimums, GPWS) */
+  callouts = new CalloutMonitor();
+  private clips = new Map<string, AudioBuffer | 'loading'>();
+  private queue: string[] = [];
+  private playing: AudioBufferSourceNode | null = null;
+  private playingId = '';
+  private voiceGain!: GainNode;
+  setCalloutProfile(p: CalloutProfile) {
+    this.callouts.profile = p;
+  }
+  private loadClip(id: string) {
+    if (!this.ctx || this.clips.has(id)) return;
+    this.clips.set(id, 'loading');
+    fetch(`/audio/callouts/${id}.mp3`)
+      .then((r) => r.arrayBuffer())
+      .then((b) => this.ctx!.decodeAudioData(b))
+      .then((buf) => {
+        this.clips.set(id, buf);
+        this.pump();
+      })
+      .catch(() => this.clips.delete(id));
+  }
+  /** queue a callout; higher-priority warnings interrupt lower ones */
+  callout(id: string) {
+    if (!this.ctx || this.muted) return;
+    this.loadClip(id);
+    const pr = PRIORITY[id] ?? 1;
+    if (this.playing && pr > (PRIORITY[this.playingId] ?? 1) + 2) {
+      try { this.playing.stop(); } catch { /* already stopped */ }
+      this.playing = null;
+    }
+    if (!this.queue.includes(id)) this.queue.push(id);
+    this.queue.sort((a, b) => (PRIORITY[b] ?? 1) - (PRIORITY[a] ?? 1));
+    if (this.queue.length > 3) this.queue.length = 3;
+    this.pump();
+  }
+  private pump() {
+    if (!this.ctx || this.playing || !this.queue.length) return;
+    const id = this.queue[0];
+    const buf = this.clips.get(id);
+    if (!buf) return this.loadClip(id);
+    if (buf === 'loading') return;
+    this.queue.shift();
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(this.voiceGain);
+    src.onended = () => {
+      if (this.playing === src) this.playing = null;
+      this.pump();
+    };
+    this.playing = src;
+    this.playingId = id;
+    src.start();
+  }
+
   private ctx: AudioContext | null = null;
   private master!: GainNode;
   private engOsc!: OscillatorNode;
@@ -18,8 +77,6 @@ export class CockpitAudio {
   private lastAp = false;
   private altAlerted = false;
   private lastAltSel = 0;
-  private minsCalled = false;
-  private hundredCalled = false;
   private t = 0;
 
   constructor(muted: boolean) {
@@ -39,6 +96,11 @@ export class CockpitAudio {
     this.master = c.createGain();
     this.master.gain.value = this.muted ? 0 : 0.5;
     this.master.connect(c.destination);
+    this.voiceGain = c.createGain();
+    this.voiceGain.gain.value = 1.4;
+    this.voiceGain.connect(this.master);
+    // preload the most common clips
+    for (const id of ['500', '100', 'plus100', 'minimums', 'sinkrate', 'pullup', 'glideslope']) this.loadClip(id);
     // engine: two detuned saws through a low-pass + some wind noise
     this.engFilter = c.createBiquadFilter();
     this.engFilter.type = 'lowpass';
@@ -107,7 +169,13 @@ export class CockpitAudio {
     o.stop(c.currentTime + delay + dur + 0.05);
   }
 
-  private say(text: string) {
+  /** soft two-tone chime (chronometer minute marks) */
+  chime() {
+    this.beep(1175, 0.12, 0.07);
+    this.beep(1568, 0.22, 0.06, 'sine', 0.13);
+  }
+
+  speak(text: string) {
     if (this.muted || !('speechSynthesis' in window)) return;
     try {
       const u = new SpeechSynthesisUtterance(text);
@@ -155,19 +223,22 @@ export class CockpitAudio {
       this.beep(1046, 0.18, 0.1);
       this.beep(1318, 0.25, 0.1, 'sine', 0.2);
     }
-    // minimums callouts
-    const mins = sim.av.minimums;
-    if (mins !== null && !sim.ac.s.onGround) {
-      const above = sim.indicatedAlt() - mins;
-      if (!this.hundredCalled && above < 100 && above > 50 && d.vsFpm < -100) {
-        this.hundredCalled = true;
-        this.say('One hundred above');
-      }
-      if (!this.minsCalled && above < 0 && d.vsFpm < -100) {
-        this.minsCalled = true;
-        this.say('Minimums');
-      }
-      if (above > 300) this.hundredCalled = this.minsCalled = false;
+    // automatic callouts
+    if (!sim.paused && !sim.replaying) {
+      const nav = sim.navInputs().nav;
+      const ids = this.callouts.update(dt, {
+        aglFt: d.aglFt,
+        baroAltFt: sim.indicatedAlt(),
+        vsFpm: d.vsFpm,
+        minimums: sim.av.minimums,
+        onGround: sim.ac.s.onGround,
+        bankDeg: d.rollDeg,
+        gsDots: nav.gsValid ? nav.gsDev * 2 : null,
+        approachActive: nav.isLoc && nav.gsValid,
+        throttle: sim.controls.throttle,
+        stall: d.stallWarn,
+      });
+      for (const id of ids) this.callout(id);
     }
   }
 }

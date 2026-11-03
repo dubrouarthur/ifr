@@ -64,7 +64,7 @@ export function drawPfd(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState, d
     BRG1: sim.av.bearing1 !== 'OFF',
     BRG2: sim.av.bearing2 !== 'OFF',
     DME: st.dmeWindow,
-    'TMR/REF': sim.av.timerStart !== null,
+    'TMR/REF': sim.chrono() !== null,
   });
   ctx.restore();
 }
@@ -826,7 +826,7 @@ function drawLowerWindows(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState)
   box(ctx, 780, 716, 244, 26, '#000', C.gray);
   text(ctx, `XPDR ${sim.av.xpdr}`, 790, 729, C.green, 16);
   text(ctx, sim.av.xpdrMode, 890, 729, C.green, 16);
-  const tmr = sim.av.timerStart !== null ? sim.time - sim.av.timerStart : null;
+  const tmr = sim.chrono();
   const tt = tmr ?? sim.time;
   const mm = Math.floor(tt / 60);
   const ss = Math.floor(tt % 60);

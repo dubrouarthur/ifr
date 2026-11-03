@@ -119,8 +119,8 @@ function bottomStrip(ctx: CanvasRenderingContext2D, sim: Sim) {
   gtext(ctx, `FLAPS ${Math.round(d.flapsDeg)}°`, 160, y, 15, G.dim, 'left');
   const tr = sim.controls.trim;
   gtext(ctx, `TRIM ${tr < -0.02 ? 'UP' : tr > 0.02 ? 'DN' : 'T/O'} ${Math.abs(Math.round(tr * 100))}`, 300, y, 15, G.dim, 'left');
-  const tmr = sim.av.timerStart !== null ? sim.time - sim.av.timerStart : sim.time;
-  gtext(ctx, `${sim.av.timerStart !== null ? 'TIMER' : 'ET'} ${String(Math.floor(tmr / 60)).padStart(2, '0')}:${String(Math.floor(tmr % 60)).padStart(2, '0')}`, STEAM_W - 20, y, 16, sim.av.timerStart !== null ? G.yellow : G.dim, 'right');
+  const tmr = sim.chrono() ?? sim.time;
+  gtext(ctx, `${sim.chrono() !== null ? 'TIMER' : 'ET'} ${String(Math.floor(tmr / 60)).padStart(2, '0')}:${String(Math.floor(tmr % 60)).padStart(2, '0')}`, STEAM_W - 20, y, 16, sim.av.timerStart !== null ? G.yellow : G.dim, 'right');
   if (sim.av.minimums !== null) gtext(ctx, `MINS ${sim.av.minimums}`, 660, y, 15, sim.indicatedAlt() < sim.av.minimums ? G.yellow : G.dim, 'left');
 }
 
@@ -452,9 +452,9 @@ export function drawStack(ctx: CanvasRenderingContext2D, sim: Sim) {
   lcd(ctx, x + 60, 452, 260, 40);
   led(ctx, `ADF ${sim.av.adf.active}`, x + 76, 473, 24, '#ffb347');
   led(ctx, sim.adf.valid ? sim.adf.ident : '----', x + 300, 473, 20, '#ffb347', 'right');
-  const tmr = sim.av.timerStart !== null ? sim.time - sim.av.timerStart : sim.time;
+  const tmr = sim.chrono() ?? sim.time;
   lcd(ctx, x + 340, 452, 260, 40);
-  led(ctx, `${sim.av.timerStart !== null ? 'ET' : 'FLT'} ${String(Math.floor(tmr / 60)).padStart(2, '0')}:${String(Math.floor(tmr % 60)).padStart(2, '0')}`, x + 356, 473, 24, '#ffb347');
+  led(ctx, `${sim.chrono() !== null ? 'CHR' : 'FLT'} ${String(Math.floor(tmr / 60)).padStart(2, '0')}:${String(Math.floor(tmr % 60)).padStart(2, '0')}`, x + 356, 473, 24, '#ffb347');
   // DME
   unit(ctx, x, 504, w, 52, 'DME');
   lcd(ctx, x + 60, 510, 540, 40);

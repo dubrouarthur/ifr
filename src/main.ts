@@ -550,6 +550,7 @@ function setCockpit(t: CockpitType, announce = true) {
   cockpitType = t;
   store.set('ifr.cockpit', t);
   sim.cockpitEyeFt = t === 'airliner' ? 18 : 7;
+  audio.setCalloutProfile(t === 'airliner' ? 'airline' : 'ga');
   panel.classList.remove('theme-g1000', 'theme-steam', 'theme-airliner');
   panel.classList.add(`theme-${t}`);
   cockpit.classList.toggle('with-mcp', t === 'airliner');
@@ -582,12 +583,26 @@ const rudderBar = h('div', { class: 'rudder', title: 'Rudder ( , and . )' }, h('
 const brakeLight = h('span', { class: 'brake-light' }, 'BRAKES');
 const joyDot = h('span', { class: 'joy-dot' });
 const joyLbl = h('span', { class: 'joy-lbl' }, 'Keyboard');
+// chronometer widget (pedestal): START/STOP, RESET, minute chime
+const chronoRead = h('b', { class: 'chrono-lcd' }, '--:--');
+const chronoSS = h('button', { class: 'ped-btn chrono-b', onclick: () => sim.chronoStartStop(), title: 'Start / stop (T cycles start → stop → reset)' }, 'ST/SP');
+const chronoRst = h('button', { class: 'ped-btn chrono-b', onclick: () => sim.chronoReset(), title: 'Reset' }, 'RST');
+let chronoMin = -1;
+function updateChrono() {
+  const t = sim.chrono();
+  chronoRead.textContent = t === null ? '--:--' : `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+  chronoRead.classList.toggle('run', sim.av.timerStart !== null);
+  const m = t === null || sim.av.timerStart === null ? -1 : Math.floor(t / 60);
+  if (m > 0 && m !== chronoMin) audio.chime();
+  chronoMin = m;
+}
 const group = (title: string, ...kids: (HTMLElement | string)[]) => h('div', { class: 'ped-g' }, h('div', { class: 'ped-t' }, title), h('div', { class: 'ped-c' }, ...kids));
 const footer = h('footer', { class: 'footer pedestal' },
   group('Throttle', h('div', { class: 'lever-box' }, h('span', { class: 'lv-l' }, 'IDLE'), thr, h('span', { class: 'lv-l' }, 'FULL')), h('div', { class: 'ped-read' }, thrPct, thrRpm)),
   group('Flaps', h('div', { class: 'flap-sel' }, ...flapBtns, flapNeedle), flapRead),
   group('Trim', h('button', { class: 'ped-btn', onclick: () => (sim.controls.trim = Math.max(-1, sim.controls.trim - 0.05)), title: 'Nose down (Home)' }, '▼'), h('div', { class: 'trim-box' }, trimWheel, h('div', { class: 'trim-scale' }, h('span', {}, 'DN'), h('b', {}, 'T/O'), h('span', {}, 'UP'), trimMark)), h('button', { class: 'ped-btn', onclick: () => (sim.controls.trim = Math.min(1, sim.controls.trim + 0.05)), title: 'Nose up (End)' }, '▲'), trimRead),
   group('Yoke & rudder', stick, h('div', { class: 'ped-col' }, rudderBar, brakeLight)),
+  group('Chrono', h('div', { class: 'chrono' }, chronoRead, h('div', { class: 'chrono-btns' }, chronoSS, chronoRst))),
   group('Controller', h('button', { class: 'ped-joy', onclick: () => joyModal.open(), title: 'Joystick, yoke & pedals setup' }, joyDot, joyLbl)),
   h('div', { class: 'spacer' }),
   h('div', { class: 'ped-keys' }, h('span', {}, h('kbd', {}, 'F1'), ' explain'), h('span', {}, h('kbd', {}, '?'), ' shortcuts'), h('span', {}, h('kbd', {}, 'G'), ' go-around'), h('span', {}, h('kbd', {}, 'K'), ' charts')),
@@ -713,8 +728,8 @@ function centerCdi() {
   }
 }
 function toggleTimer() {
-  sim.av.timerStart = sim.av.timerStart === null ? sim.time : null;
-  toast(sim.av.timerStart !== null ? 'Timer started' : 'Timer stopped');
+  const r = sim.chronoButton();
+  toast(r === 'start' ? 'Chronometer started' : r === 'stop' ? `Chronometer stopped — ${fmtTime(sim.chrono() ?? 0)}` : 'Chronometer reset');
 }
 function cycleMins() {
   const ap = sim.fp.approach;
@@ -1087,6 +1102,7 @@ function frame(now: number) {
   charts.update();
   ios.update(dt);
   audio.update(sim, dt);
+  updateChrono();
   connect.link.update(sim, dt);
 
   // pedestal
