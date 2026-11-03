@@ -27,7 +27,7 @@ import { CduPanel } from './ui/cduPanel';
 import { AtcRadio } from './ui/atcRadio';
 import { CircuitBuilder, decodeCircuit } from './ui/circuitBuilder';
 import { circuitToExercise, type Circuit } from './train/circuits';
-import type { LessonRun, Exercise } from './train/engine';
+import { LessonRun, type Exercise } from './train/engine';
 import { exercise, type Path } from './train/curriculum';
 import type { AssessSettings } from './sim/sim';
 import { Launcher, ProcModal, DirectModal, JoystickModal, DebriefModal, HelpModal, Modal, WX_PRESETS, type WxPreset } from './ui/modals';
@@ -179,7 +179,7 @@ const fc = new FlightCenter({
 });
 const builder = new CircuitBuilder((c) => flyCircuit(c), (m, k) => toast(m, k ?? 'info'));
 const setup = new FlightSetup({
-  flyGraded: (c, st) => { applySetupPrefs(st); flyCircuit(c); },
+  flyGraded: (c, st) => { applySetupPrefs(st); if (c.cockpit && c.cockpit !== cockpitType) setCockpit(c.cockpit); startExerciseNow(circuitToExercise(c)); },
   flyFree: (sc, st) => { applySetupPrefs(st); startScenario(sc, { id: 'custom', name: 'Custom', desc: '', wx: st.weather }, { mode: 'training', student: launcher.assess.student, handFlown: false, randomFailure: false }); },
   openChart: (id) => { charts.toggle(true); charts.show(id); },
   regionChanged: () => { rebuildOutside(); charts.refresh?.(); },
@@ -196,7 +196,15 @@ function flyCircuit(c: Circuit) {
   pickExercise(circuitToExercise(c), null);
 }
 const lessonResult = new LessonResultModal((ex) => pickExercise(ex, lessonPath), (ex) => pickExercise(ex, lessonPath), () => openDebrief());
+/** start an exercise immediately (no briefing window) — used by Plan a flight, Retry */
+function startExerciseNow(ex: Exercise, path: Path | null = null) {
+  lessonPath = path;
+  sim.assess = { mode: sim.assess.mode, student: launcher.assess.student, handFlown: false, randomFailure: false };
+  hideCrash();
+  startLesson(new LessonRun(ex, sim));
+}
 function pickExercise(ex: Exercise, path: Path | null) {
+  hideCrash();
   lesson = null;
   lessonPath = path;
   sim.assess = { mode: 'training', student: launcher.assess.student, handFlown: false, randomFailure: false };
@@ -204,6 +212,7 @@ function pickExercise(ex: Exercise, path: Path | null) {
 }
 function startLesson(run: LessonRun) {
   lesson = run;
+  lastLessonEx = run.ex;
   debriefShown = true; // the lesson result replaces the automatic debrief
   sim.paused = false;
   input.keys.clear();
@@ -224,6 +233,7 @@ const ios = new InstructorDrawer(sim, (m, k) => toast(m, k ?? 'info'));
 ios.onBuilder = () => builder.edit();
 
 function startScenario(sc: Scenario, wx: WxPreset, a: AssessSettings = launcher.assess) {
+  hideCrash();
   lesson = null;
   lastScenario = sc;
   lastWx = wx;
@@ -338,7 +348,7 @@ const flightMenu = h('div', { class: 'menu flight-menu', role: 'menu' });
 const flightItem = (label: string, hint: string, fn: () => void, danger = false) =>
   h('button', { class: `menu-item${danger ? ' danger' : ''}`, role: 'menuitem', onclick: () => { flightMenu.classList.remove('open'); fn(); } }, h('span', {}, label), hint ? h('kbd', {}, hint) : null);
 function restartFlight() {
-  if (lesson) pickExercise(lesson.ex, lessonPath);
+  if (lesson || lastLessonEx) startExerciseNow((lesson?.ex ?? lastLessonEx)!, lessonPath);
   else startScenario(lastScenario, lastWx, sim.assess);
 }
 function endFlight() {
@@ -1110,13 +1120,51 @@ function updateCoach() {
 let last = performance.now();
 let coachAcc = 0;
 let lastTouchdown: unknown = null;
+let lastLessonEx: Exercise | null = null;
+// crash screen: a clear way out (retry / debrief / new flight / Flight Center)
+const crashVeil = h('div', { class: 'crash-veil', role: 'alertdialog', 'aria-label': 'Crash' });
+let crashShown = '';
+function showCrash(reason: string) {
+  crashShown = reason;
+  if (!crashVeil.isConnected) document.body.append(crashVeil);
+  crashVeil.innerHTML = '';
+  crashVeil.append(
+    h('div', { class: 'crash-card' },
+      h('div', { class: 'crash-k' }, 'Flight ended'),
+      h('h2', {}, reason),
+      h('p', {}, 'Review what happened in the debrief, or go again.'),
+      h('div', { class: 'crash-acts' },
+        h('button', { class: 'btn primary', onclick: () => restartFlight() }, 'Retry this flight'),
+        h('button', { class: 'btn', onclick: () => { hideCrash(); openDebrief(); } }, 'Debrief'),
+        h('button', { class: 'btn', onclick: () => { hideCrash(); setup.start(); } }, 'Plan a new flight'),
+        h('button', { class: 'btn ghost', onclick: () => { hideCrash(); fc.open(); } }, 'Flight Center'),
+      ),
+    ),
+  );
+  crashVeil.classList.add('open');
+}
+function hideCrash() {
+  crashShown = '';
+  crashVeil.classList.remove('open');
+}
 let lastAtcStep = -1;
 /** lesson steps that read as ATC instructions are transmitted on the radio */
 const ATC_LIKE = /^(fly|turn|climb|descend|maintain|cleared|hold|proceed|intercept|join|expect|contact|cross|reduce|increase|go around|track|enter)\b/i;
 let cduTick = 0;
+/** per-section frame timings (ms, exponential average) — window.__ifr.perf */
+const perf: Record<string, number> = {};
+let perfT = 0;
+const mark = (k: string) => {
+  const t = performance.now();
+  perf[k] = (perf[k] ?? 0) * 0.95 + (t - perfT) * 0.05;
+  perfT = t;
+};
 function frame(now: number) {
+  perfT = performance.now();
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
+  if (sim.ac.s.crashed && !crashShown && !sim.replaying) showCrash(sim.ac.s.crashed);
+  if (!sim.ac.s.crashed && crashShown) hideCrash();
   // touchdown feedback (rate, g, speed, position on the runway)
   const tdn = sim.ac.touchdown;
   if (tdn && tdn !== lastTouchdown && !sim.replaying) {
@@ -1137,6 +1185,7 @@ function frame(now: number) {
     applyReplay();
     sim.updateAvionics(0);
   } else sim.step(dt);
+  mark('sim');
   if (lesson && !sim.paused) {
     lesson.update(Math.min(0.1, dt) * sim.rate);
   }
@@ -1167,6 +1216,7 @@ function frame(now: number) {
       outside.lookPitch *= 0.995;
     }
     outside.render(sim, now / 1000);
+    mark('outside3d');
   } else if (otwH > 10) {
     const octx = otwCanvas.getContext('2d')!;
     const rect = otwCanvas.getBoundingClientRect();
@@ -1179,6 +1229,7 @@ function frame(now: number) {
     }
     octx.setTransform(1, 0, 0, 1, 0, 0);
     drawOtw(octx, sim, W, Hh, now / 1000);
+    mark('outside2d');
   }
   fitCanvas(pfdCanvas, PFD_W, PFD_H);
   fitCanvas(mfdCanvas, MFD_W, MFD_H);
@@ -1199,7 +1250,9 @@ function frame(now: number) {
     mcp.querySelectorAll<HTMLElement>('[data-mcp]').forEach((b) => b.classList.toggle('on', !!lit[b.dataset.mcp!]));
   } else {
     drawPfd(lctx, sim, pfdSt, sim.paused ? 0 : dt);
+    mark('pfd');
     drawMfd(rctx, sim, mfdSt);
+    mark('mfd');
   }
   charts.update();
   ios.update(dt);
@@ -1207,6 +1260,7 @@ function frame(now: number) {
   updateChrono();
   if ((cduTick = (cduTick + 1) % 15) === 0) cduPanel.tick();
   connect.link.update(sim, dt);
+  mark('misc');
 
   // pedestal
   const ctl = sim.controls;
@@ -1239,11 +1293,12 @@ function frame(now: number) {
     coachAcc = 0;
     updateCoach();
   }
+  mark('dom');
   requestAnimationFrame(frame);
 }
 
 // test/automation hook
-(window as unknown as { __ifr: unknown }).__ifr = { sim, get outside() { return outside; }, thr27: runway('PARD', '27').threshold, charts: (id: string) => chartIndex().find((c) => c.id === id)?.render() ?? '', world: () => import('./nav/world'), lesson: (id: string) => pickExercise(exercise(id), null) };
+(window as unknown as { __ifr: unknown }).__ifr = { sim, get outside() { return outside; }, thr27: runway('PARD', '27').threshold, charts: (id: string) => chartIndex().find((c) => c.id === id)?.render() ?? '', world: () => import('./nav/world'), lesson: (id: string) => pickExercise(exercise(id), null), perf };
 
 // ------------------------------------------------------------------ boot
 setOtw(otwMode);

@@ -37,3 +37,11 @@ body.chrome-auto .drawer { top: 56px; }
 body.chrome-auto:not(.chrome-hidden) .cockpit.no-otw > .panel { padding-top: 108px; }
 .cockpit.no-otw .bezel { height: min(calc((50vw - 210px) * 0.75 + 40px), calc(100dvh - 250px)) !important; }
 .cockpit.no-otw .otw .coach, .cockpit.no-otw .otw .atc-radio { top: 56px; }
+/* crash screen */
+.crash-veil { position: fixed; inset: 0; z-index: 75; display: none; align-items: center; justify-content: center; background: rgba(10, 4, 4, 0.55); backdrop-filter: blur(3px); }
+.crash-veil.open { display: flex; }
+.crash-card { width: min(520px, calc(100vw - 32px)); background: var(--surface); color: var(--text); border-radius: 16px; padding: 24px 24px 20px; box-shadow: var(--shadow-lg); border-top: 4px solid var(--bad); }
+.crash-k { font: 800 11px var(--font); letter-spacing: 1.4px; text-transform: uppercase; color: var(--bad); }
+.crash-card h2 { margin: 6px 0 6px; font-size: 22px; letter-spacing: -0.3px; }
+.crash-card p { margin: 0 0 18px; color: var(--muted); }
+.crash-acts { display: flex; flex-wrap: wrap; gap: 8px; }
