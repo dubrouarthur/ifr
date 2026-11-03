@@ -616,7 +616,7 @@ export function drawMap(
       poly(ctx, [[0, -11], [-5, -3], [5, -3]], C.white);
       ctx.restore();
       text(ctx, `${Math.round(d.windKt)}KT`, r.x + 38, r.y + 8 + (oh + 8) / 2 + 1, C.white, os, 'left', 700);
-    } else text(ctx, 'WIND', r.x + 8 + ww / 2, r.y + 8 + (oh + 8) / 2 + 1, C.gray, fs(12), 'center');
+    } else text(ctx, 'WIND ---', r.x + 8 + ww / 2, r.y + 8 + (oh + 8) / 2 + 1, C.gray, fs(12), 'center');
     // no flight plan (bottom left)
     if (!fp.wpts.length) {
       const t1 = 'NO FLIGHT PLAN';

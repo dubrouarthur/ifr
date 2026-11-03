@@ -183,12 +183,11 @@ function approachGeometry(
     });
     g.lines.push({ kind: "missed", pts, leg });
     const m = ap.missed[ap.missed.length - 1];
-    if (m.hold)
-      g.lines.push({
-        kind: missed ? "hold" : "missed",
-        pts: holdPts(m.fix, m.hold.inbound, m.hold.turn, m.hold.legMin),
-        leg,
-      });
+    if (m.hold) {
+      const hp = holdPts(m.fix, m.hold.inbound, m.hold.turn, m.hold.legMin);
+      g.lines.push({ kind: missed ? "hold" : "missed", pts: hp, leg });
+      g.bounds.push(...hp);
+    }
     if (m.fix.kind !== "runway")
       g.points.push({
         ident: m.fix.ident,
@@ -203,6 +202,9 @@ function approachGeometry(
     g.bounds.push(...pts);
   }
   g.bounds.push(...app);
+  // the start of the other transitions when they are close: the pilot sees the options
+  const end = app[app.length - 1];
+  if (end) for (const t of ap.transitions) { const f = t.legs[0]?.fix; if (f && distanceNm(f, end) < 25) g.bounds.push(f); }
 }
 
 export function planGeometry(c: Circuit): PlanGeometry {
@@ -291,7 +293,7 @@ export interface PlanProfile {
   total: number;
 }
 
-const CLIMB_FT_NM = 400;
+const CLIMB_FT_NM = 500;
 const DESC_FT_NM = 300;
 
 export function planProfile(c: Circuit, sampleGround = true): PlanProfile {
@@ -362,12 +364,14 @@ export function planProfile(c: Circuit, sampleGround = true): PlanProfile {
         if (!f) return;
         const target = l.type === "hold" ? l.alt : (l.alt ?? assigned);
         assigned = target;
-        goTo(f, target, {
-          ident: f.ident,
-          leg: i,
-          seg: alt < target - 20 ? "climb" : "route",
-          hold: l.type === "hold",
-        });
+        const seg = alt < target - 20 ? "climb" : "route";
+        if (l.type === "fix") goTo(f, target, { ident: f.ident, leg: i, seg });
+        else {
+          // the altitude still missing at the fix is gained / lost in the hold
+          goTo(f, target, { leg: i, seg });
+          alt = target;
+          pts.push({ d, alt, ident: f.ident, leg: i, seg, hold: true });
+        }
         return;
       }
       let ap: Approach;
@@ -1449,8 +1453,8 @@ export function profileSvg(
     );
   }
   // fixes: tick + ident on the distance axis, altitude above the point (min underlined, max overlined)
-  let lastX = -99;
   let lastAltX = -99;
+  const idl: { x: number; text: string; dim: boolean; pri: number }[] = [];
   for (const p of pr.pts) {
     if (!p.ident) continue;
     const x = X(p.d),
@@ -1468,12 +1472,7 @@ export function profileSvg(
         `<rect class="rp-hold" x="${f1(x - 7)}" y="${f1(y - 12)}" width="14" height="7" rx="3.5"/>`,
       );
     else o.push(`<circle class="rp-pt" cx="${f1(x)}" cy="${f1(y)}" r="2.6"/>`);
-    if (x - lastX > 34) {
-      o.push(
-        `<text class="rp-id${dimmed ? " dim" : ""}" x="${f1(x)}" y="${H - B + 15}">${esc(p.ident)}</text>`,
-      );
-      lastX = x;
-    }
+    idl.push({ x, text: p.ident, dim: dimmed, pri: p.role === "FAF" || p.role === "IAF" || p.hold || p.role === "MAHP" ? 0 : p.leg < 0 ? 3 : p.ident.startsWith("RW") ? 1 : 2 });
     const at =
       p.amin ??
       p.amax ??
@@ -1499,6 +1498,15 @@ export function profileSvg(
         );
       lastAltX = x;
     }
+  }
+  // fix idents on the distance axis: the procedure fixes first, no overlaps
+  const placed: [number, number][] = [];
+  for (const l of idl.sort((a, b) => a.pri - b.pri)) {
+    const w = l.text.length * 6 + 6;
+    const x0 = Math.max(L - 8, Math.min(W - R - w / 2, l.x)) - w / 2;
+    if (placed.some(([a, b]) => x0 < b && x0 + w > a)) continue;
+    placed.push([x0, x0 + w]);
+    o.push(`<text class="rp-id${l.dim ? " dim" : ""}" x="${f1(x0 + w / 2)}" y="${H - B + 15}">${esc(l.text)}</text>`);
   }
   o.push(
     `<text class="rp-ax" x="${W - R}" y="${H - 4}">${pr.total.toFixed(0)} NM</text><text class="rp-ax" x="${L - 6}" y="${T - 12}">ft</text>`,

@@ -612,7 +612,7 @@ function drawAirspeed(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   if (!valid) text(ctx, '---', x + 40, cy + 1, C.white, 26, 'center', 700);
   else {
     const dr = drum(d.iasKt, 1, 10);
-    drawHiDigits(ctx, dr.hi, dr.hiFrac, xd + 2, cy + 1, 30, col, 30, { top: cy - 21, bot: cy + 21, left: xl + 1 });
+    drawHiDigits(ctx, dr.hi, dr.hiFrac, xd + 2, cy + 1, 30, col, 42, { top: cy - 21, bot: cy + 21, left: xl + 1 });
     ctx.save();
     ctx.beginPath();
     ctx.rect(xd + 1, cy - 32, xr - xd - 2, 64);
@@ -710,7 +710,7 @@ function drawAltimeter(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   const xr = x + w + 6;
   poly(ctx, [[x - 4, cy], [px, cy - 12], [px, cy - 22], [xd, cy - 22], [xd, cy - 33], [xr, cy - 33], [xr, cy + 33], [xd, cy + 33], [xd, cy + 22], [px, cy + 22], [px, cy + 12]], '#000', C.white, 2);
   const dr = drum(Math.abs(alt), 20, 100);
-  drawHiDigits(ctx, dr.hi, dr.hiFrac, xd - 1, cy + 1, 28, C.white, 30, { top: cy - 21, bot: cy + 21, left: px + 1 });
+  drawHiDigits(ctx, dr.hi, dr.hiFrac, xd - 1, cy + 1, 28, C.white, 42, { top: cy - 21, bot: cy + 21, left: px + 1 });
   if (alt < 0) text(ctx, '-', px + 6, cy, C.white, 24, 'left', 700);
   ctx.save();
   ctx.beginPath();
