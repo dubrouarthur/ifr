@@ -99,7 +99,13 @@ export class FlightPlan {
   };
 
   get approach(): Approach | null {
-    return this.approachId ? getApproach(this.approachId) : null;
+    if (!this.approachId) return null;
+    // the nav database can be swapped under a loaded plan (real-world region change): never throw per frame
+    try {
+      return getApproach(this.approachId);
+    } catch {
+      return null;
+    }
   }
 
   /** Non-published hold (ATC clearance): proceed direct to the fix and hold. */

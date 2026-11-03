@@ -62,7 +62,22 @@ export function flightCategory(sim: Sim): {
   return { cat: "VFR", color: "#16a34a" };
 }
 
-export function airportPage(icao: string, sim: Sim): HTMLElement {
+/** m:ss from seconds, rounded first so a leg never reads 2:60 */
+export function mss(sec: number): string {
+  const s = Math.max(0, Math.round(sec));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+/** h:mm from minutes, rounded first */
+const hmm = (min: number) => {
+  const m = Math.max(0, Math.round(min));
+  return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`;
+};
+
+export function airportPage(
+  icao: string,
+  sim: Sim,
+  openChart?: (approachId: string) => void,
+): HTMLElement {
   const a = AIRPORTS.find((x) => x.icao === icao);
   if (!a) return h("div", { class: "efb-empty" }, "No airport selected");
   const w = sim.weather;
@@ -166,7 +181,15 @@ export function airportPage(icao: string, sim: Sim): HTMLElement {
       "div",
       { class: "efb-chips" },
       ...apps.map((x) =>
-        h("span", { class: `efb-ap t-${x.type.toLowerCase()}` }, x.name),
+        h(
+          "button",
+          {
+            class: `efb-ap t-${x.type.toLowerCase()}`,
+            title: `Open the ${x.name} chart`,
+            onclick: () => openChart?.(x.id),
+          },
+          x.name,
+        ),
       ),
     ),
     h("h4", {}, "ATIS"),
@@ -199,17 +222,9 @@ export function navlogPage(sim: Sim): HTMLElement {
       h("td", {}, h("b", {}, w.ident), w.role ? h("em", {}, w.role) : null),
       h("td", {}, `${pad3(bearingDeg(prev, w))}°`),
       h("td", {}, d.toFixed(1)),
-      h("td", {}, cumD.toFixed(0)),
-      h(
-        "td",
-        {},
-        `${Math.floor(t)}:${String(Math.round((t % 1) * 60)).padStart(2, "0")}`,
-      ),
-      h(
-        "td",
-        {},
-        `${Math.floor(cumT / 60)}:${String(Math.round(cumT % 60)).padStart(2, "0")}`,
-      ),
+      h("td", {}, cumD.toFixed(1)),
+      h("td", {}, mss(t * 60)),
+      h("td", {}, hmm(cumT)),
       h("td", {}, w.altMin ? String(w.altMin) : "—"),
       h("td", {}, ((cumT / 60) * ff).toFixed(1)),
     );
@@ -229,12 +244,8 @@ export function navlogPage(sim: Sim): HTMLElement {
       h(
         "div",
         {},
-        h("span", {}, "ETE"),
-        h(
-          "b",
-          {},
-          `${Math.floor(cumT / 60)} h ${String(Math.round(cumT % 60)).padStart(2, "0")}`,
-        ),
+        h("span", {}, "ETE (h:mm)"),
+        h("b", {}, hmm(cumT)),
       ),
       h(
         "div",
@@ -258,9 +269,16 @@ export function navlogPage(sim: Sim): HTMLElement {
         h(
           "tr",
           {},
-          ...["FIX", "MC", "DIST", "CUM", "ETE", "TOTAL", "ALT", "FUEL"].map(
-            (t) => h("th", {}, t),
-          ),
+          ...[
+            "FIX",
+            "MC",
+            "DIST (NM)",
+            "CUM (NM)",
+            "ETE (m:s)",
+            "TOTAL (h:m)",
+            "ALT (ft)",
+            "FUEL (gal)",
+          ].map((t) => h("th", {}, t)),
         ),
       ),
       h("tbody", {}, ...rows),
@@ -273,23 +291,73 @@ export function navlogPage(sim: Sim): HTMLElement {
   );
 }
 
-export function weatherPage(sim: Sim): HTMLElement {
-  const icaos = [
-    ...new Set(
-      [
-        AIRPORTS[0]?.icao,
-        ...APPROACHES.slice(0, 1).map((a) => a.airport),
-        sim.fp.approach?.airport,
-      ].filter(Boolean) as string[],
-    ),
-  ];
+/** TAF with a 24 h validity period and one BECMG group, from the simulator weather */
+export function taf(icao: string, sim: Sim, now = new Date()): string {
+  const w = sim.weather;
+  const dh = (d: Date) =>
+    `${String(d.getUTCDate()).padStart(2, "0")}${String(d.getUTCHours()).padStart(2, "0")}`;
+  const at = (h: number) => {
+    const d = new Date(now.getTime());
+    d.setUTCMinutes(0, 0, 0);
+    d.setUTCHours(d.getUTCHours() + h);
+    return d;
+  };
+  const issued = `${dh(at(0))}30Z`;
+  const body = metar(icao, sim).split(" ").slice(2, -2).join(" ");
+  const later =
+    w.ceilingFt < 1500
+      ? `OVC${String(Math.round((w.ceilingFt + 600) / 100)).padStart(3, "0")}`
+      : "SCT050";
+  return `TAF ${icao} ${issued} ${dh(at(1))}/${dh(at(25))} ${body} BECMG ${dh(at(6))}/${dh(at(8))} ${later}`;
+}
+
+/** departure, destination and alternate of the loaded flight plan (best effort from its waypoints) */
+function planAirports(sim: Sim): { icao: string; role: string }[] {
+  const isApt = (id?: string) => !!id && AIRPORTS.some((a) => a.icao === id);
+  const w = sim.fp.wpts;
+  const out: { icao: string; role: string }[] = [];
+  const dep = w.find((x) => isApt(x.ident))?.ident;
+  const dest =
+    sim.fp.approach?.airport ??
+    [...w].reverse().find((x) => isApt(x.ident) && x.ident !== dep)?.ident;
+  if (dep) out.push({ icao: dep, role: "Departure" });
+  if (dest) out.push({ icao: dest, role: "Destination" });
+  const d = AIRPORTS.find((a) => a.icao === dest);
+  if (d) {
+    const alt = AIRPORTS.filter(
+      (a) =>
+        a.icao !== d.icao &&
+        a.icao !== dep &&
+        APPROACHES.some((x) => x.airport === a.icao),
+    ).sort((a, b) => distanceNm(d, a) - distanceNm(d, b))[0];
+    if (alt) out.push({ icao: alt.icao, role: "Alternate" });
+  }
+  return out;
+}
+
+export function weatherPage(sim: Sim, selected?: string): HTMLElement {
+  const cards: { icao: string; roles: string[] }[] = [];
+  const add = (icao: string | undefined, role: string) => {
+    if (!icao) return;
+    const c = cards.find((x) => x.icao === icao);
+    if (c) {
+      if (role) c.roles.push(role);
+    } else cards.push({ icao, roles: role ? [role] : [] });
+  };
+  add(selected, "");
+  for (const p of planAirports(sim)) add(p.icao, p.role);
+  if (cards.length < 2)
+    add(
+      AIRPORTS.find((a) => a.icao !== selected && APPROACHES.some((x) => x.airport === a.icao))?.icao,
+      "Nearby",
+    );
   const w = sim.weather;
   const layers = (w.aloft ?? []).slice(0, 6);
   const cat = flightCategory(sim);
   return h(
     "div",
     { class: "efb-page" },
-    ...icaos.map((i) =>
+    ...cards.map(({ icao: i, roles }) =>
       h(
         "div",
         { class: "efb-wx" },
@@ -297,6 +365,8 @@ export function weatherPage(sim: Sim): HTMLElement {
           "div",
           { class: "efb-wx-h" },
           h("b", {}, i),
+          h("span", { class: "efb-wx-name" }, AIRPORTS.find((a) => a.icao === i)?.name ?? ""),
+          ...roles.map((r) => h("span", { class: "efb-role" }, r)),
           h(
             "span",
             { class: "efb-cat", style: `background:${cat.color}` },
@@ -304,11 +374,7 @@ export function weatherPage(sim: Sim): HTMLElement {
           ),
         ),
         h("code", {}, `METAR ${metar(i, sim)}`),
-        h(
-          "code",
-          {},
-          `TAF ${i} ${new Date().toISOString().slice(8, 10)}${new Date().toISOString().slice(11, 13)}00Z ${metar(i, sim).split(" ").slice(2, -2).join(" ")} BECMG ${w.ceilingFt < 1500 ? "OVC" + String(Math.round((w.ceilingFt + 600) / 100)).padStart(3, "0") : "SCT050"}`,
-        ),
+        h("code", {}, taf(i, sim)),
       ),
     ),
     h("h4", {}, "Winds aloft"),
@@ -391,7 +457,7 @@ const CHECKLISTS: Record<string, string[]> = {
     "Landing light — ON",
   ],
   "Final / landing": [
-    "Stabilised by 1000 ft (IMC)",
+    "Stabilised approach — BY 1000 FT (IMC)",
     "Flaps — AS REQUIRED",
     "Speed — VREF + additives",
     "Minimums — decision: LAND or GO AROUND",
@@ -457,7 +523,7 @@ export function checklistPage(): HTMLElement {
             }),
             h("span", {}, a),
             b ? h("i", {}) : null,
-            b ? h("b", {}, b) : null,
+            b ? h("b", {}, b.toUpperCase()) : null,
           );
           return row;
         }),
@@ -497,10 +563,10 @@ export function clearancePage(): HTMLElement {
       { class: "efb-note" },
       "Copy the clearance as you receive it — C R A F T.",
     ),
-    field("C", "Clearance limit", "e.g. KSJC"),
-    field("R", "Route", "e.g. as filed, radar vectors SJC"),
+    field("C", "Clearance limit", "e.g. PARD"),
+    field("R", "Route", "e.g. as filed, vectors ARD"),
     field("A", "Altitude", "e.g. maintain 5000, expect 7000 10 min after"),
-    field("F", "Frequency", "e.g. departure 120.9"),
+    field("F", "Frequency", "e.g. departure 119.85"),
     field("T", "Transponder", "e.g. squawk 4512"),
   );
 }

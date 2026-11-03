@@ -1,13 +1,27 @@
-/* EFB drawer layout: header · app bar · (chart tabs + viewer) | app page.
+/* EFB drawer layout: header · app bar · (chart toolbar + viewer) | app page.
    The viewer and the app pages share the last row, only one is displayed. */
-.drawer[aria-label='Charts'] { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); width: min(760px, 100vw); }
-.drawer[aria-label='Charts'] > header { grid-row: 1; }
-.drawer[aria-label='Charts'] > .efb-apps { grid-row: 2; }
-.drawer[aria-label='Charts'] > .chart-tabs { grid-row: 3; align-items: center; flex-wrap: nowrap; min-height: 0; max-height: 220px; }
-.drawer[aria-label='Charts'] > .chart-view,
-.drawer[aria-label='Charts'] > .efb-pagehost { grid-row: 4; min-height: 0; }
-.drawer[aria-label='Charts'] > .efb-pagehost { overflow-y: auto; }
-.chart-tabs button { height: 30px; white-space: nowrap; color: var(--text-2); background: var(--surface); }
-.chart-tabs button.on { color: #fff; background: var(--accent); border-color: var(--accent); }
-.chart-tabs:has(.ng-list) { flex-wrap: wrap; }
-.chart-view { background: #e9edf1; }
+.drawer[aria-label="Charts"] {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  width: min(760px, 100vw);
+}
+.drawer[aria-label="Charts"] > header {
+  grid-row: 1;
+}
+.drawer[aria-label="Charts"] > .efb-apps {
+  grid-row: 2;
+}
+.drawer[aria-label="Charts"] > .chart-bar {
+  grid-row: 3;
+}
+.drawer[aria-label="Charts"] > .chart-view,
+.drawer[aria-label="Charts"] > .efb-pagehost {
+  grid-row: 4;
+  min-height: 0;
+}
+.drawer[aria-label="Charts"] > .efb-pagehost {
+  overflow-y: auto;
+}
+.chart-view {
+  background: #e9edf1;
+}

@@ -567,7 +567,8 @@ export class Cdu {
         },
       ];
       const n = this.pages();
-      if (n > 1)
+      // multi-page lists always carry their page count, even on a single page
+      if (n > 1 || this.page === "RTE" || this.page === "LEGS")
         L[0].push({
           t: `${this.sub + 1}/${n}`,
           c: "w",

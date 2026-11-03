@@ -2,6 +2,7 @@
 // "say again", spoken with radio phraseology (digits, thousands, flight levels, "niner", "decimal")
 // and a squelch tail.
 import { h, clear, store } from "./dom";
+import { svgIcon } from "./icons";
 import { AIRPORTS } from "../nav/data";
 import { distanceNm } from "../nav/geo";
 import type { Sim } from "../sim/sim";
@@ -78,6 +79,7 @@ export class AtcRadio {
   callsign = store.get("ifr.callsign", "N172SP");
   voiceOn = store.get("ifr.atc.voice", true);
   private log: Transmission[] = [];
+  private head: HTMLElement;
   private body: HTMLElement;
   private hist: HTMLElement;
   private voice: SpeechSynthesisVoice | null = null;
@@ -86,49 +88,66 @@ export class AtcRadio {
     private sim: Sim,
     private squelch: () => void,
   ) {
+    this.head = h("div", { class: "atc-head" });
     this.body = h("div", { class: "atc-body" });
-    this.hist = h("div", { class: "atc-hist" });
-    const vbtn = h(
+    this.hist = h("div", { class: "atc-hist", "aria-label": "Earlier transmissions" });
+    const vbtn = h("button", {
+      class: "atc-b atc-voice",
+      type: "button",
+      "aria-pressed": String(this.voiceOn),
+      "aria-label": "ATC voice",
+      onclick: () => {
+        this.voiceOn = !this.voiceOn;
+        store.set("ifr.atc.voice", this.voiceOn);
+        syncVoice();
+        if (!this.voiceOn && "speechSynthesis" in window) speechSynthesis.cancel();
+      },
+    });
+    const syncVoice = () => {
+      vbtn.setAttribute("aria-pressed", String(this.voiceOn));
+      vbtn.title = this.voiceOn ? "ATC voice on — click to mute" : "ATC voice off — click to hear ATC";
+      vbtn.replaceChildren(svgIcon(this.voiceOn ? "sound" : "mute", 14));
+    };
+    syncVoice();
+    const logBtn = h(
       "button",
       {
         class: "atc-b",
-        title: "ATC voice on/off",
+        type: "button",
+        "aria-pressed": "false",
+        title: "Earlier transmissions",
         onclick: () => {
-          this.voiceOn = !this.voiceOn;
-          store.set("ifr.atc.voice", this.voiceOn);
-          vbtn.textContent = this.voiceOn ? "VOICE ON" : "VOICE OFF";
-          if (!this.voiceOn) speechSynthesis?.cancel();
+          const on = this.el.classList.toggle("show-hist");
+          logBtn.setAttribute("aria-pressed", String(on));
         },
       },
-      this.voiceOn ? "VOICE ON" : "VOICE OFF",
+      "Log",
     );
     this.el = h(
       "div",
-      { class: "atc-radio empty", role: "log", "aria-live": "polite" },
-      this.body,
+      { class: "atc-radio empty", role: "log", "aria-live": "polite", "aria-label": "ATC radio" },
       h(
         "div",
-        { class: "atc-tools" },
+        { class: "atc-top" },
+        this.head,
         h(
-          "button",
-          {
-            class: "atc-b",
-            title: "Say again (repeat the last transmission)",
-            onclick: () => this.sayAgain(),
-          },
-          "SAY AGAIN",
-        ),
-        vbtn,
-        h(
-          "button",
-          {
-            class: "atc-b",
-            title: "History",
-            onclick: () => this.el.classList.toggle("show-hist"),
-          },
-          "LOG",
+          "div",
+          { class: "atc-tools" },
+          h(
+            "button",
+            {
+              class: "atc-b",
+              type: "button",
+              title: "Say again (repeat the last transmission)",
+              onclick: () => this.sayAgain(),
+            },
+            "Say again",
+          ),
+          logBtn,
+          vbtn,
         ),
       ),
+      this.body,
       this.hist,
     );
     if ("speechSynthesis" in window) {
@@ -266,18 +285,16 @@ export class AtcRadio {
   private render() {
     const tr = this.log[0];
     this.el.classList.toggle("empty", !tr);
+    this.el.classList.toggle("has-hist", this.log.length > 1);
+    clear(this.head);
     clear(this.body);
     if (tr) {
-      this.body.append(
-        h(
-          "div",
-          { class: "atc-head" },
-          h("span", { class: "atc-led" }),
-          h("b", {}, tr.facility),
-          h("span", { class: "atc-freq" }, tr.freq),
-        ),
-        h("div", { class: "atc-msg" }, tr.text),
+      this.head.append(
+        h("span", { class: "atc-led" }),
+        h("b", {}, tr.facility),
+        h("span", { class: "atc-freq" }, tr.freq),
       );
+      this.body.append(h("div", { class: "atc-msg" }, tr.text));
     }
     clear(this.hist);
     for (const x of this.log.slice(1))

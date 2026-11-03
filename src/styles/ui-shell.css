@@ -1,0 +1,906 @@
+/* =================================================================== ui-shell
+   In-game chrome: top bar, menus, situation bar, overlays of the outside view (lesson / coach panel, ATC strip,
+   toasts, look hint, pause veil), the four layouts, both bezels, the airliner MCP and the pedestal.
+   One block per component. Loads after styles.css and hotfix.css (src/styles/load.ts). */
+
+/* ------------------------------------------------------------------ shared geometry
+   --sb-top   where the situation bar sits (under the auto-hiding top bar while it is shown)
+   --ov-top   where overlays start (under the situation bar)
+   --pfd-w/h, --ped-h are measured by fitSides() in main.ts */
+body {
+  --sb-top: 0px;
+  --sb-h: 40px;
+  --ov-top: calc(var(--sb-top) + var(--sb-h) + 12px);
+  --ped-h: 74px;
+}
+body.chrome-auto:not(.chrome-hidden) {
+  --sb-top: 56px;
+}
+
+/* ------------------------------------------------------------------ top bar */
+.topbar {
+  gap: 10px;
+}
+body .topbar {
+  box-shadow: 0 1px 0 rgba(15, 23, 32, 0.1);
+}
+body.chrome-auto:not(.chrome-hidden) .topbar {
+  box-shadow:
+    0 1px 0 rgba(15, 23, 32, 0.1),
+    0 8px 24px rgba(15, 23, 32, 0.14);
+}
+body.chrome-auto.chrome-hidden .topbar {
+  box-shadow: none;
+}
+.scn-wrap {
+  flex: 0 1 520px;
+}
+.tb-actions {
+  align-items: center;
+  gap: 6px;
+}
+.tb-actions .btn {
+  height: 36px;
+}
+body .tb-actions .btn .lbl {
+  display: inline;
+}
+.tb-actions .tb-icon {
+  width: 36px;
+  padding: 0;
+  justify-content: center;
+}
+.tb-group {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  box-sizing: border-box;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.tb-group .btn {
+  height: 34px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.tb-group .btn + .btn {
+  border-left: 1px solid var(--line);
+}
+.tb-sim {
+  display: inline-flex;
+  align-items: center;
+}
+.tb-sim .btn {
+  border-radius: 0;
+}
+.tb-sim .tb-pause {
+  border-radius: var(--r-sm) 0 0 var(--r-sm);
+}
+.tb-sim .tb-pause.on {
+  color: var(--accent);
+  background: #eef5ff;
+  border-color: #b9d3f3;
+}
+.tb-sim .tb-rate {
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  border-left: 0;
+  min-width: 42px;
+  padding: 0 10px;
+  justify-content: center;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.tb-sim .tb-rate.on {
+  color: var(--accent);
+  font-weight: 700;
+}
+body .tb-actions > .seg.tb-cockpit {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 36px;
+  box-sizing: border-box;
+}
+.tb-cockpit button {
+  height: 30px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+@media (max-width: 1700px) {
+  body .tb-actions > .seg.tb-cockpit {
+    display: none;
+  }
+}
+@media (max-width: 1500px) {
+  body .tb-actions .tb-pause .lbl {
+    display: none;
+  }
+  .tb-actions .tb-pause {
+    width: 38px;
+    padding: 0;
+    justify-content: center;
+  }
+}
+@media (max-width: 1279px) {
+  body .tb-actions .btn:not(.primary) .lbl {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------ menus */
+.menu-h {
+  padding: 9px 10px 3px;
+  font: 700 10.5px var(--font);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.menu-h:first-child {
+  padding-top: 4px;
+}
+.more-menu {
+  min-width: 290px;
+}
+.more-menu .menu-item,
+.flight-menu .menu-item {
+  padding: 7px 10px;
+}
+.menu-item kbd {
+  font-size: 11px;
+}
+.menu-item .sw {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 18px;
+  border-radius: 9px;
+  background: #c9d1da;
+  transition: background 0.15s;
+}
+.menu-item .sw::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 32, 0.3);
+  transition: transform 0.15s;
+}
+.menu-item .sw.on {
+  background: var(--accent);
+}
+.menu-item .sw.on::after {
+  transform: translateX(12px);
+}
+
+/* ------------------------------------------------------------------ situation bar */
+.cockpit .sitbar {
+  top: var(--sb-top);
+  transition: top 0.22s;
+  overflow: hidden;
+}
+.cockpit .sitbar .sb,
+.cockpit .sitbar .sb:nth-child(2),
+.cockpit .sitbar .sb:nth-child(4) {
+  flex: 0 0 auto;
+  padding: 5px 18px;
+}
+.cockpit .sitbar .sb-fill {
+  flex: 1 1 auto;
+}
+.cockpit .sitbar .sb.dim b {
+  color: #6f7c89;
+}
+.cockpit .sitbar .sb.paused b {
+  display: inline-block;
+  padding: 0 9px;
+  border-radius: 99px;
+  background: #ffb020;
+  color: #1a1100;
+  font-size: 11.5px;
+  line-height: 18px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+@media (max-width: 1440px) {
+  .cockpit .sitbar .sb,
+  .cockpit .sitbar .sb:nth-child(2),
+  .cockpit .sitbar .sb:nth-child(4) {
+    padding: 5px 13px;
+  }
+}
+
+/* ------------------------------------------------------------------ lesson / coach panel (top-left) */
+.cockpit .coach {
+  position: absolute;
+  left: 14px;
+  right: auto;
+  top: var(--ov-top);
+  bottom: auto;
+  margin: 0;
+  width: min(380px, calc(46% - 20px));
+  max-width: none;
+  max-height: calc(100% - var(--ov-top) - 12px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 11px 14px 0;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(11, 15, 20, 0.93);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  color: #e6edf3;
+  font-size: 13px;
+  line-height: 1.45;
+  transition: top 0.22s;
+}
+.cockpit .coach:not(.lesson) {
+  padding-bottom: 12px;
+}
+.cockpit .coach h4.coach-k {
+  margin: 0 0 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font: 700 11px/18px var(--font);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #9fb0c0 !important;
+}
+.cockpit .coach .coach-time {
+  font: 600 12px var(--font-cond);
+  letter-spacing: 0.4px;
+  color: #8b97a4;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+}
+.cockpit .coach .next {
+  font: 600 15px/1.38 var(--font);
+  color: #fff;
+}
+.cockpit .coach .ro {
+  margin-top: 5px;
+  font: 600 12.5px var(--font-cond);
+  letter-spacing: 0.2px;
+  color: #8fd3ff;
+}
+.cockpit .coach .viol {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  margin-top: 8px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 176, 32, 0.3);
+  background: rgba(255, 176, 32, 0.12);
+  color: #ffd28a;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.cockpit .coach .viol svg {
+  flex: none;
+  margin-top: 2px;
+}
+.cockpit .coach .coach-more {
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.cockpit .coach .hint {
+  color: #9fb0c0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  margin: 0;
+}
+.cockpit .coach .steps {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cockpit .coach .hint + .steps {
+  margin-top: 9px;
+}
+.cockpit .coach .coach-more > .steps:first-child {
+  margin-top: 0;
+}
+.cockpit .coach .steps li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 500;
+  color: #8b97a4;
+}
+.cockpit .coach .steps li.ok {
+  color: #7d8b98;
+}
+.cockpit .coach .steps li.ok svg {
+  flex: none;
+  margin-top: 2px;
+  color: #6ee7a2;
+}
+.cockpit .coach .steps li .dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin: 5px 3px 0;
+  border-radius: 50%;
+  border: 1.5px solid #5d6b78;
+}
+.cockpit .coach .acts {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px -14px 0;
+  padding: 9px 14px 11px;
+  background: rgb(12, 16, 21);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.cockpit .coach .acts-sp {
+  flex: 1;
+}
+.cockpit .coach .acts .btn {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e6edf3;
+  font: 600 12px var(--font);
+  box-shadow: none;
+}
+.cockpit .coach .acts .btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+.cockpit .coach .acts .btn.danger {
+  border-color: rgba(255, 128, 128, 0.5);
+  background: transparent;
+  color: #ffb3b3;
+}
+.cockpit .coach .acts .btn.danger:hover {
+  background: rgba(255, 90, 90, 0.14);
+}
+.cockpit .coach .acts .coach-more-btn {
+  padding: 0 6px;
+  margin-left: -6px;
+  border-color: transparent;
+  background: transparent;
+  color: #9fb0c0;
+}
+.cockpit .coach .acts .coach-more-btn:hover {
+  color: #fff;
+}
+/* short space for the panel: title, instruction and actions; hint and steps behind "Details" */
+.cockpit.coach-compact .coach.lesson:not(.details) .coach-more {
+  display: none;
+}
+.cockpit:not(.coach-compact) .coach .coach-more-btn {
+  display: none;
+}
+/* free-flight coach tips */
+.cockpit .coach ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  color: #d3dbe3;
+}
+.cockpit .coach ul li {
+  margin: 2px 0;
+}
+.cockpit .coach h4 .coach-min {
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 0;
+  background: none;
+  color: #9fb0c0;
+  font: 600 11.5px var(--font);
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+}
+.cockpit .coach h4 .coach-min:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+/* ------------------------------------------------------------------ ATC strip (top-right) */
+.cockpit .atc-radio {
+  position: absolute;
+  top: var(--ov-top);
+  right: 14px;
+  left: auto;
+  bottom: auto;
+  transform: none;
+  margin: 0;
+  width: min(480px, calc(54% - 40px));
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 12px 11px;
+  border-radius: 12px;
+  border: 1px solid rgba(143, 211, 255, 0.22);
+  background: rgba(11, 15, 20, 0.93);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  color: #eaf2f8;
+  transition: top 0.22s;
+}
+.cockpit .atc-radio.empty {
+  display: none;
+}
+.atc-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 24px;
+}
+.atc-radio .atc-head {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  font: 700 11px var(--font);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #8fd3ff;
+}
+.atc-radio .atc-head b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.atc-radio .atc-led {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  background: #34d27a;
+  box-shadow: none;
+}
+.atc-radio .atc-tools {
+  display: flex;
+  flex-direction: row;
+  gap: 4px;
+  flex: none;
+}
+.atc-radio .atc-b {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+  color: #dbe6ef;
+  font: 600 11.5px var(--font);
+  letter-spacing: 0;
+  cursor: pointer;
+}
+.atc-radio .atc-b:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.atc-radio .atc-b[aria-pressed="true"] {
+  background: rgba(143, 211, 255, 0.14);
+  border-color: rgba(143, 211, 255, 0.38);
+  color: #d6eeff;
+}
+.atc-radio .atc-voice {
+  width: 28px;
+  padding: 0;
+}
+.atc-radio .atc-voice[aria-pressed="false"] {
+  color: #8b97a4;
+}
+.atc-radio:not(.has-hist) .atc-tools > .atc-b:nth-child(2) {
+  display: none;
+}
+.atc-radio .atc-msg {
+  margin: 0;
+  font: 600 14.5px/1.42 var(--font);
+  color: #fff;
+}
+.atc-radio .atc-hist {
+  max-height: 140px;
+  margin-top: 2px;
+}
+
+/* ------------------------------------------------------------------ toasts (bottom centre of the outside view) */
+.cockpit .toasts {
+  position: absolute;
+  top: auto;
+  bottom: 14px;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(460px, calc(100% - 28px));
+  align-items: center;
+  pointer-events: none;
+}
+.cockpit .toast {
+  max-width: 100%;
+}
+
+/* ------------------------------------------------------------------ look hint: top centre, once per session */
+.cockpit .otw .look-hint {
+  top: calc(var(--ov-top) + 2px);
+  bottom: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  opacity: 0;
+  transition:
+    opacity 0.6s,
+    top 0.22s;
+}
+.cockpit .otw .look-hint.show {
+  opacity: 1;
+}
+.cockpit .otw.looked .look-hint {
+  opacity: 0;
+}
+
+/* ------------------------------------------------------------------ bezels: one size system for both, per cockpit theme */
+.cockpit {
+  --side-w: 74px;
+  --knob: 52px;
+  --bz-max: 62vh;
+}
+.panel {
+  --bz-chrome: 30px;
+  --bz-fit: calc((50vw - 62px - 2 * var(--side-w)) * 0.75 + var(--bz-chrome));
+}
+.panel.theme-g1000 {
+  --bz-chrome: 52px;
+}
+.cockpit.with-mcp {
+  --bz-max: min(62vh, calc(100dvh - 478px));
+}
+.cockpit.big-otw {
+  --bz-max: max(260px, 40vh);
+}
+.cockpit.big-otw.with-mcp {
+  --bz-max: max(240px, 36vh);
+}
+@media (max-height: 800px) {
+  .cockpit:not(.big-otw) {
+    --bz-max: calc(100dvh - 420px);
+  }
+  .cockpit.with-mcp:not(.big-otw) {
+    --bz-max: calc(100dvh - 478px);
+  }
+  .bezel .knob-label small {
+    display: none;
+  }
+}
+@media (max-width: 1500px) {
+  .cockpit {
+    --side-w: 58px;
+    --knob: 46px;
+  }
+}
+body .cockpit .panel .bezel {
+  height: min(var(--bz-fit), var(--bz-max));
+  grid-template-columns: var(--side-w) auto var(--side-w);
+  padding-top: 18px;
+}
+.cockpit > .panel:has(.pknob.show),
+.cockpit > .mcp:has(.pknob.show) {
+  z-index: 7;
+}
+.bezel .brand-mark {
+  top: 4px;
+  line-height: 1;
+  z-index: 1;
+  font: 700 9px var(--font-cond);
+  letter-spacing: 2px;
+  color: var(--ck-muted);
+}
+.bezel .brand-mark:empty {
+  display: none;
+}
+body .bezel .side {
+  justify-content: space-between;
+  align-items: center;
+  gap: 4px;
+  min-height: 0;
+}
+.bezel .pknob {
+  width: var(--knob);
+  height: var(--knob);
+}
+.bezel .pknob.single .cap {
+  inset: calc(var(--knob) * 0.14);
+}
+.bezel .pknob.dual .cap {
+  inset: calc(var(--knob) * 0.25);
+}
+.bezel .side > .bkey {
+  width: calc(var(--side-w) - 8px);
+}
+.bezel .ap-col,
+.bezel .bkey-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  width: calc(var(--side-w) - 6px);
+}
+.bezel .ap-col .bkey,
+.bezel .bkey-grid .bkey {
+  width: auto;
+  height: 22px;
+  font-size: 9px;
+}
+.softrow button.dead {
+  cursor: default;
+}
+.softrow button.dead:active {
+  transform: none;
+  box-shadow:
+    0 2px 0 #050606,
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+/* steam: one continuous panel, only the controls a classic panel has */
+.panel.theme-steam {
+  gap: 0;
+}
+body .panel.theme-steam .bezel {
+  background: none;
+  box-shadow: none;
+  border: 0;
+  border-radius: 0;
+  padding: 12px 8px 8px;
+}
+.panel.theme-steam .bezel .screen {
+  box-shadow: none;
+  border-radius: 0;
+}
+.panel.theme-steam [data-k="mins"],
+.panel.theme-steam [data-k="fms"],
+.panel.theme-steam [data-k="act"] {
+  display: none;
+}
+/* airliner: the MCP owns the autopilot; the display frames keep a narrow column of radio knobs */
+.panel.theme-airliner .bezel .ap-col,
+.panel.theme-airliner .bezel .bkey-grid,
+.panel.theme-airliner [data-k="hdg"],
+.panel.theme-airliner [data-k="alt"],
+.panel.theme-airliner [data-k="nav2"],
+.panel.theme-airliner [data-k="adf"],
+.panel.theme-airliner [data-k="cdi"],
+.panel.theme-airliner [data-k="fms"] {
+  display: none;
+}
+body .panel.theme-airliner .bezel .side {
+  justify-content: flex-start;
+  gap: 10px;
+  padding-top: 4px;
+}
+body .panel.theme-airliner .bezel {
+  padding-top: 12px;
+}
+body .cockpit .panel.theme-airliner .bezel.mfd {
+  grid-template-columns: 0 auto var(--side-w);
+}
+.panel.theme-airliner .bezel.mfd > .side.left {
+  display: none;
+}
+.panel.theme-airliner .knob-label {
+  color: #14171a;
+}
+.panel.theme-airliner .knob-label small {
+  color: #2b3035;
+}
+
+/* ------------------------------------------------------------------ airliner mode-control panel */
+.cockpit .mcp {
+  justify-content: safe center;
+  overflow: visible;
+  gap: 8px;
+  padding: 6px 12px;
+}
+.mcp .pknob {
+  width: 40px;
+  height: 40px;
+}
+.mcp .pknob.dual .cap {
+  inset: 10px;
+}
+@media (max-width: 1500px) {
+  .cockpit .mcp {
+    gap: 4px;
+    padding: 6px 8px;
+  }
+  .mcp-group {
+    padding: 2px 5px;
+    gap: 4px;
+  }
+  .mcp-key {
+    min-width: 48px;
+    padding: 8px 4px 0;
+    font-size: 9.5px;
+  }
+  .mcp-win {
+    min-width: 58px;
+  }
+  .mcp-win b {
+    min-width: 54px;
+    font-size: 17px;
+  }
+  .mcp .pknob {
+    width: 34px;
+    height: 34px;
+  }
+  .mcp .pknob.dual .cap {
+    inset: 8px;
+  }
+}
+
+/* ------------------------------------------------------------------ Standard / Large view: nothing to add — the
+   overlays above apply. Immersive: lesson top-left, ATC top-right, PFD bottom-left, toasts right of the PFD */
+.cockpit.vis-otw .coach {
+  left: 14px;
+  right: auto;
+  top: var(--ov-top);
+  bottom: auto;
+  width: min(380px, calc(46% - 20px));
+  max-width: none;
+  max-height: calc(100% - var(--ov-top) - var(--pfd-h, 420px) - 30px);
+}
+.cockpit.vis-otw .toasts {
+  left: calc(var(--pfd-w, 560px) + 28px);
+  right: 14px;
+  transform: none;
+  width: auto;
+  max-width: none;
+}
+.cockpit.vis-otw .toast {
+  max-width: 420px;
+}
+.cockpit.vis-otw .pause-veil {
+  padding-left: calc(var(--pfd-w, 560px) + 28px);
+}
+
+/* ------------------------------------------------------------------ Instruments: overlays docked in a row above the panel */
+body .cockpit.no-otw {
+  grid-template-rows: auto 0 minmax(0, 1fr);
+  --bz-max: 100%;
+}
+body .cockpit.no-otw > .otw {
+  position: relative;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px 14px;
+  height: auto;
+  min-height: 0;
+  padding: 0 14px 10px;
+  border: 0;
+  background: none;
+}
+body.chrome-auto .cockpit.no-otw > .otw {
+  padding-top: 56px;
+}
+.cockpit.no-otw > .otw > canvas,
+.cockpit.no-otw .otw > .glare,
+.cockpit.no-otw .look-hint,
+.cockpit.no-otw .pause-veil {
+  display: none !important;
+}
+.cockpit.no-otw .sitbar {
+  position: relative;
+  top: auto;
+  flex: 0 0 calc(100% + 28px);
+  margin: 0 -14px;
+}
+.cockpit.no-otw .coach,
+.cockpit.no-otw .atc-radio {
+  position: relative;
+  top: auto;
+  left: auto;
+  right: auto;
+  max-height: 30vh;
+}
+.cockpit.no-otw .coach {
+  flex: 0 1 420px;
+  width: auto;
+}
+.cockpit.no-otw .atc-radio {
+  flex: 0 1 520px;
+  width: auto;
+  margin-left: auto;
+  overflow-y: auto;
+}
+.cockpit.no-otw > .panel {
+  align-items: center;
+  padding: 4px 14px 12px;
+}
+.cockpit.no-otw .toasts,
+.cockpit.no-otw .replay {
+  position: fixed;
+  bottom: calc(var(--ped-h) + 12px);
+}
+
+/* ------------------------------------------------------------------ control pedestal */
+.footer.pedestal {
+  overflow: hidden;
+  flex-wrap: nowrap;
+}
+.pedestal .ped-g {
+  flex: none;
+  padding: 8px 14px;
+}
+.pedestal .ped-joy {
+  white-space: nowrap;
+}
+.pedestal .lv-l {
+  font: 700 10px var(--font);
+  letter-spacing: 0.6px;
+  color: #8b97a4;
+}
+.pedestal .brake-light {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: #5d6873;
+  font: 800 9.5px var(--font);
+  letter-spacing: 1px;
+}
+.pedestal .brake-light i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2a323b;
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6);
+}
+.pedestal .brake-light.on {
+  color: #ffcf7a;
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+.pedestal .brake-light.on i {
+  background: #ffb020;
+  box-shadow: 0 0 6px rgba(255, 176, 32, 0.6);
+}
+.pedestal .chrono-lcd.idle {
+  color: #8a6a2a;
+}
+@media (max-width: 1699px) {
+  .pedestal .ped-keys {
+    display: none;
+  }
+}
+@media (max-width: 1439px) {
+  .pedestal .ped-g {
+    padding: 7px 11px;
+  }
+  .pedestal input.lever {
+    width: 120px;
+  }
+  .pedestal .flap-sel {
+    grid-template-columns: repeat(4, 40px);
+  }
+}

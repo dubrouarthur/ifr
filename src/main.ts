@@ -2,6 +2,7 @@ import './styles.css';
 // per-area overrides (src/styles/*.css) — a separate module so they load AFTER the base stylesheet
 // (Vite hoists import.meta.glob imports to the top of the module that contains them)
 import './styles/load';
+import { FlightPlan } from './nav/flightplan';
 import { Sim, SCENARIOS, type Scenario } from './sim/sim';
 import { InputManager, type ButtonAction } from './sim/input';
 import { drawPfd, newPfdState, PFD_W, PFD_H, softkeyAt, PFD_SOFTKEYS } from './avionics/pfd';
@@ -14,6 +15,7 @@ import { mfdRange } from './avionics/mfd';
 import { fitCanvas } from './avionics/draw';
 import { h, store, fmtTime } from './ui/dom';
 import { knob, bkey } from './ui/knob';
+import { svgIcon, I } from './ui/icons';
 import { ChartsDrawer } from './ui/charts';
 import { InstructorDrawer, HistoryModal } from './ui/instructor';
 import { LearnModal, BriefingModal, LessonResultModal, HoldDrillModal } from './ui/learn';
@@ -182,7 +184,17 @@ const setup = new FlightSetup({
   flyGraded: (c, st) => { applySetupPrefs(st); if (c.cockpit && c.cockpit !== cockpitType) setCockpit(c.cockpit); startExerciseNow(circuitToExercise(c)); },
   flyFree: (sc, st) => { applySetupPrefs(st); startScenario(sc, { id: 'custom', name: 'Custom', desc: '', wx: st.weather }, { mode: 'training', student: launcher.assess.student, handFlown: false, randomFailure: false }); },
   openChart: (id) => { charts.toggle(true); charts.show(id); },
-  regionChanged: () => { rebuildOutside(); charts.refresh?.(); },
+  regionChanged: () => {
+    // the previous flight refers to the old nav database: stop it cleanly (no result, no debrief) before
+    // anything else reads its route, approach or lesson steps
+    lesson = null;
+    hideCrash();
+    sim.paused = true;
+    sim.fp = new FlightPlan();
+    atc.clear();
+    rebuildOutside();
+    charts.refresh?.();
+  },
 });
 setup.toast = (m) => toast(m, 'good');
 function applySetupPrefs(st: import('./ui/flightsetup').FlightSetupState) {
@@ -216,8 +228,8 @@ function startLesson(run: LessonRun) {
   debriefShown = true; // the lesson result replaces the automatic debrief
   sim.paused = false;
   input.keys.clear();
-  scnName.textContent = `Lesson · ${run.ex.title}`;
-  scnSub.textContent = run.ex.summary;
+  coachKey = '';
+  updateHeader();
   if (run.ex.plate) charts.show(run.ex.plate);
   toast(`Exercise started: ${run.ex.title}`, 'info');
   atc.clear();
@@ -235,6 +247,7 @@ ios.onBuilder = () => builder.edit();
 function startScenario(sc: Scenario, wx: WxPreset, a: AssessSettings = launcher.assess) {
   hideCrash();
   lesson = null;
+  lastLessonEx = null;
   lastScenario = sc;
   lastWx = wx;
   sim.assess = { ...a };
@@ -256,60 +269,35 @@ function maybeTour() {
 }
 
 // ------------------------------------------------------------------ layout
-const icon = (d: string) => {
-  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  s.setAttribute('viewBox', '0 0 24 24');
-  s.innerHTML = `<path d="${d}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
-  return s;
-};
-const I = {
-  layout: 'M3 4h18v16H3zM3 11h18M8 11v9',
-  plane: 'M2 16l20-6-20-6 4 6-4 6zM6 10h8',
-  cloud: 'M7 18h10a4 4 0 0 0 0-8 6 6 0 0 0-11.5 1.5A3.5 3.5 0 0 0 7 18z',
-  map: 'M9 4L3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14',
-  route: 'M5 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM19 9a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM7 17l10-10',
-  joy: 'M12 3v9M9 3h6M6 16h12a2 2 0 0 1 2 2v2H4v-2a2 2 0 0 1 2-2zM12 12v4',
-  chart: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
-  help: 'M12 18h.01M9.1 9a3 3 0 1 1 4.2 2.7c-.8.4-1.3 1.2-1.3 2.1v.2',
-  pause: 'M8 5v14M16 5v14',
-  play: 'M7 5l12 7-12 7z',
-  proc: 'M4 6h16M4 12h10M4 18h7',
-  ga: 'M12 20V5M5 12l7-7 7 7',
-  sound: 'M4 9v6h4l5 4V5L8 9H4zM17 8a5 5 0 0 1 0 8M19.5 5.5a9 9 0 0 1 0 13',
-  mute: 'M4 9v6h4l5 4V5L8 9H4zM17 9l5 6M22 9l-5 6',
-  gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
-  link: 'M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7',
-  more: 'M5 12h.01M12 12h.01M19 12h.01',
-  learn: 'M2 9l10-5 10 5-10 5-10-5zM6 11v5c3 2 9 2 12 0v-5M22 9v6',
-  ios: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0',
-  records: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01',
-};
+/** chrome icons come from the shared line set (src/ui/icons.ts) */
+const icon = (name: string) => svgIcon(name, 16);
 const scnName = h('b', {}, '');
 const scnSub = h('span', {}, '');
-const phaseChip = h('span', { class: 'chip live' }, 'Ready');
-const wxChip = h('span', { class: 'chip', id: 'wx-chip' }, '');
-const pauseBtn = h('button', { class: 'btn', title: 'Pause (Esc)', onclick: () => togglePause() }, icon(I.pause), h('span', { class: 'lbl' }, 'Pause'));
-const rateSeg = h('div', { class: 'seg', title: 'Simulation rate' }, ...[1, 2, 4].map((r) => h('button', { class: r === 1 ? 'on' : '', onclick: () => setRate(r) }, `${r}×`)));
-const cockpitSeg = h('div', { class: 'seg', title: 'Cockpit type' }, ...([['g1000', 'G1000'], ['steam', 'Steam'], ['airliner', 'Airliner']] as const).map(([c, l]) => h('button', { 'data-c': c, onclick: () => setCockpit(c) }, l)));
-/** layout picker in the top bar: clearer than the More menu */
+const scnBtn = h('button', { class: 'scn', title: 'Flight: restart, end, plan a new one', 'aria-haspopup': 'menu', onclick: (e: Event) => { e.stopPropagation(); flightMenu.classList.toggle('open'); } }, scnName, scnSub);
+const pauseBtn = h('button', { class: 'btn tb-pause', title: 'Pause (Esc)', onclick: () => togglePause() }, icon(I.pause), h('span', { class: 'lbl' }, 'Pause'));
+/** simulation rate: one compact button next to Pause that cycles 1× → 2× → 4× */
+const RATES = [1, 2, 4];
+const rateBtn = h('button', { class: 'btn tb-rate', title: 'Simulation rate — click to change (Ctrl+1 / 2 / 4)', onclick: () => setRate(RATES[(RATES.indexOf(sim.rate) + 1) % RATES.length] ?? 1) }, '1×');
+const COCKPITS = [['g1000', 'G1000', 'Garmin G1000 glass cockpit'], ['steam', 'Steam', 'Classic six-pack and radio stack'], ['airliner', 'Boeing', 'Airliner PFD / ND with a mode control panel']] as const;
+const cockpitSeg = h('div', { class: 'seg tb-cockpit', role: 'radiogroup', 'aria-label': 'Cockpit type' }, ...COCKPITS.map(([c, l, t]) => h('button', { 'data-c': c, role: 'radio', title: t, onclick: () => setCockpit(c) }, l)));
+/** layout picker in the top bar — the same four names everywhere (menu, Tab toast, tour) */
 const LAYOUTS = [
-  ['normal', 'Outside + panel', 'Outside view above the full instrument panel'],
+  ['normal', 'Standard', 'Outside view above the full instrument panel'],
   ['big', 'Large view', 'Bigger outside view, smaller panel'],
   ['visual', 'Immersive', 'Full-screen outside view with a floating PFD'],
-  ['none', 'Instruments only', 'Instrument panel only (pure IFR)'],
+  ['none', 'Instruments', 'Instrument panel only (pure IFR)'],
 ] as const;
+const layoutName = (m: OtwMode) => LAYOUTS.find((x) => x[0] === m)?.[1] ?? 'Standard';
 const layoutMenu = h('div', { class: 'menu layout-menu', role: 'menu' });
-const layoutLbl = h('span', { class: 'lbl' }, 'Layout');
-const layoutBtn = h('button', { class: 'btn', title: 'Screen layout (Tab cycles)', 'aria-haspopup': 'menu', onclick: (e: Event) => { e.stopPropagation(); renderLayoutMenu(); layoutMenu.classList.toggle('open'); } }, icon(I.layout), layoutLbl);
+const layoutBtn = h('button', { class: 'btn', title: 'Screen layout (Tab cycles)', 'aria-haspopup': 'menu', onclick: (e: Event) => { e.stopPropagation(); renderLayoutMenu(); layoutMenu.classList.toggle('open'); } }, icon(I.layout), h('span', { class: 'lbl' }, 'Layout'));
 function renderLayoutMenu() {
   layoutMenu.innerHTML = '';
   for (const [m, t, d] of LAYOUTS)
-    layoutMenu.append(h('button', { class: `menu-item layout-item${otwMode === m ? ' on' : ''}`, role: 'menuitemradio', onclick: () => { layoutMenu.classList.remove('open'); setOtw(m); } }, h('i', { class: `lay-ic lay-${m}` }), h('span', {}, h('b', {}, t), h('small', {}, d))));
+    layoutMenu.append(h('button', { class: `menu-item layout-item${otwMode === m ? ' on' : ''}`, role: 'menuitemradio', 'aria-checked': String(otwMode === m), onclick: () => { layoutMenu.classList.remove('open'); setOtw(m); } }, h('i', { class: `lay-ic lay-${m}` }), h('span', {}, h('b', {}, t), h('small', {}, d))));
 }
-document.addEventListener('click', (e) => { if (!layoutMenu.contains(e.target as Node) && e.target !== layoutBtn) layoutMenu.classList.remove('open'); });
-const viewSeg = h('div', { class: 'seg', title: 'Outside view (Tab)' }, ...(['normal', 'big', 'visual', 'none'] as const).map((m) => h('button', { 'data-m': m, onclick: () => setOtw(m), title: { normal: 'Outside view + full panel', big: 'Large outside view', visual: 'Immersive: full-screen view with a floating PFD', none: 'Instruments only' }[m] }, { normal: 'View', big: 'Big', visual: 'Visual', none: 'Panel' }[m])));
+document.addEventListener('click', (e) => { if (!layoutMenu.contains(e.target as Node) && !layoutBtn.contains(e.target as Node)) layoutMenu.classList.remove('open'); });
 
-const muteBtn = h('button', { class: 'btn ghost', title: 'Sound on/off (M)', onclick: () => toggleMute() }, icon(audio.muted ? I.mute : I.sound));
+const muteBtn = h('button', { class: 'btn ghost tb-icon', title: 'Sound on/off (M)', 'aria-label': 'Sound on/off', onclick: () => toggleMute() }, icon(audio.muted ? I.mute : I.sound));
 function toggleMute() {
   audio.setMuted(!audio.muted);
   store.set('ifr.muted', audio.muted);
@@ -342,48 +330,52 @@ const settings = new SettingsModal(
     if (p.otw) setOtw(p.otw);
   },
 );
-const moreMenu = h('div', { class: 'menu', role: 'menu' });
+const moreMenu = h('div', { class: 'menu more-menu', role: 'menu' });
 /** flight menu (click the flight name): restart / end & debrief / plan a new flight / Flight Center */
 const flightMenu = h('div', { class: 'menu flight-menu', role: 'menu' });
-const flightItem = (label: string, hint: string, fn: () => void, danger = false) =>
-  h('button', { class: `menu-item${danger ? ' danger' : ''}`, role: 'menuitem', onclick: () => { flightMenu.classList.remove('open'); fn(); } }, h('span', {}, label), hint ? h('kbd', {}, hint) : null);
+const flightItem = (ic: string, label: string, hint: string, fn: () => void, danger = false) =>
+  h('button', { class: `menu-item${danger ? ' danger' : ''}`, role: 'menuitem', onclick: () => { flightMenu.classList.remove('open'); fn(); } }, icon(ic), h('span', {}, label), hint ? h('kbd', {}, hint) : null);
 function restartFlight() {
   if (lesson || lastLessonEx) startExerciseNow((lesson?.ex ?? lastLessonEx)!, lessonPath);
   else startScenario(lastScenario, lastWx, sim.assess);
 }
 function endFlight() {
-  if (lesson) lesson.abort();
   sim.paused = true;
+  // a lesson ends with its own result window (which offers the full debrief) — never both
+  if (lesson) { lesson.abort(); return; }
   openDebrief();
 }
 document.addEventListener('click', (e) => { if (!flightMenu.contains(e.target as Node)) flightMenu.classList.remove('open'); });
 const moreItem = (ic: string, label: string, kbd: string, fn: () => void) =>
   h('button', { class: 'menu-item', role: 'menuitem', onclick: () => { moreMenu.classList.remove('open'); fn(); } }, icon(ic), h('span', {}, label), kbd ? h('kbd', {}, kbd) : null);
+const menuHead = (t: string) => h('div', { class: 'menu-h', role: 'presentation' }, t);
+const autoHideSw = h('i', { class: 'sw', 'aria-hidden': 'true' });
+const autoHideItem = h('button', { class: 'menu-item', role: 'menuitemcheckbox', 'aria-checked': 'true', onclick: () => { setAutoHide(!autoHide); toast(autoHide ? 'Top bar hides in flight — move the mouse to the top edge to show it' : 'Top bar always visible'); } }, icon(I.eye), h('span', {}, 'Auto-hide top bar'), autoHideSw);
 moreMenu.append(
-  moreItem(I.proc, 'Load an approach', 'X', () => procModal.open()),
-  moreItem(I.route, 'Direct-To', 'D', () => directModal.open()),
-  moreItem(I.plane, 'Plan a flight…', 'Shift N', () => setup.start()),
-  moreItem(I.gear, 'Settings', ',', () => settings.open()),
-  moreItem(I.cloud, 'Weather station', '', () => weatherModal.open()),
-  moreItem(I.link, 'Connections & export', '', () => connect.open()),
-  moreItem(I.help, 'Explain instruments', 'F1', () => toggleExplain()),
-  moreItem(I.learn, 'Guided tour', '', () => startTour()),
-  moreItem(I.joy, 'Joystick & controls', '', () => joyModal.open()),
+  menuHead('Flight'),
+  moreItem(I.approach, 'Procedures', 'X', () => procModal.open()),
+  moreItem(I.direct, 'Direct-To', 'D', () => directModal.open()),
   moreItem(I.chart, 'Debrief', 'Shift D', () => openDebrief()),
-  moreItem(I.records, 'Training records', '', () => historyModal.open()),
+  menuHead('Tools'),
+  moreItem(I.cloud, 'Weather station', '', () => weatherModal.open()),
+  moreItem(I.pattern, 'Circuit builder', 'U', () => builder.edit()),
+  moreItem(I.link, 'Connections', '', () => connect.open()),
+  menuHead('Learn'),
   moreItem(I.learn, 'Learning paths', 'J', () => learn.open()),
-  moreItem(I.proc, 'IFR circuit builder', 'U', () => builder.edit()),
-  moreItem(I.help, 'Keyboard shortcuts', '?', () => help.open()),
-  moreItem(I.gear, 'Auto-hide top bar in flight (on/off)', '', () => { setAutoHide(!autoHide); toast(autoHide ? 'Top bar hides in flight — move the mouse to the top edge to show it' : 'Top bar always visible'); }),
-  h('div', { class: 'menu-sep' }),
-  h('div', { class: 'menu-row' }, h('span', {}, 'Outside view'), viewSeg),
-  h('div', { class: 'menu-row' }, h('span', {}, 'Sim rate'), rateSeg),
+  moreItem(I.records, 'Training records', '', () => historyModal.open()),
+  moreItem(I.compass, 'Guided tour', '', () => startTour()),
+  moreItem(I.help, 'Explain instruments', 'F1', () => toggleExplain()),
+  moreItem(I.keyboard, 'Keyboard shortcuts', '?', () => help.open()),
+  menuHead('App'),
+  moreItem(I.gear, 'Settings', ',', () => settings.open()),
+  moreItem(I.joystick, 'Controllers', '', () => joyModal.open()),
+  autoHideItem,
 );
 // auto-hiding top bar in flight (game-style HUD): reveal near the top edge, while a menu/window is open
 let autoHide = store.get('ifr.autohide', true);
 let hideTimer = 0;
 function chromeShow(on: boolean) {
-  document.body.classList.toggle('chrome-hidden', autoHide && !on);
+  document.body.classList.toggle('chrome-hidden', autoHide && !on && otwMode !== 'none');
 }
 function scheduleHide() {
   clearTimeout(hideTimer);
@@ -403,36 +395,37 @@ function setAutoHide(on: boolean) {
   document.body.classList.toggle('chrome-auto', on);
   chromeShow(true);
   if (on) scheduleHide();
+  syncAutoHide();
 }
+function syncAutoHide() {
+  autoHideItem.setAttribute('aria-checked', String(autoHide));
+  autoHideSw.classList.toggle('on', autoHide);
+}
+syncAutoHide();
 flightMenu.append(
-  flightItem('Restart this flight', '', () => restartFlight()),
-  flightItem('End flight & debrief', 'Shift D', () => endFlight()),
+  flightItem(I.restart, 'Restart this flight', '', () => restartFlight()),
+  flightItem(I.flag, 'End flight & debrief', 'Shift D', () => endFlight()),
   h('div', { class: 'menu-sep' }),
-  flightItem('Plan a new flight…', 'Shift N', () => setup.start()),
-  flightItem('Flight Center', 'F2', () => fc.open()),
+  flightItem(I.plan, 'Plan a new flight…', 'Shift N', () => setup.start()),
+  flightItem(I.plane, 'Flight Center', 'F2', () => fc.open()),
 );
-const moreBtn = h('button', { class: 'btn', title: 'More', 'aria-haspopup': 'menu', onclick: (e: Event) => { e.stopPropagation(); moreMenu.classList.toggle('open'); } }, icon(I.more), h('span', { class: 'lbl' }, 'More'));
+const moreBtn = h('button', { class: 'btn tb-icon', title: 'More', 'aria-label': 'More', 'aria-haspopup': 'menu', onclick: (e: Event) => { e.stopPropagation(); moreMenu.classList.toggle('open'); } }, icon(I.more));
 document.addEventListener('click', (e) => { if (!moreMenu.contains(e.target as Node)) moreMenu.classList.remove('open'); });
 const topbar = h('header', { class: 'topbar' },
   h('div', { class: 'brand' }, h('img', { class: 'logo', src: '/favicon.svg', alt: '' }), h('span', { class: 'brand-t' }, h('b', {}, 'IFR'), h('span', {}, ' Trainer'))),
-  h('div', { class: 'menu-wrap scn-wrap' },
-    h('button', { class: 'scn', title: 'Flight: restart, end, plan a new one', 'aria-haspopup': 'menu', onclick: (e: Event) => { e.stopPropagation(); flightMenu.classList.toggle('open'); } }, scnName, scnSub),
-    flightMenu,
-  ),
-  phaseChip,
-  wxChip,
+  h('div', { class: 'menu-wrap scn-wrap' }, scnBtn, flightMenu),
   h('div', { class: 'spacer' }),
   h('div', { class: 'tb-actions' },
     h('button', { class: 'btn primary', onclick: () => fc.open(), title: 'Flight Center — all flights, exercises and paths (F2)' }, icon(I.plane), h('span', { class: 'lbl' }, 'Flight Center')),
-    h('button', { class: 'btn', onclick: () => setup.start(), title: 'Plan a flight — aircraft, instruments, route, weather (Shift N)' }, icon(I.route), h('span', { class: 'lbl' }, 'Plan')),
+    h('button', { class: 'btn', onclick: () => setup.start(), title: 'Plan a flight — aircraft, instruments, route, weather (Shift N)' }, icon(I.plan), h('span', { class: 'lbl' }, 'Plan')),
     h('div', { class: 'tb-group' },
-      h('button', { class: 'btn', onclick: () => charts.toggle(), title: 'EFB — charts, airport, navlog, weather, checklists (K)' }, icon(I.map), h('span', { class: 'lbl' }, 'EFB')),
-      h('button', { class: 'btn', onclick: () => cduPanel.toggle(), title: 'FMC CDU — route, approach, legs, hold (F3)' }, icon(I.proc), h('span', { class: 'lbl' }, 'CDU')),
+      h('button', { class: 'btn', onclick: () => charts.toggle(), title: 'EFB — charts, airport, navlog, weather, checklists (K)' }, icon(I.tablet), h('span', { class: 'lbl' }, 'EFB')),
+      h('button', { class: 'btn', onclick: () => cduPanel.toggle(), title: 'FMC CDU — route, approach, legs, hold (F3)' }, icon(I.keypad), h('span', { class: 'lbl' }, 'CDU')),
     ),
-    h('button', { class: 'btn', onclick: () => ios.toggle(), title: 'Instructor station (I)' }, icon(I.ios), h('span', { class: 'lbl' }, 'Instructor')),
+    h('button', { class: 'btn', onclick: () => ios.toggle(), title: 'Instructor station (I)' }, icon(I.instructor), h('span', { class: 'lbl' }, 'Instructor')),
     h('div', { class: 'menu-wrap' }, layoutBtn, layoutMenu),
     cockpitSeg,
-    pauseBtn,
+    h('div', { class: 'tb-sim' }, pauseBtn, rateBtn),
     muteBtn,
     h('div', { class: 'menu-wrap' }, moreBtn, moreMenu),
   ),
@@ -441,15 +434,22 @@ const topbar = h('header', { class: 'topbar' },
 // outside view
 const otwCanvas = h('canvas', { 'aria-label': 'Outside view' });
 const coach = h('div', { class: `coach${store.get('ifr.coachMin', false) ? ' min' : ''}` });
-const badges = h('div', { class: 'otw-badges' });
 const glCanvas = h('canvas', { 'aria-label': 'Outside view (3D)', class: 'gl' });
 const glare = h('div', { class: 'glare' });
-const lookHint = h('div', { class: 'look-hint' }, 'Drag to look around · double-click to recentre');
+const lookHint = h('div', { class: 'look-hint', 'aria-hidden': 'true' }, 'Drag to look around · double-click to recentre');
+/** the look hint appears once per session, under the situation bar, and fades after 6 s or on the first drag */
+function showLookHint() {
+  let seen = false;
+  try { seen = sessionStorage.getItem('ifr.lookHint') === '1'; sessionStorage.setItem('ifr.lookHint', '1'); } catch { /* storage blocked */ }
+  if (seen) return;
+  lookHint.classList.add('show');
+  setTimeout(() => lookHint.classList.remove('show'), 6000);
+}
 const sitbar = h('div', { class: 'sitbar', role: 'status', 'aria-label': 'Flight situation' });
-const pauseVeil = h('div', { class: 'pause-veil' }, h('b', {}, 'Paused'), h('span', {}, 'Press Esc or ▶ to resume'));
+const pauseVeil = h('div', { class: 'pause-veil' }, h('b', {}, 'Paused'), h('span', {}, 'Press Esc or the Resume button to continue'));
 const replayBar = h('div', { class: 'replay' });
 const atc = new AtcRadio(sim, () => audio.squelch());
-const otw = h('section', { class: 'otw' }, otwCanvas, glCanvas, glare, lookHint, sitbar, pauseVeil, coach, badges, toasts, replayBar, atc.el);
+const otw = h('section', { class: 'otw' }, otwCanvas, glCanvas, glare, lookHint, sitbar, pauseVeil, coach, toasts, replayBar, atc.el);
 let outside: Outside3D | null = null;
 let timeOfDay = store.get<TimeOfDay>('ifr.tod', 'day');
 let gfx = store.get<Quality>('ifr.gfx', 'high');
@@ -462,6 +462,7 @@ async function initOutside() {
     if (!mod.webglAvailable()) return;
     outside = new mod.Outside3D(glCanvas, gfx, timeOfDay);
     otw.classList.add('has-gl');
+    if (otwMode !== 'none') showLookHint();
   } catch (e) {
     console.warn('WebGL outside view unavailable', e);
     outside = null;
@@ -479,7 +480,7 @@ function rebuildOutside() {
 // mouse look
 {
   let drag: { x: number; y: number } | null = null;
-  glCanvas.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; glCanvas.setPointerCapture(e.pointerId); otw.classList.add('looked'); });
+  glCanvas.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; glCanvas.setPointerCapture(e.pointerId); otw.classList.add('looked'); lookHint.classList.remove('show'); });
   glCanvas.addEventListener('pointermove', (e) => {
     if (!drag || !outside) return;
     outside.lookYaw = Math.max(-2.6, Math.min(2.6, outside.lookYaw + (e.clientX - drag.x) * 0.005));
@@ -526,7 +527,6 @@ const apKeyEls = () => {
     k('HDG', () => sim.ap.pressHdg(d()), 'Heading mode (H)'),
     k('ALT', () => sim.ap.pressAlt(d()), 'Altitude hold (L)'),
     k('NAV', () => sim.ap.pressNav(d(), n()), 'Nav mode (N)'),
-    k('VNV', () => toast('VNAV not available in this unit — use VS/FLC or APR', 'warn'), 'Vertical navigation'),
     k('APR', () => sim.ap.pressApr(d(), n()), 'Approach mode (R)'),
     k('BC', () => sim.ap.pressApr(d(), n()), 'Back course (auto via APR)'),
     k('VS', () => sim.ap.pressVs(d()), 'Vertical speed (V)'),
@@ -537,22 +537,28 @@ const apKeyEls = () => {
 };
 
 const pad3 = (n: number) => String(Math.round(((n % 360) + 360) % 360) || 360).padStart(3, '0');
-const softRow = (fn: (i: number) => void) => h('div', { class: 'softrow' }, ...Array.from({ length: 12 }, (_, i) => h('button', { 'aria-label': `Softkey ${i + 1}`, onclick: () => fn(i) })));
+/** softkeys this trainer does not model: drawn blank or inert, never a fake toast */
+const DEAD_SOFTKEYS = new Set(['', 'ENGINE', 'ALERTS']);
+const softRow = (labels: readonly string[], fn: (i: number) => void) => h('div', { class: 'softrow' }, ...labels.map((l, i) => DEAD_SOFTKEYS.has(l)
+  ? h('button', { class: 'dead', 'aria-disabled': 'true', tabindex: -1, 'aria-label': l ? `${l} (not modelled)` : `Softkey ${i + 1} (blank)` })
+  : h('button', { 'aria-label': `Softkey ${l}`, title: l, onclick: () => fn(i) })));
+/** tag a bezel control so each cockpit theme can show only the controls it really has */
+const tag = <T extends HTMLElement>(el: T, k: string): T => { el.dataset.k = k; return el; };
 const pfdBezel = h('div', { class: 'bezel pfd' },
   h('div', { class: 'brand-mark', 'data-l': '1' }, 'PFD'),
   h('div', { class: 'side left' },
-    knob({ label: 'NAV', sub: 'MHz · kHz', dual: true, size: 'sm', onTurn: (d, c) => tune(sim.av.nav1, d, c, 108, 118, 0.05), readout: () => `NAV1 SBY ${sim.av.nav1.standby.toFixed(2)}` }),
-    bkey('NAV ⇆', () => swap(sim.av.nav1), 'Swap NAV1 active/standby'),
-    knob({ label: 'HDG', sub: 'Push sync', size: 'sm', onTurn: hdgBy, onPush: () => (sim.ap.hdgBug = Math.round(sim.ac.data.hdgTrue) || 360), readout: () => `HDG ${pad3(sim.ap.hdgBug)}°` }),
+    tag(knob({ label: 'NAV', sub: 'MHz · kHz', dual: true, onTurn: (d, c) => tune(sim.av.nav1, d, c, 108, 118, 0.05), readout: () => `NAV1 SBY ${sim.av.nav1.standby.toFixed(2)}` }), 'nav'),
+    tag(bkey('NAV ⇆', () => swap(sim.av.nav1), 'Swap NAV1 active/standby'), 'nav'),
+    tag(knob({ label: 'HDG', sub: 'Push sync', onTurn: hdgBy, onPush: () => (sim.ap.hdgBug = Math.round(sim.ac.data.hdgTrue) || 360), readout: () => `HDG ${pad3(sim.ap.hdgBug)}°` }), 'hdg'),
     apKeyEls(),
-    knob({ label: 'ALT', sub: '1000 · 100', dual: true, size: 'sm', onTurn: altBy, onPush: () => (sim.ap.altSel = Math.round(sim.indicatedAlt() / 100) * 100), readout: () => `ALT ${sim.ap.altSel} FT` }),
+    tag(knob({ label: 'ALT', sub: '1000 · 100', dual: true, onTurn: altBy, onPush: () => (sim.ap.altSel = Math.round(sim.indicatedAlt() / 100) * 100), readout: () => `ALT ${sim.ap.altSel} FT` }), 'alt'),
   ),
   h('div', { class: 'screen' }, pfdCanvas),
-  softRow((i) => pfdSoftkey(i)),
+  softRow(PFD_SOFTKEYS, (i) => pfdSoftkey(i)),
   h('div', { class: 'side right' },
-    knob({ label: 'COM', sub: 'MHz · kHz', dual: true, onTurn: (d, c) => tune(sim.av.com1, d, c, 118, 137, 0.025), readout: () => `COM1 SBY ${sim.av.com1.standby.toFixed(3)}` }),
-    bkey('COM ⇆', () => swap(sim.av.com1), 'Swap COM1'),
-    knob({
+    tag(knob({ label: 'COM', sub: 'MHz · kHz', dual: true, onTurn: (d, c) => tune(sim.av.com1, d, c, 118, 137, 0.025), readout: () => `COM1 SBY ${sim.av.com1.standby.toFixed(3)}` }), 'com'),
+    tag(bkey('COM ⇆', () => swap(sim.av.com1), 'Swap COM1'), 'com'),
+    tag(knob({
       label: 'CRS',
       sub: 'Outer BARO',
       dual: true,
@@ -563,8 +569,8 @@ const pfdBezel = h('div', { class: 'bezel pfd' },
       onPush: () => centerCdi(),
       readout: () => `CRS ${pad3(sim.course())}° · ${sim.av.baro.toFixed(2)} IN`,
       title: 'CRS/BARO — inner knob: course (push = centre CDI) · outer ring: altimeter setting',
-    }),
-    knob({ label: 'MINS', sub: 'Push off', size: 'sm', onTurn: (d, c) => (sim.av.minimums = Math.max(0, (sim.av.minimums ?? Math.round(sim.indicatedAlt() / 100) * 100) + d * (c ? 100 : 10))), onPush: () => (sim.av.minimums = null), readout: () => (sim.av.minimums === null ? 'MINS OFF' : `BARO MIN ${sim.av.minimums}`) }),
+    }), 'crs'),
+    tag(knob({ label: 'MINS', sub: 'Push off', onTurn: (d, c) => (sim.av.minimums = Math.max(0, (sim.av.minimums ?? Math.round(sim.indicatedAlt() / 100) * 100) + d * (c ? 100 : 10))), onPush: () => (sim.av.minimums = null), readout: () => (sim.av.minimums === null ? 'MINS OFF' : `BARO MIN ${sim.av.minimums}`) }), 'mins'),
     h('div', { class: 'bkey-grid' },
       bkey('D→', () => directModal.open(), 'Direct-To (D)'),
       bkey('PROC', () => procModal.open(), 'Procedures (X)'),
@@ -578,26 +584,22 @@ const pfdBezel = h('div', { class: 'bezel pfd' },
 const mfdBezel = h('div', { class: 'bezel mfd' },
   h('div', { class: 'brand-mark', 'data-r': '1' }, 'MFD'),
   h('div', { class: 'side left' },
-    knob({ label: 'NAV2', sub: 'MHz · kHz', dual: true, onTurn: (d, c) => tune(sim.av.nav2, d, c, 108, 118, 0.05), readout: () => `NAV2 SBY ${sim.av.nav2.standby.toFixed(2)}` }),
-    bkey('NAV2 ⇆', () => swap(sim.av.nav2), 'Swap NAV2'),
-    knob({ label: 'ADF', sub: '100 · 1 kHz', dual: true, onTurn: (d, c) => (sim.av.adf.active = Math.max(190, Math.min(1750, sim.av.adf.active + d * (c ? 100 : 1)))), readout: () => `ADF ${sim.av.adf.active} kHz` }),
-    bkey('CDI', () => doAction('cdi'), 'Cycle CDI (C)'),
-    bkey('CHARTS', () => charts.toggle(), 'Charts (K)'),
-    bkey('MISSED', () => goAround(), 'Activate missed approach'),
+    tag(knob({ label: 'NAV2', sub: 'MHz · kHz', dual: true, onTurn: (d, c) => tune(sim.av.nav2, d, c, 108, 118, 0.05), readout: () => `NAV2 SBY ${sim.av.nav2.standby.toFixed(2)}` }), 'nav2'),
+    tag(bkey('NAV2 ⇆', () => swap(sim.av.nav2), 'Swap NAV2'), 'nav2'),
+    tag(knob({ label: 'ADF', sub: '100 · 1 kHz', dual: true, onTurn: (d, c) => (sim.av.adf.active = Math.max(190, Math.min(1750, sim.av.adf.active + d * (c ? 100 : 1)))), readout: () => `ADF ${sim.av.adf.active} kHz` }), 'adf'),
+    tag(bkey('CDI', () => doAction('cdi'), 'Cycle CDI (C)'), 'cdi'),
   ),
   h('div', { class: 'screen' }, mfdCanvas),
-  softRow((i) => mfdSoftkey(i)),
+  softRow(MFD_SOFTKEYS, (i) => mfdSoftkey(i)),
   h('div', { class: 'side right' },
-    knob({ label: 'RANGE', sub: 'Map', onTurn: (d) => (mfdSt.rangeIdx = Math.max(0, Math.min(8, mfdSt.rangeIdx - d))), readout: () => `RANGE ${mfdRange(mfdSt)} NM` }),
+    tag(knob({ label: 'RANGE', sub: 'Map', onTurn: (d) => (mfdSt.rangeIdx = Math.max(0, Math.min(8, mfdSt.rangeIdx - d))), readout: () => `RANGE ${mfdRange(mfdSt)} NM` }), 'range'),
     h('div', { class: 'bkey-grid' },
-      bkey('D→', () => directModal.open()),
-      bkey('PROC', () => procModal.open()),
-      bkey('FPL', () => (mfdSt.showFpl = !mfdSt.showFpl)),
-      bkey('ACT', () => { sim.fp.activateApproach(sim.ac.s); toast('Approach activated', 'good'); }, 'Activate approach'),
-      bkey('VTF', () => { sim.fp.vectorsToFinal(); toast('Vectors to final', 'good'); }, 'Vectors to final'),
-      bkey('ENT', () => undefined, 'Enter'),
+      bkey('D→', () => directModal.open(), 'Direct-To (D)'),
+      bkey('PROC', () => procModal.open(), 'Procedures (X)'),
+      bkey('FPL', () => (mfdSt.showFpl = !mfdSt.showFpl), 'Flight plan'),
+      tag(bkey('ACT', () => { sim.fp.activateApproach(sim.ac.s); toast('Approach activated', 'good'); }, 'Activate the loaded approach'), 'act'),
     ),
-    knob({ label: 'FMS', sub: 'Leg select', dual: true, onTurn: (d) => sim.fp.activateLeg(Math.max(1, Math.min(sim.fp.wpts.length - 1, sim.fp.active + d))), readout: () => (sim.fp.out.valid ? `ACTV ${sim.fp.out.toIdent}` : 'NO FPL'), title: 'FMS — select the active leg' }),
+    tag(knob({ label: 'FMS', sub: 'Leg select', dual: true, onTurn: (d) => sim.fp.activateLeg(Math.max(1, Math.min(sim.fp.wpts.length - 1, sim.fp.active + d))), readout: () => (sim.fp.out.valid ? `ACTV ${sim.fp.out.toIdent}` : 'NO FPL'), title: 'FMS — select the active leg' }), 'fms'),
   ),
 );
 const panel = h('section', { class: 'panel' }, pfdBezel, mfdBezel);
@@ -617,15 +619,17 @@ const mcpKey = (label: string, fn: () => void, key: string) => {
 };
 const mcp = h('section', { class: 'mcp' },
   h('div', { class: 'mcp-group' }, mcpKey('F/D', () => sim.ap.toggleFd(sim.ac.data), 'FD'), mcpKey('CMD A', () => doAction('apToggle'), 'AP')),
-  h('div', { class: 'mcp-group' }, mcpSpd.el, mcpKey('FLCH', () => sim.ap.pressFlc(sim.ac.data), 'FLC')),
+  h('div', { class: 'mcp-group' }, mcpSpd.el, knob({ label: 'IAS', onTurn: (d, c) => (sim.ap.iasSel = Math.max(60, Math.min(180, sim.ap.iasSel + d * (c ? 10 : 1)))), readout: () => `IAS ${sim.ap.iasSel} KT` }), mcpKey('FLCH', () => sim.ap.pressFlc(sim.ac.data), 'FLC')),
   h('div', { class: 'mcp-group' }, mcpKey('LNAV', () => { if (sim.av.cdi !== 'GPS') sim.setCdi('GPS'); sim.ap.pressNav(sim.ac.data, sim.navInputs()); }, 'LNAV'), mcpKey('VOR LOC', () => { if (sim.av.cdi === 'GPS') sim.setCdi('NAV1'); sim.ap.pressNav(sim.ac.data, sim.navInputs()); }, 'VORLOC'), mcpKey('APP', () => sim.ap.pressApr(sim.ac.data, sim.navInputs()), 'APR')),
   h('div', { class: 'mcp-group' }, mcpHdg.el, knob({ label: 'HDG', onTurn: hdgBy, onPush: () => (sim.ap.hdgBug = Math.round(sim.ac.data.hdgTrue) || 360) }), mcpKey('HDG SEL', () => sim.ap.pressHdg(sim.ac.data), 'HDG')),
   h('div', { class: 'mcp-group' }, mcpAlt.el, knob({ label: 'ALT', dual: true, onTurn: altBy }), mcpKey('ALT HOLD', () => sim.ap.pressAlt(sim.ac.data), 'ALT')),
   h('div', { class: 'mcp-group' }, mcpVs.el, knob({ label: 'V/S', onTurn: (d) => { if (sim.ap.vert !== 'VS') sim.ap.pressVs(sim.ac.data); sim.ap.vsSel = Math.max(-2000, Math.min(1500, sim.ap.vsSel + d * 100)); } }), mcpKey('V/S', () => sim.ap.pressVs(sim.ac.data), 'VS')),
   h('div', { class: 'mcp-group' }, mcpKey('A/P DISC', () => sim.ap.disconnect(), 'DISC'), mcpKey('TO/GA', () => goAround(), 'TOGA')),
 );
+const mcpKeys = [...mcp.querySelectorAll<HTMLElement>('[data-mcp]')];
 const cockpit = h('main', { class: 'cockpit' }, otw, mcp, panel);
-const BEZEL_LABELS: Record<CockpitType, [string, string]> = { g1000: ['PFD', 'MFD'], steam: ['FLIGHT INSTRUMENTS', 'NAV / COM STACK'], airliner: ['CAPT PFD', 'NAVIGATION DISPLAY'] };
+/** only the G1000 has engraved PFD / MFD labels; the steam panel and the airliner displays carry none */
+const BEZEL_LABELS: Record<CockpitType, [string, string]> = { g1000: ['PFD', 'MFD'], steam: ['', ''], airliner: ['', ''] };
 let explain: ExplainOverlay | null = null;
 function toggleExplain(force?: boolean) {
   explain ??= new ExplainOverlay(pfdBezel.querySelector('.screen')!, mfdBezel.querySelector('.screen')!);
@@ -635,13 +639,13 @@ function toggleExplain(force?: boolean) {
 const TOUR = [
   { sel: '.tb-actions .btn.primary', title: 'Flight Center', text: 'Every flight lives here, sorted by type: approaches, holdings and procedures, IFR cross-country flights, basics, abnormals, checkrides, your own IFR circuits and the learning paths.' },
   { sel: '.sitbar', title: 'Situation bar', text: 'The essentials at a glance: flight phase, next fix and its altitude constraint, selected altitude, wind with headwind/crosswind and drift, distance to minimums, IMC or VMC.' },
-  { sel: '.otw', title: 'Outside view', text: 'A 3D view of the Ardent Islands with real runway lighting and PAPI. Drag to look around, double-click to recentre. Tab changes the size; Settings sets day, dusk or night.' },
+  { sel: '.otw', title: 'Outside view', text: 'A 3D view of the Ardent Islands with real runway lighting and PAPI. Drag to look around, double-click to recentre. Tab cycles the layout: Standard, Large view, Immersive, Instruments.' },
   { sel: '.bezel.pfd .screen', title: 'Primary flight display', text: 'Attitude, airspeed, altitude, vertical speed and the HSI. Press F1 at any time to label and explain every instrument — in all three cockpits.' },
   { sel: '.bezel.pfd .side.left', title: 'Knobs & autopilot', text: 'Drag or scroll a knob to turn it; on dual knobs the outer ring is coarse and the inner knob fine. Click without dragging to push. The keys are the autopilot: HDG, NAV, APR, ALT, VS, FLC.' },
-  { sel: '.bezel.mfd', title: 'Multi-function display', text: 'Moving map with terrain and the active flight plan. RANGE zooms; PROC loads an approach; ACT/VTF activates it.' },
-  { sel: '.footer', title: 'Flight controls', text: 'Throttle, flaps, trim and yoke position. Use a joystick or yoke (Controls in the menu), the keyboard (arrows, +/−, Home/End, F), or the touch stick.' },
+  { sel: '.bezel.mfd', title: 'Multi-function display', text: 'Moving map with terrain and the active flight plan. RANGE zooms; PROC loads an approach; ACT activates it.' },
+  { sel: '.footer', title: 'Flight controls', text: 'Throttle, flaps, trim and yoke position. Use a joystick or yoke (Controllers in the More menu), the keyboard (arrows, +/−, Home/End, F), or the touch stick.' },
   { sel: '.tb-group', title: 'EFB & CDU', text: 'EFB: approach plates (your aircraft is drawn on them), airport data, navlog, weather and checklists. CDU: the flight management computer — route, departure/arrival, legs, holds, progress.' },
-  { sel: '.menu-wrap', title: 'Everything else', text: 'Settings (cockpit, night, Pro mode), the weather station with winds aloft and ATIS, the instructor station, debrief, training records and all keyboard shortcuts.' },
+  { sel: '.tb-actions > .menu-wrap:last-child', title: 'Everything else', text: 'Procedures, Direct-To and the debrief; the weather station and circuit builder; learning paths, training records and keyboard shortcuts; Settings and controllers.' },
 ];
 function startTour() {
   Modal.closeAll();
@@ -657,7 +661,8 @@ function setCockpit(t: CockpitType, announce = true) {
   cockpit.classList.toggle('with-mcp', t === 'airliner');
   pfdBezel.querySelector('[data-l]')!.textContent = BEZEL_LABELS[t][0];
   mfdBezel.querySelector('[data-r]')!.textContent = BEZEL_LABELS[t][1];
-  cockpitSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', (b as HTMLElement).dataset.c === t));
+  cockpitSeg.querySelectorAll('button').forEach((b) => { const on = (b as HTMLElement).dataset.c === t; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
+  fitSoon();
   if (explain?.on) explain.set(true, t);
   if (announce) toast(t === 'g1000' ? 'Cockpit: G1000 glass' : t === 'steam' ? 'Cockpit: classic steam gauges' : 'Cockpit: airliner PFD/ND', 'info');
 }
@@ -673,26 +678,25 @@ const thrPct = h('b', {}, '');
 const thrRpm = h('small', {}, '');
 const flapNeedle = h('i', { class: 'flap-needle' });
 const flapBtns = ['UP', '10', '20', 'FULL'].map((l, i) => h('button', { onclick: () => (sim.controls.flaps = i), title: `Flaps ${i * 10}° (F / Shift+F)` }, l));
-const flapRead = h('small', {}, '');
 const trimWheel = h('div', { class: 'trim-wheel', title: 'Elevator trim — Home (nose down) / End (nose up), or scroll here' }, h('i', {}));
 trimWheel.addEventListener('wheel', (e) => { e.preventDefault(); sim.controls.trim = Math.max(-1, Math.min(1, sim.controls.trim + (e.deltaY < 0 ? -0.02 : 0.02))); }, { passive: false });
 const trimMark = h('i', { class: 'trim-mark' });
-const trimRead = h('small', {}, '');
 const stickDot = h('i', {});
 const stick = h('div', { class: 'stick', title: 'Yoke position — drag here to fly with the mouse or a touch screen' }, h('span', { class: 'cross' }), stickDot);
 const rudderBar = h('div', { class: 'rudder', title: 'Rudder ( , and . )' }, h('i', {}));
-const brakeLight = h('span', { class: 'brake-light' }, 'BRAKES');
+const brakeLight = h('span', { class: 'brake-light', role: 'status', title: 'Wheel brakes (hold Space)' }, h('i', {}), 'BRAKES');
 const joyDot = h('span', { class: 'joy-dot' });
 const joyLbl = h('span', { class: 'joy-lbl' }, 'Keyboard');
 // chronometer widget (pedestal): START/STOP, RESET, minute chime
-const chronoRead = h('b', { class: 'chrono-lcd' }, '--:--');
+const chronoRead = h('b', { class: 'chrono-lcd' }, '00:00');
 const chronoSS = h('button', { class: 'ped-btn chrono-b', onclick: () => sim.chronoStartStop(), title: 'Start / stop (T cycles start → stop → reset)' }, 'ST/SP');
 const chronoRst = h('button', { class: 'ped-btn chrono-b', onclick: () => sim.chronoReset(), title: 'Reset' }, 'RST');
 let chronoMin = -1;
 function updateChrono() {
   const t = sim.chrono();
-  chronoRead.textContent = t === null ? '--:--' : `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
-  chronoRead.classList.toggle('run', sim.av.timerStart !== null);
+  setText(chronoRead, t === null ? '00:00' : `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math.floor(t % 60)).padStart(2, '0')}`);
+  setClass(chronoRead, 'run', sim.av.timerStart !== null);
+  setClass(chronoRead, 'idle', t === null);
   const m = t === null || sim.av.timerStart === null ? -1 : Math.floor(t / 60);
   if (m > 0 && m !== chronoMin) audio.chime();
   chronoMin = m;
@@ -700,11 +704,11 @@ function updateChrono() {
 const group = (title: string, ...kids: (HTMLElement | string)[]) => h('div', { class: 'ped-g' }, h('div', { class: 'ped-t' }, title), h('div', { class: 'ped-c' }, ...kids));
 const footer = h('footer', { class: 'footer pedestal' },
   group('Throttle', h('div', { class: 'lever-box' }, h('span', { class: 'lv-l' }, 'IDLE'), thr, h('span', { class: 'lv-l' }, 'FULL')), h('div', { class: 'ped-read' }, thrPct, thrRpm)),
-  group('Flaps', h('div', { class: 'flap-sel' }, ...flapBtns, flapNeedle), flapRead),
-  group('Trim', h('button', { class: 'ped-btn', onclick: () => (sim.controls.trim = Math.max(-1, sim.controls.trim - 0.05)), title: 'Nose down (Home)' }, '▼'), h('div', { class: 'trim-box' }, trimWheel, h('div', { class: 'trim-scale' }, h('span', {}, 'DN'), h('b', {}, 'T/O'), h('span', {}, 'UP'), trimMark)), h('button', { class: 'ped-btn', onclick: () => (sim.controls.trim = Math.min(1, sim.controls.trim + 0.05)), title: 'Nose up (End)' }, '▲'), trimRead),
+  group('Flaps', h('div', { class: 'flap-sel' }, ...flapBtns, flapNeedle)),
+  group('Trim', h('button', { class: 'ped-btn', onclick: () => (sim.controls.trim = Math.max(-1, sim.controls.trim - 0.05)), title: 'Nose down (Home)' }, '▼'), h('div', { class: 'trim-box' }, trimWheel, h('div', { class: 'trim-scale' }, h('span', {}, 'DN'), h('b', {}, 'T/O'), h('span', {}, 'UP'), trimMark)), h('button', { class: 'ped-btn', onclick: () => (sim.controls.trim = Math.min(1, sim.controls.trim + 0.05)), title: 'Nose up (End)' }, '▲')),
   group('Yoke & rudder', stick, h('div', { class: 'ped-col' }, rudderBar, brakeLight)),
   group('Chrono', h('div', { class: 'chrono' }, chronoRead, h('div', { class: 'chrono-btns' }, chronoSS, chronoRst))),
-  group('Controller', h('button', { class: 'ped-joy', onclick: () => joyModal.open(), title: 'Joystick, yoke & pedals setup' }, joyDot, joyLbl)),
+  group('Controller', h('button', { class: 'ped-joy', onclick: () => joyModal.open(), title: 'Flying with the keyboard — click to connect a joystick, yoke or pedals' }, joyDot, joyLbl)),
   h('div', { class: 'spacer' }),
   h('div', { class: 'ped-keys' }, h('span', {}, h('kbd', {}, 'F1'), ' explain'), h('span', {}, h('kbd', {}, '?'), ' shortcuts'), h('span', {}, h('kbd', {}, 'G'), ' go-around'), h('span', {}, h('kbd', {}, 'K'), ' charts')),
 );
@@ -737,7 +741,7 @@ function canvasPoint(c: HTMLCanvasElement, e: MouseEvent, W: number, H: number) 
   return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H };
 }
 function pfdSoftkey(i: number) {
-  if (cockpitType !== 'g1000') return;
+  if (cockpitType !== 'g1000' || DEAD_SOFTKEYS.has(PFD_SOFTKEYS[i] ?? '')) return;
   pfdSt.softkeyFlash = i;
   setTimeout(() => (pfdSt.softkeyFlash = null), 150);
   const av = sim.av;
@@ -752,7 +756,6 @@ function pfdSoftkey(i: number) {
     case 'XPDR': { const o = ['STBY', 'ON', 'ALT'] as const; av.xpdrMode = o[(o.indexOf(av.xpdrMode) + 1) % 3]; break; }
     case 'IDENT': toast('IDENT — squawking ' + av.xpdr, 'info'); break;
     case 'MINS': cycleMins(); break;
-    case 'ALERTS': toast(sim.ac.s.fuelGal < 10 ? 'LOW FUEL' : 'No alerts', 'info'); break;
   }
 }
 pfdCanvas.addEventListener('click', (e) => {
@@ -773,7 +776,7 @@ pfdCanvas.addEventListener('wheel', (e) => {
   e.preventDefault();
 }, { passive: false });
 function mfdSoftkey(i: number) {
-  if (cockpitType !== 'g1000') return;
+  if (cockpitType !== 'g1000' || DEAD_SOFTKEYS.has(MFD_SOFTKEYS[i] ?? '')) return;
   mfdSt.softkeyFlash = i;
   setTimeout(() => (mfdSt.softkeyFlash = null), 150);
   switch (MFD_SOFTKEYS[i]) {
@@ -783,7 +786,6 @@ function mfdSoftkey(i: number) {
     case 'FPL': mfdSt.showFpl = !mfdSt.showFpl; break;
     case 'PROC': procModal.open(); break;
     case 'CHKLIST': showChecklist(); break;
-    case 'ENGINE': toast('Engine: all parameters normal', 'good'); break;
     case 'MAP': mfdSt.rangeIdx = 4; break;
   }
 }
@@ -801,21 +803,33 @@ mfdCanvas.addEventListener('wheel', (e) => {
 // ------------------------------------------------------------------ actions
 function togglePause() {
   sim.paused = !sim.paused;
+  syncPauseBtn();
+}
+let pauseShown: boolean | null = null;
+/** the Pause button follows sim.paused whoever changed it (lessons, modals, crash, replay) */
+function syncPauseBtn() {
+  if (pauseShown === sim.paused) return;
+  pauseShown = sim.paused;
   pauseBtn.replaceChildren(icon(sim.paused ? I.play : I.pause), h('span', { class: 'lbl' }, sim.paused ? 'Resume' : 'Pause'));
+  pauseBtn.title = sim.paused ? 'Resume (Esc)' : 'Pause (Esc)';
+  pauseBtn.classList.toggle('on', sim.paused);
 }
 function setRate(r: number) {
   sim.rate = r;
-  rateSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.textContent === `${r}×`));
+  rateBtn.textContent = `${r}×`;
+  rateBtn.classList.toggle('on', r !== 1);
   toast(`Sim rate ${r}×`);
 }
-function setOtw(m: OtwMode) {
+function setOtw(m: OtwMode, announce = false) {
   otwMode = m;
   store.set('ifr.otw', m);
   cockpit.classList.toggle('big-otw', m === 'big');
   cockpit.classList.toggle('vis-otw', m === 'visual');
   cockpit.classList.toggle('no-otw', m === 'none');
-  viewSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', (b as HTMLElement).dataset.m === m));
-  layoutLbl.textContent = LAYOUTS.find((x) => x[0] === m)?.[1] ?? 'Layout';
+  // Instruments: the top bar stays put so the panel never jumps when it would auto-hide
+  if (m === 'none') chromeShow(true);
+  if (announce) toast(`Layout: ${layoutName(m)}`, 'info', 2200);
+  fitSoon();
 }
 function setQnh() {
   sim.av.baro = sim.weather.qnh;
@@ -954,7 +968,7 @@ window.addEventListener('keydown', (e) => {
     case 't': toggleTimer(); break;
     case 'f': doAction(e.shiftKey ? 'flapsUp' : 'flapsDn'); break;
     case 'escape': case 'pause': togglePause(); break;
-    case 'tab': setOtw(({ normal: 'big', big: 'visual', visual: 'none', none: 'normal' } as const)[otwMode]); e.preventDefault(); break;
+    case 'tab': setOtw(({ normal: 'big', big: 'visual', visual: 'none', none: 'normal' } as const)[otwMode], true); e.preventDefault(); break;
     case '?': case '/': help.open(); break;
     default: return;
   }
@@ -968,9 +982,23 @@ window.addEventListener('blur', () => input.keys.clear());
 
 // ------------------------------------------------------------------ header / coach
 const PHASE_LABEL: Record<Phase, string> = { ground: 'On ground', departure: 'Departure', enroute: 'Enroute', initial: 'Approach', final: 'Final approach', missed: 'Missed approach', landed: 'Landed' };
+const AIRCRAFT: Record<CockpitType, string> = { g1000: 'C172 G1000', steam: 'C172 steam gauges', airliner: '737-800' };
+/** top bar: the flight's name, and a short "airport · procedure · aircraft" descriptor (the sitbar owns flight state) */
 function updateHeader() {
-  scnName.textContent = sim.scenario?.name ?? 'Free flight';
-  scnSub.textContent = sim.fp.approach ? `${sim.fp.approach.airport} ${sim.fp.approach.name}` : sim.scenario?.description ?? '';
+  const ex = lesson?.ex ?? lastLessonEx;
+  const name = ex ? ex.title : sim.scenario?.name ?? 'Free flight';
+  const ap = sim.fp.approach;
+  const hold = lesson?.rt.hold;
+  const parts: string[] = [];
+  if (ap) parts.push(ap.airport, ap.name);
+  else if (hold) parts.push(`Hold at ${hold.fix.ident}`);
+  else if (!ex && sim.scenario?.kind) parts.push(sim.scenario.kind);
+  parts.push(AIRCRAFT[cockpitType]);
+  const sub = parts.join(' · ');
+  setText(scnName, name);
+  setText(scnSub, sub);
+  const full = `${name} — ${ex ? ex.summary : sim.scenario?.description ?? sub}`;
+  if (cached(scnBtn, 'title', full)) scnBtn.title = `${full}\nClick: restart, end or plan a new flight`;
 }
 let coachKey = '';
 let sitKey = '';
@@ -988,13 +1016,13 @@ function updateSitbar() {
   const gust = sim.weather.gustKt > sim.weather.windKt ? `G${Math.round(sim.weather.gustKt)}` : '';
   const mins = sim.av.minimums;
   const cells: [string, string, string][] = [
-    ['Phase', sim.replaying ? 'Replay' : sim.ac.s.crashed ? 'Crashed' : sim.paused ? 'Paused' : PHASE_LABEL[ph], sim.ac.s.crashed ? 'bad' : sim.replaying ? 'warn' : ''],
+    ['Phase', sim.replaying ? 'Replay' : sim.ac.s.crashed ? 'Crashed' : sim.paused ? 'Paused' : PHASE_LABEL[ph], sim.ac.s.crashed ? 'bad' : sim.replaying ? 'warn' : sim.paused ? 'paused' : ''],
     ['Next', to ? `${g.holding ? 'HOLD ' : ''}${to.ident}${to.altMin ? ` ≥${to.altMin}` : ''} · ${g.distNm.toFixed(1)} NM${g.eteMin !== null ? ` · ${fmtTime(g.eteMin * 60)}` : ''}` : 'no flight plan', 'mag'],
     ['Altitude', `${alt} ft → ${sel}${Math.abs(altDiff) > 100 ? ` (${altDiff > 0 ? '+' : ''}${altDiff})` : ' ✓'}`, Math.abs(altDiff) > 100 ? '' : 'good'],
     sim.ac.s.onGround
       ? ['Surface wind', `${String(Math.round(sim.weather.windDir)).padStart(3, '0')}°/${Math.round(sim.weather.windKt)}${gust} · ${hw >= 0 ? 'HW' : 'TW'} ${Math.abs(hw)} · XW ${Math.abs(xw)}${xw >= 0 ? 'R' : 'L'}`, Math.abs(xw) > 15 || hw < -5 ? 'warn' : '']
       : ['Wind at aircraft', `${String(Math.round(d.windDir) || 360).padStart(3, '0')}°/${Math.round(d.windKt)} · ${hw >= 0 ? 'HW' : 'TW'} ${Math.abs(hw)} · XW ${Math.abs(xw)}${xw >= 0 ? 'R' : 'L'} · drift ${Math.abs(Math.round(d.driftDeg))}°${d.driftDeg >= 0 ? 'R' : 'L'}`, Math.abs(xw) > 15 || hw < -5 ? 'warn' : ''],
-    ['Minimums', mins === null ? 'not set' : `${mins} · ${alt - mins >= 0 ? '+' : ''}${alt - mins} ft`, mins !== null && alt < mins ? 'warn' : ''],
+    ['Minimums', mins === null ? '—' : `${mins} · ${alt - mins >= 0 ? '+' : ''}${alt - mins} ft`, mins === null ? 'dim' : alt < mins ? 'warn' : ''],
     ['Conditions', imc ? 'IMC' : 'VMC', imc ? 'imc' : 'good'],
   ];
   const key = cells.map((c) => c[1]).join('|');
@@ -1002,19 +1030,17 @@ function updateSitbar() {
   sitKey = key;
   sitbar.innerHTML = '';
   for (const [k, v, cls] of cells) sitbar.append(h('div', { class: `sb ${cls}` }, h('small', {}, k), h('b', {}, v)));
+  sitbar.append(h('div', { class: 'sb-fill' }));
   pauseVeil.classList.toggle('on', sim.paused && !sim.ac.s.crashed);
 }
+/** lesson panel: hint and step list behind "Details" when the space for the panel is short */
+let coachDetails = store.get('ifr.coachDetails', false);
+let coachTimer: HTMLElement | null = null;
+const coachBtn = (label: string, fn: () => void, cls = '', title = '') => h('button', { class: `btn ${cls}`, type: 'button', title: title || label, onclick: fn }, label);
 function updateCoach() {
   updateSitbar();
-  const d = sim.ac.data;
-  const ph = sim.rec.phase(sim);
-  phaseChip.textContent = sim.ac.s.crashed ? 'Crashed' : sim.paused ? 'Paused' : PHASE_LABEL[ph];
-  phaseChip.className = `chip ${sim.ac.s.crashed ? 'warn' : sim.paused ? '' : 'live'}`;
-
-  const imc = inCloud(sim);
-  const w = sim.weather;
-  wxChip.textContent = `${imc ? 'IMC' : 'VMC'} · ${w.ceilingFt >= 15000 ? 'CLR' : 'OVC' + String(Math.round(w.ceilingFt / 100)).padStart(3, '0')} · ${w.visibilitySm}SM · ${String(w.windDir).padStart(3, '0')}/${w.windKt}${w.gustKt ? 'G' + w.gustKt : ''}`;
-  wxChip.className = `chip${imc ? ' warn' : ''}`;
+  updateHeader();
+  syncPauseBtn();
   if (lesson) {
     const run = lesson;
     const st = run.step;
@@ -1024,28 +1050,43 @@ function updateCoach() {
     }
     const ctx = run.ctx(0);
     const ro = st?.readout ? st.readout(ctx) : '';
-    const key = `lesson|${run.idx}|${run.currentViolation}|${ro}|${sim.paused}|${!!run.finished}`;
+    if (coachTimer) setText(coachTimer, fmtTime(run.totalT));
+    const key = `lesson|${run.idx}|${run.currentViolation}|${ro}|${!!run.finished}|${coachDetails}`;
     if (key === coachKey) return;
     coachKey = key;
     coach.innerHTML = '';
     coach.classList.add('lesson');
-    const steps = h('ul', { class: 'steps' }, ...run.rt.steps.map((x, i) => h('li', { class: i < run.idx ? 'ok' : i === run.idx ? 'cur' : '' }, i < run.idx ? '✓' : i === run.idx ? '▶' : '○', ' ', x.text)));
+    coach.classList.remove('empty', 'min');
+    coach.classList.toggle('details', coachDetails);
+    const ride = sim.assess.mode === 'checkride';
+    const n = run.rt.steps.length;
+    coachTimer = h('span', { class: 'coach-time' }, fmtTime(run.totalT));
     coach.append(
-      h('h4', {}, `Lesson · ${run.ex.title}`, h('span', { class: 'muted', style: 'font-size:11px' }, fmtTime(run.totalT))),
+      h('h4', { class: 'coach-k' }, h('span', {}, run.finished ? 'Exercise complete' : n > 1 ? `Step ${run.idx + 1} of ${n}` : 'Exercise'), coachTimer),
       h('div', { class: 'next' }, st ? st.text : run.finished ? 'Complete' : ''),
     );
-    const ride = sim.assess.mode === 'checkride';
-    if (st?.hint && !ride) coach.append(h('div', { class: 'hint', style: 'color:#9fb0c0;font-size:12.5px;margin-top:4px' }, st.hint));
     if (ro) coach.append(h('div', { class: 'ro' }, ro));
-    if (run.currentViolation && !ride) coach.append(h('div', { class: 'viol' }, `⚠ ${run.currentViolation}`));
-    coach.append(steps);
+    if (run.currentViolation && !ride) coach.append(h('div', { class: 'viol' }, svgIcon(I.warning, 14), h('span', {}, run.currentViolation)));
+    const more = h('div', { class: 'coach-more' });
+    if (st?.hint && !ride) more.append(h('div', { class: 'hint' }, st.hint));
+    if (n > 1) {
+      const others = run.rt.steps.map((x, i) => ({ x, i })).filter(({ i }) => i !== run.idx);
+      more.append(h('ol', { class: 'steps', 'aria-label': 'Other steps' }, ...others.map(({ x, i }) => h('li', { class: i < run.idx ? 'ok' : 'todo' }, i < run.idx ? svgIcon(I.check, 13) : h('i', { class: 'dot' }), h('span', {}, x.text)))));
+    }
+    const hasMore = more.childElementCount > 0;
+    if (hasMore) coach.append(more);
     coach.append(h('div', { class: 'acts' },
-      h('button', { class: 'btn', onclick: () => pickExercise(run.ex, lessonPath) }, 'Restart'),
-      run.ex.plate ? h('button', { class: 'btn', onclick: () => { charts.toggle(true); charts.show(run.ex.plate!); } }, 'Plate') : null,
-      h('button', { class: 'btn', onclick: () => { run.abort(); } }, 'End'),
+      hasMore ? coachBtn(coachDetails ? 'Hide details' : 'Details', () => { coachDetails = !coachDetails; store.set('ifr.coachDetails', coachDetails); updateCoach(); }, 'coach-more-btn', 'Show the hint and the other steps') : null,
+      h('span', { class: 'acts-sp' }),
+      run.ex.plate ? coachBtn('Plate', () => { charts.toggle(true); charts.show(run.ex.plate!); }, '', 'Open the approach plate in the EFB') : null,
+      coachBtn('Restart', () => pickExercise(run.ex, lessonPath), '', 'Restart this exercise from the briefing'),
+      coachBtn('End', () => { if (confirm('End lesson and see debrief?')) endFlight(); }, 'danger', 'End the exercise and see the result'),
     ));
     return;
   }
+  coachTimer = null;
+  const d = sim.ac.data;
+  const ph = sim.rec.phase(sim);
   coach.classList.remove('lesson');
   if (sim.assess.mode === 'checkride') {
     const fails = Object.values(sim.failures).some(Boolean);
@@ -1076,7 +1117,7 @@ function updateCoach() {
     const ete = g.eteMin !== null ? ` · ${fmtTime(g.eteMin * 60)}` : '';
     next = `${g.holding ? 'Holding at' : 'Next'} <em>${to.ident}</em>${to.altMin ? ` · ≥ ${to.altMin} ft` : ''} · ${g.distNm.toFixed(1)} nm${ete}`;
     const ap = fp.approach;
-    if (ap && !fp.approachActive) hints.push('Approach loaded but not active — ACT/VTF on the MFD bezel, or Procedures.');
+    if (ap && !fp.approachActive) hints.push('Approach loaded but not active — ACT on the MFD bezel, or Procedures.');
     if (ap && fp.approachActive && !fp.missedActive) {
       const navBased = ap.type === 'ILS' || ap.type === 'LOC' || ap.type === 'LOCBC' || ap.type === 'VOR' || ap.type === 'LDA';
       const faf = fp.wpts.find((x) => x.role === 'FAF' && x.appr === 'final');
@@ -1108,10 +1149,12 @@ function updateCoach() {
   if (key === coachKey) return;
   coachKey = key;
   coach.innerHTML = '';
-  const minBtn = h('button', { onclick: () => { coach.classList.toggle('min'); store.set('ifr.coachMin', coach.classList.contains('min')); }, title: 'Minimise' }, '▾');
+  const isMin = coach.classList.contains('min');
+  const minBtn = h('button', { class: 'coach-min', type: 'button', 'aria-expanded': String(!isMin), title: isMin ? 'Show the coach tips' : 'Hide the coach tips', onclick: () => { coach.classList.toggle('min'); store.set('ifr.coachMin', coach.classList.contains('min')); coachKey = ''; updateCoach(); } }, isMin ? 'Show' : 'Hide');
   const shown = hints.filter((t) => !t.startsWith('Paused'));
   coach.classList.toggle('empty', shown.length === 0);
-  coach.append(h('h4', {}, 'Coach · what to do now', minBtn));
+  coach.classList.remove('details');
+  coach.append(h('h4', { class: 'coach-k' }, h('span', {}, 'Coach · what to do now'), minBtn));
   if (shown.length) coach.append(h('ul', {}, ...shown.slice(0, 4).map((t) => h('li', {}, t))));
   void next;
 }
@@ -1183,7 +1226,23 @@ const mark = (k: string) => {
   perf[k] = (perf[k] ?? 0) * 0.95 + (t - perfT) * 0.05;
   perfT = t;
 };
+let frameErr = '';
+/** the render loop must survive any exception (a stale reference after a region change, a bad datum…):
+ *  one failing frame is logged once, the next frame runs normally */
 function frame(now: number) {
+  try {
+    frameBody(now);
+  } catch (e) {
+    const msg = String((e as Error)?.stack ?? e);
+    if (msg !== frameErr) {
+      frameErr = msg;
+      console.error('frame', e);
+    }
+    last = now;
+  }
+  requestAnimationFrame(frame);
+}
+function frameBody(now: number) {
   perfT = performance.now();
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
@@ -1265,13 +1324,13 @@ function frame(now: number) {
   } else if (cockpitType === 'airliner') {
     drawAirlinerPfd(lctx, sim);
     drawNd(rctx, sim, mfdRange(mfdSt));
-    mcpSpd.v.textContent = sim.ap.vert === 'FLC' ? String(sim.ap.iasSel) : '---';
-    mcpHdg.v.textContent = String(sim.ap.hdgBug).padStart(3, '0');
-    mcpAlt.v.textContent = String(sim.ap.altSel).padStart(5, '0');
-    mcpVs.v.textContent = sim.ap.vert === 'VS' ? `${sim.ap.vsSel > 0 ? '+' : ''}${sim.ap.vsSel}` : '';
+    setText(mcpSpd.v, sim.ap.iasSel > 0 ? String(Math.round(sim.ap.iasSel)) : '---');
+    setText(mcpHdg.v, String(sim.ap.hdgBug).padStart(3, '0'));
+    setText(mcpAlt.v, String(sim.ap.altSel));
+    setText(mcpVs.v, sim.ap.vert === 'VS' ? `${sim.ap.vsSel > 0 ? '+' : ''}${sim.ap.vsSel}` : '');
     const a = sim.ap;
     const lit: Record<string, boolean> = { FD: a.fd, AP: a.ap, FLC: a.engaged && a.vert === 'FLC', LNAV: a.engaged && (a.lat === 'GPS' || a.latArmed === 'GPS'), VORLOC: a.engaged && (['VOR', 'LOC', 'BC'].includes(a.lat) || ['VOR', 'LOC', 'BC'].includes(a.latArmed ?? '')), APR: a.apprMode, HDG: a.engaged && a.lat === 'HDG', ALT: a.engaged && a.vert === 'ALT', VS: a.engaged && a.vert === 'VS' };
-    mcp.querySelectorAll<HTMLElement>('[data-mcp]').forEach((b) => b.classList.toggle('on', !!lit[b.dataset.mcp!]));
+    for (const b of mcpKeys) setClass(b, 'on', !!lit[b.dataset.mcp!]);
   } else {
     drawPfd(lctx, sim, pfdSt, sim.paused ? 0 : dt);
     mark('pfd');
@@ -1295,10 +1354,8 @@ function frame(now: number) {
   setText(thrRpm, `${Math.round(sim.ac.data.rpm / 10) * 10} RPM`);
   flapBtns.forEach((b, i) => setClass(b, 'on', Math.round(ctl.flaps) === i));
   setCss(flapNeedle, 'left', `${((sim.ac.data.flapsDeg / 30) * 75 + 12.5).toFixed(1)}%`);
-  setText(flapRead, `${Math.round(sim.ac.data.flapsDeg)}°`);
   setCss(trimWheel, '--t', `${Math.round(ctl.trim * 220)}px`);
   setCss(trimMark, 'left', `${(50 + ctl.trim * 50).toFixed(1)}%`);
-  setText(trimRead, Math.abs(ctl.trim + 0.2) < 0.06 ? 'T/O' : ctl.trim < 0 ? `UP ${Math.round(-ctl.trim * 100)}` : `DN ${Math.round(ctl.trim * 100)}`);
   if (!stick.classList.contains('active')) {
     setCss(stickDot, 'left', `${(50 + Math.max(-1, Math.min(1, ctl.aileron)) * 42).toFixed(1)}%`);
     setCss(stickDot, 'top', `${(50 + Math.max(-1, Math.min(1, ctl.elevator)) * 42).toFixed(1)}%`);
@@ -1321,7 +1378,6 @@ function frame(now: number) {
     updateCoach();
   }
   mark('dom');
-  requestAnimationFrame(frame);
 }
 
 // test/automation hook
@@ -1331,21 +1387,36 @@ function frame(now: number) {
 setOtw(otwMode);
 setCockpit(cockpitType, false);
 requestAnimationFrame(() => setTimeout(() => void initOutside(), 50));
-// keep the bezel controls inside the bezel whatever the window size
-{
-  const fitSides = () => {
-    for (const side of document.querySelectorAll<HTMLElement>('.bezel .side')) {
-      side.style.zoom = '1';
-      const bezel = side.parentElement as HTMLElement;
-      const avail = bezel.clientHeight - 16;
-      const need = side.scrollHeight;
-      side.style.zoom = need > avail && avail > 50 ? String(Math.max(0.55, avail / need)) : '1';
-    }
-  };
-  new ResizeObserver(fitSides).observe(panel);
-  window.addEventListener('resize', fitSides);
-  setTimeout(fitSides, 100);
+// keep the bezel controls inside the bezel whatever the window size: ONE scale for every side column of
+// both bezels (PFD and MFD knobs and keys are always the same size), plus a few sizes the CSS lays out with
+function fitSides() {
+  const sides = [...panel.querySelectorAll<HTMLElement>('.bezel .side')].filter((x) => x.offsetParent !== null);
+  for (const side of sides) side.style.zoom = '1';
+  let k = 1;
+  for (const side of sides) {
+    const avail = (side.parentElement as HTMLElement).clientHeight - 26;
+    const need = side.scrollHeight;
+    if (need > avail && avail > 50) k = Math.min(k, avail / need);
+  }
+  k = Math.max(0.55, Math.round(k * 100) / 100);
+  for (const side of sides) side.style.zoom = k < 1 ? String(k) : '';
+  cockpit.style.setProperty('--bz-scale', String(k));
+  cockpit.style.setProperty('--pfd-w', `${pfdBezel.offsetWidth}px`);
+  cockpit.style.setProperty('--pfd-h', `${pfdBezel.offsetHeight}px`);
+  document.body.style.setProperty('--ped-h', `${footer.offsetHeight}px`);
+  // the lesson panel shows its hint and steps behind "Details" when its space is short
+  const room = otwMode === 'none' ? 0 : otwMode === 'visual' ? otw.clientHeight - pfdBezel.offsetHeight - 150 : otw.clientHeight - 120;
+  cockpit.classList.toggle('coach-compact', room < 300);
 }
+let fitRaf = 0;
+function fitSoon() {
+  cancelAnimationFrame(fitRaf);
+  fitRaf = requestAnimationFrame(() => fitSides());
+}
+new ResizeObserver(fitSoon).observe(panel);
+new ResizeObserver(fitSoon).observe(otw);
+window.addEventListener('resize', fitSoon);
+setTimeout(fitSides, 100);
 updateHeader();
 updateCoach();
 requestAnimationFrame(frame);

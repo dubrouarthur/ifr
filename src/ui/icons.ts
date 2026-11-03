@@ -1,6 +1,6 @@
 // Line icon set (24-unit grid, 1.6 stroke, round joins) — replaces emoji in the UI.
 // Any UI string that starts with one of the mapped emoji is rendered as icon + text by `h()`.
-const P: Record<string, string> = {
+const P = {
   home: 'M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z',
   approach: 'M3 6l11 7M14 13l7 4M4 20h16M15 20l1.5-3M9 20l.5-1',
   depart: 'M3 18l18-0M5 14l14-7M13 7.5l3-1.5 2 1-6 4',
@@ -29,7 +29,33 @@ const P: Record<string, string> = {
   link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
   joystick: 'M12 3a2.5 2.5 0 1 0 0 5a2.5 2.5 0 1 0 0-5M12 8v7M6 15h12l1 5H5z',
   compass: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M15.5 8.5l-2 5-5 2 2-5z',
+  // application chrome (top bar, menus, pedestal)
+  layout: 'M3 4h18v16H3zM3 11h18M9 11v9',
+  map: 'M9 4L3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14',
+  tablet: 'M6 3h12a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM10 18h4',
+  plan: 'M9 4h6v3H9zM7 5H5v16h14V5h-2M8.5 17.5a1 1 0 1 0 0-.01M15.5 10.5a1 1 0 1 0 0-.01M9.5 16.5l5-5',
+  keypad: 'M5 3h14a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM7 6h10v4H7zM7.5 13.5h.01M12 13.5h.01M16.5 13.5h.01M7.5 17h.01M12 17h.01M16.5 17h.01',
+  pattern: 'M6 7h12a3 3 0 0 1 0 6H6a3 3 0 0 1 0-6zM3 19h18M12 13v6',
+  cloud: 'M7 18h10a4 4 0 0 0 0-8 6 6 0 0 0-11.5 1.5A3.5 3.5 0 0 0 7 18z',
+  help: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.4M12 17v.01',
+  keyboard: 'M3 6h18v12H3zM6.5 9.5h.01M10 9.5h.01M13.5 9.5h.01M17 9.5h.01M6.5 12.5h.01M17 12.5h.01M8 15h8M10 12.5h4',
+  pause: 'M8 5v14M16 5v14',
+  play: 'M7 5l12 7-12 7z',
+  sound: 'M4 9v6h4l5 4V5L8 9H4zM17 8a5 5 0 0 1 0 8M19.5 5.5a9 9 0 0 1 0 13',
+  mute: 'M4 9v6h4l5 4V5L8 9H4zM17 9l5 6M22 9l-5 6',
+  gear: 'M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z',
+  more: 'M5 12h.01M12 12h.01M19 12h.01',
+  learn: 'M2 9l10-5 10 5-10 5-10-5zM6 11v5c3 2 9 2 12 0v-5M22 9v6',
+  records: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01',
+  chart: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
+  direct: 'M4 12h13M13 7l5 5-5 5M20 5v14',
+  restart: 'M4 12a8 8 0 1 0 2.3-5.7M4 4v4h4',
+  flag: 'M5 21V4M5 4h11l-2 4 2 4H5',
+  eye: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6',
+  rate: 'M12 13l4-5M5 18a8 8 0 1 1 14 0',
 };
+/** icon names, for `svgIcon(I.check)` */
+export const I = Object.fromEntries(Object.keys(P).map((k) => [k, k])) as { [K in keyof typeof P]: K };
 const EMOJI: Record<string, string> = {
   '🏠': 'home', '🛬': 'approach', '🛫': 'depart', '🧭': 'route', '🔁': 'hold', '🛠️': 'tools', '🛠': 'tools', '🎯': 'target', '⚠️': 'warning', '⚠': 'warning',
   '🎓': 'badge', '✈️': 'plane', '✈': 'plane', '🛩️': 'plane', '⚡': 'stopwatch', '📋': 'clipboard', '📄': 'document', '✋': 'hand', '✅': 'check',
@@ -51,7 +77,7 @@ export function svgIcon(name: string, size = 16): SVGSVGElement {
   s.setAttribute('aria-hidden', 'true');
   s.setAttribute('class', 'ico');
   const p = document.createElementNS(NS, 'path');
-  p.setAttribute('d', P[name] ?? P.plane);
+  p.setAttribute('d', (P as Record<string, string>)[name] ?? P.plane);
   s.append(p);
   return s;
 }

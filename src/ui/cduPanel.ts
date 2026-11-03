@@ -1,6 +1,6 @@
 // Hardware-style CDU panel: LCD with 6+6 line-select keys, page keys, EXEC with annunciator,
 // alphanumeric keypad. Keyboard typing goes to the scratchpad while the CDU is open and hovered/focused.
-import { h, clear } from "./dom";
+import { h, clear, store } from "./dom";
 import { Cdu, COLS, type CduKey, type Line } from "../avionics/cdu";
 import type { Sim } from "../sim/sim";
 
@@ -17,6 +17,12 @@ export class CduPanel {
   private lcd: HTMLElement;
   private execLight: HTMLElement;
   private hot = false;
+  /** where the pilot dragged the CDU (top-left, px), remembered across sessions */
+  private pos: { l: number; t: number } | null = store.get<{
+    l: number;
+    t: number;
+  } | null>("ifr.cdu.pos", null);
+  private focusSink = h("span", { class: "cdu-sr", tabindex: "-1" });
 
   constructor(sim: Sim) {
     this.cdu = new Cdu(sim);
@@ -29,7 +35,9 @@ export class CduPanel {
         ...[1, 2, 3, 4, 5, 6].map((r) =>
           h("button", {
             class: "cdu-lsk",
+            style: `grid-row:${2 * r + 1}`,
             title: `LSK ${r}${side}`,
+            "aria-label": `Line select key ${r} ${side === "L" ? "left" : "right"}`,
             onclick: () => this.act(() => this.cdu.lsk(side, r)),
           }),
         ),
@@ -95,7 +103,7 @@ export class CduPanel {
     const head = h(
       "div",
       { class: "cdu-head" },
-      h("span", {}, "FMC CDU"),
+      h("span", { title: "Drag to move · double-click to dock" }, "FMC CDU"),
       h(
         "button",
         {
@@ -113,6 +121,7 @@ export class CduPanel {
         tabindex: "-1",
         "aria-label": "FMC control display unit",
       },
+      this.focusSink,
       head,
       h(
         "div",
@@ -128,6 +137,8 @@ export class CduPanel {
     this.el.addEventListener("pointerleave", () => (this.hot = false));
     this.dragify(head);
     this.render();
+    if (typeof window !== "undefined")
+      window.addEventListener("resize", () => this.isOpen && this.layout());
   }
 
   get isOpen() {
@@ -138,7 +149,9 @@ export class CduPanel {
     if (on) {
       this.cdu.syncFromSim();
       this.render();
-      this.el.focus();
+      this.layout();
+      // focus a hidden element: typing reaches the scratchpad without a focus ring around the whole unit
+      this.focusSink.focus({ preventScroll: true });
     }
   }
 
@@ -168,20 +181,79 @@ export class CduPanel {
 
   /** live data pages (LEGS, PROG) refresh a few times a second */
   tick() {
-    if (this.isOpen && /LEGS|PROG|HOLD|POS/.test(this.cdu.page)) this.render();
+    if (!this.isOpen) return;
+    if (/LEGS|PROG|HOLD|POS/.test(this.cdu.page)) this.render();
+    this.layout();
+  }
+
+  /** fit the CDU on screen: scaled down on short viewports, clear of the top bar, the ATC strip, the pedestal and
+   *  the EFB drawer (it sits to the left of the drawer so it never covers the plate) */
+  private layout() {
+    const vw = window.innerWidth,
+      vh = window.innerHeight;
+    const natW = this.el.offsetWidth || 372,
+      natH = this.el.offsetHeight || 650;
+    const rectOf = (sel: string) => {
+      const e = document.querySelector<HTMLElement>(sel);
+      if (!e || !e.offsetParent) return null;
+      const r = e.getBoundingClientRect();
+      return r.width && r.height ? r : null;
+    };
+    const tb = rectOf(".topbar");
+    const top = Math.max(60, tb && tb.bottom > 0 ? tb.bottom + 8 : 0);
+    const foot = rectOf("footer.footer");
+    const bottom = foot && foot.top < vh ? Math.max(12, vh - foot.top + 10) : 18;
+    const drawer = document.querySelector<HTMLElement>(
+      ".drawer[aria-label='Charts'].open",
+    );
+    const dw = drawer ? drawer.getBoundingClientRect().width : 0;
+    let right = 18 + (dw && vw - dw >= 300 ? dw : 0);
+    let topMin = top;
+    // the ATC strip: stay below it when it is above the CDU
+    const atc = rectOf(".atc-radio:not(.empty)");
+    const xL = vw - right - natW,
+      xR = vw - right;
+    if (atc && atc.left < xR && atc.right > xL) topMin = Math.max(topMin, atc.bottom + 8);
+    let avail = vh - bottom - topMin;
+    // too little room below the ATC strip: ignore it rather than shrinking the unit to unreadable
+    if (avail < natH * 0.7 && topMin > top) {
+      topMin = top;
+      avail = vh - bottom - topMin;
+    }
+    const scale = Math.max(0.55, Math.min(1, avail / natH, (vw - right - 8) / natW));
+    if (right + natW * scale > vw - 8) right = Math.max(8, vw - natW * scale - 8);
+    const st = this.el.style;
+    st.setProperty("--cdu-scale", scale.toFixed(3));
+    if (this.pos) {
+      // dragged: keep the pilot's spot, clamped on screen
+      const l = Math.max(0, Math.min(vw - natW * scale, this.pos.l));
+      const t = Math.max(top, Math.min(vh - natH * scale - 4, this.pos.t));
+      st.transformOrigin = "top left";
+      st.left = `${l}px`;
+      st.top = `${t}px`;
+      st.right = "auto";
+      st.bottom = "auto";
+    } else {
+      st.transformOrigin = "bottom right";
+      st.left = "auto";
+      st.top = "auto";
+      st.right = `${right}px`;
+      st.bottom = `${bottom}px`;
+    }
   }
 
   render() {
     clear(this.lcd);
     const lines = this.cdu.screen();
     lines.forEach((ln: Line, i) => {
+      const labelRow = i % 2 === 1 && i < 13;
       const row = h("div", {
-        class: `cdu-ln${i % 2 === 1 && i < 13 ? " sm" : ""}${i === 13 ? " sp" : ""}`,
+        class: `cdu-ln${labelRow ? " sm" : ""}${i === 13 ? " sp" : ""}`,
       });
-      // compose into a fixed 24-column grid
+      // a fixed 24-column grid: one cell per character, small font only shrinks the glyph
       const cells: { ch: string; c: string; small: boolean }[] = Array.from(
         { length: COLS },
-        () => ({ ch: " ", c: "w", small: i % 2 === 1 && i < 13 }),
+        () => ({ ch: " ", c: "w", small: labelRow }),
       );
       for (const seg of ln) {
         const t = seg.t.slice(0, COLS);
@@ -198,23 +270,14 @@ export class CduPanel {
               small: !!seg.small,
             };
       }
-      let cur = "",
-        curC = "",
-        curS = false;
-      const flush = () => {
-        if (cur)
-          row.append(h("span", { class: `c-${curC}${curS ? " s" : ""}` }, cur));
-        cur = "";
-      };
-      for (const cell of cells) {
-        if (cell.c !== curC || cell.small !== curS) {
-          flush();
-          curC = cell.c;
-          curS = cell.small;
-        }
-        cur += cell.ch;
-      }
-      flush();
+      for (const cell of cells)
+        row.append(
+          h(
+            "span",
+            { class: `c-${cell.c}${cell.small ? " s" : ""}` },
+            cell.ch === " " ? "\u00a0" : cell.ch,
+          ),
+        );
       this.lcd.append(row);
     });
     this.execLight.classList.toggle("on", this.cdu.mod);
@@ -230,11 +293,23 @@ export class CduPanel {
     });
     handle.addEventListener("pointermove", (e) => {
       if (!start) return;
-      this.el.style.left = `${Math.max(0, start.l + e.clientX - start.x)}px`;
-      this.el.style.top = `${Math.max(0, start.t + e.clientY - start.y)}px`;
-      this.el.style.right = "auto";
-      this.el.style.bottom = "auto";
+      this.pos = {
+        l: Math.max(0, start.l + e.clientX - start.x),
+        t: Math.max(60, start.t + e.clientY - start.y),
+      };
+      this.layout();
     });
-    handle.addEventListener("pointerup", () => (start = null));
+    const end = () => {
+      if (start && this.pos) store.set("ifr.cdu.pos", this.pos);
+      start = null;
+    };
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+    // double-click the title bar: back to the docked position
+    handle.addEventListener("dblclick", () => {
+      this.pos = null;
+      store.set("ifr.cdu.pos", null);
+      this.layout();
+    });
   }
 }

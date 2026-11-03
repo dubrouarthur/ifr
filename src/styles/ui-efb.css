@@ -1,0 +1,373 @@
+/* ui-efb: EFB tablet (header, chart toolbar, night mode, pages) and the FMC CDU panel.
+   Loads after styles.css, efb.css and hotfix.css. */
+
+/* ---------------------------------------------------------------- header */
+.drawer.efb > header {
+  gap: 10px;
+  padding: 10px 12px 10px 16px;
+  min-height: 56px;
+}
+.drawer.efb .efb-ttl {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.drawer.efb .efb-ttl h3 {
+  flex: none;
+  margin: 0;
+  font: 700 15px var(--font);
+  letter-spacing: 0.2px;
+}
+.drawer.efb .efb-cur {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font: 600 13px var(--font);
+}
+.drawer.efb .chart-apt {
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--text);
+  font: 700 13px var(--font);
+}
+.drawer.efb > header .x {
+  flex: none;
+}
+
+/* ---------------------------------------------------------------- app tabs */
+.drawer.efb .efb-apps {
+  padding: 0 12px;
+  gap: 4px;
+}
+.drawer.efb .efb-apps button {
+  padding: 11px 10px 10px;
+  font-size: 13.5px;
+}
+
+/* ---------------------------------------------------------------- chart toolbar: selector · zoom · fit · night */
+.chart-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.chart-bar .chart-src {
+  flex: none;
+}
+.chart-sel {
+  flex: 1 1 220px;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--text);
+  font: 600 13px var(--font);
+  text-overflow: ellipsis;
+}
+.chart-sel optgroup {
+  font-weight: 700;
+  color: var(--muted);
+}
+.chart-sel option {
+  font-weight: 500;
+  color: var(--text);
+}
+.chart-bar .cz {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  margin-left: auto;
+}
+.cz-zoom {
+  display: inline-flex;
+  align-items: stretch;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.cz-zoom button {
+  min-width: 30px;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font: 600 15px var(--font);
+  cursor: pointer;
+}
+.cz-zoom button:hover {
+  background: var(--surface-3);
+}
+.cz-zoom .cz-pct {
+  min-width: 50px;
+  padding: 0 4px;
+  border-inline: 1px solid var(--line);
+  font: 600 12px var(--font);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.cz-fit button {
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+.cz-night {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-2);
+  font: 600 12.5px var(--font);
+  cursor: pointer;
+}
+.cz-night svg {
+  flex: none;
+}
+.cz-night.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.chart-bar button:focus-visible,
+.chart-sel:focus-visible,
+.chart-apt:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* ---------------------------------------------------------------- viewer */
+.drawer.efb .chart-view {
+  cursor: grab;
+}
+.drawer.efb .chart-view.grabbing {
+  cursor: grabbing;
+}
+.drawer.efb .chart-view .sheet {
+  box-shadow:
+    0 1px 3px rgba(15, 23, 32, 0.12),
+    0 8px 24px rgba(15, 23, 32, 0.1);
+}
+
+/* ---------------------------------------------------------------- night: the whole tablet goes dark, not just the plate */
+.drawer.efb.night {
+  --surface: #151b22;
+  --surface-2: #0f1419;
+  --surface-3: #1d252e;
+  --line: #29323c;
+  --line-strong: #3a4552;
+  --text: #e7edf3;
+  --text-2: #c7d1db;
+  --muted: #8b97a4;
+  --accent: #4d9bff;
+  --ring: 0 0 0 3px rgba(77, 155, 255, 0.35);
+  background: var(--surface);
+  color: var(--text);
+  border-left-color: var(--line);
+  color-scheme: dark;
+}
+.drawer.efb.night > header,
+.drawer.efb.night .efb-apps {
+  background: var(--surface);
+  border-color: var(--line);
+}
+.drawer.efb.night .efb-apps button.on {
+  color: #8cc0ff;
+  border-bottom-color: #8cc0ff;
+}
+.drawer.efb.night .chart-view {
+  background: #070a0d;
+}
+.drawer.efb.night .chart-view .sheet {
+  box-shadow: 0 0 0 1px #1d252e;
+}
+.drawer.efb.night .seg {
+  background: var(--surface-3);
+  border-color: var(--line);
+}
+.drawer.efb.night .seg button.on {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--line-strong);
+}
+.drawer.efb.night .x {
+  color: var(--text-2);
+}
+/* the plate is inverted; the terrain tint is faded first so it inverts to a quiet dark relief, not mud */
+.drawer.efb.night .chart-view .sheet svg image {
+  opacity: 0.3;
+}
+.drawer.efb.night .efb-t tr.inuse td {
+  background: #16273b;
+}
+.drawer.efb.night .efb-t.navlog tr.active td {
+  background: #2a1630;
+  color: #f2a6e4;
+}
+.drawer.efb.night .efb-ap.t-ils {
+  background: #10243d;
+  border-color: #24446b;
+  color: #9cc6ff;
+}
+.drawer.efb.night .efb-ap.t-rnav {
+  background: #221a3a;
+  border-color: #3d2f66;
+  color: #c9b5ff;
+}
+
+/* ---------------------------------------------------------------- pages */
+.efb-metar,
+.efb-wx code {
+  background: var(--surface-3);
+  color: var(--text);
+  border: 1px solid var(--line);
+  line-height: 1.5;
+}
+.efb-wx {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.efb-wx-h {
+  flex-wrap: wrap;
+}
+.efb-wx-h > b {
+  font: 800 17px var(--font);
+  letter-spacing: -0.2px;
+}
+.efb-wx-name {
+  color: var(--muted);
+  font-size: 12.5px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.efb-role {
+  font: 700 10.5px var(--font);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-2);
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 7px;
+}
+.efb-wx code + code {
+  margin-top: 6px;
+}
+button.efb-ap {
+  cursor: pointer;
+  color: var(--text);
+  font: 600 12.5px var(--font);
+  padding: 6px 10px;
+}
+button.efb-ap:hover {
+  border-color: var(--accent);
+}
+button.efb-ap:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+.efb-t th {
+  white-space: nowrap;
+}
+.efb-craft input::placeholder {
+  font: 400 13px var(--font);
+  color: var(--muted);
+  opacity: 1;
+}
+.efb-ci b {
+  text-transform: uppercase;
+}
+
+/* ---------------------------------------------------------------- FMC CDU: fits the screen, 24-column LCD grid */
+.cdu {
+  transform: scale(var(--cdu-scale, 1));
+  transform-origin: bottom right;
+}
+.cdu:focus,
+.cdu:focus-visible {
+  outline: none;
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.35);
+}
+.cdu-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.cdu-head {
+  user-select: none;
+  touch-action: none;
+}
+.cdu-close {
+  width: 26px;
+  height: 22px;
+  border-radius: 5px;
+}
+.cdu-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.cdu-glass {
+  padding: 6px 4px;
+}
+.cdu-lcd {
+  font:
+    600 18.5px/18px "Roboto Mono",
+    ui-monospace,
+    monospace;
+  grid-template-rows: repeat(14, 18px);
+  align-items: stretch;
+}
+.cdu-ln {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  height: 18px;
+  line-height: 18px;
+  white-space: pre;
+  overflow: visible;
+}
+.cdu-ln span {
+  display: block;
+  text-align: center;
+  font-size: 18.5px;
+  line-height: 18px;
+  overflow: visible;
+}
+.cdu-ln span.s {
+  font-size: 14px;
+}
+.cdu-lsks {
+  grid-template-rows: repeat(14, 18px);
+  padding-top: 6px;
+}
+.cdu-lsks::before {
+  content: none;
+}
+.cdu-lsks .cdu-lsk:nth-child(n) {
+  margin-top: 0;
+  align-self: center;
+}
