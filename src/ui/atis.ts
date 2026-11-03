@@ -27,8 +27,11 @@ const CALM_KT = 3;
 /** Runway best aligned with the wind at an airport (calm wind: the longest runway). */
 export function runwayInUse(icao: string, w: Weather): Runway {
   const a = AIRPORTS.find((x) => x.icao === icao)!;
+  // parallel runways (28L / 28R) differ by a fraction of a degree: compare to the nearest knot, then by length
   const head = (r: Runway) =>
-    w.windKt < CALM_KT ? 0 : components(w.windDir, w.windKt, r.heading).head;
+    w.windKt < CALM_KT
+      ? 0
+      : Math.round(components(w.windDir, w.windKt, r.heading).head);
   return [...a.runways].sort(
     (x, y) => head(y) - head(x) || y.lengthFt - x.lengthFt,
   )[0];

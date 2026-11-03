@@ -750,3 +750,131 @@
 .modal.cbx .cb-f input, .modal.cbx .cb-f select { width: 100%; min-width: 0; max-width: none; }
 .modal.cbx .cbx-fixwrap { display: block; }
 .modal.cbx .cbx-leg-b .seg { display: inline-flex; }
+
+/* ------------------------------------------------------------------ Plan a flight wizard */
+.modal.fs .fs-grid { grid-template-columns: 228px minmax(0, 1fr) clamp(300px, 26vw, 380px); }
+@media (max-width: 1150px) { .modal.fs .fs-grid { grid-template-columns: 200px minmax(0, 1fr); } }
+/* step rail: check only when valid, warning dot when the step holds an error */
+.modal.fs .fs-step { position: relative; transition: background 0.12s, color 0.12s; }
+.modal.fs .fs-step:focus-visible { outline: none; box-shadow: var(--ring); }
+.modal.fs .fs-step .n .ico { display: block; }
+.modal.fs .fs-step.done .n { background: #e9f7ef; border-color: #bfe3d2; color: #13804b; }
+.modal.fs .fs-step.warn .n { background: #fff4e0; border-color: #f1d39b; color: #9a5b00; }
+.fs-warn-dot { position: absolute; right: 10px; top: 50%; width: 8px; height: 8px; margin-top: -4px; border-radius: 50%; background: #9a5b00; }
+/* choices: line icons, no photos, fixed column counts */
+body .modal.fs .fs-choice.ft-route, body .modal.fs .fs-choice.ft-approach, body .modal.fs .fs-choice.ft-hold, body .modal.fs .fs-choice.ft-free,
+body .modal.fs .fs-choice.ck-g1000, body .modal.fs .fs-choice.ck-steam, body .modal.fs .fs-choice.ck-airliner { --img: none; padding-top: 14px; }
+body .modal.fs .fs-choice::before { display: none; }
+.modal.fs .fs-choice { transition: border-color 0.12s, box-shadow 0.12s, background 0.12s; }
+.modal.fs .fs-choice:hover { transform: none; }
+.modal.fs .fs-choice:focus-visible { outline: none; box-shadow: var(--ring); }
+.modal.fs .fs-choice.on { background: rgb(var(--accent-rgb) / 0.05); }
+.fs-ic { display: grid; place-items: center; width: 34px; height: 34px; margin-bottom: 6px; border-radius: 9px; background: var(--surface-3); color: var(--text-2); }
+.fs-choice.on .fs-ic { background: rgb(var(--accent-rgb) / 0.12); color: var(--accent); }
+.modal.fs .fs-choices.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.modal.fs .fs-choices.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.modal.fs .fs-choices.big { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.modal.fs .fs-choices.big .fs-choice { min-height: 0; }
+.fs-foot-note { margin-top: 16px; font-size: 12.5px; }
+/* aircraft */
+.modal.fs .fs-chips.eq { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.modal.fs .fs-chips.eq button { width: 100%; text-align: left; }
+@media (max-width: 1300px) { .modal.fs .fs-chips.eq { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+body .modal.fs .fs-tog.on { border-color: rgb(var(--accent-rgb) / 0.4); background: rgb(var(--accent-rgb) / 0.05); }
+.modal.fs .fs-tog input { accent-color: var(--accent); }
+/* loading / ready rows */
+.fs-prog { display: flex; align-items: center; gap: 10px; max-width: 720px; margin-top: 12px; padding: 10px 14px; border-radius: var(--radius); background: var(--surface-2); border: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.fs-prog .fs-prog-step { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--text-2); font-weight: 600; }
+.fs-wait { font-size: 12.5px; margin-top: 8px; }
+.modal.fs .ap-status.ready { background: var(--surface-2); border-color: var(--line); color: var(--text-2); }
+.modal.fs .ap-status .ok { display: grid; place-items: center; color: #13804b; }
+.modal.fs .ap-status.bad { background: #fdecee; border-color: #f4c7cd; color: #b42318; }
+.spin.light { border-color: rgb(255 255 255 / 0.35); border-top-color: #fff; width: 13px; height: 13px; }
+.modal.fs .fs-fly { gap: 8px; }
+.modal.fs .fs-loading { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-weight: 500; }
+.fs-side-empty.loading { position: relative; }
+.fs-side-load { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; color: var(--text-2); font-size: 13px; }
+.fs-side-load .fs-prog-step { color: var(--muted); font-size: 12px; }
+/* notes */
+.fs-note { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 8px 12px; border-radius: var(--r-sm); font-size: 12.5px; }
+.fs-note.warn { background: #fff4e0; color: #9a5b00; }
+.fs-note .linkbtn { margin-left: auto; }
+.fs-hint { font-size: 12px; margin: 6px 0 0; width: 100%; }
+/* fix entry */
+.fs-fixw { display: inline-flex; flex-direction: column; gap: 3px; }
+.fs-fixw.wide { flex: 1; min-width: 220px; }
+.fs-fixin { text-transform: uppercase; }
+.fs-fixin::placeholder { text-transform: none; }
+.modal.fs input.fs-fixin { height: 34px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); padding: 0 10px; font: 600 13px var(--font); }
+.modal.fs input.fs-fixin:focus { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
+.modal.fs input.fs-fixin.bad { border-color: #b42318; }
+.fs-fixerr { min-height: 0; color: #b42318; font: 600 12px var(--font); }
+.fs-fixerr:empty { display: none; }
+.fs-addrow { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; }
+/* route strip */
+.modal.fs .fs-route { align-items: center; gap: 6px; padding: 8px; border-style: solid; border-color: var(--line); background: var(--surface-2); }
+.modal.fs .fs-route:empty::before { content: none; }
+.fs-cap { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 8px; background: var(--surface-3); color: var(--muted); font: 600 12.5px var(--font); white-space: nowrap; }
+.fs-cap.proc { background: transparent; border: 1px dashed var(--line-strong); }
+.fs-route-empty { color: var(--muted); font-size: 12.5px; padding: 0 6px; }
+.modal.fs .fs-wp { height: 28px; gap: 0; padding: 0 2px 0 0; cursor: grab; background: var(--surface); border-color: rgb(var(--accent-rgb) / 0.35); }
+.modal.fs .fs-wp .grip { width: 14px; text-align: center; color: var(--muted); font-size: 14px; line-height: 1; }
+.modal.fs .fs-wp b { font: 700 13px var(--font); letter-spacing: 0.3px; padding: 0 4px 0 0; }
+.modal.fs .fs-wp button.x { width: 22px; height: 22px; border-radius: 6px; padding: 0; color: var(--muted); font-size: 11px; }
+.modal.fs .fs-wp button.x:hover { background: #fdecee; color: #b42318; }
+.modal.fs .fs-wp.dragging { opacity: 0.4; }
+.modal.fs .fs-wp.drop { box-shadow: -3px 0 0 var(--accent); }
+/* SID / STAR */
+.fs-term { gap: 10px; }
+.fs-term-seq { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: var(--r-sm); background: var(--surface-2); font-size: 12.5px; }
+.fs-term-seq small { font: 700 10.5px var(--font); letter-spacing: 0.5px; text-transform: uppercase; color: var(--muted); }
+.fs-term-seq span { font-weight: 600; color: var(--text-2); word-break: break-word; line-height: 1.5; }
+.modal.fs .cb-f select { max-width: 420px; }
+/* weather */
+.modal.fs .wx-presets button.on { background: rgb(var(--accent-rgb) / 0.05); }
+.modal.fs .wx-presets button.custom { cursor: default; }
+.modal.fs .wx-presets button.custom span { font-variant-numeric: tabular-nums; }
+.modal.fs .fs-wx { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 16px; gap: 14px 20px; }
+@media (max-width: 1300px) { .modal.fs .fs-wx { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.modal.fs .wx-f b { font: 700 13px var(--font); font-variant-numeric: tabular-nums; }
+/* training */
+.fs-btnrow { display: flex; flex-wrap: wrap; gap: 8px; }
+.fs-btnrow .btn { gap: 6px; }
+.modal.fs .cb-card > .seg, .modal.fs .cb-card > .btn { align-self: flex-start; }
+/* briefing */
+.fs-prof-t { margin-top: 14px; }
+.modal.fs .fs-errs { display: flex; flex-direction: column; gap: 2px; padding: 6px; margin: 12px 0; background: #fff4e0; border-color: #f1d39b; }
+.fs-err { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 0; border-radius: 6px; background: none; color: #9a5b00; font: 600 13px var(--font); text-align: left; cursor: pointer; }
+.fs-err:hover { background: rgb(154 91 0 / 0.08); }
+.fs-err span { flex: 1; }
+.fs-err small { font-weight: 600; color: #7a4800; white-space: nowrap; }
+.fs-chips-w { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 2px; }
+.fs-wchip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: #fff4e0; color: #9a5b00; font: 600 12px var(--font); }
+.modal.fs .fs-brief { margin-top: 14px; grid-template-columns: minmax(0, 1fr) 300px; }
+.cb-seq li.proc { color: var(--muted); }
+.modal.fs .fs-atis { display: block; margin-top: 12px; }
+.modal.fs .fs-atis .section-t { margin: 0 0 4px; }
+.modal.fs .fs-atis p { margin: 0; color: var(--text-2); }
+.fs-plate-w { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.modal.fs .fs-plate { position: relative; width: 100%; }
+.fs-plate-cap { position: absolute; left: 0; right: 0; top: 0; padding: 6px 10px; background: rgba(255, 255, 255, 0.94); border-bottom: 1px solid var(--line); font: 700 11.5px var(--font); color: var(--text); text-align: left; }
+@media (max-width: 1300px) { .modal.fs .fs-brief { grid-template-columns: 1fr; } .fs-plate-w { max-width: 340px; } }
+/* summary */
+.modal.fs .fs-sum { margin-top: 10px; }
+.modal.fs .fs-sum .wide { grid-column: 1 / -1; }
+.fs-metar { font-variant-numeric: tabular-nums; letter-spacing: 0.3px; }
+.fs-pills { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.fs-pills i { font: 700 10.5px var(--font); font-style: normal; padding: 2px 7px; border-radius: 999px; background: var(--surface-3); color: var(--muted); text-decoration: line-through; text-decoration-color: rgb(102 115 127 / 0.5); }
+.fs-pills i.on { background: rgb(var(--accent-rgb) / 0.1); color: var(--accent); text-decoration: none; }
+/* footer */
+.modal.fs button.fs-errline { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; padding: 4px 6px; border-radius: 6px; color: #9a5b00; font: 600 12.5px var(--font); cursor: pointer; max-width: 46%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.modal.fs button.fs-errline:hover { background: #fff4e0; }
+/* airport results: wider than a narrow field, two lines per row */
+.modal.fs .ap-res { right: auto; min-width: max(100%, 420px); }
+.modal.fs .ap-res button { grid-template-columns: 1fr auto; grid-template-rows: auto auto; row-gap: 1px; }
+.modal.fs .ap-res button .ap-r1 { display: flex; flex-direction: row; align-items: baseline; gap: 10px; min-width: 0; color: var(--text); }
+.modal.fs .ap-res button .ap-r1 b { flex: none; min-width: 42px; font: 700 14px var(--font); color: var(--text); }
+.modal.fs .ap-res button small { grid-column: 1; padding-left: 52px; }
+.modal.fs .ap-res button em { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+.modal.fs .ap-res-t { display: flex; justify-content: space-between; }
+.modal.fs .ap-res-t span { font-weight: 500; letter-spacing: 0; text-transform: none; }

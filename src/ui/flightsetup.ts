@@ -1036,7 +1036,7 @@ export class FlightSetup extends Modal {
         ],
         (v) => {
           st.world = v;
-          if (v === "training") void this.ensureRegion();
+          if (v === "training") { void this.ensureRegion(); if (!currentRegion()) { sanitizeSetup(st); this.applyAtisDefaults(); } }
         },
         "two",
       ),
