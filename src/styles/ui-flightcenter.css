@@ -252,17 +252,18 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   margin: 4px 0 6px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--line);
 }
 .fc-filters select {
+  flex: none;
   width: auto;
   min-width: 0;
   max-width: 220px;
   height: 32px;
-  padding: 0 28px 0 10px;
+  padding: 0 24px 0 10px;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   background-color: var(--surface);
@@ -293,6 +294,7 @@
 }
 .fc-count {
   margin-left: auto;
+  white-space: nowrap;
   color: var(--muted);
   font-size: 13px;
   font-variant-numeric: tabular-nums;

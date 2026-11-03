@@ -113,7 +113,7 @@ const searchLabel = (cat: (typeof CATEGORIES)[number], tag: string) => {
       : tag.startsWith(`${short} · `)
         ? tag.slice(short.length + 3)
         : tag;
-  return rest ? `${cat.title} · ${rest}` : cat.title;
+  return rest ? `${cat.short} · ${rest}` : cat.title;
 };
 
 export class FlightCenter extends Modal {
@@ -432,6 +432,7 @@ export class FlightCenter extends Modal {
         "select",
         {
           "aria-label": label,
+          title: label,
           class: value ? "set" : "",
           onchange: (e: Event) => {
             set((e.target as HTMLSelectElement).value);
@@ -439,7 +440,7 @@ export class FlightCenter extends Modal {
           },
         },
         ...opts.map(([v, t]) =>
-          h("option", { value: v, selected: v === value }, `${label}: ${t}`),
+          h("option", { value: v, selected: v === value }, t),
         ),
       );
       return s;
@@ -454,7 +455,7 @@ export class FlightCenter extends Modal {
         "Level",
         String(this.fDiff || ""),
         [
-          ["", "Any"],
+          ["", "Any level"],
           ["1", DIFF[1]],
           ["2", DIFF[2]],
           ["3", DIFF[3]],
@@ -465,7 +466,7 @@ export class FlightCenter extends Modal {
         ? select(
             "Airport",
             this.fApt,
-            [["", "Any"], ...apts.map((a) => [a, a] as [string, string])],
+            [["", "Any airport"], ...apts.map((a) => [a, a] as [string, string])],
             (v) => (this.fApt = v),
           )
         : null,
@@ -473,9 +474,9 @@ export class FlightCenter extends Modal {
         "Autopilot",
         this.fAp,
         [
-          ["", "Any"],
-          ["ap", "Allowed"],
-          ["hand", "Hand-flown"],
+          ["", "Autopilot or hand"],
+          ["ap", "Autopilot allowed"],
+          ["hand", "Hand-flown only"],
         ],
         (v) => (this.fAp = v as "" | "ap" | "hand"),
       ),

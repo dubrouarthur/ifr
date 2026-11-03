@@ -12,7 +12,7 @@ export type CatId = 'approaches' | 'procedures' | 'xc' | 'circuits' | 'basics' |
 
 export const CATEGORIES: { id: CatId; title: string; short: string; icon: IconName; desc: string; subs: string[] }[] = [
   { id: 'approaches', title: 'Approaches', short: 'Approach', icon: I.approach, desc: 'Every instrument approach type, coupled or hand-flown.', subs: ['ILS & precision', 'LOC / LDA / BC', 'VOR & NDB', 'RNAV (GPS)', 'Circling'] },
-  { id: 'procedures', title: 'Procedures', short: 'Procedure', icon: I.hold, desc: 'Holdings, entries, DME arcs, procedure turns, interceptions and tracking.', subs: ['Holdings', 'Interceptions', 'Arcs & PTs', 'Tracking & navigation aids'] },
+  { id: 'procedures', title: 'Procedures', short: 'Procedure', icon: I.hold, desc: 'Holdings, entries, DME arcs, procedure turns, interceptions and tracking.', subs: ['Holdings', 'Interceptions', 'Arcs & PTs', 'Tracking & nav aids'] },
   { id: 'xc', title: 'IFR flights', short: 'XC', icon: I.route, desc: 'Gate-to-gate IFR cross-country flights between airports.', subs: ['Cross-country'] },
   { id: 'circuits', title: 'IFR circuits', short: 'Circuit', icon: I.tools, desc: 'Instructor-built circuits: start, legs, holds, approaches, weather and scheduled failures.', subs: ['School presets', 'My circuits'] },
   { id: 'basics', title: 'Instrument basics', short: 'Basics', icon: I.attitude, desc: 'Attitude instrument flying and partial panel.', subs: ['Attitude instrument flying', 'Partial panel'] },
@@ -58,7 +58,7 @@ function exTag(e: Exercise, cat: CatId, sub: string): string {
   if (cat === 'approaches') return id === 'app-circle' ? 'CIRCLING' : id === 'app-loc' ? 'LOC' : plateTag(e.plate) || 'APPROACH';
   if (sub === 'Holdings') return 'HOLD';
   if (id === 'nav-arc') return 'ARC';
-  if (sub === 'Interceptions') return `${plateTag(e.plate) || 'RADIAL'} INTERCEPT`;
+  if (sub === 'Interceptions') return id === 'int-lda' ? 'LDA INTCP' : id.startsWith('int-loc') ? 'LOC INTCP' : 'INTCP';
   if (id.startsWith('nav-vor')) return 'VOR';
   if (id === 'nav-ndb') return 'NDB';
   if (id === 'nav-gps') return 'GPS';
@@ -80,7 +80,7 @@ function approachSub(id: string | undefined): string {
 
 function exItem(e: Exercise): Item {
   let cat: CatId = 'procedures';
-  let sub = 'Tracking & navigation aids';
+  let sub = 'Tracking & nav aids';
   let diff: 1 | 2 | 3 = 2;
   switch (e.stage) {
     case 'S1':
@@ -95,7 +95,7 @@ function exItem(e: Exercise): Item {
       break;
     case 'S3':
       cat = 'procedures';
-      sub = e.id.startsWith('int-') ? 'Interceptions' : e.id === 'nav-arc' ? 'Arcs & PTs' : 'Tracking & navigation aids';
+      sub = e.id.startsWith('int-') ? 'Interceptions' : e.id === 'nav-arc' ? 'Arcs & PTs' : 'Tracking & nav aids';
       diff = e.id === 'int-loc90' || e.id === 'nav-arc' || e.id === 'nav-ndb' ? 3 : 2;
       break;
     case 'S4':
