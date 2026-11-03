@@ -96,13 +96,14 @@ export function drawOtw(ctx: CanvasRenderingContext2D, sim: Sim, W: number, H: n
       ctx.strokeStyle = 'rgba(255,255,255,0.8)';
       ctx.lineWidth = 1;
       ctx.stroke();
-      ctx.setLineDash([10, 12]);
       ctx.strokeStyle = 'rgba(255,255,255,0.85)';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      rw.center.forEach((p, i) => (i ? ctx.lineTo(p.az * ppd, -p.el * ppd) : ctx.moveTo(p.az * ppd, -p.el * ppd)));
+      for (const [a, b] of rw.stripes) {
+        ctx.moveTo(a.az * ppd, -a.el * ppd);
+        ctx.lineTo(b.az * ppd, -b.el * ppd);
+      }
       ctx.stroke();
-      ctx.setLineDash([]);
       // lights (brighter in low visibility)
       for (const l of rw.lights) {
         const r = Math.max(1.2, Math.min(5, 3 / Math.max(0.15, l.dist)));

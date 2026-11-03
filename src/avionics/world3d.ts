@@ -29,6 +29,8 @@ export interface RunwayQuad {
   id: string;
   corners: { az: number; el: number }[];
   center: { az: number; el: number }[];
+  /** centreline stripes fixed on the ground (each a projected segment) */
+  stripes: [{ az: number; el: number }, { az: number; el: number }][];
   lights: { az: number; el: number; dist: number; kind: 'edge' | 'app' | 'thr' }[];
   dist: number;
 }
@@ -42,14 +44,37 @@ export function runwaysInView(cam: Cam, rangeNm = 18): RunwayQuad[] {
       const r = a.runways[i];
       const halfW = r.widthFt / 2 / FT_PER_NM;
       const len = distanceNm(r.threshold, r.end);
-      // sample both edges so that a runway partially behind the camera still draws
+      // Everything is clipped at a fixed near plane ahead of the eye (interpolated, never by dropping samples):
+      // the near edge then stays put as the aircraft rolls and the surface flows towards it, as in reality.
+      const NEAR = 0.012; // NM ahead of the eye (~70 ft)
+      const h = cam.hdgTrue * DEG;
+      const fwdOf = (p: LatLon) => {
+        const l = toLocal(cam, p);
+        return l.x * Math.sin(h) + l.y * Math.cos(h);
+      };
+      const at = (t: number, side: number) => destination(destination(r.threshold, r.heading, t), r.heading + 90 * side, halfW);
+      /** sub-range [t0, t1] of runway distance whose points (on both edges) lie beyond the near plane */
+      const visibleRange = (): [number, number] | null => {
+        let t0 = len, t1 = 0;
+        for (const side of [-1, 1]) {
+          const f0 = fwdOf(at(0, side)), f1 = fwdOf(at(len, side));
+          if (f0 < NEAR && f1 < NEAR) return null;
+          if (f0 >= NEAR && f1 >= NEAR) { t0 = Math.min(t0, 0); t1 = Math.max(t1, len); continue; }
+          const tc = ((NEAR - f0) / (f1 - f0)) * len; // crossing (fwd is linear along a straight runway)
+          if (f1 > f0) { t0 = Math.min(t0, tc); t1 = Math.max(t1, len); } else { t0 = Math.min(t0, 0); t1 = Math.max(t1, tc); }
+        }
+        return t1 > t0 ? [t0, t1] : null;
+      };
+      const vr = visibleRange();
+      if (!vr) continue;
       const left: { az: number; el: number }[] = [];
       const right: { az: number; el: number }[] = [];
-      for (let k = 0; k <= 40; k++) {
-        const base = destination(r.threshold, r.heading, (len * k) / 40);
-        const pl = onGround(cam, destination(base, r.heading - 90, halfW));
-        const pr = onGround(cam, destination(base, r.heading + 90, halfW));
-        if (pl && pr && pl.dist > 0.02 && pr.dist > 0.02) {
+      const N = 40;
+      for (let k = 0; k <= N; k++) {
+        const t = vr[0] + ((vr[1] - vr[0]) * k) / N;
+        const pl = onGround(cam, at(t, -1));
+        const pr = onGround(cam, at(t, 1));
+        if (pl && pr) {
           left.push(pl);
           right.push(pr);
         }
@@ -58,8 +83,21 @@ export function runwaysInView(cam: Cam, rangeNm = 18): RunwayQuad[] {
       const pts = [...left, ...right.reverse()];
       const center: { az: number; el: number }[] = [];
       for (let k = 0; k <= 20; k++) {
-        const p = onGround(cam, destination(r.threshold, r.heading, (len * k) / 20));
+        const p = onGround(cam, destination(r.threshold, r.heading, vr[0] + ((vr[1] - vr[0]) * k) / 20));
         if (p) center.push(p);
+      }
+      // centreline stripes fixed on the ground (FAA: 120 ft stripe, 80 ft gap), clipped at the near plane
+      const stripes: [{ az: number; el: number }, { az: number; el: number }][] = [];
+      const ft = 1 / FT_PER_NM;
+      for (let t = 400 * ft; t < len - 400 * ft; t += 200 * ft) {
+        let a0 = t, a1 = t + 120 * ft;
+        const c0 = destination(r.threshold, r.heading, a0), c1 = destination(r.threshold, r.heading, a1);
+        const f0 = fwdOf(c0), f1 = fwdOf(c1);
+        if (f0 < NEAR && f1 < NEAR) continue;
+        if (f0 < NEAR) a0 += ((NEAR - f0) / (f1 - f0)) * (a1 - a0);
+        else if (f1 < NEAR) a1 = a0 + ((NEAR - f0) / (f1 - f0)) * (a1 - a0);
+        const p0 = onGround(cam, destination(r.threshold, r.heading, a0)), p1 = onGround(cam, destination(r.threshold, r.heading, a1));
+        if (p0 && p1 && Math.min(p0.dist, p1.dist) < 3) stripes.push([p0, p1]);
       }
       const lights: RunwayQuad['lights'] = [];
       for (const [thr, hdg, other] of [
@@ -84,7 +122,7 @@ export function runwaysInView(cam: Cam, rangeNm = 18): RunwayQuad[] {
         }
       }
       const d = Math.min(distanceNm(cam, r.threshold), distanceNm(cam, r.end));
-      out.push({ id: r.id, corners: pts, center, lights, dist: d });
+      out.push({ id: r.id, corners: pts, center, stripes, lights, dist: d });
     }
   }
   return out.sort((x, y) => y.dist - x.dist);

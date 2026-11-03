@@ -34,3 +34,22 @@ it('synthetic-vision runways are never drawn above the horizon from on or above 
   expect(above).toEqual([]);
   leaveRealWorld();
 }, 60000);
+
+it('take-off roll: the runway near edge stays put and ground-fixed stripes flow towards the aircraft', async () => {
+  const { runwaysInView } = await import('../src/avionics/world3d');
+  const { runway } = await import('../src/nav/data');
+  const { destination } = await import('../src/nav/geo');
+  const r = runway('PARD', '27');
+  const view = (d: number) => {
+    const p = destination(r.threshold, r.heading, d);
+    return runwaysInView({ lat: p.lat, lon: p.lon, altFt: r.elevFt + 7, hdgTrue: r.heading }, 5).sort((a, b) => a.dist - b.dist)[0];
+  };
+  const frames = [0.1, 0.13, 0.16, 0.19].map(view);
+  const nearEl = frames.map((q) => Math.min(...q.corners.map((c) => c.el)));
+  for (const e of nearEl) expect(Math.abs(e - nearEl[0])).toBeLessThan(0.1);
+  for (const q of frames) expect(q.stripes.length).toBeGreaterThan(3);
+  // the same ground stripe seen 10 ft later is lower on the screen (closer): compare the 3rd stripe's far end
+  const a = view(0.1), b = view(0.1 + 10 / 6076);
+  const farEnd = (q: typeof a, k: number) => Math.max(q.stripes[k][0].el, q.stripes[k][1].el);
+  expect(farEnd(b, 2)).toBeLessThan(farEnd(a, 2));
+});

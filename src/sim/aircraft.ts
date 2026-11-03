@@ -268,7 +268,7 @@ export class Aircraft {
 
     // ---- Sideslip (ball): rudder vs. adverse yaw from roll rate
     const pFactor = s.onGround ? 0 : 0.035 * thr * Math.max(0, Math.min(1, (95 - V / KT) / 45));
-    const betaTarget = (-0.12 * c.rudder + 0.03 * s.p) * Math.min(1, qf * 1.5) + pFactor;
+    const betaTarget = (-0.18 * c.rudder + 0.03 * s.p) * Math.min(1, qf * 1.5) + pFactor;
     s.beta += (betaTarget - s.beta) * Math.min(1, dt * 3);
 
     if (!s.onGround) {
@@ -431,7 +431,9 @@ export class Aircraft {
       vsFpm: s.onGround ? 0 : this.vsFilt,
       pitchDeg: s.theta / DEG,
       rollDeg: s.phi / DEG,
-      hdgTrue: norm360(s.psi / DEG),
+      // the nose points off the flight path by the sideslip: rudder yaws the nose (heading) at once,
+      // the track follows through the side force / dihedral roll
+      hdgTrue: norm360((s.psi - (s.onGround ? 0 : s.beta)) / DEG),
       trackTrue: Math.hypot(ve, vn) > 1 ? norm360(Math.atan2(ve, vn) / DEG) : norm360(s.psi / DEG),
       trackSmooth: gsMs > 1 ? norm360(Math.atan2(this.gvE, this.gvN) / DEG) : norm360(s.psi / DEG),
       turnRateDps: turnRate,

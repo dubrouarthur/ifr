@@ -208,11 +208,13 @@ function drawAttitude(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
       ctx.lineWidth = 1.5;
       ctx.stroke();
       if (rw.dist < 6) {
-        ctx.setLineDash([6, 6]);
+        // centreline stripes are fixed on the ground: they flow towards the aircraft during the take-off roll
         ctx.beginPath();
-        rw.center.forEach((p, i) => (i ? ctx.lineTo(p.az * PPD, -p.el * PPD) : ctx.moveTo(p.az * PPD, -p.el * PPD)));
+        for (const [a, b] of rw.stripes) {
+          ctx.moveTo(a.az * PPD, -a.el * PPD);
+          ctx.lineTo(b.az * PPD, -b.el * PPD);
+        }
         ctx.stroke();
-        ctx.setLineDash([]);
       }
     }
     // flight path marker
