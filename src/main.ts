@@ -1,6 +1,7 @@
 import './styles.css';
-// per-area overrides (src/styles/*.css), loaded after the base stylesheet in name order
-import.meta.glob('./styles/*.css', { eager: true });
+// per-area overrides (src/styles/*.css) — a separate module so they load AFTER the base stylesheet
+// (Vite hoists import.meta.glob imports to the top of the module that contains them)
+import './styles/load';
 import { Sim, SCENARIOS, type Scenario } from './sim/sim';
 import { InputManager, type ButtonAction } from './sim/input';
 import { drawPfd, newPfdState, PFD_W, PFD_H, softkeyAt, PFD_SOFTKEYS } from './avionics/pfd';
@@ -252,6 +253,7 @@ const icon = (d: string) => {
   return s;
 };
 const I = {
+  layout: 'M3 4h18v16H3zM3 11h18M8 11v9',
   plane: 'M2 16l20-6-20-6 4 6-4 6zM6 10h8',
   cloud: 'M7 18h10a4 4 0 0 0 0-8 6 6 0 0 0-11.5 1.5A3.5 3.5 0 0 0 7 18z',
   map: 'M9 4L3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14',
@@ -288,7 +290,7 @@ const LAYOUTS = [
 ] as const;
 const layoutMenu = h('div', { class: 'menu layout-menu', role: 'menu' });
 const layoutLbl = h('span', { class: 'lbl' }, 'Layout');
-const layoutBtn = h('button', { class: 'btn', title: 'Screen layout (Tab cycles)', 'aria-haspopup': 'menu', onclick: (e: Event) => { e.stopPropagation(); renderLayoutMenu(); layoutMenu.classList.toggle('open'); } }, layoutLbl);
+const layoutBtn = h('button', { class: 'btn', title: 'Screen layout (Tab cycles)', 'aria-haspopup': 'menu', onclick: (e: Event) => { e.stopPropagation(); renderLayoutMenu(); layoutMenu.classList.toggle('open'); } }, icon(I.layout), layoutLbl);
 function renderLayoutMenu() {
   layoutMenu.innerHTML = '';
   for (const [m, t, d] of LAYOUTS)

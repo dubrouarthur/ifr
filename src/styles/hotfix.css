@@ -28,3 +28,12 @@ body.chrome-auto .drawer { top: 56px; }
 .lay-ic { width: 44px; height: 30px; border-radius: 5px; border: 1.5px solid var(--line-strong); background: linear-gradient(#9cc2e8 0 var(--sky, 45%), #2b3036 var(--sky, 45%)); }
 .lay-big { --sky: 65%; } .lay-visual { --sky: 100%; position: relative; } .lay-none { --sky: 0%; }
 .lay-visual::after { content: ''; position: absolute; left: 3px; bottom: 3px; width: 14px; height: 10px; background: #2b3036; border-radius: 2px; }
+/* layout modes: explicit rows so a hidden MCP never shifts the panel */
+.cockpit > .otw { grid-row: 1; }
+.cockpit > .mcp { grid-row: 2; }
+.cockpit > .panel { grid-row: 3; }
+.cockpit.no-otw { grid-template-rows: 0 auto minmax(0, 1fr) !important; }
+.cockpit.no-otw > .panel { align-items: center; align-self: stretch; padding-top: 56px; padding-bottom: 12px; }
+body.chrome-auto:not(.chrome-hidden) .cockpit.no-otw > .panel { padding-top: 108px; }
+.cockpit.no-otw .bezel { height: min(calc((50vw - 210px) * 0.75 + 40px), calc(100dvh - 250px)) !important; }
+.cockpit.no-otw .otw .coach, .cockpit.no-otw .otw .atc-radio { top: 56px; }
