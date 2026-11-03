@@ -76,3 +76,18 @@ describe('flight setup wizard conversion', () => {
     expect(sim.ap.inhibited).toBe('NO AUTOPILOT');
   });
 });
+
+describe('stored plans from another session', () => {
+  it('a plan referring to procedures that are not loaded is repaired, not thrown on', async () => {
+    const { defaultSetup, setupToCircuit, sanitizeSetup } = await load();
+    const st = { ...defaultSetup(), world: 'training' as const };
+    st.arrival.approachId = 'LFPO-G06';
+    st.final.approachId = 'LFPO-G06';
+    st.rwy = { airport: 'LFPN', runway: '07L', initialAlt: 3000 };
+    st.route = ['PO06I'];
+    expect(() => setupToCircuit(st)).toThrow();
+    sanitizeSetup(st);
+    expect(() => setupToCircuit(st)).not.toThrow();
+    expect(validate(setupToCircuit(st))).toEqual([]);
+  });
+});

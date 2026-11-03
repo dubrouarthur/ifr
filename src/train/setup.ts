@@ -185,3 +185,24 @@ export function adaptSetupToRegion(st: FlightSetupState) {
     if (tr) st.route = [tr.legs[0].fix.ident];
   }
 }
+
+/** Make a stored setup safe to render against the nav data currently loaded: any approach / runway / fix that
+ *  does not resolve falls back to the defaults of the current region. */
+export function sanitizeSetup(st: FlightSetupState) {
+  const ok = (id: string | null) => {
+    if (!id) return true;
+    try { getApproach(id); return true; } catch { return false; }
+  };
+  const d = defaultSetup();
+  if (!ok(st.arrival.approachId) || !ok(st.final.approachId) || !AIRPORTS.some((a) => a.icao === st.rwy.airport)) {
+    if (APPROACHES.length && AIRPORTS.some((a) => a.icao === d.rwy.airport)) {
+      st.arrival = { ...d.arrival, outcome: st.arrival.outcome };
+      st.final = { ...d.final };
+      st.rwy = { ...d.rwy };
+    }
+    adaptSetupToRegion(st);
+  }
+  if (!findFix(st.air.fix)) st.air.fix = d.air.fix;
+  if (!findFix(st.hold.fix)) st.hold.fix = d.hold.fix;
+  st.route = st.route.filter((f) => findFix(f));
+}

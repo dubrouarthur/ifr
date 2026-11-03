@@ -6,7 +6,7 @@ import { FIXES, APPROACHES, AIRPORTS, approach as getApproach, findFix } from '.
 import { FAILURE_LABELS, fullEquipment, type Equipment, type Failures, type Scenario } from '../sim/sim';
 import type { Weather } from '../sim/environment';
 import { circuitPath, circuitStats, validate, circuitStore, type Circuit, type CircuitLeg } from '../train/circuits';
-import { defaultSetup, adaptSetupToRegion, setupToCircuit, setupToScenario, type FlightSetupState, type FlightType, type StartKind } from '../train/setup';
+import { defaultSetup, adaptSetupToRegion, sanitizeSetup, setupToCircuit, setupToScenario, type FlightSetupState, type FlightType, type StartKind } from '../train/setup';
 export type { FlightSetupState, FlightType } from '../train/setup';
 import { racetrack } from '../nav/holding';
 import { toLocal, type LatLon } from '../nav/geo';
@@ -70,9 +70,11 @@ export class FlightSetup extends Modal {
 
   start(type?: FlightType) {
     if (type) this.applyType(type);
+    // a plan saved in another session may refer to procedures of a region that is not loaded now
+    if (!this.needsRegion()) sanitizeSetup(this.st);
     this.step = 0;
+    this.open(); // open first: a rendering problem must never leave the user on a paused sim with nothing shown
     this.render();
-    this.open();
   }
 
   private save() {
@@ -109,10 +111,18 @@ export class FlightSetup extends Modal {
   }
 
   render() {
-    this.renderNav();
-    this.renderMain();
-    this.renderSide();
-    this.renderFoot();
+    try {
+      this.renderNav();
+      this.renderMain();
+      this.renderSide();
+      this.renderFoot();
+    } catch (e) {
+      console.error('flight setup render', e);
+      clear(this.main);
+      this.main.append(h('div', { class: 'fs-errs' },
+        h('div', {}, 'This plan refers to data that is not available any more.'),
+        h('button', { class: 'btn primary', style: 'margin-top:10px', onclick: () => { this.st = { ...defaultSetup(), world: this.st.world, dep: this.st.dep, arr: this.st.arr }; this.loadedKey = ''; this.step = 0; this.save(); this.render(); } }, 'Start a fresh plan')));
+    }
   }
 
   private renderNav() {
@@ -320,6 +330,11 @@ export class FlightSetup extends Modal {
   private renderMain() {
     clear(this.main);
     const st = this.st;
+    if (this.step > 0 && this.needsRegion() && [3, 4, 7].includes(this.step)) {
+      this.main.append(this.h2(STEPS[this.step], ''), h('div', { class: 'ap-status' }, h('span', { class: 'spin' }), h('span', {}, this.loadErr ? this.loadErr : `Loading ${st.dep} → ${st.arr}: ${this.progress || 'navigation data, procedures and terrain…'}`)));
+      if (!this.loading && !this.loadErr && st.dep && st.arr) void this.ensureRegion();
+      return;
+    }
     switch (this.step) {
       case 0:
         this.renderAirports();
@@ -627,17 +642,17 @@ export class FlightSetup extends Modal {
   private renderFoot() {
     clear(this.foot);
     const st = this.st;
-    const c = setupToCircuit(st);
     const pendingLoad = this.needsRegion();
+    const c = pendingLoad ? null : setupToCircuit(st);
     // procedures of a region not loaded yet can't be validated — Fly loads first, then checks
-    const errs = st.type === 'free' || pendingLoad ? [] : validate(c);
+    const errs = st.type === 'free' || !c ? [] : validate(c);
     const noAirports = st.world === 'real' && (!st.dep || !st.arr);
     const canFly = errs.length === 0 && !noAirports && !this.flyPending;
     this.foot.append(
       this.step > 0 ? h('button', { class: 'btn', onclick: () => { this.step--; this.render(); } }, '← Back') : h('span', {}),
       this.flyPending || this.loading ? h('span', { class: 'fs-errline fs-loading' }, this.progress || 'Loading…') : h('span', { class: 'fs-errline' }, noAirports ? 'Choose the departure and destination airports' : errs[0] ? `⚠ ${errs[0]}` : ''),
       h('span', { style: 'flex:1' }),
-      st.type !== 'free' && !pendingLoad ? h('button', { class: 'btn ghost', disabled: !canFly, onclick: () => { circuitStore.save({ ...c, name: c.name }); this.toast?.(`Saved “${c.name}” to IFR circuits`); }, title: 'Save to the Flight Center → IFR circuits' }, 'Save as circuit') : h('span', {}),
+      st.type !== 'free' && c ? h('button', { class: 'btn ghost', disabled: !canFly, onclick: () => { circuitStore.save({ ...c, name: c.name }); this.toast?.(`Saved “${c.name}” to IFR circuits`); }, title: 'Save to the Flight Center → IFR circuits' }, 'Save as circuit') : h('span', {}),
       this.step < STEPS.length - 1 ? h('button', { class: 'btn', disabled: this.step === 0 && noAirports, onclick: () => { this.step++; this.render(); if (this.step === 1 && this.needsRegion() && !noAirports) void this.ensureRegion(); } }, 'Next →') : h('span', {}),
       h('button', { class: 'btn primary', disabled: !canFly, onclick: () => void this.fly() }, this.flyPending ? 'Loading…' : pendingLoad && !noAirports ? 'Load & fly ✈' : 'Fly ✈'),
     );
