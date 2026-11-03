@@ -20,6 +20,8 @@ export class CircuitBuilder extends Modal {
   private ed!: HTMLElement;
   private pv!: HTMLElement;
   private errs!: HTMLElement;
+  private tab = 1;
+  private grid!: HTMLElement;
 
   constructor(private onFly: (c: Circuit) => void, private toast: (m: string, k?: 'info' | 'good' | 'warn' | 'bad') => void) {
     super('IFR circuit builder');
@@ -28,7 +30,11 @@ export class CircuitBuilder extends Modal {
     this.list = h('nav', { class: 'cb-list' });
     this.ed = h('section', { class: 'cb-ed' });
     this.pv = h('aside', { class: 'cb-pv' });
-    this.body.append(h('div', { class: 'cb-grid' }, this.list, this.ed, this.pv));
+    this.grid = h('div', { class: 'cb-grid' }, this.list, this.ed, this.pv);
+    this.body.append(this.grid);
+    // library is an overlay opened from the header, not a permanent column
+    const hdr = this.box.querySelector('header')!;
+    hdr.insertBefore(h('button', { class: 'btn ghost', onclick: () => this.grid.classList.toggle('lib-open') }, '☰ Library'), hdr.querySelector('.x'));
     this.errs = h('div', { class: 'cb-errs' });
   }
 
@@ -57,9 +63,9 @@ export class CircuitBuilder extends Modal {
   // ---------------------------------------------------------------- library
   private renderList() {
     clear(this.list);
-    this.list.append(h('button', { class: 'btn primary', style: 'width:100%;justify-content:center', onclick: () => { this.c = newCircuit(); this.dirty = true; this.render(); } }, '+ New circuit'));
+    this.list.append(h('button', { class: 'btn primary', style: 'width:100%;justify-content:center', onclick: () => { this.c = newCircuit(); this.dirty = true; this.grid.classList.remove('lib-open'); this.render(); } }, '+ New circuit'));
     const item = (c: Circuit, preset: boolean) =>
-      h('button', { class: `cb-item${c.id === this.c.id ? ' on' : ''}`, onclick: () => { this.c = clone(c); this.dirty = false; this.render(); } },
+      h('button', { class: `cb-item${c.id === this.c.id ? ' on' : ''}`, onclick: () => { this.c = clone(c); this.dirty = false; this.grid.classList.remove('lib-open'); this.render(); } },
         h('b', {}, c.name), h('small', {}, `${c.legs.length} legs · ~${circuitStats(c).minutes} min${preset ? ' · preset' : ''}`));
     const mine = circuitStore.list();
     this.list.append(h('div', { class: 'fc-sec' }, `My circuits (${mine.length})`));
@@ -107,6 +113,28 @@ export class CircuitBuilder extends Modal {
   }
 
   private renderEditor() {
+    this.buildEditor();
+    this.tabify();
+  }
+
+  /** Group the editor into tabs (one section visible at a time). */
+  private tabify() {
+    const kids = [...this.ed.children] as HTMLElement[];
+    const head: HTMLElement[] = [];
+    const panels: { title: string; els: HTMLElement[] }[] = [];
+    for (const k of kids) {
+      if (k.classList.contains('cb-sec')) panels.push({ title: (k.textContent ?? '').replace(/^\d+ · /, ''), els: [] });
+      else if (panels.length) panels[panels.length - 1].els.push(k);
+      else head.push(k);
+    }
+    if (!panels.length) return;
+    this.tab = Math.min(this.tab, panels.length - 1);
+    clear(this.ed);
+    const bar = h('div', { class: 'cb-tabs', role: 'tablist' }, ...panels.map((p, i) => h('button', { class: i === this.tab ? 'on' : '', role: 'tab', onclick: () => { this.tab = i; this.renderEditor(); } }, p.title)));
+    this.ed.append(...head, bar, h('div', { class: 'cb-panel' }, ...panels[this.tab].els));
+  }
+
+  private buildEditor() {
     clear(this.ed);
     const c = this.c;
     const name = h('input', { type: 'text', value: c.name, class: 'cb-name', placeholder: 'Circuit name' }) as HTMLInputElement;

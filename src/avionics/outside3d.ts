@@ -7,6 +7,7 @@ import { toLocal, destination, bearingDeg, distanceNm, FT_PER_NM, DEG, type LatL
 import type { Runway } from '../nav/types';
 import { buildAirports } from './airport3d';
 import { CloudLayers } from './clouds3d';
+import { terrainMaterial } from './terrain3d';
 import { cloudLayer } from './otw';
 
 const NM = 1852;
@@ -61,22 +62,6 @@ function noiseCanvas(size: number, base: [number, number, number], amp: number, 
     }
   g.putImageData(img, 0, 0);
   return c;
-}
-
-function fieldsTexture(): THREE.Texture {
-  const c = noiseCanvas(512, [200, 200, 200], 0.55, 16, 3);
-  const g = c.getContext('2d')!;
-  // field patchwork
-  for (let i = 0; i < 90; i++) {
-    g.fillStyle = `rgba(${150 + (i * 37) % 80},${150 + (i * 53) % 70},${120 + (i * 29) % 60},0.18)`;
-    const x = (i * 137) % 512, y = (i * 271) % 512;
-    g.fillRect(x, y, 30 + (i * 17) % 90, 20 + (i * 23) % 70);
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
-  return t;
 }
 
 function cloudTexture(): THREE.Texture {
@@ -151,6 +136,7 @@ export class Outside3D {
   private cloudBase!: THREE.Mesh;
   private cloudTop!: THREE.Mesh;
   private clouds!: CloudLayers;
+  private terrainMat!: THREE.ShaderMaterial;
   private lightsMat!: THREE.ShaderMaterial;
   private fog = new THREE.Fog(0xaab4bf, 1000, 30000);
   private stars!: THREE.Points;
@@ -222,6 +208,7 @@ export class Outside3D {
     const ny = Math.ceil((y1 - y0) / step) + 1;
     const pos = new Float32Array(nx * ny * 3);
     const col = new Float32Array(nx * ny * 3);
+    const bio = new Float32Array(nx * ny * 4);
     const uv = new Float32Array(nx * ny * 2);
     const tmp = new THREE.Color();
     for (let j = 0; j < ny; j++)
@@ -242,6 +229,15 @@ export class Outside3D {
         else if (e > 1500) tmp.setRGB(0.2, 0.3 + n * 0.03, 0.17);
         else if (n > 0.35) tmp.setRGB(0.17, 0.27, 0.13);
         else tmp.setRGB(0.32 + n * 0.05, 0.44 + n * 0.05, 0.22);
+        const ss = (a: number, b: number, x: number) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+        const sand = 1 - ss(0.3, 0.5, m);
+        const rock = ss(1800, 2500, e) * (1 - sand);
+        const forest = Math.max(ss(-0.05, 0.3, n), ss(1150, 1600, e) * 0.85) * (1 - sand) * (1 - rock);
+        const fields = Math.max(0, 1 - sand - rock - forest);
+        bio[k * 4] = sand;
+        bio[k * 4 + 1] = fields;
+        bio[k * 4 + 2] = forest;
+        bio[k * 4 + 3] = rock;
         col[k * 3] = tmp.r;
         col[k * 3 + 1] = tmp.g;
         col[k * 3 + 2] = tmp.b;
@@ -257,11 +253,12 @@ export class Outside3D {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.setAttribute('biome', new THREE.BufferAttribute(bio, 4));
     geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     geo.setIndex(idx);
     geo.computeVertexNormals();
-    const mat = new THREE.MeshLambertMaterial({ vertexColors: true, map: fieldsTexture() });
-    const mesh = new THREE.Mesh(geo, mat);
+    this.terrainMat = terrainMaterial();
+    const mesh = new THREE.Mesh(geo, this.terrainMat);
     this.scene.add(mesh);
   }
 
@@ -513,6 +510,13 @@ export class Outside3D {
       this.clouds.update(eye, overcast ? { baseFt: base, topFt: top } : null, this.fog.color, this.fog.far, lit, shade, inside);
       (this.cloudBase.material as THREE.MeshBasicMaterial).color.copy(shade).multiplyScalar(1.12);
       (this.cloudTop.material as THREE.MeshBasicMaterial).color.copy(lit).multiplyScalar(0.94);
+    }
+    {
+      const tu = this.terrainMat.uniforms;
+      tu.uSunDir.value.copy(this.sun.position).normalize();
+      tu.uSun.value.copy(this.sun.color).multiplyScalar(this.sun.intensity);
+      tu.uSky.value.copy(this.hemi.color).multiplyScalar(this.hemi.intensity);
+      tu.uGround.value.copy(this.hemi.groundColor).multiplyScalar(this.hemi.intensity);
     }
     this.skyMat.uniforms.uOvercast.value = overcast && !above ? 1 : 0;
     this.skyMat.uniforms.uGrey.value.copy(inside ? this.fog.color : grey);

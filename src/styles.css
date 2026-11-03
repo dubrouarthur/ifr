@@ -1001,3 +1001,15 @@ input[type='range'], input[type='checkbox'], input[type='radio'] { accent-color:
 .brand-t { font-size: 16px; letter-spacing: -0.3px; color: var(--text); background: none; -webkit-text-fill-color: currentColor; }
 .brand-t b { font-weight: 800; }
 .brand-t span { font-weight: 500; color: var(--text-2); }
+
+/* circuit builder: simplified — library overlay + tabbed editor */
+.modal.cb .cb-grid { grid-template-columns: minmax(0, 1fr) 420px; position: relative; }
+.modal.cb .cb-list { position: absolute; inset: 0 auto 0 0; width: 300px; z-index: 5; transform: translateX(-104%); transition: transform .2s ease; box-shadow: var(--shadow-lg); background: var(--surface); border-right: 1px solid var(--line); overflow-y: auto; }
+.modal.cb .cb-grid.lib-open .cb-list { transform: none; }
+.cb-tabs { display: flex; gap: 2px; padding: 3px; margin: 14px 0 12px; background: var(--surface-3); border: 1px solid var(--line); border-radius: 10px; }
+.cb-tabs button { flex: 1; height: 32px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font: 600 12.5px var(--font); cursor: pointer; white-space: nowrap; }
+.cb-tabs button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm), 0 0 0 1px var(--line); }
+.cb-panel { animation: tin .15s ease; }
+.cb-name { font-size: 18px !important; font-weight: 700; border: 0 !important; padding: 4px 0 !important; box-shadow: none !important; background: transparent !important; }
+.cb-ed textarea { width: 100%; resize: vertical; }
+@media (max-width: 1200px) { .modal.cb .cb-grid { grid-template-columns: 1fr; } }
