@@ -44,6 +44,7 @@ export class Intro {
       role: "dialog",
       "aria-modal": "true",
       "aria-labelledby": "intro-title",
+      tabindex: -1,
     });
   }
 
@@ -61,13 +62,8 @@ export class Intro {
     img?.addEventListener("error", ready, { once: true });
     requestAnimationFrame(() => this.el.classList.add("open"));
     window.addEventListener("keydown", this.onKey, true);
-    setTimeout(
-      () =>
-        (this.el.querySelector(".intro-go") as HTMLElement | null)?.focus({
-          preventScroll: true,
-        }),
-      60,
-    );
+    // focus the page itself (no ring on load); Tab then reaches "Start a flight" first
+    setTimeout(() => this.el.focus({ preventScroll: true }), 60);
   }
 
   hide() {
@@ -88,7 +84,7 @@ export class Intro {
     fn();
   }
 
-  /** while the intro is up it owns the keyboard: nothing reaches the cockpit (Tab still moves the focus) */
+  /** while the intro is up it owns the keyboard: nothing reaches the cockpit (Tab still moves the focus: its default is kept) */
   private key(e: KeyboardEvent) {
     const t = e.target as HTMLElement | null;
     const onControl =
@@ -103,7 +99,7 @@ export class Intro {
       e.preventDefault();
       this.go(this.hooks.flightCenter);
     }
-    if (e.key !== "Tab") e.stopPropagation();
+    e.stopPropagation();
   }
 
   private render() {

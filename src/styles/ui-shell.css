@@ -574,10 +574,10 @@ body .tb-actions > .seg.tb-cockpit {
   --bz-max: min(62vh, calc(100dvh - 478px));
 }
 .cockpit.big-otw {
-  --bz-max: max(260px, 40vh);
+  --bz-max: max(340px, 40vh);
 }
 .cockpit.big-otw.with-mcp {
-  --bz-max: max(240px, 36vh);
+  --bz-max: max(300px, 36vh);
 }
 @media (max-height: 800px) {
   .cockpit:not(.big-otw) {
@@ -903,4 +903,468 @@ body.chrome-auto .cockpit.no-otw > .otw {
   .pedestal .flap-sel {
     grid-template-columns: repeat(4, 40px);
   }
+}
+
+/* ------------------------------------------------------------------ top bar: never clipped, logo pins it */
+.topbar .tb-actions,
+.topbar .tb-actions > * {
+  flex: none;
+}
+.topbar > .spacer {
+  min-width: 0;
+}
+.topbar .scn-wrap {
+  flex: 0 1 520px;
+  min-width: 120px;
+}
+body .topbar .brand {
+  appearance: none;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 0 -6px;
+  padding: 4px 8px 4px 6px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+body .topbar .brand:hover {
+  background: var(--surface-3);
+}
+body .topbar .brand:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+@media (max-width: 1440px) {
+  body .topbar .brand-t {
+    display: none;
+  }
+}
+/* the handle: a slim tab at the top centre while the bar is hidden; it grows under the pointer */
+.tb-handle {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  z-index: 71;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 7px;
+  padding: 0;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  background: rgba(14, 19, 25, 0.82);
+  color: #cfd8e1;
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    height 0.15s,
+    background 0.15s;
+}
+.tb-handle svg {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.tb-handle:hover,
+.tb-handle:focus-visible {
+  height: 20px;
+  background: rgba(14, 19, 25, 0.95);
+}
+.tb-handle:hover svg,
+.tb-handle:focus-visible svg {
+  opacity: 1;
+}
+body.chrome-auto.chrome-hidden:not(.intro-open) .tb-handle {
+  display: flex;
+}
+
+/* ------------------------------------------------------------------ lesson panel v2: header row, progress, fold */
+.cockpit .coach h4.coach-k {
+  gap: 8px;
+  justify-content: flex-start;
+}
+.cockpit .coach .coach-step {
+  flex: none;
+  color: #8fd3ff;
+}
+.cockpit .coach .coach-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #8b97a4;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+}
+.cockpit .coach .coach-step + .coach-title::before {
+  content: "·";
+  margin-right: 8px;
+  color: #5d6b78;
+}
+.cockpit .coach .coach-time {
+  flex: none;
+}
+.cockpit .coach h4 .coach-fold {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: -3px -6px -3px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: #9fb0c0;
+  cursor: pointer;
+}
+.cockpit .coach h4 .coach-fold:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.cockpit .coach h4 .coach-fold:focus-visible {
+  outline: 2px solid #8fd3ff;
+  outline-offset: 0;
+}
+.cockpit .coach .coach-prog {
+  height: 3px;
+  margin: 2px 0 9px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+.cockpit .coach .coach-prog i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: #8fd3ff;
+  transition: width 0.3s;
+}
+/* folded: header, progress and the current instruction on one line; warnings stay visible */
+.cockpit .coach.lesson.collapsed {
+  padding-bottom: 10px;
+}
+.cockpit .coach .coach-fill {
+  flex: 1 1 auto;
+}
+.cockpit .coach.lesson.collapsed .next {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.38;
+}
+.cockpit .coach.lesson.collapsed .viol {
+  margin-top: 6px;
+}
+/* free-flight coach folded: just its header */
+.cockpit .coach.min:not(.lesson) {
+  padding-bottom: 8px;
+}
+.cockpit .coach.min:not(.lesson) h4.coach-k {
+  margin: 0;
+}
+
+/* ------------------------------------------------------------------ immersive: the ATC strip under the situation bar */
+body .cockpit.vis-otw .atc-radio {
+  top: var(--ov-top);
+  right: 14px;
+  left: auto;
+  bottom: auto;
+}
+
+/* ------------------------------------------------------------------ instruments: toasts in the overlay row, never on the knobs */
+body .cockpit.no-otw .toasts {
+  position: absolute;
+  top: calc(var(--sb-h) + 12px + (var(--chrome-pad, 0px)));
+  bottom: auto;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  z-index: 30;
+  max-width: min(420px, calc(100% - 28px));
+}
+body.chrome-auto .cockpit.no-otw {
+  --chrome-pad: 56px;
+}
+
+/* ------------------------------------------------------------------ start page (src/ui/intro.ts) */
+.intro {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  overflow: hidden;
+  background: #0b1118;
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.intro.open {
+  opacity: 1;
+}
+.intro.closing {
+  opacity: 0;
+  pointer-events: none;
+}
+.intro-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 32%;
+  opacity: 0;
+  transform: scale(1.04);
+  transition:
+    opacity 0.7s ease,
+    transform 8s cubic-bezier(0.2, 0.6, 0.2, 1);
+}
+.intro.ready .intro-photo {
+  opacity: 1;
+  transform: scale(1);
+}
+/* legibility only: darken behind the text (left and bottom), keep the aircraft untouched */
+.intro-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(6, 10, 15, 0.8) 0%, rgba(6, 10, 15, 0.5) 34%, rgba(6, 10, 15, 0) 62%),
+    linear-gradient(0deg, rgba(6, 10, 15, 0.75) 0%, rgba(6, 10, 15, 0) 45%);
+}
+.intro-main {
+  position: relative;
+  align-self: end;
+  max-width: 660px;
+  padding: 0 clamp(28px, 7vw, 128px) clamp(28px, 7vh, 84px);
+}
+.intro-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font: 600 12.5px var(--font);
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.8);
+}
+.intro-main h1 {
+  margin: 18px 0 14px;
+  font: 800 clamp(52px, 6.4vw, 96px) / 0.96 var(--font);
+  letter-spacing: -0.035em;
+  color: #fff;
+}
+.intro-lead {
+  max-width: 30em;
+  margin: 0 0 34px;
+  font: 400 clamp(17px, 1.35vw, 21px) / 1.5 var(--font);
+  color: rgba(255, 255, 255, 0.86);
+}
+.intro-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.intro-go,
+.intro-alt {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 56px;
+  border-radius: 14px;
+  font-family: var(--font);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    transform 0.1s;
+}
+.intro-go {
+  padding: 0 24px 0 30px;
+  border: 0;
+  background: var(--accent);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  box-shadow: 0 10px 30px rgba(11, 99, 206, 0.35);
+}
+.intro-go:hover {
+  background: #0a57b5;
+}
+.intro-go svg {
+  transition: transform 0.15s;
+}
+.intro-go:hover svg {
+  transform: translateX(3px);
+}
+.intro-alt {
+  padding: 0 22px;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  background: rgba(8, 12, 18, 0.35);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+}
+.intro-alt:hover {
+  border-color: rgba(255, 255, 255, 0.6);
+  background: rgba(8, 12, 18, 0.55);
+}
+.intro-go:active,
+.intro-alt:active {
+  transform: translateY(1px);
+}
+.intro-go:focus-visible,
+.intro-alt:focus-visible,
+.intro-skip input:focus-visible {
+  outline: 3px solid rgba(255, 255, 255, 0.92);
+  outline-offset: 3px;
+}
+.intro-resume span {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.15;
+  min-width: 0;
+}
+.intro-resume small {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.66);
+}
+.intro-resume b {
+  max-width: 240px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 15px;
+}
+.intro-keys {
+  margin: 22px 0 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.68);
+}
+.intro-keys kbd {
+  margin-right: 5px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font: 600 11.5px var(--font);
+}
+.intro-dot {
+  margin: 0 10px;
+  color: rgba(255, 255, 255, 0.4);
+}
+.intro-foot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px clamp(28px, 7vw, 128px) 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(6, 10, 15, 0.55);
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.66);
+}
+.intro-skip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.intro-skip input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.intro-credit {
+  color: rgba(255, 255, 255, 0.55);
+  text-decoration: none;
+}
+.intro-credit:hover {
+  color: #fff;
+  text-decoration: underline;
+}
+@media (max-height: 760px) {
+  .intro-main h1 {
+    font-size: 56px;
+    margin: 12px 0 10px;
+  }
+  .intro-lead {
+    margin-bottom: 24px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .intro,
+  .intro-photo,
+  .intro-go svg {
+    transition: none;
+  }
+  .intro-photo {
+    transform: none;
+  }
+}
+.intro:focus {
+  outline: none;
+}
+/* "Continue" is a quiet third line under the two buttons, not a third competing button */
+.intro-acts .intro-resume {
+  flex: 0 0 100%;
+  justify-content: flex-start;
+  width: max-content;
+  max-width: 100%;
+  height: auto;
+  margin-top: 4px;
+  padding: 6px 2px;
+  border: 0;
+  background: none;
+  backdrop-filter: none;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 14.5px;
+}
+.intro-acts .intro-resume:hover {
+  background: none;
+  color: #fff;
+}
+.intro-acts .intro-resume:hover b {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.intro-acts .intro-resume span {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
+}
+.intro-acts .intro-resume b {
+  max-width: 420px;
+  font-size: 14.5px;
+}
+/* the text column is 620px wide whatever the side padding */
+.intro .intro-main {
+  max-width: none;
+}
+.intro .intro-main > * {
+  max-width: 620px;
+}
+.intro .intro-main h1 {
+  white-space: nowrap;
 }

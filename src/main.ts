@@ -1153,7 +1153,7 @@ function updateCoach() {
     coach.append(
       h('h4', { class: 'coach-k' },
         h('span', { class: 'coach-step' }, run.finished ? 'Exercise complete' : n > 1 ? `Step ${run.idx + 1} of ${n}` : 'Exercise'),
-        h('span', { class: 'coach-title', title: run.ex.title }, run.ex.title),
+        h('span', { class: 'coach-fill' }),
         coachTimer,
         foldBtn(coachCollapsed, () => setCoachCollapsed(!coachCollapsed), 'the lesson panel'),
       ),
