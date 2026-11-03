@@ -22,6 +22,7 @@ export interface FcHooks {
   getCockpit: () => CockpitType;
   openBuilder: (c?: import('../train/circuits').Circuit) => void;
   flyCircuit: (c: import('../train/circuits').Circuit) => void;
+  planFlight: (t?: import('./flightsetup').FlightType) => void;
 }
 
 type View = { type: 'home' } | { type: 'cat'; cat: CatId; sub: string | null } | { type: 'path'; path: Path } | { type: 'search' };
@@ -178,6 +179,13 @@ export class FlightCenter extends Modal {
             h('div', { class: 'lp-bar' }, h('i', { style: `width:${(passed / ir.exercises.length) * 100}%` })),
             h('button', { class: 'btn primary', onclick: () => { this.sel = next; this.renderDetail(); } }, 'Continue →'),
           ),
+        ),
+      );
+      this.main.append(
+        h('div', { class: 'fc-plan' },
+          h('div', { class: 'fc-plan-t' }, h('b', {}, 'Plan your own flight'), h('span', {}, 'Choose the aircraft and installed instruments, build a route, pick the approach, weather, time of day and failures.')),
+          ...([['route', '🧭', 'IFR flight A → B'], ['approach', '🛬', 'Approach practice'], ['hold', '🔁', 'Holding practice'], ['free', '✈️', 'Free flight']] as const).map(([t, ic, l]) =>
+            h('button', { class: 'fc-plan-b', onclick: () => { this.close(); this.hooks.planFlight(t); } }, h('span', {}, ic), h('b', {}, l))),
         ),
       );
       this.main.append(h('div', { class: 'fc-sec2' }, 'Browse by flight type'));

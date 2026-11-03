@@ -72,3 +72,20 @@ describe('IFR circuits', () => {
     expect(r.finished?.steps.every((s) => s.done)).toBe(true);
   });
 });
+
+describe('equipment', () => {
+  it('an aircraft without GPS, autopilot, ADF or DME behaves accordingly', () => {
+    const c = { ...PRESET_CIRCUITS[0], equipment: { gps: false, ap: false, adf: false, dme: false, nav2: false } };
+    const sim = new Sim();
+    new LessonRun(circuitToExercise(c), sim);
+    sim.step(0.1);
+    expect(sim.fp.out.valid).toBe(false);
+    expect(sim.av.cdi).not.toBe('GPS');
+    sim.ap.toggleAp(sim.ac.data);
+    expect(sim.ap.ap).toBe(false);
+    expect(sim.adf.valid).toBe(false);
+    expect(sim.nav1.dmeNm).toBeNull();
+    sim.cycleCdi();
+    expect(sim.av.cdi).toBe('NAV1');
+  });
+});

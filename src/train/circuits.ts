@@ -4,7 +4,7 @@ import { HoldEvaluator } from './holdEval';
 import { findFix, runway, approach as getApproach, APPROACHES, AIRPORTS } from '../nav/data';
 import { destination, bearingDeg, distanceNm } from '../nav/geo';
 import { clearanceText, type HoldDef, type Turn } from '../nav/holding';
-import { FAILURE_LABELS, type Failures } from '../sim/sim';
+import { FAILURE_LABELS, fullEquipment, type Failures, type Equipment } from '../sim/sim';
 import type { Weather } from '../sim/environment';
 
 export type CircuitStart =
@@ -35,6 +35,9 @@ export interface Circuit {
   allowAp: boolean;
   mode: 'training' | 'checkride';
   cockpit: 'g1000' | 'steam' | 'airliner' | null;
+  /** installed avionics (defaults to fully equipped) */
+  equipment?: Equipment;
+  timeOfDay?: 'day' | 'dusk' | 'night';
   preset?: boolean;
   updated?: string;
 }
@@ -197,6 +200,7 @@ export function circuitToExercise(c: Circuit): Exercise {
         startAt(sim, { pos, altFt: c.start.altFt, hdg, iasKt: c.start.iasKt, weather: c.weather, setup: (s) => { s.ap.altSel = curAlt; s.ap.hdgBug = Math.round(hdg) || 360; } });
       }
       sim.assess = { ...sim.assess, mode: c.mode };
+      sim.equip = { ...fullEquipment(), ...(c.equipment ?? {}) };
       let firstHold: HoldDef | undefined;
       const legStep: number[] = [];
       c.legs.forEach((l, i) => {

@@ -52,6 +52,16 @@ export const FAILURE_LABELS: Record<keyof Failures, string> = {
 };
 export const noFailures = (): Failures => ({ gs: false, nav1: false, gps: false, ap: false, ahrs: false, airData: false, engine: false });
 
+/** Installed avionics: lets schools train on equipment-limited aircraft (no GPS, no autopilot…). */
+export interface Equipment {
+  gps: boolean;
+  ap: boolean;
+  adf: boolean;
+  dme: boolean;
+  nav2: boolean;
+}
+export const fullEquipment = (): Equipment => ({ gps: true, ap: true, adf: true, dme: true, nav2: true });
+
 export interface AssessSettings {
   mode: 'training' | 'checkride';
   student: string;
@@ -131,6 +141,8 @@ export class Sim {
   }
   time = 0;
   paused = false;
+  /** installed avionics */
+  equip: Equipment = fullEquipment();
   /** true while the debrief replay drives the aircraft */
   replaying = false;
   rate = 1;
@@ -148,6 +160,7 @@ export class Sim {
     this.ap = new Autopilot();
     this.fp = new FlightPlan();
     this.failures = noFailures();
+    this.equip = fullEquipment();
     this.weather = defaultWeather();
     this.randomFailureArmed = null;
     this.controls = neutralControls();
@@ -240,10 +253,22 @@ export class Sim {
       this.fp.out.gpValid = false;
     }
     if (f.ap && this.ap.ap) this.ap.disconnect();
-    this.ap.inhibited = f.ap || f.ahrs || f.airData ? 'AP FAIL' : this.assess.handFlown && this.assess.mode === 'checkride' ? 'HAND-FLOWN CHECKRIDE' : null;
+    this.ap.inhibited = !this.equip.ap ? 'NO AUTOPILOT' : f.ap || f.ahrs || f.airData ? 'AP FAIL' : this.assess.handFlown && this.assess.mode === 'checkride' ? 'HAND-FLOWN CHECKRIDE' : null;
     if (this.ap.inhibited && this.ap.ap) this.ap.disconnect();
     this.marker = markerBeacon(pos);
     this.adf = computeAdf(this.av.adf.active, pos);
+    const eq = this.equip;
+    if (!eq.adf) this.adf = { valid: false, ident: '', bearingTo: 0, distNm: 0 };
+    if (!eq.dme) {
+      this.nav1 = { ...this.nav1, dmeNm: null };
+      this.nav2 = { ...this.nav2, dmeNm: null };
+    }
+    if (!eq.nav2) this.nav2 = { ...EMPTY_NAV, course: this.av.obs2 };
+    if (!eq.gps) {
+      this.fp.out.valid = false;
+      this.fp.out.gpValid = false;
+      if (this.av.cdi === 'GPS') this.av.cdi = 'NAV1';
+    }
     this.fp.update(pos, d.gsKt, d.trackTrue);
     if (dt > 0) {
       const pr = (d.pitchDeg - this.lastPitch) / dt;
@@ -353,7 +378,7 @@ export class Sim {
   }
 
   cycleCdi() {
-    const order: CdiSource[] = ['GPS', 'NAV1', 'NAV2'];
+    const order: CdiSource[] = (['GPS', 'NAV1', 'NAV2'] as CdiSource[]).filter((c) => (c === 'GPS' ? this.equip.gps : c === 'NAV2' ? this.equip.nav2 : true));
     this.setCdi(order[(order.indexOf(this.av.cdi) + 1) % order.length]);
   }
 

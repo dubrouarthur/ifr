@@ -15,6 +15,7 @@ import { ChartsDrawer } from './ui/charts';
 import { InstructorDrawer, HistoryModal } from './ui/instructor';
 import { LearnModal, BriefingModal, LessonResultModal, HoldDrillModal } from './ui/learn';
 import { FlightCenter } from './ui/flightcenter';
+import { FlightSetup } from './ui/flightsetup';
 import { SettingsModal } from './ui/settings';
 import { WeatherStation } from './ui/weather';
 import { ExplainOverlay, Tour } from './ui/explain';
@@ -155,8 +156,21 @@ const fc = new FlightCenter({
   getCockpit: () => cockpitType,
   openBuilder: (c) => builder.edit(c),
   flyCircuit: (c) => flyCircuit(c),
+  planFlight: (t) => setup.start(t),
 });
 const builder = new CircuitBuilder((c) => flyCircuit(c), (m, k) => toast(m, k ?? 'info'));
+const setup = new FlightSetup({
+  flyGraded: (c, st) => { applySetupPrefs(st); flyCircuit(c); },
+  flyFree: (sc, st) => { applySetupPrefs(st); startScenario(sc, { id: 'custom', name: 'Custom', desc: '', wx: st.weather }, { mode: 'training', student: launcher.assess.student, handFlown: false, randomFailure: false }); },
+  openChart: (id) => { charts.toggle(true); charts.show(id); },
+});
+setup.toast = (m) => toast(m, 'good');
+function applySetupPrefs(st: import('./ui/flightsetup').FlightSetupState) {
+  if (st.cockpit !== cockpitType) setCockpit(st.cockpit);
+  pfdSt.svt = st.svt;
+  store.set('ifr.svt', st.svt);
+  if (st.tod !== timeOfDay) { timeOfDay = st.tod; store.set('ifr.tod', st.tod); outside?.setTime(st.tod); }
+}
 function flyCircuit(c: Circuit) {
   if (c.cockpit && c.cockpit !== cockpitType) setCockpit(c.cockpit);
   pickExercise(circuitToExercise(c), null);
@@ -280,6 +294,7 @@ const moreMenu = h('div', { class: 'menu', role: 'menu' });
 const moreItem = (ic: string, label: string, kbd: string, fn: () => void) =>
   h('button', { class: 'menu-item', role: 'menuitem', onclick: () => { moreMenu.classList.remove('open'); fn(); } }, icon(ic), h('span', {}, label), kbd ? h('kbd', {}, kbd) : null);
 moreMenu.append(
+  moreItem(I.plane, 'Plan a flight…', 'N', () => setup.start()),
   moreItem(I.gear, 'Settings', ',', () => settings.open()),
   moreItem(I.cloud, 'Weather station', '', () => weatherModal.open()),
   moreItem(I.link, 'Connections & export', '', () => connect.open()),
@@ -305,6 +320,7 @@ const topbar = h('header', { class: 'topbar' },
   h('div', { class: 'spacer' }),
   h('div', { class: 'tb-actions' },
     h('button', { class: 'btn primary', onclick: () => fc.open(), title: 'Flight Center — all flights, exercises and paths (F2)' }, icon(I.plane), h('span', { class: 'lbl' }, 'Flight Center')),
+    h('button', { class: 'btn', onclick: () => setup.start(), title: 'Plan a flight — aircraft, instruments, route, weather (N)' }, icon(I.route), h('span', { class: 'lbl' }, 'Plan')),
     h('div', { class: 'tb-group' },
       h('button', { class: 'btn', onclick: () => charts.toggle(), title: 'Charts (K)' }, icon(I.map), h('span', { class: 'lbl' }, 'Charts')),
       h('button', { class: 'btn', onclick: () => procModal.open(), title: 'Load an approach (X)' }, icon(I.proc), h('span', { class: 'lbl' }, 'Procedures')),
@@ -802,6 +818,7 @@ window.addEventListener('keydown', (e) => {
     case 'j': learn.open(); break;
     case 'f2': fc.open(); break;
     case 'u': builder.edit(); break;
+    case 'n': setup.start(); break;
     case 'f1': toggleExplain(); e.preventDefault(); break;
     case ',': settings.open(); break;
     case 'm': toggleMute(); break;
