@@ -1,5 +1,6 @@
 // Flight setup model (wizard state) and its conversion to a circuit or a free-flight scenario. DOM-free.
 import { approach as getApproach, findFix, runway, AIRPORTS, APPROACHES } from '../nav/data';
+import { terminalProc, terminalLegs } from '../nav/terminal';
 import { fullEquipment, type Equipment, type Scenario, type Sim } from '../sim/sim';
 import type { Weather } from '../sim/environment';
 import type { Circuit, CircuitFailure, CircuitLeg, CircuitStart } from './circuits';
@@ -25,6 +26,9 @@ export interface FlightSetupState {
   air: { fix: string; bearing: number; distNm: number; altFt: number; iasKt: number };
   final: { approachId: string; distNm: number };
   route: string[];
+  /** published departure (SID) from the departure runway and arrival (STAR) — real world, US */
+  sid?: { id: string; transition: string | null } | null;
+  star?: { id: string; transition: string | null } | null;
   cruise: number;
   arrival: { approachId: string | null; transition: string | null; outcome: 'land' | 'missed' };
   hold: { enabled: boolean; fix: string; inbound: number; turn: Turn; legMin: number; alt: number; laps: number };
@@ -75,7 +79,23 @@ export function setupStart(st: FlightSetupState): CircuitStart {
 
 export function setupToCircuit(st: FlightSetupState): Circuit {
   const legs: CircuitLeg[] = [];
-  if (st.type === 'route') for (const r of st.route) legs.push({ type: 'fix', ident: r, alt: st.cruise });
+  if (st.type === 'route') {
+    const push = (ident: string, alt: number | null) => {
+      const last = legs[legs.length - 1];
+      if (last?.type === 'fix' && last.ident === ident) return;
+      legs.push({ type: 'fix', ident, alt });
+    };
+    // published departure from the take-off runway, then the route, then the published arrival
+    const sid = st.sid && st.start === 'runway' ? terminalProc(st.rwy.airport, 'SID', st.sid.id) : undefined;
+    if (sid) for (const l of terminalLegs(sid, st.rwy.runway, st.sid!.transition)) if (l.fix) push(l.fix.ident, l.altMin !== undefined && l.altMin === l.altMax ? l.altMin : null);
+    const star0 = st.star ? terminalProc(st.arr, 'STAR', st.star.id) : undefined;
+    // with a STAR, route fixes that belong to the approach (e.g. a suggested 'direct IAF') would loop back: drop them
+    const apFix = new Set(star0 && st.arrival.approachId ? (() => { const a = getApproach(st.arrival.approachId!); return [...a.transitions.flatMap((t) => t.legs), ...a.final].map((l) => l.fix.ident); })() : []);
+    for (const r of st.route) if (!apFix.has(r)) push(r, st.cruise);
+    const star = st.star && st.arrival.approachId ? terminalProc(getApproach(st.arrival.approachId).airport, 'STAR', st.star.id) : st.star ? terminalProc(st.arr, 'STAR', st.star.id) : undefined;
+    const arrRwy = st.arrival.approachId ? getApproach(st.arrival.approachId).runway : null;
+    if (star) for (const l of terminalLegs(star, arrRwy, st.star!.transition)) if (l.fix) push(l.fix.ident, l.altMin !== undefined && l.altMin === l.altMax ? l.altMin : l.altMax ?? null);
+  }
   if ((st.type === 'hold' || st.hold.enabled) && st.type !== 'free') legs.push({ type: 'hold', ident: st.hold.fix, inbound: st.hold.inbound, turn: st.hold.turn, legMin: st.hold.legMin, alt: st.hold.alt, laps: st.hold.laps });
   const arrId = st.type === 'approach' && st.start === 'final' ? st.final.approachId : st.arrival.approachId;
   if (arrId && (st.type === 'route' || st.type === 'approach'))
@@ -179,6 +199,8 @@ export function adaptSetupToRegion(st: FlightSetupState) {
   if (!findFix(st.air.fix)) st.air.fix = st.arr || st.dep;
   if (!findFix(st.hold.fix)) st.hold.fix = pref?.missed[pref.missed.length - 1]?.fix.ident ?? st.arr;
   st.route = st.route.filter((f) => findFix(f));
+  if (st.sid && !terminalProc(st.rwy.airport, 'SID', st.sid.id)) st.sid = null;
+  if (st.star && !terminalProc(st.arr, 'STAR', st.star.id)) st.star = null;
   if (!st.route.length && st.arrival.approachId && st.dep !== st.arr) {
     const ap = APPROACHES.find((a) => a.id === st.arrival.approachId);
     const tr = ap?.transitions.find((t) => t.name === st.arrival.transition) ?? ap?.transitions[0];

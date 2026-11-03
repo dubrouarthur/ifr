@@ -17,7 +17,7 @@ import {
   FT_PER_NM,
   type LatLon,
 } from "./geo";
-import type { Airport, Approach, Fix, Navaid, ProcLeg, Runway } from "./types";
+import type { Airport, Approach, Fix, Navaid, ProcLeg, Runway, TermLeg, TerminalProc } from "./types";
 
 export type IndexRow = [
   icao: string,
@@ -32,7 +32,8 @@ export type IndexRow = [
 export const FLAG_LARGE = 2,
   FLAG_MEDIUM = 1,
   FLAG_PROC = 4,
-  FLAG_ILS = 8;
+  FLAG_ILS = 8,
+  FLAG_TERM = 16;
 
 interface TileAirport {
   name: string;
@@ -748,6 +749,40 @@ export async function loadRegion(
       } as Approach);
     }
   }
+  // SIDs of the departure and STARs of the destination (FAA CIFP, US only)
+  const terminal: TerminalProc[] = [];
+  {
+    const termOf = await Promise.all(
+      pick.filter((r) => r[7] & FLAG_TERM).map((r) =>
+        fetchT(`${BASE}/term/${r[0]}.json`, 20000)
+          .then((x) => (x.ok ? x.json() : null))
+          .then((j) => [r[0], j] as const)
+          .catch(() => [r[0], null] as const),
+      ),
+    );
+    const conv = (legs: TermLeg[]): TermLeg[] =>
+      legs.map((l) => {
+        if (!l.fix) return { ...l };
+        const p = S(l.fix.lat, l.fix.lon);
+        const fx: Fix = { ident: l.fix.ident, kind: l.fix.kind, ...p };
+        if (fx.kind !== "runway") addFix(fx);
+        return { ...l, fix: fx };
+      });
+    for (const [icao, j] of termOf) {
+      if (!j) continue;
+      const mk = (kind: "SID" | "STAR", e: { id: string; rwy: { name: string; legs: TermLeg[] }[]; common: TermLeg[]; enr: { name: string; legs: TermLeg[] }[] }): TerminalProc => ({
+        id: e.id,
+        airport: icao,
+        kind,
+        rwy: e.rwy.map((t) => ({ name: t.name, legs: conv(t.legs) })),
+        common: conv(e.common),
+        enr: e.enr.map((t) => ({ name: t.name, legs: conv(t.legs) })),
+        source: "FAA CIFP",
+      });
+      for (const e of j.sids ?? []) terminal.push(mk("SID", e));
+      for (const e of j.stars ?? []) terminal.push(mk("STAR", e));
+    }
+  }
   // airports chosen by the pilot without any published procedure in the data set (everything outside the US):
   // generate a standard RNAV (GPS) "T" approach per usable runway end so every real airport can be flown IFR.
   for (const icao of wanted) {
@@ -755,7 +790,7 @@ export async function loadRegion(
     const apt = airports.find((a) => a.icao === icao);
     if (apt) approaches.push(...syntheticApproaches(apt, addFix));
   }
-  replaceNavData({ airports, navaids, fixes, approaches });
+  replaceNavData({ airports, navaids, fixes, approaches, terminal });
   // terrain: precomputed elevation grid (sim coordinates) with airport surfaces flattened. Navigation is
   // usable immediately; terrain tiles stream in (bounded wait), the grid is rebuilt when late tiles arrive.
   const flat = airports.map((a) => ({

@@ -1,0 +1,1 @@
+{"sids":[{"id":"KELSO2","rwy":[{"name":"RW30","legs":[{"vec":{"pt":"VA","course":303.4},"altMin":540},{"fix":{"ident":"KELNG","lat":46.17828,"lon":-123.07581,"kind":"fix"},"altMin":4000,"speed":230,"hold":{"inbound":73,"turn":"R","legMin":1}}]}],"common":[],"enr":[]}],"stars":[]}

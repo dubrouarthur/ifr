@@ -1,0 +1,1 @@
+{"sids":[{"id":"JIMPA2","rwy":[{"name":"RW09","legs":[{"vec":{"pt":"VA","course":89.3},"altMin":5220},{"fix":{"ident":"MOPNE","lat":39.18655,"lon":-119.70123,"kind":"fix"}},{"fix":{"ident":"JIMPA","lat":38.97258,"lon":-119.69063,"kind":"fix"},"altMin":15000,"hold":{"inbound":204,"turn":"L","legMin":1}}]}],"common":[],"enr":[]}],"stars":[]}

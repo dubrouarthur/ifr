@@ -1,0 +1,1 @@
+{"sids":[{"id":"PULPP1","rwy":[{"name":"RW09","legs":[{"vec":{"pt":"VA","course":95.2},"altMin":553},{"fix":{"ident":"PULPP","lat":60.27874,"lon":-145.77653,"kind":"fix"}}]},{"name":"RW27","legs":[{"vec":{"pt":"VA","course":275.2},"altMin":553},{"fix":{"ident":"PULPP","lat":60.27874,"lon":-145.77653,"kind":"fix"}}]}],"common":[],"enr":[]}],"stars":[]}

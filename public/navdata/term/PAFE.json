@@ -1,0 +1,1 @@
+{"sids":[{"id":"KAKE1","rwy":[{"name":"RW11","legs":[{"vec":{"pt":"VA","course":108.9},"altMin":672},{"fix":{"ident":"LVD","lat":56.46771,"lon":-133.08311,"kind":"vor"}}]},{"name":"RW29","legs":[{"vec":{"pt":"VA","course":288.9},"altMin":800},{"fix":{"ident":"LVD","lat":56.46771,"lon":-133.08311,"kind":"vor"}}]}],"common":[],"enr":[]}],"stars":[]}

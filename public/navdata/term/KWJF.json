@@ -1,0 +1,1 @@
+{"sids":[{"id":"PMD1","rwy":[{"name":"RW06","legs":[{"vec":{"pt":"CA","course":57.1},"altMin":2751},{"fix":{"ident":"PMD","lat":34.6314,"lon":-118.06382,"kind":"vor"}}]},{"name":"RW24","legs":[{"vec":{"pt":"CA","course":237.1},"altMin":2751},{"fix":{"ident":"PMD","lat":34.6314,"lon":-118.06382,"kind":"vor"}}]}],"common":[],"enr":[]}],"stars":[]}

@@ -1,0 +1,1 @@
+{"sids":[{"id":"FLCON1","rwy":[{"name":"RW15","legs":[{"vec":{"pt":"VA","course":153.5},"altMin":7378},{"fix":{"ident":"DRAKE","lat":38.60668,"lon":-104.41422,"kind":"fix"}}]},{"name":"RW33","legs":[{"vec":{"pt":"VA","course":333.5},"altMin":7378},{"fix":{"ident":"DRAKE","lat":38.60668,"lon":-104.41422,"kind":"fix"}}]}],"common":[],"enr":[]}],"stars":[]}

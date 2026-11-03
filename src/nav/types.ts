@@ -114,3 +114,23 @@ export interface Approach {
   /** data source (e.g. 'FAA CIFP') — absent for the built-in training region */
   source?: string;
 }
+
+/** One leg of a SID / STAR: a fix (with constraints) or a heading/course leg without a fix (vectors, climb to…) */
+export interface TermLeg {
+  fix?: Fix;
+  vec?: { pt: string; course: number | null };
+  altMin?: number;
+  altMax?: number;
+  speed?: number;
+  hold?: { inbound: number; turn: 'L' | 'R'; legMin: number };
+}
+/** A departure (SID) or arrival (STAR) procedure: runway transitions, common route, enroute transitions. */
+export interface TerminalProc {
+  id: string; // e.g. SSTIK5
+  airport: string;
+  kind: 'SID' | 'STAR';
+  rwy: { name: string; legs: TermLeg[] }[]; // name RW28B (both 28L/R), RW01L, ALL
+  common: TermLeg[];
+  enr: { name: string; legs: TermLeg[] }[]; // name = transition fix
+  source: string;
+}

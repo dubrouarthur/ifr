@@ -1,0 +1,1 @@
+{"sids":[{"id":"PEPUC2","rwy":[{"name":"RW16","legs":[{"fix":{"ident":"TATIE","lat":44.84704,"lon":-116.10033,"kind":"fix"}},{"fix":{"ident":"DECEP","lat":44.70113,"lon":-116.06426,"kind":"fix"}},{"fix":{"ident":"PEPUC","lat":44.59058,"lon":-116.06831,"kind":"fix"},"altMin":11700,"hold":{"inbound":317.8,"turn":"L","legMin":1}}]}],"common":[],"enr":[]}],"stars":[]}

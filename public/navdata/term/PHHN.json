@@ -1,0 +1,1 @@
+{"sids":[{"id":"LNBRG2","rwy":[{"name":"RW08","legs":[{"vec":{"pt":"VA","course":79.1},"altMin":578},{"fix":{"ident":"SIPAE","lat":20.79558,"lon":-155.95579,"kind":"fix"}},{"fix":{"ident":"LNBRG","lat":20.63863,"lon":-155.93373,"kind":"fix"},"speed":175,"altMin":5400,"hold":{"inbound":349,"turn":"R","legMin":1}}]}],"common":[],"enr":[]}],"stars":[]}

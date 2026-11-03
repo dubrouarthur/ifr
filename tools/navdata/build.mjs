@@ -10,6 +10,7 @@
 //   index.json            searchable airport list
 //   tiles/<la>_<lo>.json  5°×5° tiles: airport details, navaids, waypoints
 //   proc/<ICAO>.json      instrument approaches (US, from CIFP)
+//   term/<ICAO>.json      SIDs and STARs (US, from CIFP): runway / common / enroute transitions
 //
 // Usage: node tools/navdata/build.mjs <dir with airports.csv runways.csv navaids.csv airport-frequencies.csv> [FAACIFP18]
 import fs from 'node:fs';
@@ -24,6 +25,7 @@ const OUT = path.resolve('public/navdata');
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(path.join(OUT, 'tiles'), { recursive: true });
 fs.mkdirSync(path.join(OUT, 'proc'), { recursive: true });
+fs.mkdirSync(path.join(OUT, 'term'), { recursive: true });
 
 // ------------------------------------------------------------------ CSV
 function parseCsv(text) {
@@ -120,7 +122,8 @@ for (const n of navaidsCsv) {
 
 // ------------------------------------------------------------------ CIFP (ARINC 424)
 const procs = new Map(); // icao -> [approach]
-let nCifpWpt = 0, nCifpApp = 0;
+const term = new Map(); // icao -> { sids, stars }
+let nCifpWpt = 0, nCifpApp = 0, nSid = 0, nStar = 0;
 if (cifpPath) {
   const lines = fs.readFileSync(cifpPath, 'latin1').split(/\r?\n/);
   const col = (l, a, b) => l.substring(a - 1, b); // 1-based inclusive
@@ -150,6 +153,7 @@ if (cifpPath) {
   const locs = new Map(); // `${icao}|IGWQ` -> loc
   const cifpApt = new Map();
   const appRows = new Map(); // `${icao}|${proc}` -> rows
+  const termRows = new Map(); // `D|${icao}|${proc}` (SID) / `E|…` (STAR) -> rows
 
   for (const l of lines) {
     if (l[0] !== 'S' || l.length < 120) continue;
@@ -177,6 +181,12 @@ if (cifpPath) {
         const k = `${icao}|${proc}`;
         if (!appRows.has(k)) appRows.set(k, []);
         appRows.get(k).push(l);
+      } else if ((sub === 'D' || sub === 'E') && (l[38] === '0' || l[38] === '1')) {
+        // SID (D) / STAR (E) primary records
+        const proc = col(l, 14, 19).trim();
+        const k = `${sub}|${icao}|${proc}`;
+        if (!termRows.has(k)) termRows.set(k, []);
+        termRows.get(k).push(l);
       }
     } else if (sec === 'E' && l[5] === 'A') {
       const id = col(l, 14, 18).trim();
@@ -342,6 +352,58 @@ if (cifpPath) {
     procs.get(icao).push(ap);
     nCifpApp++;
   }
+
+  // ---------------------------------------------------------------- SIDs / STARs
+  // ARINC 424 route types — SID: 1/4/F runway transition, 2/5/M common route, 3/6/S/V enroute transition;
+  // STAR: 1/4/F enroute transition, 2/5/M common route, 3/6/S runway transition (7/8/9 profile descents).
+  const SID_ROLE = { 0: null, 1: 'rwy', 4: 'rwy', F: 'rwy', T: 'rwy', 2: 'common', 5: 'common', M: 'common', 3: 'enr', 6: 'enr', S: 'enr', V: 'enr' };
+  const STAR_ROLE = { 1: 'enr', 4: 'enr', F: 'enr', 7: 'enr', 2: 'common', 5: 'common', M: 'common', 8: 'common', 3: 'rwy', 6: 'rwy', S: 'rwy', 9: 'rwy' };
+  for (const [k, rows] of termRows) {
+    const [sub, icao, proc] = k.split('|');
+    if (!apts.has(icao)) continue;
+    const roles = sub === 'D' ? SID_ROLE : STAR_ROLE;
+    const groups = new Map(); // `${role}|${trans}` -> legs
+    rows.sort((a, b) => a[19].localeCompare(b[19]) || col(a, 21, 25).localeCompare(col(b, 21, 25)) || Number(col(a, 27, 29)) - Number(col(b, 27, 29)));
+    for (const l of rows) {
+      const role = roles[l[19]];
+      if (!role) continue;
+      const trans = col(l, 21, 25).trim() || 'ALL';
+      const id = col(l, 30, 34).trim();
+      const sect = col(l, 37, 38);
+      const pos = id ? fixPos(icao, id, sect, col(l, 35, 36)) : undefined;
+      const pt = col(l, 48, 49);
+      const altD = l[82];
+      const a1 = Number(col(l, 85, 89)) || null;
+      const a2 = Number(col(l, 90, 94)) || null;
+      const course = col(l, 71, 74).trim() ? Number(col(l, 71, 74)) / 10 : null;
+      const spd = Number(col(l, 100, 102)) || null;
+      const leg = {};
+      if (pos) leg.fix = { ident: id, lat: r5(pos[0]), lon: r5(pos[1]), kind: kindOf(sect) };
+      else if (/^(V[AIMDR]|C[AIDFR]|FM)$/.test(pt)) leg.vec = { pt, course }; // heading / course legs (no fix)
+      else continue;
+      if (a1) {
+        if (altD === '+' ) leg.altMin = a1;
+        else if (altD === '-') leg.altMax = a1;
+        else if (altD === 'B') { leg.altMin = Math.min(a1, a2 ?? a1); leg.altMax = Math.max(a1, a2 ?? a1); }
+        else if (altD === ' ' || altD === '@') { leg.altMin = a1; leg.altMax = a1; }
+        else leg.altMin = a1;
+      }
+      if (spd) leg.speed = spd;
+      if (pt === 'HM' || pt === 'HF' || pt === 'HA') leg.hold = { inbound: course ?? 0, turn: l[43] === 'L' ? 'L' : 'R', legMin: 1 };
+      const gk = `${role}|${trans}`;
+      if (!groups.has(gk)) groups.set(gk, []);
+      const g = groups.get(gk);
+      if (leg.fix && g.length && g[g.length - 1].fix?.ident === leg.fix.ident) Object.assign(g[g.length - 1], leg);
+      else g.push(leg);
+    }
+    const pick = (role) => [...groups].filter(([gk]) => gk.startsWith(role + '|')).map(([gk, legs]) => ({ name: gk.split('|')[1], legs }));
+    const common = pick('common')[0]?.legs ?? [];
+    const entry = { id: proc, rwy: pick('rwy'), common, enr: pick('enr') };
+    if (!entry.rwy.length && !common.length && !entry.enr.length) continue;
+    if (!term.has(icao)) term.set(icao, { sids: [], stars: [] });
+    term.get(icao)[sub === 'D' ? 'sids' : 'stars'].push(entry);
+    if (sub === 'D') nSid++; else nStar++;
+  }
 }
 
 // ------------------------------------------------------------------ write
@@ -349,11 +411,12 @@ for (const d of apts.values()) {
   const t = tile(d.lat, d.lon);
   const { icao, ...rest } = d;
   t.airports[icao] = rest;
-  index.push([icao, d.name, d.city, d.country, d.lat, d.lon, d.elev, (d.type === 'large_airport' ? 2 : d.type === 'medium_airport' ? 1 : 0) | (procs.has(icao) ? 4 : 0) | (d.ils?.length ? 8 : 0)]);
+  index.push([icao, d.name, d.city, d.country, d.lat, d.lon, d.elev, (d.type === 'large_airport' ? 2 : d.type === 'medium_airport' ? 1 : 0) | (procs.has(icao) ? 4 : 0) | (d.ils?.length ? 8 : 0) | (term.has(icao) ? 16 : 0)]);
 }
 index.sort((a, b) => (b[7] & 3) - (a[7] & 3) || a[0].localeCompare(b[0]));
 fs.writeFileSync(path.join(OUT, 'index.json'), JSON.stringify(index));
 for (const [k, t] of tiles) fs.writeFileSync(path.join(OUT, 'tiles', `${k}.json`), JSON.stringify(t));
 for (const [icao, list] of procs) fs.writeFileSync(path.join(OUT, 'proc', `${icao}.json`), JSON.stringify(list));
-fs.writeFileSync(path.join(OUT, 'meta.json'), JSON.stringify({ built: new Date().toISOString(), airports: index.length, tiles: tiles.size, cifpWaypoints: nCifpWpt, cifpApproaches: nCifpApp, sources: ['OurAirports (public domain)', cifpPath ? 'FAA CIFP (public domain)' : null].filter(Boolean) }));
-console.log(`airports ${index.length} · tiles ${tiles.size} · waypoints ${nCifpWpt} · approaches ${nCifpApp} (${procs.size} airports)`);
+for (const [icao, t] of term) fs.writeFileSync(path.join(OUT, 'term', `${icao}.json`), JSON.stringify(t));
+fs.writeFileSync(path.join(OUT, 'meta.json'), JSON.stringify({ built: new Date().toISOString(), airports: index.length, tiles: tiles.size, cifpWaypoints: nCifpWpt, cifpApproaches: nCifpApp, sids: nSid, stars: nStar, sources: ['OurAirports (public domain)', cifpPath ? 'FAA CIFP (public domain)' : null].filter(Boolean) }));
+console.log(`airports ${index.length} · tiles ${tiles.size} · waypoints ${nCifpWpt} · approaches ${nCifpApp} (${procs.size} airports) · SIDs ${nSid} · STARs ${nStar} (${term.size} airports)`);

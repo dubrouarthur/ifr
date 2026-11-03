@@ -1,0 +1,1 @@
+{"sids":[{"id":"TRUMA1","rwy":[{"name":"RW05","legs":[{"vec":{"pt":"VA","course":54},"altMin":7514},{"fix":{"ident":"TRUMA","lat":41.6394,"lon":-107.04785,"kind":"fix"}}]},{"name":"RW23","legs":[{"vec":{"pt":"VA","course":234},"altMin":7514},{"fix":{"ident":"TRUMA","lat":41.6394,"lon":-107.04785,"kind":"fix"}}]}],"common":[],"enr":[]}],"stars":[]}

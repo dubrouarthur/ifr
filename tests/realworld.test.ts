@@ -91,3 +91,33 @@ describe('real-world flight plan in the GPS', () => {
     leaveRealWorld();
   }, 30000);
 });
+
+describe('real-world SIDs and STARs', () => {
+  it('KSFO → KSJC: a SID from the departure runway and a STAR are flown as fix legs before the approach', async () => {
+    const { loadRegion, leaveRealWorld } = await import('../src/nav/world');
+    const { findFix, approach } = await import('../src/nav/data');
+    const { sidsFor, starsFor, terminalLegs } = await import('../src/nav/terminal');
+    const { defaultSetup, adaptSetupToRegion, setupToCircuit } = await import('../src/train/setup');
+    await loadRegion(['KSFO', 'KSJC']);
+    const st = { ...defaultSetup(), world: 'real' as const, dep: 'KSFO', arr: 'KSJC', type: 'route' as const, route: [] as string[] };
+    adaptSetupToRegion(st);
+    const sids = sidsFor('KSFO', st.rwy.runway);
+    expect(sids.length, `SIDs for ${st.rwy.runway}`).toBeGreaterThan(0);
+    const sid = sids.find((p) => terminalLegs(p, st.rwy.runway, p.enr[0]?.name ?? null).filter((l) => l.fix).length >= 2) ?? sids[0];
+    const stars = starsFor('KSJC');
+    expect(stars.length).toBeGreaterThan(0);
+    const star = stars[0];
+    st.sid = { id: sid.id, transition: sid.enr[0]?.name ?? null };
+    st.star = { id: star.id, transition: star.enr[0]?.name ?? null };
+    const c = setupToCircuit(st);
+    expect(validate(c)).toEqual([]);
+    const fixLegs = c.legs.filter((l) => l.type === 'fix').map((l) => (l as { ident: string }).ident);
+    const sidFixes = terminalLegs(sid, st.rwy.runway, st.sid.transition).filter((l) => l.fix).map((l) => l.fix!.ident);
+    const starFixes = terminalLegs(star, approach(st.arrival.approachId!).runway, st.star.transition).filter((l) => l.fix).map((l) => l.fix!.ident);
+    expect(fixLegs.slice(0, sidFixes.length)).toEqual(sidFixes.filter((f, i) => f !== sidFixes[i - 1]));
+    for (const f of starFixes) expect(fixLegs).toContain(f);
+    for (const f of fixLegs) expect(findFix(f), f).toBeTruthy();
+    expect(c.legs[c.legs.length - 1].type).toBe('approach');
+    leaveRealWorld();
+  }, 30000);
+});

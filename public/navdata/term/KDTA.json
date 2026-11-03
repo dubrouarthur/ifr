@@ -1,0 +1,1 @@
+{"sids":[{"id":"DTA1","rwy":[{"name":"RW17","legs":[{"fix":{"ident":"DTA","lat":39.30226,"lon":-112.50556,"kind":"vor"}}]},{"name":"RW35","legs":[{"vec":{"pt":"VA","course":349.3},"altMin":5800},{"vec":{"pt":"VI","course":180}},{"fix":{"ident":"DTA","lat":39.30226,"lon":-112.50556,"kind":"vor"}}]}],"common":[],"enr":[]}],"stars":[]}

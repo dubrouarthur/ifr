@@ -3,7 +3,7 @@
 // placed over the open North Atlantic so they can't be confused with real-world data.
 // NOT FOR REAL-WORLD NAVIGATION.
 import { destination, FT_PER_NM, distanceNm, bearingDeg, type LatLon } from './geo';
-import type { Airport, Approach, Fix, Navaid, ProcLeg, Runway } from './types';
+import type { Airport, Approach, Fix, Navaid, ProcLeg, Runway, TerminalProc } from './types';
 
 const ft2nm = (ft: number) => ft / FT_PER_NM;
 /** set once the module is initialised: lookups fall back to the training region while a real region is loaded */
@@ -498,8 +498,11 @@ export interface TerrainProvider {
   land(p: LatLon): number; // 0 sea .. 1 land
 }
 let provider: TerrainProvider | null = null;
+/** bumped whenever the terrain under the aircraft may have changed (region loaded, late terrain tiles) */
+export let terrainEpoch = 0;
 export function setTerrainProvider(p: TerrainProvider | null) {
   provider = p;
+  terrainEpoch++;
 }
 export function terrainProviderActive(): boolean {
   return provider !== null;
@@ -507,7 +510,10 @@ export function terrainProviderActive(): boolean {
 /** Snapshot of the built-in training region (restored when leaving a real-world flight). */
 export const TRAINING_REGION = { airports: [...AIRPORTS], navaids: [...NAVAIDS], fixes: [...FIXES], approaches: [...APPROACHES] };
 TRAIN = TRAINING_REGION;
-export function replaceNavData(d: { airports: Airport[]; navaids: Navaid[]; fixes: Fix[]; approaches: Approach[] }) {
+/** SIDs and STARs of the loaded region (real world only; the training region has none) */
+export const TERMINAL: TerminalProc[] = [];
+export function replaceNavData(d: { airports: Airport[]; navaids: Navaid[]; fixes: Fix[]; approaches: Approach[]; terminal?: TerminalProc[] }) {
+  TERMINAL.splice(0, TERMINAL.length, ...(d.terminal ?? []));
   AIRPORTS.splice(0, AIRPORTS.length, ...d.airports);
   NAVAIDS.splice(0, NAVAIDS.length, ...d.navaids);
   FIXES.splice(0, FIXES.length, ...d.fixes);
@@ -516,6 +522,7 @@ export function replaceNavData(d: { airports: Airport[]; navaids: Navaid[]; fixe
 export function restoreTrainingRegion() {
   replaceNavData(TRAINING_REGION);
   provider = null;
+  terrainEpoch++;
 }
 
 /** 0 = open sea, 1 = inland. */

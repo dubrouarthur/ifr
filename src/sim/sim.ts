@@ -6,7 +6,7 @@ import { Autopilot, type CdiSource, type NavInputs } from '../avionics/autopilot
 import { computeAdf, computeNav, EMPTY_NAV, markerBeacon, type AdfOutput, type NavOutput } from '../nav/radios';
 import { Recorder } from './recorder';
 import { FlightPlan } from '../nav/flightplan';
-import { AIRPORTS, NAVAIDS, groundElevation, runway, findFix, approach } from '../nav/data';
+import { AIRPORTS, NAVAIDS, groundElevation, runway, findFix, approach, terrainEpoch } from '../nav/data';
 import { destination, distanceNm, bearingDeg, DEG, FT_PER_NM, crossTrackNm, alongTrackNm, type LatLon } from '../nav/geo';
 
 export interface Radio {
@@ -230,6 +230,7 @@ export class Sim {
     sc.setup?.(this);
     this.ac.step(0.01, this.controls, this.weather);
     this.updateAvionics(0);
+    this.terrainSeen = terrainEpoch;
     this.rec.start(this);
   }
 
@@ -260,11 +261,26 @@ export class Sim {
     }
     const dt = Math.min(0.1, dtReal) * this.rate;
     this.time += dt;
+    if (terrainEpoch !== this.terrainSeen) this.reseatOnTerrain();
     if (this.failures.engine) this.controls.throttle = 0;
     this.maybeRandomFailure();
     this.ac.step(dt, this.controls, this.weather);
     this.updateAvionics(dt);
     this.rec.update(this, dt);
+  }
+
+  private terrainSeen = terrainEpoch;
+  /** terrain data changed under the aircraft (late terrain tiles, region swap): a data update must never
+   *  read as an impact — keep a ground roll on the new surface and an airborne aircraft above it */
+  private reseatOnTerrain() {
+    this.terrainSeen = terrainEpoch;
+    const s = this.ac.s;
+    const g = groundElevation(s);
+    if (s.onGround) s.altFt = g;
+    else if (s.altFt < g + 3) {
+      s.altFt = g + 3;
+      s.gamma = Math.max(s.gamma, 0);
+    }
   }
 
   navInputs(): NavInputs {

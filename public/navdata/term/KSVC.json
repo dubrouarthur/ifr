@@ -1,0 +1,1 @@
+{"sids":[{"id":"SVC2","rwy":[{"name":"RW08","legs":[{"vec":{"pt":"VA","course":78.2},"altMin":5846},{"fix":{"ident":"FAAST","lat":32.27588,"lon":-108.17368,"kind":"fix"},"altMin":9000}]},{"name":"RW26","legs":[{"vec":{"pt":"VA","course":258.2},"altMin":5846},{"fix":{"ident":"FAAST","lat":32.27588,"lon":-108.17368,"kind":"fix"},"altMin":9000}]}],"common":[],"enr":[]}],"stars":[]}

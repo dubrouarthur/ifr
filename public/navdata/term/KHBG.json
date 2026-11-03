@@ -1,0 +1,1 @@
+{"sids":[{"id":"LBY2","rwy":[{"name":"RW13","legs":[{"vec":{"pt":"CA","course":132},"altMin":551,"speed":230},{"vec":{"pt":"VI","course":320}},{"fix":{"ident":"LBY","lat":31.41868,"lon":-89.3376,"kind":"vor"}}]},{"name":"RW31","legs":[{"vec":{"pt":"VI","course":309}},{"fix":{"ident":"LBY","lat":31.41868,"lon":-89.3376,"kind":"vor"}}]}],"common":[],"enr":[]}],"stars":[]}

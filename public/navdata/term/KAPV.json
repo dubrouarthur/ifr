@@ -1,0 +1,1 @@
+{"sids":[{"id":"EXCON1","rwy":[{"name":"RW36","legs":[{"fix":{"ident":"HUNEY","lat":34.6118,"lon":-117.17477,"kind":"fix"},"altMin":3600},{"fix":{"ident":"EXCON","lat":34.72434,"lon":-117.19179,"kind":"fix"},"altMin":7500,"hold":{"inbound":339,"turn":"L","legMin":1}}]}],"common":[],"enr":[]}],"stars":[]}
