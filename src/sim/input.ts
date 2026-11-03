@@ -173,8 +173,10 @@ export class InputManager {
     const k = this.keys;
     const has = (...names: string[]) => names.some((n) => k.has(n));
     // keyboard virtual yoke: deflect while held, re-center when released
-    const rate = 2.2 * dt;
-    const center = 3.0 * dt;
+    // progressive: gentle pressure while held, full deflection with Shift
+    const big = has('Shift');
+    const rate = (big ? 2.4 : 1.0) * dt;
+    const center = 2.2 * dt;
     const pitchIn = (has('ArrowDown') ? 1 : 0) - (has('ArrowUp') ? 1 : 0);
     const rollIn = (has('ArrowRight') ? 1 : 0) - (has('ArrowLeft') ? 1 : 0);
     const yawIn = (has('.', '>') ? 1 : 0) - (has(',', '<') ? 1 : 0);
@@ -182,8 +184,8 @@ export class InputManager {
       if (input) return Math.max(-lim, Math.min(lim, v + input * rate));
       return Math.abs(v) < center ? 0 : v - Math.sign(v) * center;
     };
-    this.kb.pitch = step(this.kb.pitch, pitchIn, 0.7);
-    this.kb.roll = step(this.kb.roll, rollIn, 0.6);
+    this.kb.pitch = step(this.kb.pitch, pitchIn, big ? 1 : 0.42);
+    this.kb.roll = step(this.kb.roll, rollIn, big ? 1 : 0.5);
     this.kb.yaw = step(this.kb.yaw, yawIn, 1);
 
     let elev = Math.max(-1, Math.min(1, this.kb.pitch + this.virtual.pitch));

@@ -182,7 +182,7 @@ export class Sim {
     this.ac.onRunwayCheck = onRunway;
     if (sc.onGround) {
       this.controls.throttle = 0;
-      this.controls.trim = -0.1;
+      this.controls.trim = 0; // take-off trim mark
       this.controls.brake = 0;
     } else {
       // rough trim for the requested speed
@@ -314,7 +314,7 @@ export class Sim {
     );
     this.ac.onRunwayCheck = onRunway;
     this.controls.throttle = onGround ? 0 : 0.5;
-    this.controls.trim = -0.17;
+    this.controls.trim = onGround ? 0 : -0.17;
     this.controls.flaps = 0;
     this.ap.hdgBug = Math.round(hdg) || 360;
     this.ap.altSel = Math.round(alt / 100) * 100;

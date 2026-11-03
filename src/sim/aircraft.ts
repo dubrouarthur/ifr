@@ -110,6 +110,10 @@ export class Aircraft {
   private lastAlt = 0;
   private vsFilt = 0;
   private gFilt = 1;
+  /** true while the wing is past the critical angle of attack */
+  stalled = false;
+  /** stall buffet intensity 0..1 (for audio / shake) */
+  buffet = 0;
 
   constructor(
     init: Partial<AircraftState> & LatLon,
@@ -191,15 +195,19 @@ export class Aircraft {
     // vertical gusts change the angle of attack
     const alpha = s.theta - s.gamma + (s.onGround ? 0 : wind.up / Math.max(15, V));
     const alphaStall = A.alphaStall - 2 * DEG * f;
-    let cl = A.cl0 + 0.55 * f + A.cla * alpha;
-    if (alpha > alphaStall) {
-      const clMax = A.cl0 + 0.55 * f + A.cla * alphaStall;
-      cl = clMax - (alpha - alphaStall) * 3.5;
-    }
+    // ground effect (wingspan 11 m): more lift slope, much less induced drag close to the runway
+    const aglM = Math.max(0, (s.altFt - ground) * FT) + 1.2;
+    const ge = (16 * aglM / 11) ** 2 / (1 + (16 * aglM / 11) ** 2); // 0 on the ground .. 1 high up
+    const claEff = A.cla * (1 + 0.09 * (1 - ge));
+    const clMax = A.cl0 + 0.55 * f + claEff * alphaStall;
+    let cl = A.cl0 + 0.55 * f + claEff * alpha;
+    const over = alpha - alphaStall;
+    if (over > 0) cl = Math.max(clMax * 0.72, clMax - over * 2.2); // the wing quits progressively, then plateaus
     cl = Math.max(-1.2, cl);
-    const cd = A.cd0 + 0.045 * f + A.k * cl * cl + (alpha > alphaStall ? 0.3 : 0);
+    const cd = A.cd0 + 0.045 * f + A.k * cl * cl * (0.45 + 0.55 * ge) + (over > 0 ? 0.12 + over * 0.9 : 0);
     const L = qbar * A.wingArea * cl;
     const D = qbar * A.wingArea * cd;
+    this.stalled = over > 0 && !s.onGround;
 
     // Engine
     const thr = Math.max(0, Math.min(1, c.throttle));
@@ -211,22 +219,37 @@ export class Aircraft {
 
     const tb = { roll: s.onGround ? 0 : wind.p, pitch: s.onGround ? 0 : wind.q };
 
-    // ---- Pitch: elevator commands an equilibrium angle of attack
+    // ---- Pitch: elevator commands an equilibrium angle of attack (static stability), limited past the stall
     const u = Math.max(-1.3, Math.min(1.3, c.elevator + c.trim));
-    const alphaCmd = (4 - 2.2 * f) * DEG + 13 * DEG * u + (thr - 0.6) * 1.2 * DEG;
+    let alphaCmd = (4 - 2.2 * f) * DEG + 13 * DEG * u + (thr - 0.6) * 1.2 * DEG;
+    // the elevator runs out of authority a few degrees past the critical angle of attack
+    alphaCmd = Math.min(alphaCmd, alphaStall + 4 * DEG);
+    // stall break: nose-down pitching moment once the wing has stalled
+    if (over > 0 && !s.onGround) alphaCmd -= over * 2.6 + 2 * DEG;
     const wn = 3.2 * Math.sqrt(Math.max(0.02, qf));
-    s.q += (wn * wn * (alphaCmd - alpha) - 2 * 0.75 * wn * s.q) * dt + tb.pitch * dt * 3;
+    s.q += (wn * wn * (alphaCmd - alpha) - 2 * 0.75 * wn * s.q) * dt + tb.pitch * dt * 4.5;
+    // stall buffet in the last ~2 degrees before the critical angle
+    if (!s.onGround && alpha > alphaStall - 2.5 * DEG) {
+      const k = Math.min(1, (alpha - alphaStall + 2.5 * DEG) / (2.5 * DEG));
+      this.buffet = k;
+      s.q += (Math.random() - 0.5) * 0.9 * k * dt * 10;
+      s.p += (Math.random() - 0.5) * 0.7 * k * dt * 10;
+    } else this.buffet = 0;
     s.theta += s.q * dt;
 
     // ---- Roll
-    const pDot = 4.4 * c.aileron * qf - 4.0 * Math.sqrt(Math.max(0.05, qf)) * s.p - 1.2 * s.beta * qf + tb.roll;
+    // a stalled wing drops toward the slip (or the side of the last roll), ailerons lose authority
+    const drop = over > 0 && !s.onGround ? -Math.sign(s.beta || s.p || 0.01) * Math.min(1.6, over / DEG * 0.35) : 0;
+    const ailEff = over > 0 ? 0.45 : 1;
+    const pDot = 4.4 * c.aileron * qf * ailEff - 4.0 * Math.sqrt(Math.max(0.05, qf)) * s.p - 1.2 * s.beta * qf + tb.roll * 2.4 + drop;
     s.p += pDot * dt;
     s.phi += s.p * dt;
     if (s.phi > Math.PI) s.phi -= 2 * Math.PI;
     if (s.phi < -Math.PI) s.phi += 2 * Math.PI;
 
     // ---- Sideslip (ball): rudder vs. adverse yaw from roll rate
-    const betaTarget = (-0.12 * c.rudder + 0.03 * s.p) * Math.min(1, qf * 1.5);
+    const pFactor = s.onGround ? 0 : 0.035 * thr * Math.max(0, Math.min(1, (95 - V / KT) / 45));
+    const betaTarget = (-0.12 * c.rudder + 0.03 * s.p) * Math.min(1, qf * 1.5) + pFactor;
     s.beta += (betaTarget - s.beta) * Math.min(1, dt * 3);
 
     if (!s.onGround) {
