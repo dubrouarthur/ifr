@@ -512,7 +512,7 @@ const tune = (r: { standby: number }, d: number, coarse: boolean, min: number, m
 };
 const swap = (r: { active: number; standby: number }) => ([r.active, r.standby] = [r.standby, r.active]);
 
-const apKeys = () => {
+const apKeyEls = () => {
   const d = () => sim.ac.data;
   const n = () => sim.navInputs();
   const k = (label: string, fn: () => void, title: string) => {
@@ -544,7 +544,7 @@ const pfdBezel = h('div', { class: 'bezel pfd' },
     knob({ label: 'NAV', sub: 'MHz · kHz', dual: true, size: 'sm', onTurn: (d, c) => tune(sim.av.nav1, d, c, 108, 118, 0.05), readout: () => `NAV1 SBY ${sim.av.nav1.standby.toFixed(2)}` }),
     bkey('NAV ⇆', () => swap(sim.av.nav1), 'Swap NAV1 active/standby'),
     knob({ label: 'HDG', sub: 'Push sync', size: 'sm', onTurn: hdgBy, onPush: () => (sim.ap.hdgBug = Math.round(sim.ac.data.hdgTrue) || 360), readout: () => `HDG ${pad3(sim.ap.hdgBug)}°` }),
-    apKeys(),
+    apKeyEls(),
     knob({ label: 'ALT', sub: '1000 · 100', dual: true, size: 'sm', onTurn: altBy, onPush: () => (sim.ap.altSel = Math.round(sim.indicatedAlt() / 100) * 100), readout: () => `ALT ${sim.ap.altSel} FT` }),
   ),
   h('div', { class: 'screen' }, pfdCanvas),
@@ -1151,6 +1151,30 @@ let lastAtcStep = -1;
 /** lesson steps that read as ATC instructions are transmitted on the radio */
 const ATC_LIKE = /^(fly|turn|climb|descend|maintain|cleared|hold|proceed|intercept|join|expect|contact|cross|reduce|increase|go around|track|enter)\b/i;
 let cduTick = 0;
+let apKeyCache: HTMLElement[] = [];
+// change-checked DOM writes (the frame loop runs 60×/s; unchanged writes still invalidate style)
+const domCache = new WeakMap<Element, Record<string, string>>();
+function cached(el: Element, k: string, v: string): boolean {
+  let c = domCache.get(el);
+  if (!c) domCache.set(el, (c = {}));
+  if (c[k] === v) return false;
+  c[k] = v;
+  return true;
+}
+function setText(el: HTMLElement, v: string) {
+  if (cached(el, '#t', v)) el.textContent = v;
+}
+function setCss(el: HTMLElement, prop: string, v: string) {
+  if (!cached(el, prop, v)) return;
+  if (prop.startsWith('--')) el.style.setProperty(prop, v);
+  else (el.style as unknown as Record<string, string>)[prop] = v;
+}
+function setClass(el: Element, cls: string, on: boolean) {
+  if (cached(el, '.' + cls, on ? '1' : '0')) el.classList.toggle(cls, on);
+}
+function setProp(el: HTMLInputElement, k: 'value', v: string) {
+  if (el[k] !== v) el[k] = v;
+}
 /** per-section frame timings (ms, exponential average) — window.__ifr.perf */
 const perf: Record<string, number> = {};
 let perfT = 0;
@@ -1197,9 +1221,9 @@ function frame(now: number) {
   }
 
   // auto debrief at the end of a flight
-  if (!debriefShown && (sim.ac.s.crashed || (sim.rec.touchdown && sim.ac.s.onGround && sim.ac.data.gsKt < 2))) {
+  if (!debriefShown && !sim.ac.s.crashed && sim.rec.touchdown && sim.ac.s.onGround && sim.ac.data.gsKt < 2) {
     endTimer += dt;
-    if (endTimer > (sim.ac.s.crashed ? 2.5 : 1.5)) openDebrief();
+    if (endTimer > 1.5) openDebrief();
   }
 
   const otwH = otw.clientHeight;
@@ -1262,32 +1286,35 @@ function frame(now: number) {
   connect.link.update(sim, dt);
   mark('misc');
 
-  // pedestal
+  // pedestal — every write goes through a change check so an idle panel costs no style/paint work
   const ctl = sim.controls;
-  if (!thrDragging) thr.value = String(Math.round(ctl.throttle * 100));
-  thr.style.setProperty('--v', `${ctl.throttle * 100}%`);
-  thrPct.textContent = `${Math.round(ctl.throttle * 100)}%`;
-  thrRpm.textContent = `${Math.round(sim.ac.data.rpm / 10) * 10} RPM`;
-  flapBtns.forEach((b, i) => b.classList.toggle('on', Math.round(ctl.flaps) === i));
-  flapNeedle.style.left = `${(sim.ac.data.flapsDeg / 30) * 75 + 12.5}%`;
-  flapRead.textContent = `${Math.round(sim.ac.data.flapsDeg)}°`;
-  trimWheel.style.setProperty('--t', `${ctl.trim * 220}px`);
-  trimMark.style.left = `${50 + ctl.trim * 50}%`;
-  trimRead.textContent = Math.abs(ctl.trim + 0.2) < 0.06 ? 'T/O' : ctl.trim < 0 ? `UP ${Math.round(-ctl.trim * 100)}` : `DN ${Math.round(ctl.trim * 100)}`;
+  const thrV = Math.round(ctl.throttle * 100);
+  if (!thrDragging) setProp(thr, 'value', String(thrV));
+  setCss(thr, '--v', `${thrV}%`);
+  setText(thrPct, `${thrV}%`);
+  setText(thrRpm, `${Math.round(sim.ac.data.rpm / 10) * 10} RPM`);
+  flapBtns.forEach((b, i) => setClass(b, 'on', Math.round(ctl.flaps) === i));
+  setCss(flapNeedle, 'left', `${((sim.ac.data.flapsDeg / 30) * 75 + 12.5).toFixed(1)}%`);
+  setText(flapRead, `${Math.round(sim.ac.data.flapsDeg)}°`);
+  setCss(trimWheel, '--t', `${Math.round(ctl.trim * 220)}px`);
+  setCss(trimMark, 'left', `${(50 + ctl.trim * 50).toFixed(1)}%`);
+  setText(trimRead, Math.abs(ctl.trim + 0.2) < 0.06 ? 'T/O' : ctl.trim < 0 ? `UP ${Math.round(-ctl.trim * 100)}` : `DN ${Math.round(ctl.trim * 100)}`);
   if (!stick.classList.contains('active')) {
-    stickDot.style.left = `${50 + Math.max(-1, Math.min(1, ctl.aileron)) * 42}%`;
-    stickDot.style.top = `${50 + Math.max(-1, Math.min(1, ctl.elevator)) * 42}%`;
+    setCss(stickDot, 'left', `${(50 + Math.max(-1, Math.min(1, ctl.aileron)) * 42).toFixed(1)}%`);
+    setCss(stickDot, 'top', `${(50 + Math.max(-1, Math.min(1, ctl.elevator)) * 42).toFixed(1)}%`);
   }
-  (rudderBar.firstChild as HTMLElement).style.left = `${50 + Math.max(-1, Math.min(1, ctl.rudder)) * 46}%`;
-  brakeLight.classList.toggle('on', ctl.brake > 0.1);
-  joyDot.classList.toggle('on', !!input.current());
-  joyLbl.textContent = input.current() ? input.current()!.id.split('(')[0].trim().slice(0, 26) || 'Joystick' : 'Keyboard · connect a joystick';
-  pfdBezel.querySelectorAll<HTMLElement>('[data-ap]').forEach((b) => {
+  setCss(rudderBar.firstChild as HTMLElement, 'left', `${(50 + Math.max(-1, Math.min(1, ctl.rudder)) * 46).toFixed(1)}%`);
+  setClass(brakeLight, 'on', ctl.brake > 0.1);
+  const joy = input.current();
+  setClass(joyDot, 'on', !!joy);
+  setText(joyLbl, joy ? joy.id.split('(')[0].trim().slice(0, 22) || 'Joystick' : 'Keyboard');
+  if (!apKeyCache.length || !apKeyCache[0].isConnected) apKeyCache = [...pfdBezel.querySelectorAll<HTMLElement>('[data-ap]')];
+  const ap = sim.ap;
+  for (const b of apKeyCache) {
     const l = b.dataset.ap;
-    const ap = sim.ap;
     const on = (l === 'AP' && ap.ap) || (l === 'FD' && ap.fd) || (l === 'HDG' && ap.engaged && ap.lat === 'HDG') || (l === 'ALT' && ap.engaged && ap.vert === 'ALT') || (l === 'NAV' && ap.engaged && (['GPS', 'VOR', 'LOC'].includes(ap.lat) || !!ap.latArmed)) || (l === 'APR' && ap.apprMode) || (l === 'BC' && ap.lat === 'BC') || (l === 'VS' && ap.engaged && ap.vert === 'VS') || (l === 'FLC' && ap.engaged && ap.vert === 'FLC');
-    b.classList.toggle('on', !!on);
-  });
+    setClass(b, 'on', !!on);
+  }
   coachAcc += dt;
   if (coachAcc > 0.25) {
     coachAcc = 0;

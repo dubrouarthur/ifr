@@ -137,6 +137,28 @@ export async function airportIndex(): Promise<IndexRow[]> {
   return indexCache!;
 }
 
+/** Great-circle distance between two index rows (NM). */
+export function rowDistanceNm(a: IndexRow, b: IndexRow): number {
+  return distanceNm({ lat: a[4], lon: a[5] }, { lat: b[4], lon: b[5] });
+}
+/** Largest departure–destination distance one region can hold (the region is a flat local grid). */
+export const MAX_REGION_NM = 400;
+/** Airports around a point, nearest first (towered / larger fields only, the strip list would be noise). */
+export async function nearbyAirports(lat: number, lon: number, limit = 8, exclude = ""): Promise<IndexRow[]> {
+  const rows = await airportIndex();
+  return rows
+    .filter((r) => r[0] !== exclude && r[7] & (FLAG_LARGE | FLAG_MEDIUM) && Math.abs(r[4] - lat) < 3 && Math.abs(r[5] - lon) < 4)
+    .map((r) => [distanceNm({ lat, lon }, { lat: r[4], lon: r[5] }), r] as const)
+    .sort((a, b) => a[0] - b[0])
+    .slice(0, limit)
+    .map(([, r]) => r);
+}
+/** Exact lookup by ICAO. */
+export async function airportRow(icao: string): Promise<IndexRow | null> {
+  const s = icao.trim().toUpperCase();
+  return (await airportIndex()).find((r) => r[0] === s) ?? null;
+}
+
 /** Search by ICAO prefix, name or city; IFR-capable and larger airports first. */
 export async function searchAirports(
   q: string,
@@ -352,6 +374,80 @@ function deriveMinimums(
   ];
 }
 
+const ceil100 = (x: number) => Math.ceil(x / 100) * 100;
+/** Generated RNAV (GPS) T-approaches (TAA style) for an airport that has no procedure in the data set.
+ *  Geometry follows the PANS-OPS / FAA standard: IF 10 NM, FAF 5 NM, 3.00° path, IAFs 6 NM either side of the IF,
+ *  missed approach straight ahead to a hold 8 NM beyond the threshold. Sim coordinates (grid north = magnetic). */
+export function syntheticApproaches(apt: Airport, addFix: (f: Fix) => void): Approach[] {
+  const ends = apt.runways.filter((r) => r.lengthFt >= 2500).sort((a, b) => b.lengthFt - a.lengthFt);
+  const longest = new Set(ends.slice(0, 2).map((r) => r.lengthFt));
+  const out: Approach[] = [];
+  const tag = apt.icao.slice(-2);
+  for (const rw of ends.filter((r) => longest.has(r.lengthFt)).slice(0, 4)) {
+    const crs = rw.heading;
+    const back = (crs + 180) % 360;
+    const thr = rw.threshold;
+    const tdze = rw.elevFt;
+    const pt = (from: LatLon, brg: number, nm: number) => destination(from, brg, nm);
+    const fx = (suffix: string, p: LatLon): Fix => {
+      const f: Fix = { ident: `${tag}${rw.id}${suffix}`, kind: "fix", ...p };
+      addFix(f);
+      return f;
+    };
+    const fafAlt = ceil100(tdze + 5 * 318.4);
+    const ifAlt = Math.max(fafAlt + 1000, ceil100(tdze + 2500));
+    const mahAlt = Math.max(ceil100(tdze + 3000), ifAlt);
+    const IF = fx("I", pt(thr, back, 10));
+    const FAF = fx("F", pt(thr, back, 5));
+    const IAFL = fx("L", pt(IF, (crs + 270) % 360, 6));
+    const IAFR = fx("R", pt(IF, (crs + 90) % 360, 6));
+    const MAH = fx("M", pt(thr, crs, 8));
+    const RWF: Fix = { ident: `RW${rw.id}`, kind: "runway", ...thr };
+    const leg = (l: ProcLeg) => l;
+    const t = (iaf: Fix) => ({
+      name: iaf.ident,
+      legs: [
+        leg({ fix: iaf, role: "IAF", altMin: ifAlt }),
+        leg({ fix: IF, role: "IF", altMin: ifAlt, course: Math.round(bearingDeg(iaf, IF)), dist: 6 }),
+      ],
+    });
+    const final: ProcLeg[] = [
+      { fix: IF, role: "IF", altMin: ifAlt, hold: { inbound: Math.round(crs), turn: "R", legMin: 1 } },
+      { fix: FAF, role: "FAF", altMin: fafAlt, course: Math.round(crs), dist: 5 },
+      { fix: RWF, role: "MAP", course: Math.round(crs), dist: 5 },
+    ];
+    const missed: ProcLeg[] = [
+      { fix: RWF },
+      { fix: MAH, role: "MAHP", altMin: mahAlt, course: Math.round(crs), dist: 8, hold: { inbound: Math.round(back), turn: "R", legMin: 1 } },
+    ];
+    out.push({
+      id: `${apt.icao}-G${rw.id}`,
+      airport: apt.icao,
+      name: `RNAV (GPS) RWY ${rw.id}`,
+      type: "RNAV",
+      category: "APV",
+      difficulty: 1,
+      runway: rw.id,
+      finalCourse: Math.round(crs),
+      gsAngle: 3,
+      tch: 50,
+      transitions: [t(IAFL), t(IAFR), { name: `${IF.ident} (HILPT)`, legs: [{ fix: IF, role: "IAF", altMin: ifAlt, hold: { inbound: Math.round(crs), turn: "R", legMin: 1 }, hilpt: true }] }],
+      final,
+      missed,
+      missedText: `Climb straight ahead to ${mahAlt} direct ${MAH.ident} and hold.`,
+      minimums: deriveMinimums("RNAV", tdze, true),
+      msa: { center: apt.icao, alt: ceil100(Math.max(ifAlt, apt.elevFt + 2000) + 500) },
+      notes: [
+        "Generated procedure: no official approach for this airport in the data set (official procedures are FAA CIFP, US only).",
+        "Standard RNAV T geometry (IF 10 NM, FAF 5 NM, 3.00°). Terrain is not assessed — check the MSA and terrain display.",
+        "For training only — not for real-world navigation.",
+      ],
+      source: "Generated",
+    });
+  }
+  return out;
+}
+
 function missedText(m: ProcLeg[]): string {
   const parts: string[] = [];
   const legs = m.slice(1);
@@ -395,6 +491,8 @@ export async function loadRegion(
     .map((c) => idx.find((r) => r[0] === c.toUpperCase()))
     .filter(Boolean) as IndexRow[];
   if (!pick.length) throw new Error("Unknown airport");
+  if (pick.length > 1 && rowDistanceNm(pick[0], pick[pick.length - 1]) > MAX_REGION_NM)
+    throw new Error(`${pick[0][0]} → ${pick[pick.length - 1][0]} is ${Math.round(rowDistanceNm(pick[0], pick[pick.length - 1]))} NM: one flight is limited to ${MAX_REGION_NM} NM`);
   const lats = pick.map((r) => r[4]),
     lons = pick.map((r) => r[5]);
   const minLat = Math.min(...lats) - marginDeg,
@@ -649,6 +747,13 @@ export async function loadRegion(
         ],
       } as Approach);
     }
+  }
+  // airports chosen by the pilot without any published procedure in the data set (everything outside the US):
+  // generate a standard RNAV (GPS) "T" approach per usable runway end so every real airport can be flown IFR.
+  for (const icao of wanted) {
+    if (approaches.some((x) => x.airport === icao)) continue;
+    const apt = airports.find((a) => a.icao === icao);
+    if (apt) approaches.push(...syntheticApproaches(apt, addFix));
   }
   replaceNavData({ airports, navaids, fixes, approaches });
   // terrain: precomputed elevation grid (sim coordinates) with airport surfaces flattened. Navigation is

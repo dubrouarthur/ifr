@@ -70,7 +70,7 @@ export const fmtFreq = (f: number) => f.toFixed(2);
 /** Resize a canvas for crisp rendering at a fixed logical size. Returns the scale. */
 export function fitCanvas(canvas: HTMLCanvasElement, logicalW: number, logicalH: number): number {
   const rect = canvas.getBoundingClientRect();
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const dpr = Math.min(1.75, window.devicePixelRatio || 1);
   const w = Math.max(1, Math.round(rect.width * dpr));
   const h = Math.max(1, Math.round(rect.height * dpr));
   if (canvas.width !== w || canvas.height !== h) {

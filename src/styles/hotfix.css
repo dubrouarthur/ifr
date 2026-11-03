@@ -45,3 +45,8 @@ body.chrome-auto:not(.chrome-hidden) .cockpit.no-otw > .panel { padding-top: 108
 .crash-card h2 { margin: 6px 0 6px; font-size: 22px; letter-spacing: -0.3px; }
 .crash-card p { margin: 0 0 18px; color: var(--muted); }
 .crash-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* modals always above the (auto-hiding, fixed) top bar */
+.modal-bg { z-index: 75; }
+.crash-veil { z-index: 74; }
+.toasts { position: fixed !important; z-index: 90 !important; }

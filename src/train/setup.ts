@@ -1,5 +1,5 @@
 // Flight setup model (wizard state) and its conversion to a circuit or a free-flight scenario. DOM-free.
-import { approach as getApproach, findFix, runway } from '../nav/data';
+import { approach as getApproach, findFix, runway, AIRPORTS, APPROACHES } from '../nav/data';
 import { fullEquipment, type Equipment, type Scenario, type Sim } from '../sim/sim';
 import type { Weather } from '../sim/environment';
 import type { Circuit, CircuitFailure, CircuitLeg, CircuitStart } from './circuits';
@@ -42,9 +42,9 @@ export const defaultSetup = (): FlightSetupState => ({
   cockpit: 'g1000',
   equipment: fullEquipment(),
   svt: true,
-  world: 'training',
-  dep: 'KSFO',
-  arr: 'KSJC',
+  world: 'real',
+  dep: '',
+  arr: '',
   start: 'runway',
   rwy: { airport: 'PARD', runway: '27', initialAlt: 3000 },
   air: { fix: 'ARD', bearing: 90, distNm: 12, altFt: 3000, iasKt: 95 },
@@ -160,3 +160,28 @@ export function setupToScenario(st: FlightSetupState): Scenario {
   };
 }
 
+
+/** After a (real-world) region load: point every reference of the setup at data that exists in the new region —
+ *  departure runway (longest), arrival approach (ILS first), start fix, hold fix, route — and suggest a direct
+ *  route to the first IAF when the route is empty. */
+export function adaptSetupToRegion(st: FlightSetupState) {
+  const dep = AIRPORTS.find((a) => a.icao === st.dep) ?? AIRPORTS[0];
+  if (dep && (st.rwy.airport !== dep.icao || !dep.runways.some((x) => x.id === st.rwy.runway))) {
+    const best = [...dep.runways].sort((a, b) => b.lengthFt - a.lengthFt)[0];
+    st.rwy = { airport: dep.icao, runway: best.id, initialAlt: Math.max(3000, Math.ceil((dep.elevFt + 2500) / 500) * 500) };
+  }
+  const arrApps = APPROACHES.filter((a) => a.airport === st.arr);
+  const pref = arrApps.find((a) => a.type === 'ILS') ?? arrApps.find((a) => a.type === 'RNAV') ?? arrApps[0];
+  if (pref && !arrApps.some((a) => a.id === st.arrival.approachId)) {
+    st.arrival = { approachId: pref.id, transition: pref.transitions[0]?.name ?? null, outcome: st.arrival.outcome };
+  }
+  if (pref && !arrApps.some((a) => a.id === st.final.approachId)) st.final = { approachId: st.arrival.approachId ?? pref.id, distNm: st.final.distNm };
+  if (!findFix(st.air.fix)) st.air.fix = st.arr || st.dep;
+  if (!findFix(st.hold.fix)) st.hold.fix = pref?.missed[pref.missed.length - 1]?.fix.ident ?? st.arr;
+  st.route = st.route.filter((f) => findFix(f));
+  if (!st.route.length && st.arrival.approachId && st.dep !== st.arr) {
+    const ap = APPROACHES.find((a) => a.id === st.arrival.approachId);
+    const tr = ap?.transitions.find((t) => t.name === st.arrival.transition) ?? ap?.transitions[0];
+    if (tr) st.route = [tr.legs[0].fix.ident];
+  }
+}

@@ -155,13 +155,21 @@ export class Outside3D {
   lookYaw = 0;
   lookPitch = 0;
   ok = true;
+  /** adaptive resolution: the pixel ratio drops when frames are slow and recovers when there is headroom */
+  private prMax = 1;
+  private pr = 1;
+  private frameMs = 16;
+  private lastRenderAt = 0;
+  private prCooldown = 0;
 
   constructor(canvas: HTMLCanvasElement, quality: Quality, time: TimeOfDay) {
     const reg = currentRegion();
     ORIGIN = reg ? { ...reg.center } : { lat: AIRPORTS[0].lat, lon: AIRPORTS[0].lon };
     this.quality = quality;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality === 'high', powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(quality === 'high' ? 1.6 : 1, window.devicePixelRatio || 1));
+    this.prMax = Math.min(quality === 'high' ? 1.5 : 1, window.devicePixelRatio || 1);
+    this.pr = this.prMax;
+    this.renderer.setPixelRatio(this.pr);
     // no tone mapping: fog, sky dome and clear colour must produce the exact same grey in cloud
     this.renderer.toneMapping = THREE.NoToneMapping;
     this.scene.fog = this.fog;
@@ -551,7 +559,32 @@ export class Outside3D {
       if (!best || dist < best.dist) best = { ang, dist };
     }
     u.uPapiAngle.value = best ? best.ang : 3;
+    this.adaptResolution();
     this.renderer.render(this.scene, this.camera);
+  }
+
+  /** current render scale (1 = native for the chosen quality) */
+  get renderScale() {
+    return this.pr / this.prMax;
+  }
+
+  private adaptResolution() {
+    const now = performance.now();
+    const gap = now - this.lastRenderAt;
+    this.lastRenderAt = now;
+    if (gap <= 0 || gap > 500) return; // tab hidden / first frame
+    this.frameMs += (gap - this.frameMs) * 0.08;
+    if ((this.prCooldown -= gap) > 0) return;
+    let next = this.pr;
+    if (this.frameMs > 24 && this.pr > 0.5) next = Math.max(0.5, this.pr * 0.85);
+    else if (this.frameMs < 15 && this.pr < this.prMax) next = Math.min(this.prMax, this.pr * 1.08);
+    if (next !== this.pr) {
+      this.pr = next;
+      this.renderer.setPixelRatio(next);
+      const c = this.renderer.domElement;
+      this.renderer.setSize(c.clientWidth || 1, c.clientHeight || 1, false);
+      this.prCooldown = 900;
+    }
   }
 }
 
