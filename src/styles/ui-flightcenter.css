@@ -362,13 +362,13 @@
   flex-wrap: nowrap;
   overflow: hidden;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   font-size: 12px;
 }
 .fc-meta > span {
   flex: none;
   white-space: nowrap;
-  padding: 2px 7px;
+  padding: 2px 6px;
   border-radius: 6px;
   background: var(--surface-3);
   color: var(--text-2);
@@ -376,7 +376,7 @@
 .fc-meta > .fc-mi {
   display: inline-grid;
   place-items: center;
-  padding: 2px 5px;
+  padding: 2px 4px;
   color: var(--muted);
 }
 .fc-meta .fc-lvl.d1 {
@@ -427,10 +427,12 @@
 .fc-quick .fc-cards {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
-@container (max-width: 640px) {
+@container (max-width: 760px) {
   .fc-quick .fc-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+@container (max-width: 640px) {
   .fc-hero {
     grid-template-columns: 1fr;
   }
@@ -478,7 +480,7 @@
 .fc-plan-b .ico {
   color: var(--accent);
 }
-@container (max-width: 860px) {
+@container (max-width: 1200px) {
   .fc-plan {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }

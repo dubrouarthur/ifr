@@ -13,7 +13,7 @@ export type CatId = 'approaches' | 'procedures' | 'xc' | 'circuits' | 'basics' |
 export const CATEGORIES: { id: CatId; title: string; short: string; icon: IconName; desc: string; subs: string[] }[] = [
   { id: 'approaches', title: 'Approaches', short: 'Approach', icon: I.approach, desc: 'Every instrument approach type, coupled or hand-flown.', subs: ['ILS & precision', 'LOC / LDA / BC', 'VOR & NDB', 'RNAV (GPS)', 'Circling'] },
   { id: 'procedures', title: 'Procedures', short: 'Procedure', icon: I.hold, desc: 'Holdings, entries, DME arcs, procedure turns, interceptions and tracking.', subs: ['Holdings', 'Interceptions', 'Arcs & PTs', 'Tracking & navigation aids'] },
-  { id: 'xc', title: 'IFR flights', short: 'IFR flight', icon: I.route, desc: 'Gate-to-gate IFR cross-country flights between airports.', subs: ['Cross-country'] },
+  { id: 'xc', title: 'IFR flights', short: 'XC', icon: I.route, desc: 'Gate-to-gate IFR cross-country flights between airports.', subs: ['Cross-country'] },
   { id: 'circuits', title: 'IFR circuits', short: 'Circuit', icon: I.tools, desc: 'Instructor-built circuits: start, legs, holds, approaches, weather and scheduled failures.', subs: ['School presets', 'My circuits'] },
   { id: 'basics', title: 'Instrument basics', short: 'Basics', icon: I.attitude, desc: 'Attitude instrument flying and partial panel.', subs: ['Attitude instrument flying', 'Partial panel'] },
   { id: 'abnormal', title: 'Emergencies', short: 'Emergency', icon: I.warning, desc: 'Missed approaches, failures, partial-panel approaches.', subs: ['Missed approach & failures'] },
@@ -63,7 +63,7 @@ function exTag(e: Exercise, cat: CatId, sub: string): string {
   if (id === 'nav-ndb') return 'NDB';
   if (id === 'nav-gps') return 'GPS';
   if (cat === 'basics') return sub === 'Partial panel' ? 'PARTIAL PANEL' : 'ATTITUDE';
-  if (cat === 'abnormal') return id.startsWith('ma-da') ? 'MISSED APPROACH' : 'FAILURE';
+  if (cat === 'abnormal') return id.startsWith('ma-da') ? 'MISSED APCH' : 'FAILURE';
   if (cat === 'checkride') return 'CHECKRIDE';
   if (cat === 'xc') return `XC · ${plateTag(e.plate) || 'IFR'}`;
   return CATEGORIES.find((c) => c.id === cat)!.short.toUpperCase();

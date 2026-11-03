@@ -104,6 +104,17 @@ const PLAN: {
 const pathLabel = (p: Path) =>
   PATH_SHORT[p.id] ?? p.title.replace(" — complete syllabus", "");
 const pct = (n: number) => `${Math.round(n)}%`;
+/** search cards: "Category · TAG", without repeating the category in the tag (CIRCUIT · ILS → IFR circuits · ILS) */
+const searchLabel = (cat: (typeof CATEGORIES)[number], tag: string) => {
+  const short = cat.short.toUpperCase();
+  const rest =
+    tag === short || tag === cat.title.toUpperCase()
+      ? ""
+      : tag.startsWith(`${short} · `)
+        ? tag.slice(short.length + 3)
+        : tag;
+  return rest ? `${cat.title} · ${rest}` : cat.title;
+};
 
 export class FlightCenter extends Modal {
   private view: View = { type: "home" };
@@ -498,7 +509,7 @@ export class FlightCenter extends Modal {
       label === "tag"
         ? i.tag
         : label === "cat"
-          ? `${cat.title} · ${i.tag}`
+          ? searchLabel(cat, i.tag)
           : i.sub;
     const badge = p?.passed
       ? h(
@@ -549,7 +560,7 @@ export class FlightCenter extends Modal {
         { class: "fc-meta" },
         h("span", { class: `fc-lvl d${i.difficulty}` }, DIFF[i.difficulty]),
         h("span", {}, i.airport),
-        h("span", {}, `~${i.minutes} min`),
+        h("span", {}, `${i.minutes} min`),
         i.ap === false ? ic(I.hand, "Hand-flown: autopilot inhibited") : null,
         i.plate ? ic(I.document, "Approach plate included") : null,
       ),
@@ -910,7 +921,7 @@ export class FlightCenter extends Modal {
             h(
               "small",
               {},
-              `${i.tag} · ${DIFF[i.difficulty]} · ~${i.minutes} min`,
+              `${i.sub} · ${DIFF[i.difficulty]} · ${i.minutes} min`,
             ),
             h("span", {}, i.summary),
           ),
@@ -973,7 +984,7 @@ export class FlightCenter extends Modal {
         { class: "fc-meta" },
         h("span", { class: `fc-lvl d${i.difficulty}` }, DIFF[i.difficulty]),
         h("span", {}, i.airport),
-        h("span", {}, `~${i.minutes} min`),
+        h("span", {}, `${i.minutes} min`),
         h("span", {}, i.graded ? "Scored" : "Practice"),
         i.ap === false ? h("span", {}, "Hand-flown") : null,
       ),
