@@ -217,7 +217,10 @@ export function navigraphItem(c: NgChart, airport: string): ChartItem {
 function runwayKey(g: string): number {
   const m = /^RWY (\d+)([LCR]?)/.exec(g);
   if (!m) return 1e4;
-  return Number(m[1]) * 10 + (({ L: 1, C: 2, R: 3 } as Record<string, number>)[m[2]] ?? 0);
+  return (
+    Number(m[1]) * 10 +
+    (({ L: 1, C: 2, R: 3 } as Record<string, number>)[m[2]] ?? 0)
+  );
 }
 /** the list of one category: approaches grouped by runway, the rest sorted by index then name */
 export function groupItems(
@@ -450,7 +453,10 @@ export class ChartsDrawer {
       const c = this.ngCharts.find((x) => `ng:${x.id}` === it.key);
       if (c) void this.showNavigraph(c);
     } else this.show(it.key);
+    // keyboard users land back on the chart title, not on the page body
+    const hadFocus = this.list.contains(document.activeElement);
     this.closeList();
+    if (hadFocus) this.headBtn.focus({ preventScroll: true });
   }
   private togglePin(key: string) {
     const i = this.pins.indexOf(key);
