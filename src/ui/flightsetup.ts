@@ -5,13 +5,12 @@ import { Modal, WX_PRESETS } from './modals';
 import { FIXES, APPROACHES, AIRPORTS, approach as getApproach, findFix } from '../nav/data';
 import { FAILURE_LABELS, fullEquipment, type Equipment, type Failures, type Scenario } from '../sim/sim';
 import type { Weather } from '../sim/environment';
-import { circuitPath, circuitStats, validate, circuitStore, type Circuit, type CircuitLeg } from '../train/circuits';
+import { circuitStats, validate, circuitStore, type Circuit, type CircuitLeg } from '../train/circuits';
 import { defaultSetup, adaptSetupToRegion, sanitizeSetup, setupToCircuit, setupToScenario, type FlightSetupState, type FlightType, type StartKind } from '../train/setup';
 export type { FlightSetupState, FlightType } from '../train/setup';
-import { racetrack } from '../nav/holding';
-import { toLocal, type LatLon } from '../nav/geo';
 import { approachPlate } from '../plates/plates';
 import { atisText } from './weather';
+import { RouteMap } from './routeMap';
 import { loadRegion, leaveRealWorld, currentRegion, searchAirports, nearbyAirports, airportRow, rowDistanceNm, MAX_REGION_NM, FLAG_PROC, FLAG_ILS, type IndexRow } from '../nav/world';
 import { bearingDeg } from '../nav/geo';
 
@@ -528,6 +527,7 @@ export class FlightSetup extends Modal {
       case 7: {
         this.main.append(this.h2('Briefing', 'Check the plan, then fly.'));
         const c = setupToCircuit(st);
+        this.main.append(new RouteMap(c, { height: 340, onExpand: () => this.openBigMap(c) }).el);
         const errs = st.type === 'free' ? [] : validate(c);
         if (errs.length) this.main.append(h('div', { class: 'fs-errs' }, ...errs.map((e) => h('div', {}, `⚠ ${e}`))));
         const dest = c.legs.find((l) => l.type === 'approach') as Extract<CircuitLeg, { type: 'approach' }> | undefined;
@@ -602,7 +602,7 @@ export class FlightSetup extends Modal {
     this.side.append(
       h('div', { class: 'fs-kicker' }, 'Your flight'),
       h('h3', { class: 'fs-title' }, c.name),
-      this.mapSvg(c),
+      this.mapView(c, 250, true),
       h('div', { class: 'ios-stat', style: 'margin-top:10px' },
         h('div', {}, h('small', {}, 'Type'), h('b', {}, { route: 'IFR A → B', approach: 'Approach', hold: 'Holding', free: 'Free flight' }[st.type])),
         h('div', {}, h('small', {}, 'Distance · time'), h('b', {}, `${stats.distNm.toFixed(0)} NM · ~${stats.minutes} min`)),
@@ -614,26 +614,25 @@ export class FlightSetup extends Modal {
     );
   }
 
-  private mapSvg(c: Circuit): HTMLElement {
-    const pts = c.legs.length ? circuitPath(c) : circuitPath({ ...c, legs: [] });
-    const W = 340, H = 220;
-    const near = AIRPORTS.filter((a) => pts.some((p) => Math.abs(p.lat - a.lat) < 0.3 && Math.abs(p.lon - a.lon) < 0.4));
-    const all: LatLon[] = [...pts, ...(near.length ? near : AIRPORTS)];
-    const ref = all[0];
-    const loc = all.map((p) => toLocal(ref, p));
-    const minX = Math.min(...loc.map((p) => p.x)) - 3, maxX = Math.max(...loc.map((p) => p.x)) + 3;
-    const minY = Math.min(...loc.map((p) => p.y)) - 3, maxY = Math.max(...loc.map((p) => p.y)) + 3;
-    const sc = Math.min(W / (maxX - minX), H / (maxY - minY));
-    const P = (p: LatLon) => { const l = toLocal(ref, p); return { x: (l.x - minX) * sc + (W - (maxX - minX) * sc) / 2, y: H - ((l.y - minY) * sc + (H - (maxY - minY) * sc) / 2) }; };
-    let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" rx="12" fill="#07101a"/>`;
-    for (const a of AIRPORTS) for (let k = 0; k < a.runways.length; k += 2) { const r1 = P(a.runways[k].threshold), r2 = P(a.runways[k].end); svg += `<line x1="${r1.x}" y1="${r1.y}" x2="${r2.x}" y2="${r2.y}" stroke="#cfd6dd" stroke-width="3"/>`; }
-    const line = pts.map(P);
-    for (let k = 1; k < line.length; k++) svg += `<line x1="${line[k - 1].x}" y1="${line[k - 1].y}" x2="${line[k].x}" y2="${line[k].y}" stroke="${pts[k].kind === 'approach' ? '#ff5cf4' : '#00e4ff'}" stroke-width="2.2"${pts[k].kind === 'approach' ? '' : ' stroke-dasharray="6 4"'}/>`;
-    for (const l of c.legs) if (l.type === 'hold') { const f = findFix(l.ident); if (f) svg += `<polygon points="${racetrack({ fix: { ident: f.ident, lat: f.lat, lon: f.lon }, inbound: l.inbound, turn: l.turn, legMin: l.legMin, altFt: l.alt }, 90).map(P).map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}" fill="rgba(255,210,58,.12)" stroke="#ffd23a" stroke-width="2"/>`; }
-    const seen = new Set<string>();
-    pts.forEach((p, k) => { if (seen.has(p.ident)) return; seen.add(p.ident); const q = line[k]; const col = p.kind === 'start' ? '#2bd576' : p.kind === 'approach' ? '#ff9cf8' : p.kind === 'hold' ? '#ffd23a' : '#00e4ff'; svg += `<circle cx="${q.x}" cy="${q.y}" r="${p.kind === 'start' ? 5 : 3}" fill="${col}"/><text x="${q.x + 6}" y="${q.y - 5}" fill="${col}" font-size="10" font-family="Inter">${p.ident}</text>`; });
-    svg += '</svg>';
-    return h('div', { class: 'fs-map', html: svg });
+  private sideMap: RouteMap | null = null;
+  private mapView(c: Circuit, height: number, compact: boolean): HTMLElement {
+    this.sideMap?.destroy();
+    const m = new RouteMap(c, { height, compact, onExpand: () => this.openBigMap(c) });
+    this.sideMap = m;
+    return m.el;
+  }
+  /** full-screen flight-plan map above the planner (the planner stays open underneath) */
+  private openBigMap(c: Circuit) {
+    const m = new RouteMap(c, { height: Math.round(window.innerHeight * 0.78) });
+    let layer: HTMLElement | null = null;
+    const close = () => { m.destroy(); layer?.remove(); document.removeEventListener('keydown', onKey, true); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } };
+    layer = h('div', { class: 'rm-full', role: 'dialog', 'aria-label': 'Flight plan map', onclick: (e: Event) => e.target === layer && close() },
+      h('div', { class: 'rm-full-box' },
+        h('header', {}, h('b', {}, c.name), h('span', { class: 'muted' }, 'Drag to pan · scroll to zoom'), h('button', { class: 'x', 'aria-label': 'Close', onclick: close }, '×')),
+        m.el));
+    document.addEventListener('keydown', onKey, true);
+    document.body.append(layer!);
   }
 
   // ---------------------------------------------------------------- footer
