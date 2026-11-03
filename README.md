@@ -8,6 +8,18 @@ G1000-style glass cockpit (PFD + MFD with bezel knobs/softkeys), GFC700-class au
 
 **3D outside view (WebGL)** — the Ardent Islands with terrain relief, coastline and sea, towns and forests; runways with full markings (threshold bars, numbers, TDZ, aiming points, centreline), taxiways, aprons, tower and hangars; **ALSF-II / MALSR approach lights with sequenced flashers**, edge / threshold / end / TDZ / centreline lights, REIL strobes and **PAPI driven by your actual glide angle**; sky dome with sun, overcast base and tops, visibility fog and the break-out at minimums; **day, dusk and night**; mouse look-around.
 
+**Connectivity**
+- **EFB live link** — the aircraft appears in ForeFlight, Garmin Pilot, SkyDemon, FltPlan Go, Avare… The page streams telemetry to a tiny local bridge which re-broadcasts **GDL 90** (UDP 4000: heartbeat, ownship, geometric altitude, ForeFlight ID) and **XGPS/XATT** (UDP 49002), like X-Plane does:
+  ```bash
+  node tools/efb-bridge.mjs            # or --target 192.168.1.255 to aim at your Wi-Fi broadcast address
+  ```
+  Then Menu → Connections → Connect (`ws://localhost:8765`). No dependencies (Node 18+); downloadable from the app.
+- **Exports** — flight plan as Garmin `.fpl` (ForeFlight/Garmin Pilot import), X-Plane `.fms`, MSFS `.pln`, GPX route; flown track as GPX (CloudAhoy/ForeFlight), KML 3D (Google Earth) and CSV.
+- **School webhook** — POST every debrief as JSON (student, scenario, ACS result, score, failed tasks, events) to FlightLogger / Flight Schedule Pro via Zapier or Make, an LMS or a sheet.
+- **Chart services** — links to Navigraph Charts, FAA d-TPP, SIA and SimBrief. A built-in Navigraph integration needs a Navigraph developer client ID (OAuth) and is not enabled.
+
+**Debrief replay** — replay the flight in the cockpit (instruments + 3D view) with a timeline, event markers and 1×/4×/16× speed.
+
 **Wind & weather model** — surface wind with a logarithmic boundary layer, **winds aloft by layer** (auto veer-and-strengthen profile or custom 3000/6000/9000 ft layers with per-layer turbulence), **gust surges** with direction swing (gusts change your airspeed by inertia), Dryden-style turbulence (more near the ground in strong wind), low-level wind shear, weathervaning on the ground. Weather station with runway head/crosswind calculator against the C172's 15 kt demonstrated crosswind, wind at 3000 ft, and a generated **ATIS**. PFD wind box shows head/tail and crosswind components; drift angle on the situation bar.
 
 **Clarity** — situation bar (phase · next fix & constraint · altitude vs selected · wind with components and drift · minimums · IMC/VMC), a coach that only shows what to do now, a first-launch **guided tour**, and **Explain mode (F1)** that labels and explains every instrument in all three cockpits.

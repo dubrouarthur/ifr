@@ -239,7 +239,7 @@ function drawAttitude(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
     text(ctx, 'CRASH', CX, CY - 12, C.white, 28, 'center', 700);
     text(ctx, sim.ac.s.crashed, CX, CY + 20, C.white, 16, 'center');
   }
-  if (sim.paused && !sim.ac.s.crashed) {
+  if (sim.paused && !sim.replaying && !sim.ac.s.crashed) {
     box(ctx, CX - 70, CY + 110, 140, 34, 'rgba(0,0,0,0.7)', C.white);
     text(ctx, 'PAUSED', CX, CY + 127, C.white, 22, 'center', 700);
   }

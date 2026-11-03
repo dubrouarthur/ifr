@@ -5,6 +5,8 @@ import { APPROACHES, FIXES, runway, airport } from '../nav/data';
 import { approachPlate } from '../plates/plates';
 import { computeDebrief, evaluateAcs, type Recorder } from '../sim/recorder';
 import { history } from './instructor';
+import { webhookCfg, postWebhook } from '../connect/webhook';
+import { trackGpx, trackKml, download } from '../connect/exports';
 import { AXIS_LABELS, BUTTON_LABELS, AxisDetector, type AxisName, type ButtonAction, type InputManager } from '../sim/input';
 import { alongTrackNm, distanceNm, toLocal } from '../nav/geo';
 
@@ -375,6 +377,7 @@ export class JoystickModal extends Modal {
 // ----------------------------------------------------------------- debrief
 export class DebriefModal extends Modal {
   private savedFor = new WeakSet<Recorder>();
+  onReplay?: () => void;
   constructor(private sim: Sim, private onAgain: () => void, private onNew: () => void) {
     super('Flight debrief');
   }
@@ -390,7 +393,7 @@ export class DebriefModal extends Modal {
     const acs = evaluateAcs(rec);
     if (!this.savedFor.has(rec) && (db.finalSamples.length > 4 || rec.touchdown || rec.crashed || rec.missedAt !== null)) {
       this.savedFor.add(rec);
-      history.add({
+      const rec0 = {
         id: String(Date.now()),
         date: new Date().toISOString(),
         student: rec.student,
@@ -403,7 +406,9 @@ export class DebriefModal extends Modal {
         failedTasks: acs.items.filter((i) => i.result === 'FAIL').map((i) => i.task),
         failures: rec.failuresInjected,
         durationSec: db.durationSec,
-      });
+      };
+      history.add(rec0);
+      if (webhookCfg().auto && webhookCfg().url) void postWebhook({ type: 'debrief', app: 'IFR Trainer', ...rec0, acsItems: acs.items, scoreItems: db.items, events: rec.events });
     }
     // persist best
     const sc = this.sim.scenario;
@@ -443,7 +448,10 @@ export class DebriefModal extends Modal {
     this.foot.append(
       h('button', { class: 'btn', onclick: () => this.exportJson() }, 'Export flight (JSON)'),
       h('button', { class: 'btn', onclick: () => window.print(), title: 'Print or save as PDF' }, 'Print / PDF'),
+      h('button', { class: 'btn', onclick: () => download(trackGpx(rec.samples, new Date().toISOString()), 'ifr_trainer_track.gpx', 'application/gpx+xml'), title: 'GPX track for CloudAhoy, ForeFlight, Garmin' }, 'GPX'),
+      h('button', { class: 'btn', onclick: () => download(trackKml(rec.samples), 'ifr_trainer_track.kml', 'application/vnd.google-earth.kml+xml'), title: '3D track for Google Earth' }, 'KML'),
       h('span', { style: 'flex:1' }),
+      h('button', { class: 'btn', disabled: rec.samples.length < 10, onclick: () => { this.close(); this.onReplay?.(); }, title: 'Replay the flight with the instruments and the 3D view' }, '▶ Replay in cockpit'),
       h('button', { class: 'btn', onclick: () => { this.close(); } }, 'Keep flying'),
       h('button', { class: 'btn', onclick: () => { this.close(); this.onNew(); } }, 'New scenario'),
       h('button', { class: 'btn primary', onclick: () => { this.close(); this.onAgain(); } }, 'Fly it again ↻'),

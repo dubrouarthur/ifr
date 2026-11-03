@@ -18,6 +18,7 @@ import { FlightCenter } from './ui/flightcenter';
 import { SettingsModal } from './ui/settings';
 import { WeatherStation } from './ui/weather';
 import { ExplainOverlay, Tour } from './ui/explain';
+import { ConnectModal } from './ui/connect';
 import { CircuitBuilder, decodeCircuit } from './ui/circuitBuilder';
 import { circuitToExercise, type Circuit } from './train/circuits';
 import type { LessonRun, Exercise } from './train/engine';
@@ -70,12 +71,79 @@ const procModal = new ProcModal(sim, (m) => toast(m, 'good'));
 const directModal = new DirectModal(sim, (m) => toast(m, 'good'));
 const joyModal = new JoystickModal(input);
 const debrief = new DebriefModal(sim, () => startScenario(lastScenario, lastWx, sim.assess), () => fc.open());
+debrief.onReplay = () => startReplay();
 const historyModal = new HistoryModal();
+const connect = new ConnectModal(sim, (m, k) => toast(m, k ?? 'info'));
 let lesson: LessonRun | null = null;
 let lessonPath: Path | null = null;
 const briefing = new BriefingModal(sim, (run) => startLesson(run), (id) => { charts.toggle(true); charts.show(id); });
 const drill = new HoldDrillModal();
 const learn = new LearnModal((ex, path) => pickExercise(ex, path), () => drill.open());
+// ------------------------------------------------------------------ replay
+interface ReplayState { samples: import('./sim/recorder').Sample[]; events: import('./sim/recorder').FlightEvent[]; pos: number; playing: boolean; speed: number; saved: string; wasPaused: boolean }
+let replay: ReplayState | null = null;
+function startReplay() {
+  const r = sim.rec;
+  if (r.samples.length < 10) return;
+  replay = { samples: [...r.samples], events: [...r.events], pos: 0, playing: true, speed: 4, saved: JSON.stringify(sim.ac.s), wasPaused: sim.paused };
+  sim.paused = true;
+  sim.replaying = true;
+  document.body.classList.add('replaying');
+  renderReplayBar();
+}
+function stopReplay() {
+  if (!replay) return;
+  Object.assign(sim.ac.s, JSON.parse(replay.saved));
+  sim.paused = replay.wasPaused;
+  replay = null;
+  sim.replaying = false;
+  document.body.classList.remove('replaying');
+  replayBar.innerHTML = '';
+  sim.step(0.01);
+}
+function renderReplayBar() {
+  if (!replay) return;
+  const R = replay;
+  const t0 = R.samples[0].t;
+  const t1 = R.samples[R.samples.length - 1].t;
+  replayBar.innerHTML = '';
+  const slider = h('input', { type: 'range', min: 0, max: R.samples.length - 1, step: 0.1, value: R.pos, class: 'lever', 'aria-label': 'Replay position' }) as HTMLInputElement;
+  slider.addEventListener('input', () => { R.pos = Number(slider.value); R.playing = false; applyReplay(); });
+  slider.addEventListener('keydown', (e) => e.stopPropagation());
+  const marks = h('div', { class: 'rp-marks' }, ...R.events.filter((e) => e.kind !== 'info' || /FAF|Minimums|Touchdown|Liftoff/.test(e.text)).map((e) => h('i', { class: e.kind, style: `left:${((e.t - t0) / Math.max(1, t1 - t0)) * 100}%`, title: e.text })));
+  replayBar.append(
+    h('span', { class: 'rp-tag' }, 'REPLAY'),
+    h('button', { class: 'btn', onclick: () => { R.playing = !R.playing; renderReplayBar(); } }, R.playing ? '❚❚' : '▶'),
+    h('div', { class: 'rp-track' }, marks, slider),
+    h('span', { class: 'rp-time', 'data-rp': 'time' }, ''),
+    h('div', { class: 'seg' }, ...[1, 4, 16].map((k) => h('button', { class: R.speed === k ? 'on' : '', onclick: () => { R.speed = k; renderReplayBar(); } }, `${k}×`))),
+    h('span', { class: 'rp-ev', 'data-rp': 'ev' }, ''),
+    h('button', { class: 'btn primary', onclick: () => stopReplay() }, 'Exit replay'),
+  );
+  applyReplay();
+}
+function applyReplay() {
+  if (!replay) return;
+  const R = replay;
+  const i = Math.max(0, Math.min(R.samples.length - 1, Math.floor(R.pos)));
+  const a = R.samples[i];
+  const b = R.samples[Math.min(R.samples.length - 1, i + 1)];
+  const f = R.pos - i;
+  const lerp = (x: number, y: number) => x + (y - x) * f;
+  let dh = b.hdg - a.hdg;
+  if (dh > 180) dh -= 360;
+  if (dh < -180) dh += 360;
+  sim.ac.applySnapshot({ lat: lerp(a.lat, b.lat), lon: lerp(a.lon, b.lon), altFt: lerp(a.alt, b.alt) - (sim.av.baro - sim.weather.qnh) * 1000, hdg: (a.hdg + dh * f + 360) % 360, pitch: lerp(a.pitch, b.pitch), bank: lerp(a.bank, b.bank), ias: lerp(a.ias, b.ias), vs: lerp(a.vs, b.vs), agl: lerp(a.agl, b.agl) });
+  const t = lerp(a.t, b.t) - R.samples[0].t;
+  const time = replayBar.querySelector('[data-rp=time]');
+  if (time) time.textContent = `${fmtTime(t)} / ${fmtTime(R.samples[R.samples.length - 1].t - R.samples[0].t)}`;
+  const ev = [...R.events].reverse().find((e) => e.t <= a.t);
+  const evEl = replayBar.querySelector('[data-rp=ev]');
+  if (evEl) evEl.textContent = ev ? ev.text : '';
+  const sl = replayBar.querySelector('input') as HTMLInputElement | null;
+  if (sl && R.playing) sl.value = String(R.pos);
+}
+
 const fc = new FlightCenter({
   flyScenario: (sc, wx, a) => startScenario(sc, wx, a),
   briefExercise: (ex, path) => pickExercise(ex, path),
@@ -160,6 +228,7 @@ const I = {
   sound: 'M4 9v6h4l5 4V5L8 9H4zM17 8a5 5 0 0 1 0 8M19.5 5.5a9 9 0 0 1 0 13',
   mute: 'M4 9v6h4l5 4V5L8 9H4zM17 9l5 6M22 9l-5 6',
   gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
+  link: 'M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7',
   more: 'M5 12h.01M12 12h.01M19 12h.01',
   learn: 'M2 9l10-5 10 5-10 5-10-5zM6 11v5c3 2 9 2 12 0v-5M22 9v6',
   ios: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0',
@@ -213,6 +282,7 @@ const moreItem = (ic: string, label: string, kbd: string, fn: () => void) =>
 moreMenu.append(
   moreItem(I.gear, 'Settings', ',', () => settings.open()),
   moreItem(I.cloud, 'Weather station', '', () => weatherModal.open()),
+  moreItem(I.link, 'Connections & export', '', () => connect.open()),
   moreItem(I.help, 'Explain instruments', 'F1', () => toggleExplain()),
   moreItem(I.learn, 'Guided tour', '', () => startTour()),
   moreItem(I.joy, 'Joystick & controls', '', () => joyModal.open()),
@@ -257,7 +327,8 @@ const glare = h('div', { class: 'glare' });
 const lookHint = h('div', { class: 'look-hint' }, 'Drag to look around · double-click to recentre');
 const sitbar = h('div', { class: 'sitbar', role: 'status', 'aria-label': 'Flight situation' });
 const pauseVeil = h('div', { class: 'pause-veil' }, h('b', {}, 'Paused'), h('span', {}, 'Press Esc or ▶ to resume'));
-const otw = h('section', { class: 'otw' }, otwCanvas, glCanvas, glare, lookHint, sitbar, pauseVeil, coach, badges, toasts);
+const replayBar = h('div', { class: 'replay' });
+const otw = h('section', { class: 'otw' }, otwCanvas, glCanvas, glare, lookHint, sitbar, pauseVeil, coach, badges, toasts, replayBar);
 let outside: Outside3D | null = null;
 let timeOfDay = store.get<TimeOfDay>('ifr.tod', 'day');
 let gfx = store.get<Quality>('ifr.gfx', 'high');
@@ -468,29 +539,37 @@ function setCockpit(t: CockpitType, announce = true) {
   if (announce) toast(t === 'g1000' ? 'Cockpit: G1000 glass' : t === 'steam' ? 'Cockpit: classic steam gauges' : 'Cockpit: airliner PFD/ND', 'info');
 }
 
-// footer
-const thr = h('input', { type: 'range', min: 0, max: 100, value: 60, 'aria-label': 'Throttle' }) as HTMLInputElement;
+// control pedestal (footer)
+const thr = h('input', { type: 'range', min: 0, max: 100, value: 60, class: 'lever', 'aria-label': 'Throttle' }) as HTMLInputElement;
 let thrDragging = false;
 thr.addEventListener('pointerdown', () => (thrDragging = true));
 window.addEventListener('pointerup', () => (thrDragging = false));
 thr.addEventListener('input', () => (sim.controls.throttle = Number(thr.value) / 100));
-const thrVal = h('span', {}, '');
-const flapBtns = [0, 1, 2, 3].map((i) => h('button', { onclick: () => (sim.controls.flaps = i), title: `Flaps ${i * 10}°` }, String(i * 10)));
-const trimMeter = h('div', { class: 'meter center', title: 'Elevator trim' }, h('i', {}));
-const elevMeter = h('div', { class: 'meter center', title: 'Elevator' }, h('i', {}));
-const ailMeter = h('div', { class: 'meter center', title: 'Aileron' }, h('i', {}));
+thr.addEventListener('keydown', (e) => e.stopPropagation());
+const thrPct = h('b', {}, '');
+const thrRpm = h('small', {}, '');
+const flapNeedle = h('i', { class: 'flap-needle' });
+const flapBtns = ['UP', '10', '20', 'FULL'].map((l, i) => h('button', { onclick: () => (sim.controls.flaps = i), title: `Flaps ${i * 10}° (F / Shift+F)` }, l));
+const flapRead = h('small', {}, '');
+const trimWheel = h('div', { class: 'trim-wheel', title: 'Elevator trim — Home (nose down) / End (nose up), or scroll here' }, h('i', {}));
+trimWheel.addEventListener('wheel', (e) => { e.preventDefault(); sim.controls.trim = Math.max(-1, Math.min(1, sim.controls.trim + (e.deltaY < 0 ? -0.02 : 0.02))); }, { passive: false });
+const trimMark = h('i', { class: 'trim-mark' });
+const trimRead = h('small', {}, '');
 const stickDot = h('i', {});
-const stick = h('div', { class: 'stick', title: 'Touch yoke: drag' }, stickDot);
+const stick = h('div', { class: 'stick', title: 'Yoke position — drag here to fly with the mouse or a touch screen' }, h('span', { class: 'cross' }), stickDot);
+const rudderBar = h('div', { class: 'rudder', title: 'Rudder ( , and . )' }, h('i', {}));
+const brakeLight = h('span', { class: 'brake-light' }, 'BRAKES');
 const joyDot = h('span', { class: 'joy-dot' });
-const joyLbl = h('span', {}, 'Keyboard');
-const footer = h('footer', { class: 'footer' },
-  h('div', { class: 'ctl' }, h('label', {}, 'Throttle'), thr, thrVal),
-  h('div', { class: 'ctl' }, h('label', {}, 'Flaps'), h('div', { class: 'flaps' }, ...flapBtns)),
-  h('div', { class: 'ctl' }, h('label', {}, 'Trim'), h('button', { class: 'btn', style: 'height:24px;padding:0 6px', onclick: () => (sim.controls.trim = Math.max(-1, sim.controls.trim - 0.05)), title: 'Nose down (Home)' }, '▼'), trimMeter, h('button', { class: 'btn', style: 'height:24px;padding:0 6px', onclick: () => (sim.controls.trim = Math.min(1, sim.controls.trim + 0.05)), title: 'Nose up (End)' }, '▲')),
-  h('div', { class: 'ctl' }, h('label', {}, 'Yoke'), elevMeter, ailMeter, stick),
-  h('div', { class: 'ctl', style: 'cursor:pointer', onclick: () => joyModal.open() }, joyDot, joyLbl),
+const joyLbl = h('span', { class: 'joy-lbl' }, 'Keyboard');
+const group = (title: string, ...kids: (HTMLElement | string)[]) => h('div', { class: 'ped-g' }, h('div', { class: 'ped-t' }, title), h('div', { class: 'ped-c' }, ...kids));
+const footer = h('footer', { class: 'footer pedestal' },
+  group('Throttle', h('div', { class: 'lever-box' }, h('span', { class: 'lv-l' }, 'IDLE'), thr, h('span', { class: 'lv-l' }, 'FULL')), h('div', { class: 'ped-read' }, thrPct, thrRpm)),
+  group('Flaps', h('div', { class: 'flap-sel' }, ...flapBtns, flapNeedle), flapRead),
+  group('Trim', h('button', { class: 'ped-btn', onclick: () => (sim.controls.trim = Math.max(-1, sim.controls.trim - 0.05)), title: 'Nose down (Home)' }, '▼'), h('div', { class: 'trim-box' }, trimWheel, h('div', { class: 'trim-scale' }, h('span', {}, 'DN'), h('b', {}, 'T/O'), h('span', {}, 'UP'), trimMark)), h('button', { class: 'ped-btn', onclick: () => (sim.controls.trim = Math.min(1, sim.controls.trim + 0.05)), title: 'Nose up (End)' }, '▲'), trimRead),
+  group('Yoke & rudder', stick, h('div', { class: 'ped-col' }, rudderBar, brakeLight)),
+  group('Controller', h('button', { class: 'ped-joy', onclick: () => joyModal.open(), title: 'Joystick, yoke & pedals setup' }, joyDot, joyLbl)),
   h('div', { class: 'spacer' }),
-  h('div', { class: 'ctl' }, h('kbd', {}, '?'), ' shortcuts · ', h('kbd', {}, 'G'), ' go-around · ', h('kbd', {}, 'K'), ' charts'),
+  h('div', { class: 'ped-keys' }, h('span', {}, h('kbd', {}, 'F1'), ' explain'), h('span', {}, h('kbd', {}, '?'), ' shortcuts'), h('span', {}, h('kbd', {}, 'G'), ' go-around'), h('span', {}, h('kbd', {}, 'K'), ' charts')),
 );
 
 document.getElementById('app')!.append(topbar, cockpit, footer);
@@ -508,9 +587,9 @@ document.body.append(charts.el, ios.el);
     stickDot.style.left = `${50 + x * 40}%`;
     stickDot.style.top = `${50 + y * 40}%`;
   };
-  stick.addEventListener('pointerdown', (e) => { active = true; stick.setPointerCapture(e.pointerId); move(e); });
+  stick.addEventListener('pointerdown', (e) => { active = true; stick.classList.add('active'); stick.setPointerCapture(e.pointerId); move(e); });
   stick.addEventListener('pointermove', (e) => active && move(e));
-  const end = () => { active = false; input.virtual.roll = input.virtual.pitch = 0; stickDot.style.left = stickDot.style.top = '50%'; };
+  const end = () => { active = false; stick.classList.remove('active'); input.virtual.roll = input.virtual.pitch = 0; };
   stick.addEventListener('pointerup', end);
   stick.addEventListener('pointercancel', end);
 }
@@ -765,7 +844,7 @@ function updateSitbar() {
   const gust = sim.weather.gustKt > sim.weather.windKt ? `G${Math.round(sim.weather.gustKt)}` : '';
   const mins = sim.av.minimums;
   const cells: [string, string, string][] = [
-    ['Phase', sim.ac.s.crashed ? 'Crashed' : sim.paused ? 'Paused' : PHASE_LABEL[ph], sim.ac.s.crashed ? 'bad' : ''],
+    ['Phase', sim.replaying ? 'Replay' : sim.ac.s.crashed ? 'Crashed' : sim.paused ? 'Paused' : PHASE_LABEL[ph], sim.ac.s.crashed ? 'bad' : sim.replaying ? 'warn' : ''],
     ['Next', to ? `${g.holding ? 'HOLD ' : ''}${to.ident}${to.altMin ? ` ≥${to.altMin}` : ''} · ${g.distNm.toFixed(1)} NM${g.eteMin !== null ? ` · ${fmtTime(g.eteMin * 60)}` : ''}` : 'no flight plan', 'mag'],
     ['Altitude', `${alt} ft → ${sel}${Math.abs(altDiff) > 100 ? ` (${altDiff > 0 ? '+' : ''}${altDiff})` : ' ✓'}`, Math.abs(altDiff) > 100 ? '' : 'good'],
     sim.ac.s.onGround
@@ -900,7 +979,14 @@ function frame(now: number) {
     sim.ap.disconnect();
     toast('Autopilot disconnected — control input', 'warn');
   }
-  sim.step(dt);
+  if (replay) {
+    if (replay.playing) {
+      replay.pos = Math.min(replay.samples.length - 1, replay.pos + (dt * replay.speed) / 0.5);
+      if (replay.pos >= replay.samples.length - 1) replay.playing = false;
+    }
+    applyReplay();
+    sim.updateAvionics(0);
+  } else sim.step(dt);
   if (lesson && !sim.paused) {
     lesson.update(Math.min(0.1, dt) * sim.rate);
   }
@@ -968,21 +1054,28 @@ function frame(now: number) {
   charts.update();
   ios.update(dt);
   audio.update(sim, dt);
+  connect.link.update(sim, dt);
 
-  // footer
-  if (!thrDragging) thr.value = String(Math.round(sim.controls.throttle * 100));
-  thrVal.textContent = `${Math.round(sim.controls.throttle * 100)}% · ${Math.round(sim.ac.data.rpm / 10) * 10} RPM`;
-  flapBtns.forEach((b, i) => b.classList.toggle('on', Math.round(sim.controls.flaps) === i));
-  const setMeter = (m: HTMLElement, v: number) => {
-    const i = m.firstChild as HTMLElement;
-    i.style.left = v < 0 ? `${50 + v * 50}%` : '50%';
-    i.style.width = `${Math.abs(v) * 50}%`;
-  };
-  setMeter(trimMeter, sim.controls.trim);
-  setMeter(elevMeter, sim.controls.elevator);
-  setMeter(ailMeter, sim.controls.aileron);
+  // pedestal
+  const ctl = sim.controls;
+  if (!thrDragging) thr.value = String(Math.round(ctl.throttle * 100));
+  thr.style.setProperty('--v', `${ctl.throttle * 100}%`);
+  thrPct.textContent = `${Math.round(ctl.throttle * 100)}%`;
+  thrRpm.textContent = `${Math.round(sim.ac.data.rpm / 10) * 10} RPM`;
+  flapBtns.forEach((b, i) => b.classList.toggle('on', Math.round(ctl.flaps) === i));
+  flapNeedle.style.left = `${(sim.ac.data.flapsDeg / 30) * 75 + 12.5}%`;
+  flapRead.textContent = `${Math.round(sim.ac.data.flapsDeg)}°`;
+  trimWheel.style.setProperty('--t', `${ctl.trim * 220}px`);
+  trimMark.style.left = `${50 + ctl.trim * 50}%`;
+  trimRead.textContent = Math.abs(ctl.trim + 0.2) < 0.06 ? 'T/O' : ctl.trim < 0 ? `UP ${Math.round(-ctl.trim * 100)}` : `DN ${Math.round(ctl.trim * 100)}`;
+  if (!stick.classList.contains('active')) {
+    stickDot.style.left = `${50 + Math.max(-1, Math.min(1, ctl.aileron)) * 42}%`;
+    stickDot.style.top = `${50 + Math.max(-1, Math.min(1, ctl.elevator)) * 42}%`;
+  }
+  (rudderBar.firstChild as HTMLElement).style.left = `${50 + Math.max(-1, Math.min(1, ctl.rudder)) * 46}%`;
+  brakeLight.classList.toggle('on', ctl.brake > 0.1);
   joyDot.classList.toggle('on', !!input.current());
-  joyLbl.textContent = input.current() ? input.current()!.id.split('(')[0].trim().slice(0, 28) || 'Joystick' : 'Keyboard (connect a joystick)';
+  joyLbl.textContent = input.current() ? input.current()!.id.split('(')[0].trim().slice(0, 26) || 'Joystick' : 'Keyboard · connect a joystick';
   pfdBezel.querySelectorAll<HTMLElement>('[data-ap]').forEach((b) => {
     const l = b.dataset.ap;
     const ap = sim.ap;

@@ -302,6 +302,22 @@ export class Aircraft {
 
   onRunwayCheck?: (p: LatLon) => boolean;
 
+  /** Replay: place the aircraft at a recorded instant (instruments read the recorded values). */
+  applySnapshot(x: { lat: number; lon: number; altFt: number; hdg: number; pitch: number; bank: number; ias: number; vs: number; agl: number }) {
+    const s = this.s;
+    s.lat = x.lat;
+    s.lon = x.lon;
+    s.altFt = x.altFt;
+    s.psi = x.hdg * DEG;
+    s.theta = x.pitch * DEG;
+    s.phi = x.bank * DEG;
+    s.onGround = x.agl < 3;
+    s.crashed = null;
+    this.lastAlt = x.altFt;
+    this.lastPsi = s.psi;
+    if (this.data) Object.assign(this.data, { iasKt: x.ias, tasKt: x.ias * 1.05, vsFpm: x.vs, pitchDeg: x.pitch, rollDeg: x.bank, hdgTrue: x.hdg, altFt: x.altFt, aglFt: x.agl, turnRateDps: 0, stallWarn: false });
+  }
+
   private move(ve: number, vn: number, dt: number) {
     const s = this.s;
     const dNm = (Math.hypot(ve, vn) * dt) / 1852;

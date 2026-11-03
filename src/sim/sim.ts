@@ -131,6 +131,8 @@ export class Sim {
   }
   time = 0;
   paused = false;
+  /** true while the debrief replay drives the aircraft */
+  replaying = false;
   rate = 1;
   scenario: Scenario | null = null;
   private lastPitch = 0;
