@@ -1,8 +1,12 @@
-// Charts drawer (EFB): approach plates & airport diagrams with zoom/pan, fit-width / fit-page, night mode and
-// geo-referenced own-ship, plus the airport / navlog / weather / checklists / clearance pages.
+// Charts drawer (EFB): approach plates, SIDs, STARs and airport diagrams with zoom/pan, fit-width / fit-page,
+// night mode and geo-referenced own-ship, plus the airport / navlog / weather / checklists / clearance pages.
+// Charts are classified like Navigraph: REF (airport diagram & reference), DEP (SIDs), ARR (STARs) and APP
+// (approaches grouped by runway, ILS before LOC before RNAV before VOR/NDB), with a filter box, pins and recents.
 import { h, clear, store } from "./dom";
 import { chartIndex, planProjection, type ChartEntry } from "../plates/plates";
-import { approach } from "../nav/data";
+import { rwyName } from "../plates/terminal";
+import { approach, AIRPORTS, APPROACHES, TERMINAL } from "../nav/data";
+import type { Approach } from "../nav/types";
 import type { Sim } from "../sim/sim";
 import { DEG } from "../nav/geo";
 import { svgIcon } from "./icons";
@@ -31,34 +35,248 @@ type App =
   | "checklists"
   | "clearance";
 type FitMode = "width" | "page";
+type Cat = "REF" | "DEP" | "ARR" | "APP";
 
-/** procedure groups of the chart selector, in the order a pilot looks for them */
-const GROUPS: [string, string][] = [
-  ["APD", "Airport"],
-  ["ILS", "ILS"],
-  ["RNAV", "RNAV (GPS)"],
-  ["LOC", "LOC"],
-  ["VOR", "VOR"],
-  ["NDB", "NDB"],
-  ["LDA", "LDA"],
+const APPS: [App, string][] = [
+  ["charts", "Charts"],
+  ["airport", "Airport"],
+  ["navlog", "NavLog"],
+  ["weather", "Weather"],
+  ["checklists", "Checklists"],
+  ["clearance", "Clearance"],
 ];
-function groupOf(e: ChartEntry): string {
-  if (e.kind === "APD") return "APD";
-  let t: string;
-  try {
-    t = approach(e.approachId ?? e.id).type;
-  } catch {
-    t = "RNAV";
-  }
-  return t === "LOCBC" ? "LOC" : t;
+/** chart categories, in the order Navigraph and Jeppesen pilots read them */
+const CATS: { id: Cat; label: string; name: string; tip: string }[] = [
+  {
+    id: "REF",
+    label: "REF",
+    name: "Reference",
+    tip: "Airport diagram and reference charts",
+  },
+  { id: "DEP", label: "DEP", name: "Departures", tip: "Departures (SIDs)" },
+  { id: "ARR", label: "ARR", name: "Arrivals", tip: "Arrivals (STARs)" },
+  {
+    id: "APP",
+    label: "APP",
+    name: "Approaches",
+    tip: "Instrument approaches, by runway",
+  },
+];
+/** precision first: ILS, LOC, LOC back course, LDA, RNAV, VOR, NDB */
+const TYPE_RANK: Record<string, number> = {
+  ILS: 0,
+  LOC: 1,
+  LOCBC: 2,
+  LDA: 3,
+  RNAV: 4,
+  VOR: 5,
+  NDB: 6,
+};
+const TYPE_TAG: Record<string, string> = {
+  ILS: "ILS",
+  LOC: "LOC",
+  LOCBC: "LOC BC",
+  LDA: "LDA",
+  RNAV: "RNAV",
+  VOR: "VOR",
+  NDB: "NDB",
+};
+
+/** one row of the chart list: a built-in chart or a Navigraph chart */
+export interface ChartItem {
+  /** built-in chart id, or `ng:<id>` for a Navigraph chart */
+  key: string;
+  cat: Cat;
+  airport: string;
+  /** Jeppesen chart index (10-9, 11-1, …) */
+  index: string;
+  title: string;
+  /** procedure identifier (I28R, SSTIK5) */
+  ident: string;
+  /** small type tag (ILS, RNAV, SID, …) */
+  tag: string;
+  /** runway group of an approach ('RWY 28R', 'Circling'); '' elsewhere */
+  group: string;
+  /** extra detail line (runways served by a SID / STAR) */
+  detail: string;
+  rank: number;
 }
-const NG_CATS: [NgChart["category"], string][] = [
-  ["APT", "Airport"],
-  ["DEP", "Departures"],
-  ["ARR", "Arrivals"],
-  ["APP", "Approaches"],
-  ["REF", "Reference"],
-];
+
+const safeApproach = (id: string): Approach | null => {
+  try {
+    return approach(id);
+  } catch {
+    return null;
+  }
+};
+const stripApt = (id: string, apt: string) =>
+  id.startsWith(`${apt}-`) ? id.slice(apt.length + 1) : id;
+
+/** classify a built-in chart */
+export function builtinItem(e: ChartEntry): ChartItem {
+  const kind = e.kind as string;
+  const cat: Cat =
+    kind === "SID"
+      ? "DEP"
+      : kind === "STAR"
+        ? "ARR"
+        : kind === "IAP"
+          ? "APP"
+          : "REF";
+  const it: ChartItem = {
+    key: e.id,
+    cat,
+    airport: e.airport,
+    index: e.index ?? "",
+    title: e.title,
+    ident: "",
+    tag: "",
+    group: "",
+    detail: "",
+    rank: 0,
+  };
+  if (cat === "APP") {
+    const ap = safeApproach(e.approachId ?? e.id);
+    const type = ap?.type ?? e.group ?? "RNAV";
+    it.ident = stripApt(e.approachId ?? e.id, e.airport);
+    it.tag = TYPE_TAG[type] ?? type;
+    it.rank = TYPE_RANK[type] ?? 9;
+    const rw = ap?.runway ?? "";
+    it.group = /^\d/.test(rw) ? `RWY ${rw}` : "Circling";
+  } else if (cat === "DEP" || cat === "ARR") {
+    const pid = e.id.split(`-${kind}-`)[1] ?? e.id;
+    it.ident = pid;
+    // the list is already split SID / STAR: tag only the RNAV procedures (they need GPS)
+    it.tag = /\(RNAV\)/.test(e.title) ? "RNAV" : "";
+    const p = TERMINAL.find(
+      (x) => x.airport === e.airport && x.kind === kind && x.id === pid,
+    );
+    const rws = [
+      ...new Set(
+        (p?.rwy ?? []).map((t) => rwyName(t.name)).filter((x) => x !== "ALL"),
+      ),
+    ];
+    it.detail = rws.length ? `RWY ${rws.join(", ")}` : "All runways";
+  } else {
+    it.title = kind === "APD" ? "Airport diagram" : e.title;
+    it.tag = kind === "APD" ? "APD" : "REF";
+    it.detail = kind === "APD" ? "Runways, taxiways, frequencies" : "";
+    it.rank = kind === "APD" ? 0 : 1;
+  }
+  return it;
+}
+/** classify a Navigraph chart */
+export function navigraphItem(c: NgChart, airport: string): ChartItem {
+  const cat: Cat =
+    c.category === "DEP"
+      ? "DEP"
+      : c.category === "ARR"
+        ? "ARR"
+        : c.category === "APP"
+          ? "APP"
+          : "REF";
+  const rw = c.runways?.[0] ?? "";
+  const type = /^ILS/i.test(c.name)
+    ? "ILS"
+    : /^LOC/i.test(c.name)
+      ? "LOC"
+      : /^(RNAV|RNP|GPS)/i.test(c.name)
+        ? "RNAV"
+        : /^VOR/i.test(c.name)
+          ? "VOR"
+          : /^NDB/i.test(c.name)
+            ? "NDB"
+            : "";
+  return {
+    key: `ng:${c.id}`,
+    cat,
+    airport,
+    index: c.index_number,
+    title: c.name,
+    ident: (c.procedures ?? []).slice(0, 3).join(", "),
+    tag:
+      cat === "APP"
+        ? (TYPE_TAG[type] ?? "")
+        : cat === "REF"
+          ? ""
+          : cat === "DEP"
+            ? "SID"
+            : "STAR",
+    group:
+      cat === "APP" ? (rw ? `RWY ${rw.replace(/^RW/, "")}` : "Circling") : "",
+    detail:
+      cat === "DEP" || cat === "ARR"
+        ? c.runways?.length
+          ? `RWY ${c.runways.join(", ")}`
+          : ""
+        : "",
+    rank: cat === "APP" ? (TYPE_RANK[type] ?? 9) : 0,
+  };
+}
+/** runway heading order: 01L, 01R, 09, 27, 28L, 28R … then circling */
+function runwayKey(g: string): number {
+  const m = /^RWY (\d+)([LCR]?)/.exec(g);
+  if (!m) return 1e4;
+  return Number(m[1]) * 10 + (({ L: 1, C: 2, R: 3 } as Record<string, number>)[m[2]] ?? 0);
+}
+/** the list of one category: approaches grouped by runway, the rest sorted by index then name */
+export function groupItems(
+  items: ChartItem[],
+): { head: string; items: ChartItem[] }[] {
+  const groups = new Map<string, ChartItem[]>();
+  for (const it of items) {
+    const g = it.group;
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g)!.push(it);
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => runwayKey(a) - runwayKey(b) || a.localeCompare(b))
+    .map(([head, list]) => ({
+      head,
+      items: list.sort(
+        (a, b) =>
+          a.rank - b.rank ||
+          a.title.localeCompare(b.title, "en", { numeric: true }),
+      ),
+    }));
+}
+/** case-insensitive filter on the title, identifier, tag and runways ('ils 27', 'rnav', 'sstik') */
+export function matchItem(it: ChartItem, q: string): boolean {
+  const hay =
+    `${it.title} ${it.ident} ${it.tag} ${it.group} ${it.detail} ${it.index} ${it.cat}`.toLowerCase();
+  return q
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((w) => hay.includes(w));
+}
+
+/** short label of a quick-access chip: 'ILS or LOC 27', 'RNAV (GPS) Z 28R', 'Airport diagram' */
+const chipLabel = (it: ChartItem) =>
+  it.cat === "DEP" || it.cat === "ARR"
+    ? it.ident || it.title
+    : it.title.replace(/\bRWY\s+/, "");
+
+/** favourite star (filled when pinned); a local glyph, the shared icon set has no star */
+function starIcon(on: boolean, size = 16): SVGSVGElement {
+  const NS = "http://www.w3.org/2000/svg";
+  const s = document.createElementNS(NS, "svg");
+  s.setAttribute("viewBox", "0 0 24 24");
+  s.setAttribute("width", String(size));
+  s.setAttribute("height", String(size));
+  s.setAttribute("aria-hidden", "true");
+  const p = document.createElementNS(NS, "path");
+  p.setAttribute(
+    "d",
+    "M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z",
+  );
+  p.setAttribute("fill", on ? "currentColor" : "none");
+  p.setAttribute("stroke", "currentColor");
+  p.setAttribute("stroke-width", "1.6");
+  p.setAttribute("stroke-linejoin", "round");
+  s.append(p);
+  return s;
+}
 
 export class ChartsDrawer {
   el: HTMLElement;
@@ -67,6 +285,7 @@ export class ChartsDrawer {
   private sheet: HTMLElement;
   private ship: SVGGElement | null = null;
   private entries = chartIndex();
+  private navSig = this.signature();
   current: ChartEntry | null = null;
   private zoom = 1;
   private panX = 0;
@@ -82,17 +301,64 @@ export class ChartsDrawer {
   private airportSel: string;
   /** EFB applications: the chart viewer plus airport / navlog / weather / checklists / clearance pages */
   private app: App = "charts";
-  private appBar = h("nav", { class: "efb-apps", role: "tablist" });
+  private appBar = h("nav", {
+    class: "efb-apps",
+    role: "tablist",
+    "aria-label": "EFB apps",
+  });
   private page = h("div", { class: "efb-pagehost" });
-  private sub = h("span", { class: "efb-cur" });
-  private chartSel = h("select", {
-    class: "chart-sel",
-    "aria-label": "Chart",
-  }) as HTMLSelectElement;
-  private srcSeg = h("div", { class: "seg chart-src" });
+  /** header: current chart (index · title · airport · procedure id), opens the chart list */
+  private headIdx = h("span", { class: "efb-idx" });
+  private headTitle = h("span", { class: "efb-tt" });
+  private headMeta = h("span", { class: "efb-meta" });
+  private headChev = svgIcon("chevDown", 16);
+  private headBtn = h(
+    "button",
+    {
+      class: "efb-title",
+      "aria-haspopup": "listbox",
+      "aria-expanded": "false",
+    },
+    this.headIdx,
+    this.headTitle,
+    this.headChev,
+    this.headMeta,
+  );
+  private pinBtn = h("button", { class: "efb-pin ico" });
+  /** chart list: category tabs in the toolbar, the list itself in a panel over the viewer */
+  private catSeg = h("div", {
+    class: "seg chart-cats",
+    role: "tablist",
+    "aria-label": "Chart categories",
+  });
+  private listCat: Cat = "APP";
+  private listOpen = false;
+  private query = "";
+  private list = h("div", {
+    class: "chart-list",
+    role: "dialog",
+    "aria-label": "Charts",
+    hidden: true,
+  });
+  private scrim = h("div", { class: "chart-scrim", hidden: true });
+  private search = h("input", {
+    class: "cl-search",
+    type: "search",
+    spellcheck: "false",
+    autocomplete: "off",
+    "aria-label": "Filter charts",
+  }) as HTMLInputElement;
+  private listBody = h("div", { class: "cl-body" });
+  private srcSeg = h("div", {
+    class: "seg chart-src",
+    role: "group",
+    "aria-label": "Chart source",
+  });
+  private pins: string[] = store.get<string[]>("ifr.charts.pins", []);
+  private recent: string[] = store.get<string[]>("ifr.charts.recent", []);
   private zoomLbl = h(
     "button",
-    { class: "cz-pct", title: "Fit again" },
+    { class: "cz-pct", title: "Fit again (double-click the chart)" },
     "100%",
   );
   private fitSeg = h("div", {
@@ -109,19 +375,12 @@ export class ChartsDrawer {
   private aptSel = h("select", {
     class: "chart-apt",
     "aria-label": "Airport",
+    title: "Airport",
   }) as HTMLSelectElement;
 
   private renderApps() {
     clear(this.appBar);
-    const apps: [App, string][] = [
-      ["charts", "Charts"],
-      ["airport", "Airport"],
-      ["navlog", "NavLog"],
-      ["weather", "Weather"],
-      ["checklists", "Checklists"],
-      ["clearance", "Clearance"],
-    ];
-    for (const [id, label] of apps)
+    for (const [id, label] of APPS)
       this.appBar.append(
         h(
           "button",
@@ -139,6 +398,7 @@ export class ChartsDrawer {
     this.app = id;
     this.renderApps();
     const charts = id === "charts";
+    if (!charts) this.closeList();
     this.bar.style.display = charts ? "" : "none";
     this.view.style.display = charts ? "" : "none";
     this.page.style.display = charts ? "none" : "block";
@@ -158,26 +418,373 @@ export class ChartsDrawer {
       this.page.append(weatherPage(this.sim, this.airportSel));
     if (id === "checklists") this.page.append(checklistPage());
     if (id === "clearance") this.page.append(clearancePage());
-    this.renderSub();
+    this.page.scrollTop = 0;
+    this.renderHead();
     if (charts) requestAnimationFrame(() => this.fit());
   }
-  /** current chart (or page) named in the drawer header */
-  private renderSub() {
-    const t =
-      this.app === "charts"
-        ? this.source === "navigraph" && this.ngCurrent
-          ? this.ngCurrent.name
-          : this.current
-            ? this.current.kind === "APD"
-              ? "Airport diagram"
-              : this.current.title
-            : ""
-        : this.app === "checklists" || this.app === "clearance"
-          ? ""
-          : this.airportSel;
-    this.sub.textContent = t;
-    this.sub.title = t;
+
+  // ------------------------------------------------------------------ chart items
+  private aptName(icao: string) {
+    return AIRPORTS.find((a) => a.icao === icao)?.name ?? "";
   }
+  /** every chart the list can offer: the whole region (built-in) or the selected airport (Navigraph) */
+  private allItems(): ChartItem[] {
+    if (this.source === "navigraph")
+      return this.ngCharts.map((c) => navigraphItem(c, this.airportSel));
+    return this.entries.map(builtinItem);
+  }
+  private itemsOf(cat: Cat): ChartItem[] {
+    return this.allItems().filter(
+      (x) => x.airport === this.airportSel && x.cat === cat,
+    );
+  }
+  private currentItem(): ChartItem | null {
+    if (this.source === "navigraph")
+      return this.ngCurrent
+        ? navigraphItem(this.ngCurrent, this.airportSel)
+        : null;
+    return this.current ? builtinItem(this.current) : null;
+  }
+  private openItem(it: ChartItem) {
+    if (it.key.startsWith("ng:")) {
+      const c = this.ngCharts.find((x) => `ng:${x.id}` === it.key);
+      if (c) void this.showNavigraph(c);
+    } else this.show(it.key);
+    this.closeList();
+  }
+  private togglePin(key: string) {
+    const i = this.pins.indexOf(key);
+    if (i >= 0) this.pins.splice(i, 1);
+    else this.pins.unshift(key);
+    this.pins = this.pins.slice(0, 24);
+    store.set("ifr.charts.pins", this.pins);
+    this.renderHead();
+    if (this.listOpen) this.renderList();
+  }
+  private pushRecent(key: string) {
+    this.recent = [key, ...this.recent.filter((k) => k !== key)].slice(0, 8);
+    store.set("ifr.charts.recent", this.recent);
+  }
+
+  // ------------------------------------------------------------------ header
+  /** current chart (or app) named in the drawer header, with its airport and procedure id */
+  private renderHead() {
+    const charts = this.app === "charts";
+    const it = charts ? this.currentItem() : null;
+    const apt = this.airportSel;
+    const name = this.aptName(apt);
+    this.headBtn.classList.toggle("static", !charts);
+    this.headBtn.disabled = !charts;
+    this.headChev.style.display = charts ? "" : "none";
+    if (charts && it) {
+      this.headIdx.textContent = it.index;
+      this.headIdx.style.display = it.index ? "" : "none";
+      this.headTitle.textContent = it.title;
+      this.headMeta.textContent = [
+        it.airport,
+        this.aptName(it.airport),
+        it.ident,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      this.headBtn.title = "Show all charts of this airport";
+    } else {
+      this.headIdx.style.display = "none";
+      this.headTitle.textContent = charts
+        ? "Charts"
+        : APPS.find((a) => a[0] === this.app)![1];
+      this.headMeta.textContent =
+        this.app === "checklists"
+          ? "C172 normal procedures"
+          : this.app === "clearance"
+            ? "IFR clearance copy pad"
+            : [apt, name].filter(Boolean).join(" · ");
+      this.headBtn.title = "";
+    }
+    // pin: charts only
+    const key = it?.key ?? "";
+    const on = !!key && this.pins.includes(key);
+    clear(this.pinBtn);
+    this.pinBtn.append(starIcon(on, 18));
+    this.pinBtn.style.display = charts && key ? "" : "none";
+    this.pinBtn.classList.toggle("on", on);
+    this.pinBtn.setAttribute("aria-pressed", String(on));
+    this.pinBtn.title = on ? "Unpin this chart" : "Pin this chart";
+    this.pinBtn.setAttribute("aria-label", this.pinBtn.title);
+  }
+
+  /** category tabs with counts; the selected tab is the category being browsed (or of the open chart) */
+  private renderCats() {
+    clear(this.catSeg);
+    const cur = this.currentItem();
+    for (const c of CATS) {
+      const n = this.itemsOf(c.id).length;
+      const on = c.id === this.listCat;
+      this.catSeg.append(
+        h(
+          "button",
+          {
+            class: `${on ? "on" : ""}${n ? "" : " none"}${cur?.cat === c.id ? " cur" : ""}`,
+            role: "tab",
+            "aria-selected": String(on),
+            "aria-expanded": String(on && this.listOpen),
+            title: `${c.tip}: ${n}`,
+            onclick: () => {
+              if (this.listOpen && this.listCat === c.id && !this.query)
+                this.closeList();
+              else this.openList(c.id);
+            },
+          },
+          h("span", {}, c.label),
+          h("i", {}, String(n)),
+        ),
+      );
+    }
+  }
+
+  // ------------------------------------------------------------------ chart list panel
+  private openList(cat?: Cat) {
+    if (cat) this.listCat = cat;
+    this.listOpen = true;
+    this.list.hidden = false;
+    this.scrim.hidden = false;
+    this.headBtn.setAttribute("aria-expanded", "true");
+    this.renderCats();
+    this.renderList();
+    requestAnimationFrame(() => {
+      const cur = this.listBody.querySelector<HTMLElement>(".cl-row.cur");
+      cur?.scrollIntoView({ block: "nearest" });
+      this.search.focus({ preventScroll: true });
+    });
+  }
+  private closeList() {
+    if (!this.listOpen) return;
+    this.listOpen = false;
+    this.list.hidden = true;
+    this.scrim.hidden = true;
+    this.headBtn.setAttribute("aria-expanded", "false");
+    if (this.query) {
+      this.query = "";
+      this.search.value = "";
+    }
+    const cur = this.currentItem();
+    if (cur) this.listCat = cur.cat;
+    this.renderCats();
+  }
+  private row(it: ChartItem, showApt = false): HTMLElement {
+    const cur = this.currentItem()?.key === it.key;
+    const pinned = this.pins.includes(it.key);
+    const pin = h(
+      "button",
+      {
+        class: `cl-pin${pinned ? " on" : ""}`,
+        title: pinned ? "Unpin" : "Pin",
+        "aria-label": `${pinned ? "Unpin" : "Pin"} ${it.title}`,
+        "aria-pressed": String(pinned),
+        tabindex: "-1",
+        onclick: (e: Event) => {
+          e.stopPropagation();
+          this.togglePin(it.key);
+        },
+      },
+      starIcon(pinned, 16),
+    );
+    const sub = [showApt ? it.airport : "", it.ident, it.detail]
+      .filter(Boolean)
+      .join(" · ");
+    return h(
+      "div",
+      { class: `cl-item${cur ? " cur" : ""}` },
+      h(
+        "button",
+        {
+          class: `cl-row${cur ? " cur" : ""}`,
+          "aria-current": cur ? "true" : null,
+          onclick: () => this.openItem(it),
+        },
+        h("span", { class: "cl-idx" }, it.index || "—"),
+        h(
+          "span",
+          { class: "cl-txt" },
+          h("b", {}, it.title),
+          sub ? h("small", {}, sub) : null,
+        ),
+        it.tag
+          ? h(
+              "span",
+              { class: `cl-tag t-${it.tag.toLowerCase().replace(/\s+/g, "")}` },
+              it.tag,
+            )
+          : null,
+      ),
+      pin,
+    );
+  }
+  private renderList() {
+    clear(this.listBody);
+    const all = this.allItems();
+    const byKey = new Map(all.map((x) => [x.key, x]));
+    const mine = all.filter((x) => x.airport === this.airportSel);
+    const q = this.query.trim();
+    this.search.placeholder = `Filter ${this.airportSel} charts: ILS 27, RNAV, SID…`;
+    if (q) {
+      const hits = mine.filter((x) => matchItem(x, q));
+      if (!hits.length) {
+        this.listBody.append(
+          h(
+            "div",
+            { class: "cl-empty" },
+            h("b", {}, "No chart matches"),
+            h("span", {}, `Nothing at ${this.airportSel} contains “${q}”.`),
+          ),
+        );
+        return;
+      }
+      for (const c of CATS) {
+        const list = hits.filter((x) => x.cat === c.id);
+        if (!list.length) continue;
+        this.listBody.append(
+          h(
+            "div",
+            { class: "cl-h" },
+            `${c.name}`,
+            h("i", {}, String(list.length)),
+          ),
+        );
+        for (const g of groupItems(list))
+          for (const it of g.items) this.listBody.append(this.row(it));
+      }
+      return;
+    }
+    // quick access: pinned charts and recently opened ones (any airport of the region)
+    const pinned = this.pins
+      .map((k) => byKey.get(k))
+      .filter(Boolean) as ChartItem[];
+    const cur = this.currentItem()?.key;
+    const recent = (
+      this.recent.map((k) => byKey.get(k)).filter(Boolean) as ChartItem[]
+    )
+      .filter((x) => x.key !== cur && !this.pins.includes(x.key))
+      .slice(0, 4);
+    const chip = (it: ChartItem, kind: "pin" | "recent") =>
+      h(
+        "button",
+        {
+          class: `cl-chip ${kind}`,
+          title: `${it.airport} ${it.index} ${it.title}`,
+          onclick: () => this.openItem(it),
+        },
+        kind === "pin" ? starIcon(true, 13) : svgIcon("restart", 13),
+        it.airport !== this.airportSel ? h("em", {}, it.airport) : null,
+        h("span", {}, chipLabel(it)),
+      );
+    if (pinned.length || recent.length)
+      this.listBody.append(
+        h(
+          "div",
+          { class: "cl-quick" },
+          pinned.length
+            ? h(
+                "div",
+                { class: "cl-qrow" },
+                h("span", { class: "cl-ql" }, "Pinned"),
+                ...pinned.map((x) => chip(x, "pin")),
+              )
+            : null,
+          recent.length
+            ? h(
+                "div",
+                { class: "cl-qrow" },
+                h("span", { class: "cl-ql" }, "Recent"),
+                ...recent.map((x) => chip(x, "recent")),
+              )
+            : null,
+        ),
+      );
+    const c = CATS.find((x) => x.id === this.listCat)!;
+    const list = mine.filter((x) => x.cat === this.listCat);
+    if (!list.length) {
+      const what =
+        this.listCat === "DEP"
+          ? "No departure procedure (SID) is published"
+          : this.listCat === "ARR"
+            ? "No arrival procedure (STAR) is published"
+            : this.listCat === "APP"
+              ? "No instrument approach is published"
+              : "No reference chart is available";
+      this.listBody.append(
+        h(
+          "div",
+          { class: "cl-empty" },
+          h("b", {}, `${what} for ${this.airportSel}`),
+          h(
+            "span",
+            {},
+            this.listCat === "DEP" || this.listCat === "ARR"
+              ? "Expect radar vectors. Real-world US airports come with their FAA SIDs and STARs."
+              : "Pick another airport above.",
+          ),
+        ),
+      );
+      return;
+    }
+    for (const g of groupItems(list)) {
+      this.listBody.append(
+        h(
+          "div",
+          { class: "cl-h" },
+          g.head || c.name,
+          h("i", {}, String(g.items.length)),
+        ),
+      );
+      for (const it of g.items) this.listBody.append(this.row(it));
+    }
+  }
+  /** ↑/↓ move between rows, Esc closes; keys never reach the flight controls while the list has focus */
+  private listKeys(e: KeyboardEvent) {
+    e.stopPropagation();
+    const rows = [
+      ...this.list.querySelectorAll<HTMLButtonElement>(".cl-row, .cl-chip"),
+    ];
+    const i = rows.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === "Escape") {
+      e.preventDefault();
+      if (this.query) {
+        this.query = "";
+        this.search.value = "";
+        this.renderList();
+      } else {
+        this.closeList();
+        this.headBtn.focus({ preventScroll: true });
+      }
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const rowsOnly = rows.filter((r) => r.classList.contains("cl-row"));
+      const j = rowsOnly.indexOf(document.activeElement as HTMLButtonElement);
+      const n =
+        e.key === "ArrowDown"
+          ? Math.min(rowsOnly.length - 1, j + 1)
+          : j <= 0
+            ? -1
+            : j - 1;
+      if (n < 0) this.search.focus();
+      else rowsOnly[n]?.focus();
+    } else if (e.key === "Enter" && document.activeElement === this.search) {
+      e.preventDefault();
+      const first = this.list.querySelector<HTMLButtonElement>(".cl-row");
+      first?.click();
+    } else if (
+      i < 0 &&
+      e.key.length === 1 &&
+      document.activeElement !== this.search &&
+      !e.ctrlKey &&
+      !e.metaKey
+    ) {
+      // typing anywhere in the list filters it
+      this.search.focus();
+    }
+  }
+
   /** airports offered: those with procedures first, then the rest of the loaded region */
   private fillAirports() {
     const withIap = new Set(
@@ -197,18 +804,37 @@ export class ChartsDrawer {
         ),
       );
   }
+  /** chart opened for an airport: its first approach in list order (an ILS when there is one), else its diagram */
+  private defaultChart(icao: string): ChartEntry | null {
+    const mine = this.entries.filter((x) => x.airport === icao);
+    const apps = mine.filter((x) => x.kind === "IAP").map(builtinItem);
+    const best = apps.sort(
+      (a, b) => a.rank - b.rank || runwayKey(a.group) - runwayKey(b.group),
+    )[0];
+    return (
+      (best && mine.find((x) => x.id === best.key)) ||
+      mine[0] ||
+      this.entries[0] ||
+      null
+    );
+  }
+  /** what the chart index depends on: rebuilt when a real-world region was loaded or left */
+  private signature() {
+    return `${AIRPORTS.length}/${APPROACHES.length}/${TERMINAL.length}/${AIRPORTS[0]?.icao ?? ""}/${currentRegion() ? 1 : 0}`;
+  }
   /** rebuild after the nav database changed (real-world region loaded / left) */
   refresh() {
     this.entries = chartIndex();
+    this.navSig = this.signature();
     if (!this.entries.some((e) => e.airport === this.airportSel))
       this.airportSel = this.entries[0]?.airport ?? "";
+    if (this.current && !this.entries.some((e) => e.id === this.current!.id))
+      this.current = null;
     this.fillAirports();
     this.renderTabs();
-    const first =
-      this.entries.find(
-        (x) => x.airport === this.airportSel && x.kind === "IAP",
-      ) ?? this.entries[0];
-    if (first) this.show(first.id);
+    const first = this.defaultChart(this.airportSel);
+    if (first) this.show(first.id, false);
+    if (this.app !== "charts") this.setApp(this.app);
   }
 
   constructor(private sim: Sim) {
@@ -220,7 +846,7 @@ export class ChartsDrawer {
       this.sheet,
     );
     for (const [m, label, tip] of [
-      ["width", "Width", "Fit the chart width"],
+      ["width", "Width", "Fit the chart width (scroll to read down)"],
       ["page", "Page", "Show the whole page"],
     ] as [FitMode, string, string][])
       this.fitSeg.append(
@@ -232,18 +858,36 @@ export class ChartsDrawer {
       );
     this.nightBtn.addEventListener("click", () => this.toggleNight());
     this.zoomLbl.addEventListener("click", () => this.fit(true));
-    this.chartSel.addEventListener("change", () => {
-      const v = this.chartSel.value;
-      if (this.source === "navigraph") {
-        const c = this.ngCharts.find((x) => x.id === v);
-        if (c) void this.showNavigraph(c);
-      } else this.show(v);
+    this.headBtn.addEventListener("click", () =>
+      this.listOpen
+        ? this.closeList()
+        : this.openList(this.currentItem()?.cat ?? this.listCat),
+    );
+    this.pinBtn.addEventListener("click", () => {
+      const k = this.currentItem()?.key;
+      if (k) this.togglePin(k);
     });
+    this.search.addEventListener("input", () => {
+      this.query = this.search.value;
+      this.renderList();
+    });
+    this.list.addEventListener("keydown", (e) => this.listKeys(e));
+    this.scrim.addEventListener("pointerdown", () => this.closeList());
+    this.list.append(
+      h("div", { class: "cl-top" }, this.srcSeg, this.search),
+      this.listBody,
+      h(
+        "div",
+        { class: "cl-foot" },
+        h("span", {}, h("kbd", {}, "↑"), h("kbd", {}, "↓"), " move"),
+        h("span", {}, h("kbd", {}, "Enter"), " open"),
+        h("span", {}, h("kbd", {}, "Esc"), " close"),
+      ),
+    );
     this.bar = h(
       "div",
       { class: "chart-bar" },
-      this.srcSeg,
-      this.chartSel,
+      this.catSeg,
       h(
         "div",
         { class: "cz" },
@@ -276,15 +920,14 @@ export class ChartsDrawer {
     );
     this.aptSel.addEventListener("change", () => {
       this.airportSel = this.aptSel.value;
-      this.renderTabs();
-      const first =
-        this.entries.find(
-          (x) => x.airport === this.airportSel && x.kind === "IAP",
-        ) ?? this.entries.find((x) => x.airport === this.airportSel);
-      if (first) this.show(first.id);
       if (this.source === "navigraph") void this.loadNavigraph();
+      else {
+        const first = this.defaultChart(this.airportSel);
+        if (first) this.show(first.id);
+      }
       // every page follows the selected airport
       if (this.app !== "charts") this.setApp(this.app);
+      else this.renderHead();
     });
     this.fillAirports();
     this.el = h(
@@ -296,7 +939,8 @@ export class ChartsDrawer {
       h(
         "header",
         {},
-        h("div", { class: "efb-ttl" }, h("h3", {}, "EFB"), this.sub),
+        this.headBtn,
+        this.pinBtn,
         this.aptSel,
         h(
           "button",
@@ -313,6 +957,8 @@ export class ChartsDrawer {
       this.bar,
       this.view,
       this.page,
+      this.scrim,
+      this.list,
     );
     this.renderApps();
     this.renderTabs();
@@ -331,7 +977,7 @@ export class ChartsDrawer {
   private ngCharts: NgChart[] = [];
   private ngCurrent: NgChart | null = null;
   private ngShip: HTMLElement | null = null;
-  /** chart selector: a native <select> grouped by procedure type, never clipped whatever the titles */
+  /** source switch, category tabs, list and header after a change of chart, airport or source */
   private renderTabs() {
     const signed = navigraphStatus() === "signed-in";
     clear(this.srcSeg);
@@ -343,10 +989,11 @@ export class ChartsDrawer {
           "button",
           {
             class: this.source === "builtin" ? "on" : "",
+            "aria-pressed": String(this.source === "builtin"),
             onclick: () => {
               this.source = "builtin";
               this.renderTabs();
-              if (this.current) this.show(this.current.id);
+              if (this.current) this.show(this.current.id, false);
             },
           },
           "Built-in",
@@ -355,6 +1002,7 @@ export class ChartsDrawer {
           "button",
           {
             class: this.source === "navigraph" ? "on" : "",
+            "aria-pressed": String(this.source === "navigraph"),
             onclick: () => {
               this.source = "navigraph";
               void this.loadNavigraph();
@@ -364,48 +1012,9 @@ export class ChartsDrawer {
         ),
       );
     }
-    clear(this.chartSel);
-    if (this.source === "navigraph") {
-      for (const [cat, label] of NG_CATS) {
-        const list = this.ngCharts.filter((x) => x.category === cat);
-        if (!list.length) continue;
-        this.chartSel.append(
-          h(
-            "optgroup",
-            { label },
-            ...list.map((c) =>
-              h(
-                "option",
-                { value: c.id, selected: this.ngCurrent?.id === c.id },
-                `${c.index_number}  ${c.name}`,
-              ),
-            ),
-          ),
-        );
-      }
-      if (!this.ngCharts.length)
-        this.chartSel.append(h("option", { value: "" }, "No Navigraph charts"));
-    } else {
-      const mine = this.entries.filter((x) => x.airport === this.airportSel);
-      for (const [g, label] of GROUPS) {
-        const list = mine.filter((e) => groupOf(e) === g);
-        if (!list.length) continue;
-        this.chartSel.append(
-          h(
-            "optgroup",
-            { label },
-            ...list.map((e) =>
-              h(
-                "option",
-                { value: e.id, selected: this.current?.id === e.id },
-                e.kind === "APD" ? "Airport diagram" : e.title,
-              ),
-            ),
-          ),
-        );
-      }
-    }
-    this.renderSub();
+    this.renderCats();
+    if (this.listOpen) this.renderList();
+    this.renderHead();
   }
   private async loadNavigraph() {
     this.ngCharts = await navigraphCharts(this.airportSel);
@@ -419,6 +1028,8 @@ export class ChartsDrawer {
   }
   private async showNavigraph(c: NgChart) {
     this.ngCurrent = c;
+    this.listCat = navigraphItem(c, this.airportSel).cat;
+    this.pushRecent(`ng:${c.id}`);
     this.renderTabs();
     const url = await navigraphChartImage(c, this.night);
     if (!url) return;
@@ -445,15 +1056,28 @@ export class ChartsDrawer {
     const o = open ?? !this.isOpen;
     this.el.classList.toggle("open", o);
     document.body.classList.toggle("efb-open", o);
-    if (o) {
-      if (!this.current) {
-        const id = this.sim.fp.approachId;
-        this.show(id ?? "PARD-I27");
-      } else requestAnimationFrame(() => this.fit());
+    if (!o) {
+      this.closeList();
+      return;
     }
+    // the nav database changed while the drawer was closed (region loaded or left): rebuild the index
+    if (this.signature() !== this.navSig) this.refresh();
+    if (!this.current) {
+      const id = this.sim.fp.approachId;
+      const first =
+        (id && this.entries.find((x) => x.id === id)) ||
+        this.defaultChart(this.airportSel);
+      if (first) this.show(first.id);
+    } else requestAnimationFrame(() => this.fit());
+    if (this.app !== "charts") this.setApp(this.app);
   }
 
-  show(id: string) {
+  show(id: string, remember = true) {
+    if (this.signature() !== this.navSig) {
+      this.entries = chartIndex();
+      this.navSig = this.signature();
+      this.fillAirports();
+    }
     const e = this.entries.find((x) => x.id === id);
     if (!e) return;
     if (this.source === "navigraph") this.source = "builtin";
@@ -461,9 +1085,22 @@ export class ChartsDrawer {
     this.airportSel = e.airport;
     this.aptSel.value = e.airport;
     this.sheet.innerHTML = e.render();
-    this.sheetW = 600;
-    this.sheetH = 900;
+    // charts are 600 × 900 (Jeppesen 5.5 × 8.25 in); read the real size so another format still fits
+    const vb = this.sheet
+      .querySelector("svg")
+      ?.getAttribute("viewBox")
+      ?.split(/[\s,]+/)
+      .map(Number);
+    this.sheetW = vb && vb[2] > 0 ? vb[2] : 600;
+    this.sheetH = vb && vb[3] > 0 ? vb[3] : 900;
+    const svgEl = this.sheet.querySelector<SVGSVGElement>("svg");
+    if (svgEl) {
+      svgEl.style.width = `${this.sheetW}px`;
+      svgEl.style.height = `${this.sheetH}px`;
+    }
     this.ship = null;
+    this.listCat = builtinItem(e).cat;
+    if (remember) this.pushRecent(e.id);
     if (e.kind === "IAP") {
       const svg = this.sheet.querySelector("svg")!;
       const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
@@ -500,7 +1137,8 @@ export class ChartsDrawer {
       return;
     }
     if (!this.isOpen || !this.ship || !this.current?.approachId) return;
-    const ap = approach(this.current.approachId);
+    const ap = safeApproach(this.current.approachId);
+    if (!ap) return;
     const { proj, box } = planProjection(ap);
     const p = proj(this.sim.ac.s);
     const inside =
@@ -531,6 +1169,7 @@ export class ChartsDrawer {
     this.view.classList.toggle("night", this.night);
     this.nightBtn.classList.toggle("on", this.night);
     this.nightBtn.setAttribute("aria-pressed", String(this.night));
+    this.nightBtn.title = this.night ? "Day mode" : "Night mode";
     for (const b of this.fitSeg.querySelectorAll<HTMLButtonElement>("button")) {
       const on = b.dataset.fit === this.fitMode && !this.manual;
       b.classList.toggle("on", on);

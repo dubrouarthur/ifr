@@ -354,6 +354,7 @@
 .rp-mins-t {
   font: 700 9.5px var(--font);
   fill: #b42318;
+  text-anchor: end;
 }
 .rp-gp {
   font: 700 9.5px var(--font);

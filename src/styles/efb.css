@@ -3,6 +3,7 @@
 .drawer[aria-label="Charts"] {
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   width: min(760px, 100vw);
 }
 .drawer[aria-label="Charts"] > header {
@@ -17,6 +18,7 @@
 .drawer[aria-label="Charts"] > .chart-view,
 .drawer[aria-label="Charts"] > .efb-pagehost {
   grid-row: 4;
+  grid-column: 1;
   min-height: 0;
 }
 .drawer[aria-label="Charts"] > .efb-pagehost {

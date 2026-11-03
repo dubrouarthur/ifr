@@ -394,6 +394,13 @@ export function planProfile(c: Circuit, sampleGround = true): PlanProfile {
       const minAlt = m ? (m.da ?? m.mda ?? thrElev + 250) : thrElev + 250;
       let prev: LatLon | null = pos;
       seq.forEach((pl, k) => {
+        // the route already ends at the first fix of the approach: annotate that point instead of a new one
+        const last = pts[pts.length - 1];
+        if (k === 0 && pos && last?.ident === pl.fix.ident && distanceNm(pos, pl.fix) < 0.05) {
+          Object.assign(last, { role: pl.role, amin: pl.altMin, amax: pl.altMax, leg: i });
+          prev = pl.fix;
+          return;
+        }
         const path = prev ? legPath(prev, pl) : [pl.fix];
         const isRwy = pl.fix.kind === "runway" || pl.role === "MAP";
         const base = {
@@ -779,10 +786,13 @@ export class RouteMap {
     const padX = Math.max(30, this.W * 0.1),
       padY = Math.max(30, this.H * 0.1);
     const zx = dx > 1e-9 ? Math.log2((this.W - 2 * padX - 30) / dx) : 13;
-    const zy = dy > 1e-9 ? Math.log2((this.H - 2 * padY) / dy) : 13;
-    this.z = Math.max(3, Math.min(14.5, Math.min(zx, zy)));
+    const zy = dy > 1e-9 ? Math.log2((this.H - 2 * padY - 20) / dy) : 13; // 20 px: scale bar
+    // never closer than ~10 NM across the view (a lone runway would fill the map)
+    const midLat = (Math.max(...pts.map((p) => p.lat)) + Math.min(...pts.map((p) => p.lat))) / 2;
+    const zMax = Math.log2((this.W * 156543.03392 * Math.cos((midLat * Math.PI) / 180)) / 18520);
+    this.z = Math.max(3, Math.min(14.5, zMax, Math.min(zx, zy)));
     this.cx = ((Math.max(...xs) + Math.min(...xs)) / 2) * 2 ** this.z;
-    this.cy = ((Math.max(...ys) + Math.min(...ys)) / 2) * 2 ** this.z;
+    this.cy = ((Math.max(...ys) + Math.min(...ys)) / 2) * 2 ** this.z + 8; // keep the plan clear of the scale bar
     this.fitted = true;
   }
 
@@ -1422,7 +1432,7 @@ export function profileSvg(
   // minimums
   if (pr.mins)
     o.push(
-      `<line class="rp-mins" x1="${f1(X(pr.mins.d0))}" x2="${f1(X(pr.mins.d1))}" y1="${f1(Y(pr.mins.alt))}" y2="${f1(Y(pr.mins.alt))}"/><text class="rp-mins-t" x="${f1(X(pr.mins.d0) + 2)}" y="${f1(Y(pr.mins.alt) + 11)}">${pr.mins.label}</text>`,
+      `<line class="rp-mins" x1="${f1(X(pr.mins.d0))}" x2="${f1(X(pr.mins.d1))}" y1="${f1(Y(pr.mins.alt))}" y2="${f1(Y(pr.mins.alt))}"/><text class="rp-mins-t" x="${f1(X(pr.mins.d1) - 4)}" y="${f1(Y(pr.mins.alt) - 4)}">${pr.mins.label}</text>`,
     );
   // the path, by segment kind
   const col = (s: ProfilePt["seg"]) =>

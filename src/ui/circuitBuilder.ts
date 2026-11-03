@@ -34,7 +34,7 @@ import {
 import { currentRegion } from "../nav/world";
 import { FAILURE_LABELS, type Failures } from "../sim/sim";
 import type { Approach } from "../nav/types";
-import { RouteMap, RouteProfile } from "./routeMap";
+import { RouteMap, RouteProfile, planProfile } from "./routeMap";
 import { APPROACH_RANK } from "./atis";
 
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
@@ -544,6 +544,7 @@ export class CircuitBuilder extends Modal {
   private cardRefresh: (() => void)[] = [];
   private refreshCards() {
     for (const f of this.cardRefresh) f();
+    this.markLowLegs();
   }
 
   private renderEditor() {
@@ -629,9 +630,8 @@ export class CircuitBuilder extends Modal {
           ),
         ),
       );
-    c.legs.forEach((l, i) =>
-      box.append(this.legCard(l, i, pr.legs.get(i) ?? [])),
-    );
+    c.legs.forEach((l, i) => box.append(this.legCard(l, i, pr.legs.get(i) ?? [])));
+    this.markLowLegs();
     // add-leg bar: inserted after the selected leg
     const add = (l: CircuitLeg) => {
       const at =
@@ -1154,6 +1154,18 @@ export class CircuitBuilder extends Modal {
             : `${pad3(s.bearing)}° / ${s.distNm} NM from ${s.fix} · ${s.altFt} ft · ${s.iasKt} kt`;
     });
     return card;
+  }
+
+  /** non-blocking: a procedure fix planned below its published minimum (seen on the profile) */
+  private markLowLegs() {
+    this.ed.querySelectorAll('.cbx-low').forEach((x) => x.remove());
+    const pts = planProfile(this.c, false).pts;
+    for (const p of pts) {
+      if (!p.ident || p.amin === undefined || p.alt >= p.amin - 50 || p.leg < 0) continue;
+      const card = this.ed.querySelector(`.cbx-leg[data-i="${p.leg}"]`);
+      if (!card || card.querySelector(`.cbx-low[data-f="${p.ident}"]`)) continue;
+      card.append(h("div", { class: "cbx-low", "data-f": p.ident }, svgIcon(I.warning, 13), `Planned ${Math.round(p.alt / 100) * 100} ft at ${p.ident}, below the ${p.amin} ft minimum${p.role ? ` (${p.role})` : ""}`));
+    }
   }
 
   private legSummary(l: CircuitLeg): [string, string] {

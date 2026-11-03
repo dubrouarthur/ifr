@@ -1,44 +1,112 @@
 /* ui-efb: EFB tablet (header, chart toolbar, night mode, pages) and the FMC CDU panel.
    Loads after styles.css, efb.css and hotfix.css. */
 
-/* ---------------------------------------------------------------- header */
+/* ---------------------------------------------------------------- header: current chart · pin · airport · close */
 .drawer.efb > header {
-  gap: 10px;
-  padding: 10px 12px 10px 16px;
-  min-height: 56px;
+  gap: 6px;
+  padding: 6px 10px 6px 6px;
+  min-height: 60px;
 }
-.drawer.efb .efb-ttl {
+.drawer.efb .efb-title {
   flex: 1;
   min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: auto minmax(0, auto) auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  row-gap: 1px;
+  align-items: center;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
 }
-.drawer.efb .efb-ttl h3 {
-  flex: none;
-  margin: 0;
-  font: 700 15px var(--font);
-  letter-spacing: 0.2px;
+.drawer.efb .efb-title:hover:not(.static) {
+  background: var(--surface-3);
 }
-.drawer.efb .efb-cur {
+.drawer.efb .efb-title.static {
+  cursor: default;
+}
+.drawer.efb .efb-title:disabled {
+  color: var(--text);
+  opacity: 1;
+}
+.drawer.efb .efb-title > svg {
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+.drawer.efb .efb-title[aria-expanded="true"] > svg {
+  transform: rotate(180deg);
+}
+.drawer.efb .efb-idx {
+  font: 700 11.5px var(--font-cond);
+  letter-spacing: 0.3px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.drawer.efb .efb-tt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 700 16px var(--font);
+  letter-spacing: -0.1px;
+}
+.drawer.efb .efb-meta {
+  grid-column: 1 / -1;
+  grid-row: 2;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--muted);
-  font: 600 13px var(--font);
+  font: 500 12.5px var(--font);
+}
+.drawer.efb .efb-pin,
+.drawer.efb > header .x {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.drawer.efb .efb-pin:hover,
+.drawer.efb > header .x:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.drawer.efb .efb-pin.on {
+  color: #b7791f;
 }
 .drawer.efb .chart-apt {
-  height: 32px;
+  flex: none;
+  width: 104px;
+  height: 34px;
   padding: 0 8px;
-  border-radius: 8px;
+  border-radius: 9px;
   border: 1px solid var(--line-strong);
   background: var(--surface);
   color: var(--text);
   font: 700 13px var(--font);
+  cursor: pointer;
 }
-.drawer.efb > header .x {
-  flex: none;
+.drawer.efb > header button:focus-visible,
+.drawer.efb .efb-apps button:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
 }
 
 /* ---------------------------------------------------------------- app tabs */
@@ -51,7 +119,7 @@
   font-size: 13.5px;
 }
 
-/* ---------------------------------------------------------------- chart toolbar: selector · zoom · fit · night */
+/* ---------------------------------------------------------------- chart toolbar: categories · zoom · fit · night */
 .chart-bar {
   display: flex;
   flex-wrap: wrap;
@@ -61,28 +129,42 @@
   border-bottom: 1px solid var(--line);
   background: var(--surface-2);
 }
-.chart-bar .chart-src {
-  flex: none;
+.chart-cats button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 0 11px;
+  font: 700 12.5px var(--font);
+  letter-spacing: 0.4px;
+  color: var(--text-2);
 }
-.chart-sel {
-  flex: 1 1 220px;
-  min-width: 0;
-  height: 32px;
-  padding: 0 8px;
-  border-radius: 8px;
-  border: 1px solid var(--line-strong);
-  background: var(--surface);
-  color: var(--text);
-  font: 600 13px var(--font);
-  text-overflow: ellipsis;
+.chart-cats button i {
+  font: 600 11px var(--font);
+  font-style: normal;
+  letter-spacing: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  display: inline-grid;
+  place-items: center;
+  background: var(--surface-3);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
-.chart-sel optgroup {
-  font-weight: 700;
+.chart-cats button.on i {
+  background: rgb(var(--accent-rgb) / 0.12);
+  color: var(--accent);
+}
+.chart-cats button.none {
   color: var(--muted);
 }
-.chart-sel option {
-  font-weight: 500;
+.chart-cats button.none i {
+  background: none;
+}
+.chart-cats button:hover:not(.on) {
   color: var(--text);
+  background: rgb(var(--ink-rgb) / 0.04);
 }
 .chart-bar .cz {
   display: flex;
@@ -145,7 +227,7 @@
   color: #fff;
 }
 .chart-bar button:focus-visible,
-.chart-sel:focus-visible,
+.cl-search:focus-visible,
 .chart-apt:focus-visible {
   outline: none;
   box-shadow: var(--ring);
@@ -162,6 +244,300 @@
   box-shadow:
     0 1px 3px rgba(15, 23, 32, 0.12),
     0 8px 24px rgba(15, 23, 32, 0.1);
+}
+
+/* ---------------------------------------------------------------- chart list (Navigraph-style), over the viewer */
+.drawer.efb > .chart-scrim,
+.drawer.efb > .chart-list {
+  grid-row: 4;
+  grid-column: 1;
+  min-height: 0;
+}
+.drawer.efb > .chart-scrim {
+  position: relative;
+  z-index: 2;
+  background: rgb(var(--ink-rgb) / 0.24);
+}
+.drawer.efb > .chart-list {
+  position: relative;
+  z-index: 3;
+  justify-self: start;
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  box-shadow: 12px 0 32px rgb(var(--ink-rgb) / 0.14);
+  animation: cl-in 0.14s ease-out;
+}
+.drawer.efb > .chart-scrim[hidden],
+.drawer.efb > .chart-list[hidden] {
+  display: none;
+}
+@keyframes cl-in {
+  from {
+    transform: translateY(-6px);
+    opacity: 0;
+  }
+}
+.cl-top {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.cl-top .chart-src {
+  flex: none;
+}
+.cl-search {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--text);
+  font: 500 13px var(--font);
+}
+.cl-search::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+.cl-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0 10px;
+}
+.cl-quick {
+  padding: 8px 12px 10px;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 6px;
+}
+.cl-qrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.cl-ql {
+  width: 52px;
+  font: 700 10.5px var(--font);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.cl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  max-width: 200px;
+  padding: 0 9px 0 7px;
+  border-radius: 13px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: 600 12px var(--font);
+  cursor: pointer;
+}
+.cl-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cl-chip em {
+  font-style: normal;
+  color: var(--muted);
+  font-weight: 700;
+}
+.cl-chip.pin svg {
+  color: #b7791f;
+}
+.cl-chip svg {
+  flex: none;
+  color: var(--muted);
+}
+.cl-chip:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-3);
+}
+.cl-h {
+  position: sticky;
+  top: -4px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px 5px;
+  background: var(--surface);
+  font: 700 11px var(--font);
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.cl-h i {
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--muted);
+  opacity: 0.8;
+}
+.cl-item {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  margin: 0 6px;
+  border-radius: 9px;
+}
+.cl-item:hover {
+  background: var(--surface-2);
+}
+.cl-item.cur {
+  background: rgb(var(--accent-rgb) / 0.08);
+}
+.cl-item.cur::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.cl-row {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 4px 8px 12px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  border-radius: 9px;
+}
+.cl-idx {
+  font: 600 12px var(--font-cond);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.cl-txt {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.cl-txt b {
+  font: 600 13.5px var(--font);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cl-row.cur .cl-txt b {
+  color: var(--accent);
+}
+.cl-txt small {
+  font: 500 11.5px var(--font);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cl-tag {
+  font: 700 10px var(--font);
+  letter-spacing: 0.4px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  color: var(--text-2);
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+.cl-tag.t-ils,
+.cl-tag.t-loc,
+.cl-tag.t-locbc,
+.cl-tag.t-lda {
+  color: #0b5cad;
+  background: #eaf3fe;
+  border-color: #cfe2fb;
+}
+.cl-tag.t-rnav {
+  color: #6a3db8;
+  background: #f3eefc;
+  border-color: #e1d6f6;
+}
+.cl-tag.t-vor,
+.cl-tag.t-ndb {
+  color: #13804b;
+  background: #e9f7ef;
+  border-color: #cdebd9;
+}
+.cl-pin {
+  flex: none;
+  width: 34px;
+  border: 0;
+  background: none;
+  color: var(--line-strong);
+  cursor: pointer;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.cl-item:hover .cl-pin,
+.cl-item:focus-within .cl-pin,
+.cl-pin.on {
+  opacity: 1;
+}
+.cl-pin:hover {
+  color: var(--muted);
+}
+.cl-pin.on {
+  color: #b7791f;
+}
+.cl-empty {
+  display: grid;
+  gap: 4px;
+  padding: 28px 20px;
+  text-align: center;
+  color: var(--muted);
+  font: 500 13px/1.45 var(--font);
+}
+.cl-empty b {
+  color: var(--text-2);
+  font-weight: 650;
+}
+.cl-foot {
+  display: flex;
+  gap: 14px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font: 500 11.5px var(--font);
+}
+.cl-foot kbd {
+  font-size: 10.5px;
+  padding: 0 5px;
+  margin-right: 2px;
+}
+.cl-row:focus-visible,
+.cl-chip:focus-visible,
+.cl-pin:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+@media (hover: none) {
+  .cl-pin {
+    opacity: 1;
+  }
 }
 
 /* ---------------------------------------------------------------- night: the whole tablet goes dark, not just the plate */
@@ -218,6 +594,31 @@
 .drawer.efb.night .efb-t.navlog tr.active td {
   background: #2a1630;
   color: #f2a6e4;
+}
+.drawer.efb.night .cl-tag {
+  background: var(--surface-3);
+  border-color: var(--line-strong);
+}
+.drawer.efb.night .cl-tag.t-ils,
+.drawer.efb.night .cl-tag.t-loc,
+.drawer.efb.night .cl-tag.t-locbc,
+.drawer.efb.night .cl-tag.t-lda {
+  color: #9cc6ff;
+}
+.drawer.efb.night .cl-tag.t-rnav {
+  color: #c9b5ff;
+}
+.drawer.efb.night .cl-tag.t-vor,
+.drawer.efb.night .cl-tag.t-ndb {
+  color: #8fdcb2;
+}
+.drawer.efb.night .efb-pin.on,
+.drawer.efb.night .cl-pin.on,
+.drawer.efb.night .cl-chip.pin svg {
+  color: #e8b556;
+}
+.drawer.efb.night > .chart-scrim {
+  background: rgba(0, 0, 0, 0.45);
 }
 .drawer.efb.night .efb-ap.t-ils {
   background: #10243d;

@@ -53,7 +53,7 @@ import {
   approachInUse,
   APPROACH_RANK,
 } from "./atis";
-import { RouteMap, RouteProfile } from "./routeMap";
+import { RouteMap, RouteProfile, planProfile } from "./routeMap";
 import {
   loadRegion,
   leaveRealWorld,
@@ -430,6 +430,7 @@ export class FlightSetup extends Modal {
     this.visibleSteps().forEach((i, k) => {
       const bad =
         errs.some((e) => e.step === i) &&
+        i !== this.step &&
         (this.visited.has(i) || i === S_AIRPORTS || this.step === S_BRIEF);
       const ok =
         !bad && this.visited.has(i) && i !== this.step && i !== S_BRIEF;
@@ -678,6 +679,10 @@ export class FlightSetup extends Modal {
     const w = this.wx();
     const out: string[] = [];
     const c = setupToCircuit(st);
+    // the planned altitude at a procedure fix is below its published minimum (e.g. cruise below the IAF altitude)
+    for (const p of planProfile(c, false).pts)
+      if (p.ident && p.amin !== undefined && p.alt < p.amin - 50)
+        out.push(`${p.ident}: planned ${Math.round(p.alt / 100) * 100} ft, below the ${p.amin} ft minimum${p.role ? ` (${p.role})` : ""}`);
     if (c.start.type === "runway") {
       const hw = runwayWind(c.start.airport, c.start.runway, w);
       if (hw && hw.head <= -2)
@@ -1299,11 +1304,7 @@ export class FlightSetup extends Modal {
     );
     const others =
       st.world === "real"
-        ? sort(
-            APPROACHES.filter(
-              (a) => a.airport === st.dep && a.airport !== destIcao && ok(a),
-            ),
-          )
+        ? [] // real world: only the destination's procedures (the region holds dozens of airports)
         : APPROACHES.filter((a) => a.airport !== destIcao && ok(a)).sort(
             (a, b) =>
               a.airport.localeCompare(b.airport) ||
@@ -3057,14 +3058,14 @@ export class FlightSetup extends Modal {
             ],
           ),
         ),
-        h(
+        st.type === "free" ? null : h(
           "div",
           {},
           h("small", {}, "Grading"),
           h(
             "b",
             {},
-            st.type === "free" || !st.graded
+            !st.graded
               ? "Free"
               : st.mode === "checkride"
                 ? "Checkride"
@@ -3208,7 +3209,7 @@ export class FlightSetup extends Modal {
         ? h(
             "span",
             { class: "fs-errline fs-loading" },
-            h("span", { class: "fs-prog-step" }, this.progress || "starting…"),
+            "Loading region ·", h("span", { class: "fs-prog-step" }, this.progress || "starting…"),
           )
         : errs[0]
           ? h(
