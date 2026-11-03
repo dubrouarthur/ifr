@@ -1,0 +1,1 @@
+{"airports":{},"navaids":[{"id":"HMI","name":"Hami","t":"VORDME","f":115.1,"lat":42.8333,"lon":93.65,"elev":2712,"dme":true,"mv":0.557},{"id":"RL","name":"Hami","t":"NDB","f":315,"lat":42.85,"lon":93.6333,"elev":0,"dme":false,"mv":0.562}],"fixes":[]}

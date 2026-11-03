@@ -1,0 +1,1 @@
+{"airports":{"SCFX":{"name":"Isla San Felix Airport","city":"Isla San Felix","country":"CL","lat":-26.2939,"lon":-80.0962,"elev":165,"type":"small_airport","runways":[{"ids":["11","29"],"len":6562,"wid":98,"lit":true,"surf":"ASP","le":[-26.2892,-80.1047,165,0],"he":[-26.2986,-80.0877,165,0]}],"freqs":{},"magVar":null}},"navaids":[],"fixes":[]}

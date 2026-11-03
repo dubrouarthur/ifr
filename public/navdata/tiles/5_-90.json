@@ -1,0 +1,1 @@
+{"airports":{"MRNS":{"name":"Nosara Airport","city":"Nicoya","country":"CR","lat":9.97649,"lon":-85.653,"elev":33,"type":"medium_airport","runways":[{"ids":["04","24"],"len":3281,"wid":59,"lit":false,"surf":"ASP","le":[9.97283,-85.6556,33,656],"he":[9.98016,-85.6503,33,0]}],"freqs":{},"magVar":null}},"navaids":[],"fixes":[]}

@@ -1,0 +1,1 @@
+{"airports":{"AGGM":{"name":"Munda Airport","city":"Munda","country":"SB","lat":-8.32797,"lon":157.263,"elev":10,"type":"medium_airport","runways":[{"ids":["07","25"],"len":4593,"wid":98,"lit":false,"surf":"ASP","le":[-8.32918,157.257,7,0],"he":[-8.32676,157.269,9,0]}],"freqs":{"ctaf":118.1},"magVar":null}},"navaids":[],"fixes":[]}

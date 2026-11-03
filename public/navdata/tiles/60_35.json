@@ -1,0 +1,1 @@
+{"airports":{},"navaids":[{"id":"KP","name":"Kargopol","t":"NDB","f":705,"lat":61.5333,"lon":38.9667,"elev":0,"dme":false,"mv":12.482},{"id":"OG","name":"Onega","t":"NDB","f":430,"lat":63.9167,"lon":38.1167,"elev":0,"dme":false,"mv":13.454},{"id":"SU","name":"Belozersk","t":"NDB","f":791,"lat":60.0333,"lon":37.75,"elev":0,"dme":false,"mv":11.386}],"fixes":[]}

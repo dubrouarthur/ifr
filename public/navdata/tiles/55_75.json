@@ -1,0 +1,1 @@
+{"airports":{},"navaids":[{"id":"KZ","name":"Severnoye","t":"NDB","f":100,"lat":56.335,"lon":78.36,"elev":0,"dme":false,"mv":11.112},{"id":"SZ","name":"Barabinsk","t":"NDB","f":965,"lat":55.3567,"lon":78.3033,"elev":0,"dme":false,"mv":10.326},{"id":"XV","name":"Novy Vasyugan","t":"NDB","f":350,"lat":58.5833,"lon":76.5,"elev":0,"dme":false,"mv":13.254}],"fixes":[]}

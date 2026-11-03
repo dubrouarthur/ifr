@@ -1,0 +1,1 @@
+{"airports":{"MMCD":{"name":"Isla Cedros Airport","city":"Cedros Island","country":"MX","lat":28.03903,"lon":-115.18942,"elev":98,"type":"small_airport","runways":[{"ids":["15","33"],"len":4660,"wid":85,"lit":false,"surf":"ASP","le":[28.0438,-115.19,98,0],"he":[28.0313,-115.188,98,0]}],"freqs":{},"magVar":null}},"navaids":[],"fixes":[]}

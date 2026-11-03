@@ -1,0 +1,672 @@
+// Real-world region loader: airports, runways, ILS, navaids, waypoints and instrument approaches from the
+// generated navdata (OurAirports + FAA CIFP), plus real terrain (Terrarium DEM tiles).
+//
+// Magnetic variation: the whole region is rotated about its centre so that MAGNETIC north becomes the
+// simulator's grid north. Published magnetic courses (runways, localizers, VOR radials, procedure legs)
+// then match the instruments exactly without touching the avionics. Real coordinates are recovered with
+// `toReal()` for exports and EFB links. (Variation changes < ~1° across a typical region.)
+import {
+  replaceNavData,
+  setTerrainProvider,
+  restoreTrainingRegion,
+} from "./data";
+import {
+  destination,
+  distanceNm,
+  bearingDeg,
+  FT_PER_NM,
+  type LatLon,
+} from "./geo";
+import type { Airport, Approach, Fix, Navaid, ProcLeg, Runway } from "./types";
+
+export type IndexRow = [
+  icao: string,
+  name: string,
+  city: string,
+  country: string,
+  lat: number,
+  lon: number,
+  elev: number,
+  flags: number,
+];
+export const FLAG_LARGE = 2,
+  FLAG_MEDIUM = 1,
+  FLAG_PROC = 4,
+  FLAG_ILS = 8;
+
+interface TileAirport {
+  name: string;
+  city: string;
+  country: string;
+  lat: number;
+  lon: number;
+  elev: number;
+  type: string;
+  runways: {
+    ids: [string, string];
+    len: number;
+    wid: number;
+    lit: boolean;
+    surf: string;
+    le: [number, number, number, number];
+    he: [number, number, number, number];
+  }[];
+  freqs: Record<string, number>;
+  magVar: number | null;
+  wpts?: [string, number, number][];
+  ils?: {
+    id: string;
+    f: number;
+    rwy: string;
+    lat: number;
+    lon: number;
+    crs: number;
+    gs: number | null;
+    gsLat: number | null;
+    gsLon: number | null;
+    tch: number;
+  }[];
+  rwCifp?: Record<
+    string,
+    {
+      lat: number;
+      lon: number;
+      elev: number;
+      brg: number;
+      len: number;
+      wid: number;
+      tch: number;
+      disp: number;
+    }
+  >;
+}
+interface Tile {
+  airports: Record<string, TileAirport>;
+  navaids: {
+    id: string;
+    name: string;
+    t: "VOR" | "VORDME" | "NDB";
+    f: number;
+    lat: number;
+    lon: number;
+    elev: number;
+    dme: boolean;
+    mv: number | null;
+    src?: string;
+  }[];
+  fixes: [string, number, number][];
+}
+type RawLeg = Omit<ProcLeg, "fix"> & {
+  fix: Fix;
+  hold?: { inbound: number; turn: "L" | "R"; legMin: number; legNm?: number };
+};
+type RawApproach = Omit<
+  Approach,
+  | "minimums"
+  | "msa"
+  | "notes"
+  | "missedText"
+  | "difficulty"
+  | "transitions"
+  | "final"
+  | "missed"
+> & {
+  transitions: { name: string; legs: RawLeg[] }[];
+  final: RawLeg[];
+  missed: RawLeg[];
+};
+
+const BASE = "/navdata";
+let indexCache: IndexRow[] | null = null;
+const tileCache = new Map<string, Promise<Tile | null>>();
+
+export async function airportIndex(): Promise<IndexRow[]> {
+  if (!indexCache)
+    indexCache = await (await fetch(`${BASE}/index.json`)).json();
+  return indexCache!;
+}
+
+/** Search by ICAO prefix, name or city; IFR-capable and larger airports first. */
+export async function searchAirports(
+  q: string,
+  limit = 12,
+): Promise<IndexRow[]> {
+  const rows = await airportIndex();
+  const s = q.trim().toUpperCase();
+  if (!s) return rows.filter((r) => r[7] & FLAG_PROC).slice(0, limit);
+  const score = (r: IndexRow) =>
+    r[0] === s
+      ? 0
+      : r[0].startsWith(s)
+        ? 1
+        : r[1].toUpperCase().includes(s)
+          ? 2
+          : (r[2] ?? "").toUpperCase().includes(s)
+            ? 3
+            : 9;
+  return rows
+    .map((r) => [score(r), r] as const)
+    .filter(([sc]) => sc < 9)
+    .sort((a, b) => a[0] - b[0] || (b[1][7] & 7) - (a[1][7] & 7))
+    .slice(0, limit)
+    .map(([, r]) => r);
+}
+
+function tileKey(lat: number, lon: number) {
+  return `${Math.floor(lat / 5) * 5}_${Math.floor(lon / 5) * 5}`;
+}
+function getTile(k: string): Promise<Tile | null> {
+  if (!tileCache.has(k))
+    tileCache.set(
+      k,
+      fetch(`${BASE}/tiles/${k}.json`)
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+    );
+  return tileCache.get(k)!;
+}
+
+// ------------------------------------------------------------------ magnetic rotation
+export interface RegionFrame {
+  center: LatLon;
+  magVar: number;
+}
+let frame: RegionFrame | null = null;
+export function currentRegion(): RegionFrame | null {
+  return frame;
+}
+const DEG = Math.PI / 180;
+function rot(p: LatLon, c: LatLon, deg: number): LatLon {
+  if (!deg) return { lat: p.lat, lon: p.lon };
+  const k = Math.cos(c.lat * DEG);
+  const x = (p.lon - c.lon) * k,
+    y = p.lat - c.lat;
+  const a = deg * DEG;
+  // bearing β → β − var: rotate the local frame counter-clockwise by var
+  const x2 = x * Math.cos(a) - y * Math.sin(a);
+  const y2 = y * Math.cos(a) + x * Math.sin(a);
+  return { lat: c.lat + y2, lon: c.lon + x2 / k };
+}
+/** real → simulator coordinates */
+export function toSim(p: LatLon): LatLon {
+  return frame ? rot(p, frame.center, frame.magVar) : p;
+}
+/** simulator → real coordinates (exports, EFB) */
+export function toReal(p: LatLon): LatLon {
+  return frame ? rot(p, frame.center, -frame.magVar) : p;
+}
+
+// ------------------------------------------------------------------ DEM (Terrarium tiles, z9 ≈ 300 m)
+const Z = 9;
+interface DemTile {
+  x: number;
+  y: number;
+  data: Float32Array;
+}
+const dem = new Map<string, DemTile>();
+const lon2x = (lon: number) => ((lon + 180) / 360) * 2 ** Z;
+const lat2y = (lat: number) =>
+  ((1 - Math.log(Math.tan(lat * DEG) + 1 / Math.cos(lat * DEG)) / Math.PI) /
+    2) *
+  2 ** Z;
+
+async function loadDem(
+  minLat: number,
+  maxLat: number,
+  minLon: number,
+  maxLon: number,
+) {
+  const x0 = Math.floor(lon2x(minLon)),
+    x1 = Math.floor(lon2x(maxLon));
+  const y0 = Math.floor(lat2y(maxLat)),
+    y1 = Math.floor(lat2y(minLat));
+  const jobs: Promise<void>[] = [];
+  for (let x = x0; x <= x1; x++)
+    for (let y = y0; y <= y1; y++) {
+      const k = `${x}/${y}`;
+      if (dem.has(k)) continue;
+      jobs.push(
+        (async () => {
+          try {
+            const r = await fetch(
+              `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${Z}/${x}/${y}.png`,
+            );
+            if (!r.ok) return;
+            const bmp = await createImageBitmap(await r.blob());
+            const c = new OffscreenCanvas(256, 256);
+            const g = c.getContext("2d")!;
+            g.drawImage(bmp, 0, 0);
+            const px = g.getImageData(0, 0, 256, 256).data;
+            const data = new Float32Array(256 * 256);
+            for (let i = 0; i < data.length; i++)
+              data[i] =
+                px[i * 4] * 256 + px[i * 4 + 1] + px[i * 4 + 2] / 256 - 32768;
+            dem.set(k, { x, y, data });
+          } catch {
+            /* offline: flat terrain */
+          }
+        })(),
+      );
+    }
+  await Promise.all(jobs);
+}
+function demMeters(p: LatLon): number | null {
+  const fx = lon2x(p.lon),
+    fy = lat2y(p.lat);
+  const tx = Math.floor(fx),
+    ty = Math.floor(fy);
+  const t = dem.get(`${tx}/${ty}`);
+  if (!t) return null;
+  const u = (fx - tx) * 255,
+    v = (fy - ty) * 255;
+  const i = Math.floor(u),
+    j = Math.floor(v);
+  const du = u - i,
+    dv = v - j;
+  const at = (a: number, b: number) =>
+    t.data[Math.min(255, b) * 256 + Math.min(255, a)];
+  return (
+    at(i, j) * (1 - du) * (1 - dv) +
+    at(i + 1, j) * du * (1 - dv) +
+    at(i, j + 1) * (1 - du) * dv +
+    at(i + 1, j + 1) * du * dv
+  );
+}
+
+// ------------------------------------------------------------------ building the region
+const ILS_DA_HAT = 200;
+function deriveMinimums(
+  type: Approach["type"],
+  tdze: number,
+  hasGs: boolean,
+): Approach["minimums"] {
+  const r20 = (x: number) => Math.ceil(x / 20) * 20;
+  if (type === "ILS")
+    return [
+      { label: "S-ILS", da: tdze + ILS_DA_HAT, vis: "1/2", hat: ILS_DA_HAT },
+      {
+        label: "S-LOC",
+        mda: r20(tdze + 400),
+        vis: "3/4",
+        hat: r20(tdze + 400) - tdze,
+      },
+      {
+        label: "CIRCLING",
+        mda: r20(tdze + 600),
+        vis: "1",
+        hat: r20(tdze + 600) - tdze,
+      },
+    ];
+  if (type === "RNAV")
+    return [
+      ...(hasGs
+        ? [
+            { label: "LPV", da: tdze + 250, vis: "3/4", hat: 250 },
+            { label: "LNAV/VNAV", da: tdze + 350, vis: "1", hat: 350 },
+          ]
+        : []),
+      {
+        label: "LNAV",
+        mda: r20(tdze + 420),
+        vis: "1",
+        hat: r20(tdze + 420) - tdze,
+      },
+      {
+        label: "CIRCLING",
+        mda: r20(tdze + 600),
+        vis: "1 1/4",
+        hat: r20(tdze + 600) - tdze,
+      },
+    ];
+  const hat = type === "NDB" ? 520 : 440;
+  return [
+    {
+      label: `S-${type === "LOCBC" ? "LOC BC" : type}`,
+      mda: r20(tdze + hat),
+      vis: "1",
+      hat: r20(tdze + hat) - tdze,
+    },
+    {
+      label: "CIRCLING",
+      mda: r20(tdze + hat + 160),
+      vis: "1 1/4",
+      hat: r20(tdze + hat + 160) - tdze,
+    },
+  ];
+}
+
+function missedText(m: ProcLeg[]): string {
+  const parts: string[] = [];
+  const legs = m.slice(1);
+  const first = legs[0];
+  if (first?.altMin) parts.push(`Climb to ${first.altMin}`);
+  for (const l of legs) {
+    if (l.hold)
+      parts.push(
+        `hold at ${l.fix.ident} (${l.hold.turn === "L" ? "left" : "right"} turns, ${String(Math.round(l.hold.inbound)).padStart(3, "0")}° inbound)`,
+      );
+    else
+      parts.push(
+        `direct ${l.fix.ident}${l.altMin && l !== first ? ` at ${l.altMin}` : ""}`,
+      );
+  }
+  return parts.join(", ").replace(/^./, (c) => c.toUpperCase()) + ".";
+}
+
+export interface LoadedRegion {
+  airports: string[];
+  approaches: number;
+  magVar: number;
+  center: LatLon;
+  demTiles: number;
+}
+
+/**
+ * Load the real-world region around the given airports (departure first). Replaces the simulator's nav
+ * database and terrain until `leaveRealWorld()`.
+ */
+export async function loadRegion(
+  icaos: string[],
+  marginDeg = 1.6,
+): Promise<LoadedRegion> {
+  const idx = await airportIndex();
+  const pick = icaos
+    .map((c) => idx.find((r) => r[0] === c.toUpperCase()))
+    .filter(Boolean) as IndexRow[];
+  if (!pick.length) throw new Error("Unknown airport");
+  const lats = pick.map((r) => r[4]),
+    lons = pick.map((r) => r[5]);
+  const minLat = Math.min(...lats) - marginDeg,
+    maxLat = Math.max(...lats) + marginDeg;
+  const k = Math.cos(((minLat + maxLat) / 2) * DEG);
+  const minLon = Math.min(...lons) - marginDeg / k,
+    maxLon = Math.max(...lons) + marginDeg / k;
+  const center: LatLon = {
+    lat: (minLat + maxLat) / 2,
+    lon: (minLon + maxLon) / 2,
+  };
+  // tiles
+  const keys = new Set<string>();
+  for (let la = Math.floor(minLat / 5) * 5; la <= maxLat; la += 5)
+    for (let lo = Math.floor(minLon / 5) * 5; lo <= maxLon; lo += 5)
+      keys.add(tileKey(la, lo));
+  const tiles = (await Promise.all([...keys].map(getTile))).filter(
+    Boolean,
+  ) as Tile[];
+  const inBox = (lat: number, lon: number) =>
+    lat >= minLat && lat <= maxLat && lon >= minLon && lon <= maxLon;
+  // magnetic variation: departure (CIFP) → nearest navaid declination → 0
+  const dep = tiles.map((t) => t.airports[pick[0][0]]).find(Boolean);
+  let magVar = dep?.magVar ?? null;
+  if (magVar === null) {
+    let best = Infinity;
+    for (const t of tiles)
+      for (const n of t.navaids)
+        if (n.mv !== null && n.mv !== undefined) {
+          const d = distanceNm(n, center);
+          if (d < best) {
+            best = d;
+            magVar = n.mv;
+          }
+        }
+  }
+  frame = { center, magVar: magVar ?? 0 };
+  const S = (lat: number, lon: number) => toSim({ lat, lon });
+
+  const airports: Airport[] = [];
+  const navaids: Navaid[] = [];
+  const fixes: Fix[] = [];
+  const approaches: Approach[] = [];
+  const seenFix = new Set<string>();
+  const addFix = (f: Fix) => {
+    const key = `${f.ident}|${f.kind}`;
+    if (seenFix.has(key)) return;
+    seenFix.add(key);
+    fixes.push(f);
+  };
+  // navaids (CIFP preferred over OurAirports duplicates)
+  const navSeen = new Map<string, Navaid>();
+  for (const t of tiles)
+    for (const n of t.navaids) {
+      if (!inBox(n.lat, n.lon)) continue;
+      const key = `${n.id}|${n.t === "NDB" ? "N" : "V"}`;
+      if (navSeen.has(key) && n.src !== "cifp") continue;
+      const p = S(n.lat, n.lon);
+      navSeen.set(key, {
+        ident: n.id,
+        name: n.name,
+        type: n.t,
+        freq: n.f,
+        elevFt: n.elev,
+        dme: n.dme,
+        ...p,
+      });
+    }
+  navaids.push(...navSeen.values());
+  for (const n of navaids)
+    addFix({
+      ident: n.ident,
+      lat: n.lat,
+      lon: n.lon,
+      kind: n.type === "NDB" ? "ndb" : "vor",
+    });
+  // enroute waypoints
+  for (const t of tiles)
+    for (const [id, la, lo] of t.fixes)
+      if (inBox(la, lo)) addFix({ ident: id, ...S(la, lo), kind: "fix" });
+  // airports
+  const wanted = new Set(pick.map((r) => r[0]));
+  for (const t of tiles)
+    for (const [icao, a] of Object.entries(t.airports)) {
+      if (!inBox(a.lat, a.lon)) continue;
+      const rws: Runway[] = [];
+      for (const r of a.runways) {
+        const ends = [r.le, r.he];
+        for (let e = 0; e < 2; e++) {
+          const me = ends[e],
+            other = ends[1 - e];
+          const id = /^\d[LRC]?$/.test(r.ids[e]) ? `0${r.ids[e]}` : r.ids[e];
+          const c = a.rwCifp?.[id] ?? a.rwCifp?.[r.ids[e]];
+          const phys = S(me[0], me[1]);
+          const far = S(other[0], other[1]);
+          const disp = c?.disp ?? me[3] ?? 0;
+          const thr = c
+            ? S(c.lat, c.lon)
+            : disp > 0
+              ? destination(phys, bearingDeg(phys, far), disp / FT_PER_NM)
+              : phys;
+          rws.push({
+            id,
+            heading: Math.round(bearingDeg(phys, far) * 10) / 10,
+            threshold: thr,
+            end: far,
+            lengthFt: r.len,
+            widthFt: c?.wid ?? r.wid ?? 100,
+            elevFt: c?.elev ?? me[2] ?? a.elev,
+            lights: r.lit,
+          });
+        }
+      }
+      if (!rws.length) continue;
+      const pos = S(a.lat, a.lon);
+      const apt: Airport = {
+        icao,
+        name: a.name,
+        city: a.city || a.country,
+        elevFt: a.elev,
+        runways: rws,
+        freqs: {
+          atis: a.freqs.atis,
+          approach: a.freqs.approach,
+          tower: a.freqs.tower,
+          ground: a.freqs.ground,
+          ctaf: a.freqs.ctaf,
+        },
+        magVar: frame.magVar,
+        ...pos,
+      };
+      airports.push(apt);
+      addFix({ ident: icao, ...pos, kind: "airport" });
+      for (const [id, la, lo] of a.wpts ?? [])
+        addFix({ ident: id, ...S(la, lo), kind: "fix" });
+      for (const r of rws)
+        addFix({ ident: `RW${r.id}`, ...r.threshold, kind: "runway" });
+      for (const L of a.ils ?? []) {
+        const rw = rws.find((r) => r.id === L.rwy);
+        navaids.push({
+          ident: L.id,
+          name: `I-${L.id.replace(/^I/, "")}`,
+          type: L.gs ? "ILS" : "LOC",
+          freq: L.f,
+          elevFt: rw?.elevFt ?? a.elev,
+          course: L.crs,
+          gsAngle: L.gs ?? undefined,
+          gsPos:
+            L.gsLat !== null && L.gsLon !== null
+              ? S(L.gsLat, L.gsLon)
+              : undefined,
+          tch: rw ? (a.rwCifp?.[L.rwy]?.tch ?? 50) : 50,
+          dme: true,
+          runway: L.rwy,
+          airport: icao,
+          ...S(L.lat, L.lon),
+        });
+      }
+    }
+  // departure/arrival first so AIRPORTS[0] is the departure
+  airports.sort(
+    (x, y) =>
+      (wanted.has(y.icao) ? 1 : 0) - (wanted.has(x.icao) ? 1 : 0) ||
+      (x.icao === pick[0][0] ? -1 : y.icao === pick[0][0] ? 1 : 0),
+  );
+  // approaches of the chosen airports (and others with procedures nearby)
+  const procAirports = idx.filter(
+    (r) =>
+      r[7] & FLAG_PROC &&
+      inBox(r[4], r[5]) &&
+      (wanted.has(r[0]) ||
+        pick.some(
+          (p) => Math.abs(p[4] - r[4]) < 0.5 && Math.abs(p[5] - r[5]) < 0.7,
+        )),
+  );
+  const lists = await Promise.all(
+    procAirports.map((r) =>
+      fetch(`${BASE}/proc/${r[0]}.json`)
+        .then((x) => (x.ok ? x.json() : []))
+        .catch(() => []),
+    ),
+  );
+  for (const list of lists as RawApproach[][]) {
+    for (const raw of list) {
+      const apt = airports.find((a) => a.icao === raw.airport);
+      const rw = apt?.runways.find((r) => r.id === raw.runway);
+      if (!apt || !rw) continue;
+      const fixLeg = (l: RawLeg): ProcLeg => {
+        const p = S(l.fix.lat, l.fix.lon);
+        const fx: Fix = { ident: l.fix.ident, kind: l.fix.kind, ...p };
+        if (fx.kind !== "runway") addFix(fx);
+        const out: ProcLeg = { ...l, fix: fx };
+        if (l.hold)
+          out.hold = {
+            inbound: l.hold.inbound,
+            turn: l.hold.turn,
+            legMin: l.hold.legMin || 1,
+          };
+        return out;
+      };
+      const final = raw.final.map(fixLeg);
+      const missed = raw.missed.map(fixLeg);
+      const transitions = raw.transitions
+        .map((t) => ({ name: t.name, legs: t.legs.map(fixLeg) }))
+        .filter((t) => t.legs.length);
+      // fill leg distances / courses where the source has none (sim geometry is magnetic)
+      for (const seq of [final, missed, ...transitions.map((t) => t.legs)])
+        for (let i = 1; i < seq.length; i++) {
+          seq[i].dist ??= distanceNm(seq[i - 1].fix, seq[i].fix);
+          seq[i].course ??= Math.round(bearingDeg(seq[i - 1].fix, seq[i].fix));
+        }
+      const map = final[final.length - 1];
+      if (map.fix.kind === "runway") map.fix = { ...map.fix, ...rw.threshold };
+      const hasGs = !!raw.gsAngle;
+      const iafAlt = Math.max(
+        0,
+        ...transitions.flatMap((t) => t.legs.map((l) => l.altMin ?? 0)),
+        ...final.map((l) => l.altMin ?? 0),
+      );
+      approaches.push({
+        ...raw,
+        transitions,
+        final,
+        missed,
+        crsSetting:
+          raw.type === "LOCBC" ? (raw.finalCourse + 180) % 360 : undefined,
+        difficulty:
+          raw.type === "ILS"
+            ? 1
+            : raw.type === "RNAV" || raw.type === "LOC"
+              ? 2
+              : 3,
+        minimums: deriveMinimums(raw.type, rw.elevFt, hasGs),
+        msa: {
+          center:
+            raw.navaid &&
+            navaids.some(
+              (n) =>
+                n.ident === raw.navaid && n.type !== "ILS" && n.type !== "LOC",
+            )
+              ? raw.navaid
+              : apt.icao,
+          alt:
+            Math.ceil((Math.max(iafAlt, apt.elevFt + 2000) + 500) / 100) * 100,
+        },
+        missedText: missedText(missed),
+        notes: [
+          `Source: ${raw.source ?? "FAA CIFP"} (AIRAC). Minimums derived (not in source data) — check the official chart.`,
+          "For training only — not for real-world navigation.",
+        ],
+      } as Approach);
+    }
+  }
+  replaceNavData({ airports, navaids, fixes, approaches });
+  // terrain
+  await loadDem(minLat - 0.3, maxLat + 0.3, minLon - 0.4, maxLon + 0.4);
+  const flat = airports.map((a) => ({
+    p: a as LatLon,
+    e: Math.min(...a.runways.map((r) => r.elevFt)),
+    r: Math.max(1.2, ...a.runways.map((r) => r.lengthFt / FT_PER_NM / 2 + 0.6)),
+  }));
+  setTerrainProvider({
+    elev(p) {
+      const real = toReal(p);
+      const m = demMeters(real);
+      let e = m === null ? 0 : Math.max(0, m / 0.3048);
+      // flatten airport surfaces to the published elevation, blending over ~1 NM
+      for (const f of flat) {
+        if (Math.abs(p.lat - f.p.lat) * 60 > f.r + 1) continue;
+        const d = distanceNm(p, f.p);
+        if (d < f.r + 1) {
+          const w = d < f.r ? 1 : 1 - (d - f.r);
+          e = e * (1 - w) + f.e * w;
+        }
+      }
+      return e;
+    },
+    land(p) {
+      const m = demMeters(toReal(p));
+      return m === null ? 1 : m > 0.5 ? 1 : 0;
+    },
+  });
+  return {
+    airports: airports.map((a) => a.icao),
+    approaches: approaches.length,
+    magVar: frame.magVar,
+    center,
+    demTiles: dem.size,
+  };
+}
+
+/** Back to the built-in Ardent Islands training region. */
+export function leaveRealWorld() {
+  frame = null;
+  restoreTrainingRegion();
+}

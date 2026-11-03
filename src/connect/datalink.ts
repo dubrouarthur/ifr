@@ -1,6 +1,7 @@
 // Live data link: streams own-ship telemetry over WebSocket to a local bridge (tools/efb-bridge.mjs),
 // which re-broadcasts it as GDL 90 / XGPS for EFBs (ForeFlight, Garmin Pilot, SkyDemon, FltPlan Go, Avare…).
 import type { Sim } from '../sim/sim';
+import { toReal, currentRegion } from '../nav/world';
 
 export type LinkState = 'off' | 'connecting' | 'on' | 'error';
 
@@ -25,7 +26,9 @@ export interface Telemetry {
 export function telemetry(sim: Sim): Telemetry {
   const d = sim.ac.data;
   const s = sim.ac.s;
-  return { type: 'ownship', t: Date.now(), lat: s.lat, lon: s.lon, altFt: s.altFt, pressAltFt: d.pressAltFt, gsKt: d.gsKt, trackDeg: d.trackTrue, hdgDeg: d.hdgTrue, pitchDeg: d.pitchDeg, rollDeg: d.rollDeg, vsFpm: d.vsFpm, iasKt: d.iasKt, onGround: s.onGround, callsign: 'IFRSIM' };
+  const real = toReal(s);
+  const mv = currentRegion()?.magVar ?? 0;
+  return { type: 'ownship', t: Date.now(), lat: real.lat, lon: real.lon, altFt: s.altFt, pressAltFt: d.pressAltFt, gsKt: d.gsKt, trackDeg: (d.trackTrue + mv + 360) % 360, hdgDeg: (d.hdgTrue + mv + 360) % 360, pitchDeg: d.pitchDeg, rollDeg: d.rollDeg, vsFpm: d.vsFpm, iasKt: d.iasKt, onGround: s.onGround, callsign: 'IFRSIM' };
 }
 
 export class DataLink {

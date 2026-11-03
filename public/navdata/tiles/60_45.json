@@ -1,0 +1,1 @@
+{"airports":{},"navaids":[{"id":"KTL","name":"Kotlas","t":"VORDME","f":117.8,"lat":61.2417,"lon":46.7133,"elev":180,"dme":true,"mv":14.596},{"id":"VC","name":"Leshukonskoye","t":"NDB","f":678,"lat":64.9,"lon":45.75,"elev":0,"dme":false,"mv":17.083},{"id":"WJ","name":"Leshukonskoye","t":"NDB","f":678,"lat":64.9003,"lon":45.7503,"elev":0,"dme":false,"mv":17.084}],"fixes":[]}

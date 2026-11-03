@@ -29,6 +29,7 @@ import { Launcher, ProcModal, DirectModal, JoystickModal, DebriefModal, HelpModa
 import { distanceNm, wrap180 } from './nav/geo';
 import { runway } from './nav/data';
 import { assessTouchdown } from './sim/landing';
+import { currentRegion, leaveRealWorld } from './nav/world';
 import { chartIndex } from './plates/plates';
 import type { Phase } from './sim/recorder';
 import { CockpitAudio } from './sim/audio';
@@ -149,9 +150,16 @@ function applyReplay() {
   if (sl && R.playing) sl.value = String(R.pos);
 }
 
+/** Flight Center content lives in the built-in training region */
+function backToTraining() {
+  if (!currentRegion()) return;
+  leaveRealWorld();
+  rebuildOutside();
+  charts.refresh?.();
+}
 const fc = new FlightCenter({
-  flyScenario: (sc, wx, a) => startScenario(sc, wx, a),
-  briefExercise: (ex, path) => pickExercise(ex, path),
+  flyScenario: (sc, wx, a) => { backToTraining(); startScenario(sc, wx, a); },
+  briefExercise: (ex, path) => { backToTraining(); pickExercise(ex, path); },
   openPaths: () => learn.open(),
   openDrill: () => drill.open(),
   openRecords: () => historyModal.open(),
@@ -159,7 +167,7 @@ const fc = new FlightCenter({
   setCockpit: (t) => setCockpit(t),
   getCockpit: () => cockpitType,
   openBuilder: (c) => builder.edit(c),
-  flyCircuit: (c) => flyCircuit(c),
+  flyCircuit: (c) => { backToTraining(); flyCircuit(c); },
   planFlight: (t) => setup.start(t),
 });
 const builder = new CircuitBuilder((c) => flyCircuit(c), (m, k) => toast(m, k ?? 'info'));
@@ -167,6 +175,7 @@ const setup = new FlightSetup({
   flyGraded: (c, st) => { applySetupPrefs(st); flyCircuit(c); },
   flyFree: (sc, st) => { applySetupPrefs(st); startScenario(sc, { id: 'custom', name: 'Custom', desc: '', wx: st.weather }, { mode: 'training', student: launcher.assess.student, handFlown: false, randomFailure: false }); },
   openChart: (id) => { charts.toggle(true); charts.show(id); },
+  regionChanged: () => { rebuildOutside(); charts.refresh?.(); },
 });
 setup.toast = (m) => toast(m, 'good');
 function applySetupPrefs(st: import('./ui/flightsetup').FlightSetupState) {
@@ -298,7 +307,7 @@ const moreMenu = h('div', { class: 'menu', role: 'menu' });
 const moreItem = (ic: string, label: string, kbd: string, fn: () => void) =>
   h('button', { class: 'menu-item', role: 'menuitem', onclick: () => { moreMenu.classList.remove('open'); fn(); } }, icon(ic), h('span', {}, label), kbd ? h('kbd', {}, kbd) : null);
 moreMenu.append(
-  moreItem(I.plane, 'Plan a flight…', 'N', () => setup.start()),
+  moreItem(I.plane, 'Plan a flight…', 'Shift N', () => setup.start()),
   moreItem(I.gear, 'Settings', ',', () => settings.open()),
   moreItem(I.cloud, 'Weather station', '', () => weatherModal.open()),
   moreItem(I.link, 'Connections & export', '', () => connect.open()),
@@ -324,7 +333,7 @@ const topbar = h('header', { class: 'topbar' },
   h('div', { class: 'spacer' }),
   h('div', { class: 'tb-actions' },
     h('button', { class: 'btn primary', onclick: () => fc.open(), title: 'Flight Center — all flights, exercises and paths (F2)' }, icon(I.plane), h('span', { class: 'lbl' }, 'Flight Center')),
-    h('button', { class: 'btn', onclick: () => setup.start(), title: 'Plan a flight — aircraft, instruments, route, weather (N)' }, icon(I.route), h('span', { class: 'lbl' }, 'Plan')),
+    h('button', { class: 'btn', onclick: () => setup.start(), title: 'Plan a flight — aircraft, instruments, route, weather (Shift N)' }, icon(I.route), h('span', { class: 'lbl' }, 'Plan')),
     h('div', { class: 'tb-group' },
       h('button', { class: 'btn', onclick: () => charts.toggle(), title: 'Charts (K)' }, icon(I.map), h('span', { class: 'lbl' }, 'Charts')),
       h('button', { class: 'btn', onclick: () => procModal.open(), title: 'Load an approach (X)' }, icon(I.proc), h('span', { class: 'lbl' }, 'Procedures')),
@@ -817,6 +826,7 @@ window.addEventListener('keydown', (e) => {
   }
   const n = sim.navInputs();
   const lower = k.toLowerCase();
+  if (k === 'N' && e.shiftKey) { setup.start(); e.preventDefault(); return; }
   // throttle by digit: use the physical key so AZERTY keyboards (à, &, é…) work without Shift
   const dig = /^(Digit|Numpad)([0-9])$/.exec(e.code)?.[2] ?? (/^[0-9]$/.test(k) ? k : null);
   if (dig !== null && !e.altKey) { sim.controls.throttle = dig === '0' ? 1 : Number(dig) / 10; return; }
@@ -841,7 +851,6 @@ window.addEventListener('keydown', (e) => {
     case 'j': learn.open(); break;
     case 'f2': fc.open(); break;
     case 'u': builder.edit(); break;
-    case 'n': setup.start(); break;
     case 'f1': toggleExplain(); e.preventDefault(); break;
     case ',': settings.open(); break;
     case 'm': toggleMute(); break;
@@ -1140,7 +1149,7 @@ function frame(now: number) {
 }
 
 // test/automation hook
-(window as unknown as { __ifr: unknown }).__ifr = { sim, get outside() { return outside; }, thr27: runway('PARD', '27').threshold, charts: (id: string) => chartIndex().find((c) => c.id === id)?.render() ?? '' };
+(window as unknown as { __ifr: unknown }).__ifr = { sim, get outside() { return outside; }, thr27: runway('PARD', '27').threshold, charts: (id: string) => chartIndex().find((c) => c.id === id)?.render() ?? '', world: () => import('./nav/world') };
 
 // ------------------------------------------------------------------ boot
 setOtw(otwMode);

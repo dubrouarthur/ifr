@@ -6,13 +6,22 @@ import { AIRPORTS, NAVAIDS, groundElevation, landMask } from '../nav/data';
 import { toLocal, destination, bearingDeg, distanceNm, FT_PER_NM, DEG, type LatLon } from '../nav/geo';
 import type { Runway } from '../nav/types';
 import { buildAirports } from './airport3d';
+import { currentRegion } from '../nav/world';
 import { CloudLayers } from './clouds3d';
 import { terrainMaterial } from './terrain3d';
 import { cloudLayer } from './otw';
 
 const NM = 1852;
 const FT = 0.3048;
-const ORIGIN: LatLon = { lat: AIRPORTS[0].lat, lon: AIRPORTS[0].lon };
+let ORIGIN: LatLon = { lat: AIRPORTS[0].lat, lon: AIRPORTS[0].lon };
+/** airports that get full 3D scenery: the region's main ones, closest to the departure first */
+function sceneryAirports() {
+  const ref = AIRPORTS[0];
+  return [...AIRPORTS]
+    .filter((a) => a.runways.some((r) => r.lengthFt >= 3000))
+    .sort((a, b) => distanceNm(a, ref) - distanceNm(b, ref))
+    .slice(0, 18);
+}
 
 export type TimeOfDay = 'day' | 'dusk' | 'night';
 export type Quality = 'low' | 'high';
@@ -148,6 +157,8 @@ export class Outside3D {
   ok = true;
 
   constructor(canvas: HTMLCanvasElement, quality: Quality, time: TimeOfDay) {
+    const reg = currentRegion();
+    ORIGIN = reg ? { ...reg.center } : { lat: AIRPORTS[0].lat, lon: AIRPORTS[0].lon };
     this.quality = quality;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality === 'high', powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(quality === 'high' ? 1.6 : 1, window.devicePixelRatio || 1));
@@ -202,8 +213,9 @@ export class Outside3D {
 
   // ---------------------------------------------------------------- terrain
   private buildTerrain() {
-    const step = this.quality === 'high' ? 0.22 : 0.45;
-    const x0 = -34, x1 = 52, y0 = -34, y1 = 52;
+    const step = (this.quality === 'high' ? 0.22 : 0.45) * (currentRegion() ? 1.35 : 1);
+    const real = !!currentRegion();
+    const x0 = real ? -75 : -34, x1 = real ? 75 : 52, y0 = real ? -75 : -34, y1 = real ? 75 : 52;
     const nx = Math.ceil((x1 - x0) / step) + 1;
     const ny = Math.ceil((y1 - y0) / step) + 1;
     const pos = new Float32Array(nx * ny * 3);
@@ -278,10 +290,10 @@ export class Outside3D {
   private buildAirports() {
     const lights: LightSpec[] = [];
     const ilsRunways = new Set(NAVAIDS.filter((n) => n.type === 'ILS').map((n) => `${n.airport}-${n.runway}`));
-    const apt = buildAirports(AIRPORTS, ilsRunways, w, this.quality);
+    const apt = buildAirports(sceneryAirports(), ilsRunways, w, this.quality);
     this.scene.add(apt.group);
     lights.push(...apt.lights);
-    for (const a of AIRPORTS)
+    for (const a of sceneryAirports())
       for (let i = 0; i < a.runways.length; i += 2)
         for (const rw of [a.runways[i], a.runways[i + 1]]) this.runwayLights(rw, ilsRunways.has(`${a.icao}-${rw.id}`), lights);
     // navaid shelters
@@ -364,10 +376,11 @@ export class Outside3D {
     const mtx = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     const sc = new THREE.Vector3();
-    const towns = [destination(AIRPORTS[0], 200, 2.5), destination(AIRPORTS[0], 20, 3), destination(AIRPORTS[1], 120, 2.5), destination(AIRPORTS[1], 260, 3)];
+    const towns = sceneryAirports().slice(0, 8).flatMap((a, i) => [destination(a, 200 + i * 37, 2.5), destination(a, 20 + i * 23, 3)]);
     let seed = 1;
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    const tooClose = (p: LatLon) => AIRPORTS.some((a) => a.runways.some((r) => distanceNm(p, r.threshold) < 0.6 || distanceNm(p, r.end) < 0.6 || distanceNm(p, a) < 0.5));
+    const near = sceneryAirports();
+    const tooClose = (p: LatLon) => near.some((a) => a.runways.some((r) => distanceNm(p, r.threshold) < 0.6 || distanceNm(p, r.end) < 0.6 || distanceNm(p, a) < 0.5));
     let hi = 0;
     for (let i = 0; i < nHouses * 3 && hi < nHouses; i++) {
       const t = towns[i % towns.length];

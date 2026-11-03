@@ -16,6 +16,10 @@ export interface FlightSetupState {
   cockpit: 'g1000' | 'steam' | 'airliner';
   equipment: Equipment;
   svt: boolean;
+  /** built-in training region or real-world navigation data */
+  world: 'training' | 'real';
+  dep: string;
+  arr: string;
   start: StartKind;
   rwy: { airport: string; runway: string; initialAlt: number };
   air: { fix: string; bearing: number; distNm: number; altFt: number; iasKt: number };
@@ -38,6 +42,9 @@ export const defaultSetup = (): FlightSetupState => ({
   cockpit: 'g1000',
   equipment: fullEquipment(),
   svt: true,
+  world: 'training',
+  dep: 'KSFO',
+  arr: 'KSJC',
   start: 'runway',
   rwy: { airport: 'PARD', runway: '27', initialAlt: 3000 },
   air: { fix: 'ARD', bearing: 90, distNm: 12, altFt: 3000, iasKt: 95 },

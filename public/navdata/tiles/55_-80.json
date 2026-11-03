@@ -1,0 +1,1 @@
+{"airports":{},"navaids":[{"id":"GW","name":"Jarpik","t":"NDB","f":371,"lat":55.2846,"lon":-77.7514,"elev":60,"dme":false,"mv":-18.053},{"id":"PH","name":"Inukjuak","t":"NDB","f":396,"lat":58.4678,"lon":-78.0733,"elev":180,"dme":false,"mv":-20.439},{"id":"YMU","name":"Umiujaq","t":"NDB","f":230,"lat":56.5369,"lon":-76.5231,"elev":295,"dme":false,"mv":-20.068}],"fixes":[]}

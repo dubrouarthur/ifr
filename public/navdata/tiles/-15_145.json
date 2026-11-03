@@ -1,0 +1,1 @@
+{"airports":{"YLZI":{"name":"Lizard Island Airport","city":"","country":"AU","lat":-14.67327,"lon":145.45457,"elev":70,"type":"small_airport","runways":[{"ids":["12","30"],"len":3038,"wid":49,"lit":true,"surf":"ASP","le":[-14.66995,145.45106,70,0],"he":[-14.67557,145.45691,70,0]}],"freqs":{"ctaf":126},"magVar":null}},"navaids":[],"fixes":[]}

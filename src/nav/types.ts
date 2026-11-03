@@ -111,4 +111,6 @@ export interface Approach {
   tch?: number;
   msa: { center: string; alt: number };
   notes: string[];
+  /** data source (e.g. 'FAA CIFP') — absent for the built-in training region */
+  source?: string;
 }

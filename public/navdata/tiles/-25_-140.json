@@ -1,0 +1,1 @@
+{"airports":{"NTGY":{"name":"Tureia Airport","city":"Tureia","country":"PF","lat":-20.78426,"lon":-138.56796,"elev":12,"type":"small_airport","runways":[{"ids":["18","36"],"len":4921,"wid":100,"lit":false,"surf":"BIT","le":[-20.7804,-138.561,8,1234],"he":[-20.7903,-138.5693,6,0]}],"freqs":{},"magVar":null}},"navaids":[],"fixes":[]}

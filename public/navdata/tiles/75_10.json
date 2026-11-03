@@ -1,0 +1,1 @@
+{"airports":{"ENAS":{"name":"Ny-Ålesund Airport, Hamnerabben","city":"Ny-Ålesund","country":"NO","lat":78.9275,"lon":11.8743,"elev":50,"type":"small_airport","runways":[{"ids":["12","30"],"len":3040,"wid":132,"lit":false,"surf":"ASP","le":[78.9295,11.8553,50,0],"he":[78.9256,11.8933,50,0]}],"freqs":{},"magVar":null}},"navaids":[],"fixes":[]}

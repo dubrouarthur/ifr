@@ -6,6 +6,8 @@ import { destination, FT_PER_NM, distanceNm, bearingDeg, type LatLon } from './g
 import type { Airport, Approach, Fix, Navaid, ProcLeg, Runway } from './types';
 
 const ft2nm = (ft: number) => ft / FT_PER_NM;
+/** set once the module is initialised: lookups fall back to the training region while a real region is loaded */
+let TRAIN: { airports: Airport[]; navaids: Navaid[]; approaches: Approach[] } | null = null;
 
 function makeRunwayPair(
   center: LatLon,
@@ -58,7 +60,7 @@ export const AIRPORTS: Airport[] = [
 ];
 
 export function airport(icao: string): Airport {
-  const a = AIRPORTS.find((x) => x.icao === icao);
+  const a = AIRPORTS.find((x) => x.icao === icao) ?? TRAIN?.airports.find((x) => x.icao === icao);
   if (!a) throw new Error(`Unknown airport ${icao}`);
   return a;
 }
@@ -131,7 +133,7 @@ export const NAVAIDS: Navaid[] = [
 ];
 
 export function navaid(ident: string): Navaid {
-  const n = NAVAIDS.find((x) => x.ident === ident);
+  const n = NAVAIDS.find((x) => x.ident === ident) ?? TRAIN?.navaids.find((x) => x.ident === ident);
   if (!n) throw new Error(`Unknown navaid ${ident}`);
   return n;
 }
@@ -466,7 +468,8 @@ export const APPROACHES: Approach[] = [
 ];
 
 export function approach(id: string): Approach {
-  const a = APPROACHES.find((x) => x.id === id);
+  // the training-region catalogue stays resolvable while a real-world region is loaded
+  const a = APPROACHES.find((x) => x.id === id) ?? TRAIN?.approaches.find((x) => x.id === id);
   if (!a) throw new Error(`Unknown approach ${id}`);
   return a;
 }
@@ -488,8 +491,36 @@ function smooth(e0: number, e1: number, x: number) {
   return t * t * (3 - 2 * t);
 }
 
+// ---------------------------------------------------------------- real-world region hook
+/** When a real-world region is loaded, terrain comes from a DEM provider instead of the island model. */
+export interface TerrainProvider {
+  elev(p: LatLon): number; // ft MSL
+  land(p: LatLon): number; // 0 sea .. 1 land
+}
+let provider: TerrainProvider | null = null;
+export function setTerrainProvider(p: TerrainProvider | null) {
+  provider = p;
+}
+export function terrainProviderActive(): boolean {
+  return provider !== null;
+}
+/** Snapshot of the built-in training region (restored when leaving a real-world flight). */
+export const TRAINING_REGION = { airports: [...AIRPORTS], navaids: [...NAVAIDS], fixes: [...FIXES], approaches: [...APPROACHES] };
+TRAIN = TRAINING_REGION;
+export function replaceNavData(d: { airports: Airport[]; navaids: Navaid[]; fixes: Fix[]; approaches: Approach[] }) {
+  AIRPORTS.splice(0, AIRPORTS.length, ...d.airports);
+  NAVAIDS.splice(0, NAVAIDS.length, ...d.navaids);
+  FIXES.splice(0, FIXES.length, ...d.fixes);
+  APPROACHES.splice(0, APPROACHES.length, ...d.approaches);
+}
+export function restoreTrainingRegion() {
+  replaceNavData(TRAINING_REGION);
+  provider = null;
+}
+
 /** 0 = open sea, 1 = inland. */
 export function landMask(p: LatLon): number {
+  if (provider) return provider.land(p);
   let m = 0;
   const wob = Math.sin(p.lat * 61.7 + p.lon * 13.1) * 1.4 + Math.sin(p.lon * 47.3 - p.lat * 21.9) * 1.1;
   for (const is of ISLANDS) {
@@ -501,6 +532,7 @@ export function landMask(p: LatLon): number {
 
 /** Ground elevation in ft MSL. Flat near airports, hills and a ridge elsewhere, sea beyond the coast. */
 export function groundElevation(p: LatLon): number {
+  if (provider) return provider.elev(p);
   let wSum = 0;
   let eSum = 0;
   let nearest = Infinity;

@@ -1,0 +1,1 @@
+{"airports":{},"navaids":[{"id":"SPA","name":"Sleipner A","t":"NDB","f":349,"lat":58.3667,"lon":1.90694,"elev":417,"dme":true,"mv":-2.336},{"id":"TR","name":"Tor","t":"NDB","f":375,"lat":56.6414,"lon":3.32556,"elev":0,"dme":false,"mv":-1.408},{"id":"ULA","name":"Ula","t":"NDB","f":380,"lat":57.1106,"lon":2.84472,"elev":0,"dme":false,"mv":-1.57}],"fixes":[]}

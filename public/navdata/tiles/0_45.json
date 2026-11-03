@@ -1,0 +1,1 @@
+{"airports":{"HCMM":{"name":"Aden Adde International Airport","city":"Mogadishu","country":"SO","lat":2.01444,"lon":45.3047,"elev":29,"type":"large_airport","runways":[{"ids":["05","23"],"len":10446,"wid":148,"lit":false,"surf":"ASP","le":[2.00476,45.29301,13,0],"he":[2.02315,45.31505,30,0]}],"freqs":{"approach":132.5},"magVar":null}},"navaids":[],"fixes":[]}

@@ -1,0 +1,1 @@
+{"airports":{},"navaids":[{"id":"GFC","name":"Gullfaks","t":"NDB","f":333,"lat":61.215,"lon":2.27361,"elev":312,"dme":true,"mv":-2.515},{"id":"REK","name":"Reksten","t":"NDB","f":379,"lat":61.5629,"lon":4.84932,"elev":10,"dme":false,"mv":-1.381}],"fixes":[]}

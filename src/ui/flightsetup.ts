@@ -12,6 +12,7 @@ import { racetrack } from '../nav/holding';
 import { toLocal, type LatLon } from '../nav/geo';
 import { approachPlate } from '../plates/plates';
 import { atisText } from './weather';
+import { loadRegion, leaveRealWorld, currentRegion, searchAirports, FLAG_PROC, FLAG_ILS } from '../nav/world';
 
 const STEPS = ['Flight type', 'Aircraft & instruments', 'Departure', 'Route & arrival', 'Weather & time', 'Training options', 'Briefing'] as const;
 const EQUIP_PRESETS: { name: string; desc: string; eq: Equipment; cockpit?: 'g1000' | 'steam' | 'airliner' }[] = [
@@ -20,7 +21,7 @@ const EQUIP_PRESETS: { name: string; desc: string; eq: Equipment; cockpit?: 'g10
   { name: 'Basic trainer', desc: '1 NAV, no DME, no ADF, no GPS, no autopilot', eq: { gps: false, ap: false, adf: false, dme: false, nav2: false }, cockpit: 'steam' },
   { name: 'GPS, no autopilot', desc: 'Hand-flown glass with GPS', eq: { gps: true, ap: false, adf: true, dme: true, nav2: true } },
 ];
-const FIX_IDS = [...new Set(FIXES.filter((f) => f.kind !== 'runway').map((f) => f.ident))].sort();
+const fixIds = () => [...new Set(FIXES.filter((f) => f.kind !== 'runway').map((f) => f.ident))].sort();
 const pad3 = (n: number) => String(Math.round(((n % 360) + 360) % 360) || 360).padStart(3, '0');
 
 // ------------------------------------------------------------------ wizard
@@ -28,6 +29,8 @@ export interface SetupHooks {
   flyGraded: (c: Circuit, st: FlightSetupState) => void;
   flyFree: (sc: Scenario, st: FlightSetupState) => void;
   openChart: (id: string) => void;
+  /** the nav database / terrain changed (real-world region loaded or left) */
+  regionChanged: () => void;
 }
 
 export class FlightSetup extends Modal {
@@ -123,8 +126,83 @@ export class FlightSetup extends Modal {
     return h('div', { class: `fs-choices ${cls}` }, ...items.map((it) => h('button', { class: `fs-choice${it.cls ? ' ' + it.cls : ''}${it.v === cur ? ' on' : ''}`, onclick: () => { on(it.v); this.changed(); } }, it.icon ? h('span', { class: 'ic' }, it.icon) : null, h('b', {}, it.title), h('span', {}, it.desc))));
   }
   private fixSel(v: string, on: (x: string) => void) {
-    return this.sel(v, FIX_IDS.map((f) => [f, `${f} · ${findFix(f)!.kind.toUpperCase()}`] as [string, string]), on);
+    const i = h('input', { type: 'text', value: v, list: 'fs-fixes', spellcheck: 'false', style: 'text-transform:uppercase;width:130px' }) as HTMLInputElement;
+    i.addEventListener('keydown', (e) => e.stopPropagation());
+    i.addEventListener('change', () => {
+      const x = i.value.trim().toUpperCase();
+      if (findFix(x)) { on(x); this.changed(); } else i.classList.add('bad');
+    });
+    return h('span', {}, i, this.fixList());
   }
+  private fixList() {
+    const old = document.getElementById('fs-fixes');
+    if (old) return h('span', {});
+    return h('datalist', { id: 'fs-fixes' }, ...fixIds().map((f) => h('option', { value: f }, `${findFix(f)!.kind}`)));
+  }
+  private loadedKey = '';
+  private loading = false;
+  private loadErr = '';
+  /** load (or leave) the real-world region for the chosen airports */
+  private async ensureRegion(force = false) {
+    const st = this.st;
+    if (st.world !== 'real') {
+      if (currentRegion()) { leaveRealWorld(); this.loadedKey = ''; this.hooks.regionChanged(); }
+      return;
+    }
+    const key = `${st.dep}|${st.arr}`;
+    if (!force && key === this.loadedKey && currentRegion()) return;
+    this.loading = true;
+    this.loadErr = '';
+    this.render();
+    try {
+      const r = await loadRegion([st.dep, st.arr].filter(Boolean));
+      this.loadedKey = key;
+      // sensible defaults from the real data
+      const dep = AIRPORTS.find((a) => a.icao === st.dep);
+      if (dep) {
+        const best = [...dep.runways].sort((a, b) => b.lengthFt - a.lengthFt)[0];
+        if (!dep.runways.some((x) => x.id === st.rwy.runway) || st.rwy.airport !== dep.icao) st.rwy = { airport: dep.icao, runway: best.id, initialAlt: Math.max(3000, Math.ceil((dep.elevFt + 2500) / 500) * 500) };
+      }
+      const arrApps = APPROACHES.filter((a) => a.airport === st.arr);
+      const pref = arrApps.find((a) => a.type === 'ILS') ?? arrApps[0];
+      if (pref && !arrApps.some((a) => a.id === st.arrival.approachId)) {
+        st.arrival = { approachId: pref.id, transition: pref.transitions[0]?.name ?? null, outcome: st.arrival.outcome };
+        st.final = { approachId: pref.id, distNm: st.final.distNm };
+      }
+      if (!findFix(st.air.fix)) st.air.fix = st.arr || st.dep;
+      if (!findFix(st.hold.fix)) st.hold.fix = pref?.missed[pref.missed.length - 1]?.fix.ident ?? st.arr;
+      st.route = st.route.filter((f) => findFix(f));
+      document.getElementById('fs-fixes')?.remove();
+      this.toast?.(`Real-world region loaded: ${r.airports.length} airports · ${r.approaches} approaches · mag var ${r.magVar.toFixed(1)}°`);
+      this.hooks.regionChanged();
+    } catch (e) {
+      this.loadErr = String((e as Error).message || e);
+    } finally {
+      this.loading = false;
+      this.save();
+      this.render();
+    }
+  }
+  private airportPicker(label: string, value: string, on: (icao: string) => void) {
+    const wrap = h('div', { class: 'ap-pick' });
+    const inp = h('input', { type: 'text', value, placeholder: 'ICAO, name or city', spellcheck: 'false', autocomplete: 'off' }) as HTMLInputElement;
+    const res = h('div', { class: 'ap-res' });
+    let tmr = 0;
+    const run = async () => {
+      const rows = await searchAirports(inp.value, 8);
+      clear(res);
+      for (const r of rows)
+        res.append(h('button', { type: 'button', onmousedown: (e: Event) => { e.preventDefault(); inp.value = r[0]; clear(res); on(r[0]); } },
+          h('b', {}, r[0]), h('span', {}, `${r[1]}${r[2] ? ' · ' + r[2] : ''} · ${r[3]}`), r[7] & FLAG_PROC ? h('em', {}, r[7] & FLAG_ILS ? 'ILS · RNAV' : 'IAP') : null));
+    };
+    inp.addEventListener('input', () => { clearTimeout(tmr); tmr = window.setTimeout(run, 120); });
+    inp.addEventListener('focus', run);
+    inp.addEventListener('blur', () => setTimeout(() => clear(res), 150));
+    inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { const v = inp.value.trim().toUpperCase(); if (/^[A-Z0-9]{3,4}$/.test(v)) { clear(res); on(v); } } });
+    wrap.append(h('span', { class: 'lbl' }, label), inp, res);
+    return wrap;
+  }
+
   private h2(t: string, sub: string) {
     return h('div', { class: 'fs-h' }, h('h2', {}, t), h('p', { class: 'muted' }, sub));
   }
@@ -172,6 +250,23 @@ export class FlightSetup extends Modal {
       }
       case 2: {
         this.main.append(this.h2('Departure', 'Where does the flight start?'));
+        this.main.append(h('div', { class: 'section-t' }, 'World'));
+        this.main.append(this.choice(st.world, [
+          { v: 'training' as const, title: 'Training region', desc: 'Ardent Islands: fictional, self-consistent region used by the syllabus — 9 procedures, every approach type.' },
+          { v: 'real' as const, title: 'Real world', desc: '6,900+ airports worldwide with real runways and navaids; official FAA procedures (ILS, LOC, RNAV, VOR, NDB) and waypoints for 2,000+ US airports; real terrain.' },
+        ], (v) => { st.world = v; void this.ensureRegion(); }));
+        if (st.world === 'real') {
+          const pickers = h('div', { class: 'ap-picks' },
+            this.airportPicker('Departure', st.dep, (v) => { st.dep = v; void this.ensureRegion(); }),
+            h('div', { class: 'ap-arrow' }, '→'),
+            this.airportPicker('Destination', st.arr, (v) => { st.arr = v; void this.ensureRegion(); }),
+          );
+          this.main.append(pickers);
+          const reg = currentRegion();
+          this.main.append(h('p', { class: `ap-status${this.loadErr ? ' bad' : ''}` }, this.loading ? 'Loading navigation data and terrain…' : this.loadErr ? `Could not load: ${this.loadErr}` : reg && this.loadedKey === `${st.dep}|${st.arr}` ? `${AIRPORTS.length} airports · ${APPROACHES.filter((a) => a.airport === st.arr).length} approaches at ${st.arr} · magnetic variation ${Math.abs(reg.magVar).toFixed(1)}° ${reg.magVar >= 0 ? 'E' : 'W'} · terrain loaded` : ''));
+          if (!this.loading && this.loadedKey !== `${st.dep}|${st.arr}`) void this.ensureRegion();
+        }
+        this.main.append(h('div', { class: 'section-t' }, 'Start'));
         const appIds = APPROACHES.filter((a) => st.equipment.gps || a.type !== 'RNAV');
         this.main.append(this.choice(st.start, [
           { v: 'runway' as StartKind, icon: '🛫', title: 'On a runway', desc: 'Lined up, ready for take-off.' },
@@ -215,7 +310,7 @@ export class FlightSetup extends Modal {
             )),
           );
           const inp = h('input', { type: 'text', placeholder: 'Add a fix… (e.g. ARD, KEDDY, TOBEY)', list: 'fs-fixes', spellcheck: 'false', style: 'text-transform:uppercase' }) as HTMLInputElement;
-          const dl = h('datalist', { id: 'fs-fixes' }, ...FIX_IDS.map((f) => h('option', { value: f }, `${findFix(f)!.kind}`)));
+          const dl = this.fixList();
           const add = () => { const v = inp.value.trim().toUpperCase(); if (findFix(v)) { st.route.push(v); this.changed(); } else inp.classList.add('bad'); };
           inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') add(); });
           this.main.append(h('div', { class: 'section-t' }, `Route (${st.route.length} fixes)`), chips, h('div', { class: 'cx-row', style: 'margin-top:8px' }, inp, dl, h('button', { class: 'btn', onclick: add }, '+ Add'), h('button', { class: 'btn ghost', onclick: () => { this.suggestRoute(); this.changed(); }, title: 'Direct route to the first IAF of the chosen approach' }, 'Suggest')));
@@ -408,6 +503,10 @@ export class FlightSetup extends Modal {
     this.save();
     this.close();
     const c = setupToCircuit(st);
+    if (st.world === 'real' && this.loadedKey !== `${st.dep}|${st.arr}`) {
+      void this.ensureRegion().then(() => this.fly());
+      return;
+    }
     if (st.type !== 'free' && st.graded && c.legs.length) this.hooks.flyGraded(c, st);
     else this.hooks.flyFree(setupToScenario(st), st);
   }

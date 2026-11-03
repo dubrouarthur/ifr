@@ -1,0 +1,1 @@
+{"airports":{"ENSB":{"name":"Svalbard Airport, Longyear","city":"Longyearbyen","country":"NO","lat":78.2461,"lon":15.4656,"elev":88,"type":"medium_airport","runways":[{"ids":["09","27"],"len":7608,"wid":148,"lit":true,"surf":"ASP","le":[78.2488,15.418,63,199],"he":[78.2433,15.5163,73,395]}],"freqs":{"ctaf":118.1},"magVar":null}},"navaids":[],"fixes":[]}

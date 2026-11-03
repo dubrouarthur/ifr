@@ -1,0 +1,1 @@
+{"airports":{},"navaids":[{"id":"BAG","name":"Garcas","t":"VORDME","f":113.3,"lat":-15.8535,"lon":-52.3957,"elev":1147,"dme":true,"mv":-17.532},{"id":"BAG","name":"Garcas","t":"NDB","f":320,"lat":-15.856,"lon":-52.3893,"elev":1147,"dme":false,"mv":-17.534},{"id":"CXM","name":"Coxim","t":"NDB","f":205,"lat":-18.5038,"lon":-54.7505,"elev":0,"dme":false,"mv":-15.569}],"fixes":[]}

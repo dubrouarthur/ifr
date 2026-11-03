@@ -1,0 +1,1 @@
+{"airports":{"NGTE":{"name":"Tabiteuea North Airport","city":"","country":"KI","lat":-1.22447,"lon":174.776,"elev":7,"type":"medium_airport","runways":[{"ids":["14","32"],"len":3365,"wid":103,"lit":false,"surf":"COR","le":[-1.22035,174.77299,7,0],"he":[-1.22859,174.778,7,0]}],"freqs":{"ctaf":655.3},"magVar":null}},"navaids":[],"fixes":[]}

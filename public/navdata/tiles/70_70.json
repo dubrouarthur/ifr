@@ -1,0 +1,1 @@
+{"airports":{"USDA":{"name":"Sabetta International Airport","city":"Sabetta","country":"RU","lat":71.21917,"lon":72.05222,"elev":46,"type":"medium_airport","runways":[{"ids":["04","22"],"len":8858,"wid":151,"lit":true,"surf":"CON","le":[71.20958,72.00462,38,0],"he":[71.21948,72.07325,38,0]}],"freqs":{},"magVar":null}},"navaids":[],"fixes":[]}

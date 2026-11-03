@@ -18,6 +18,23 @@ export class ChartsDrawer {
   private panY = 0;
   private night = store.get('ifr.charts.night', false);
   private airportSel: string;
+  private aptSel = h('select', { class: 'chart-apt', 'aria-label': 'Airport' }) as HTMLSelectElement;
+  /** airports offered: those with procedures first, then the rest of the loaded region */
+  private fillAirports() {
+    const withIap = new Set(this.entries.filter((e) => e.kind === 'IAP').map((e) => e.airport));
+    const list = [...new Set(this.entries.map((e) => e.airport))].sort((a, b) => Number(withIap.has(b)) - Number(withIap.has(a)) || a.localeCompare(b));
+    clear(this.aptSel);
+    for (const icao of list) this.aptSel.append(h('option', { value: icao, selected: icao === this.airportSel }, `${icao}${withIap.has(icao) ? '' : ' (diagram)'}`));
+  }
+  /** rebuild after the nav database changed (real-world region loaded / left) */
+  refresh() {
+    this.entries = chartIndex();
+    if (!this.entries.some((e) => e.airport === this.airportSel)) this.airportSel = this.entries[0]?.airport ?? '';
+    this.fillAirports();
+    this.renderTabs();
+    const first = this.entries.find((x) => x.airport === this.airportSel && x.kind === 'IAP') ?? this.entries[0];
+    if (first) this.show(first.id);
+  }
 
   constructor(private sim: Sim) {
     this.airportSel = 'PARD';
@@ -31,15 +48,14 @@ export class ChartsDrawer {
         h('button', { class: 'btn', onclick: () => this.toggleNight(), title: 'Night mode' }, '☾'),
       ),
     );
-    const airportSeg = h('div', { class: 'seg' },
-      ...['PARD', 'MSVL'].map((icao) => h('button', { class: icao === this.airportSel ? 'on' : '', onclick: (e: Event) => {
-        this.airportSel = icao;
-        (e.currentTarget as HTMLElement).parentElement!.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.textContent === icao));
-        this.renderTabs();
-        const first = this.entries.find((x) => x.airport === icao && x.kind === 'IAP');
-        if (first) this.show(first.id);
-      } }, icao)),
-    );
+    const airportSeg = this.aptSel;
+    this.aptSel.addEventListener('change', () => {
+      this.airportSel = this.aptSel.value;
+      this.renderTabs();
+      const first = this.entries.find((x) => x.airport === this.airportSel && x.kind === 'IAP') ?? this.entries.find((x) => x.airport === this.airportSel);
+      if (first) this.show(first.id);
+    });
+    this.fillAirports();
     this.el = h('aside', { class: 'drawer', 'aria-label': 'Charts' },
       h('header', {}, h('h3', {}, 'Charts'), airportSeg, h('button', { class: 'x', onclick: () => this.toggle(false), title: 'Close (K)' }, '×')),
       this.tabs,
@@ -76,6 +92,7 @@ export class ChartsDrawer {
     if (!e) return;
     this.current = e;
     this.airportSel = e.airport;
+    this.aptSel.value = e.airport;
     this.el.querySelectorAll('.seg button').forEach((b) => b.classList.toggle('on', b.textContent === e.airport));
     this.sheet.innerHTML = e.render();
     this.ship = null;
