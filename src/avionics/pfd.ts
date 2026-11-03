@@ -110,7 +110,7 @@ function drawAttitude(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
 
   // synthetic vision runways
   if (st.svt) {
-    const cam = { lat: sim.ac.s.lat, lon: sim.ac.s.lon, altFt: sim.ac.s.altFt, hdgTrue: d.hdgTrue };
+    const cam = { lat: sim.ac.s.lat, lon: sim.ac.s.lon, altFt: sim.ac.s.altFt + sim.cockpitEyeFt, hdgTrue: d.hdgTrue };
     for (const rw of runwaysInView(cam, 20)) {
       ctx.beginPath();
       rw.corners.forEach((p, i) => {
