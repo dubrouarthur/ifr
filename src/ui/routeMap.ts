@@ -280,6 +280,10 @@ export interface RouteMapOpts {
   onExpand?: () => void;
   /** smaller labels, no legend */
   compact?: boolean;
+  /** a flown track (sim coordinates) drawn over the plan, e.g. in the debrief; included when fitting */
+  track?: LatLon[];
+  /** optional markers on the track (touchdown, missed approach, …) */
+  marks?: { p: LatLon; label: string; color?: string }[];
 }
 
 export class RouteMap {
@@ -300,10 +304,12 @@ export class RouteMap {
   private ro: ResizeObserver | null = null;
 
   constructor(
-    c: Circuit,
+    c: Circuit | null,
     private o: RouteMapOpts,
   ) {
-    this.g = planGeometry(c);
+    this.g = c ? planGeometry(c) : { lines: [], points: [], bounds: [] };
+    if (o.track?.length) this.g.bounds.push(...o.track);
+    for (const m of o.marks ?? []) this.g.bounds.push(m.p);
     this.tiles = h("div", { class: "rm-tiles" });
     this.bgCanvas = h("canvas", { class: "rm-bg" }) as HTMLCanvasElement;
     this.svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -595,6 +601,17 @@ export class RouteMap {
       }
     }
     // lines: faint transitions first, then holds, missed, route, approach on top
+    const drawTrack = () => {
+      const t = this.o.track;
+      if (t && t.length > 1) {
+        out.push(`<polyline points="${poly(t)}" fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round" opacity="0.8"/>`);
+        out.push(`<polyline points="${poly(t)}" fill="none" stroke="#111a24" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>`);
+      }
+      for (const m of this.o.marks ?? []) {
+        const [x, y] = P(m.p);
+        out.push(`<g transform="translate(${x.toFixed(1)},${y.toFixed(1)})"><circle r="5.5" fill="${m.color ?? '#b42318'}" stroke="#fff" stroke-width="2"/></g><g class="rm-lbl"><rect x="${(x + 8).toFixed(1)}" y="${(y - 8).toFixed(1)}" width="${m.label.length * 7 + 8}" height="15" rx="4"/><text x="${(x + 12).toFixed(1)}" y="${(y + 3).toFixed(1)}">${esc(m.label)}</text></g>`);
+      }
+    };
     const order: MapLine["kind"][] = [
       "transition",
       "missed",
@@ -636,6 +653,7 @@ export class RouteMap {
               );
           }
       }
+    drawTrack();
     // points + labels with simple collision avoidance
     const boxes: [number, number, number, number][] = [];
     const free = (x: number, y: number, w: number, hh: number) =>
