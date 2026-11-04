@@ -198,8 +198,8 @@ const setup = new FlightSetup({
   },
 });
 setup.toast = (m) => toast(m, 'good');
-/** full-screen start page at launch (before the Flight Center) */
-const intro = new Intro({ start: () => setup.start('route', 'real'), flightCenter: () => fc.open(), get resume() { return lastFlight(); } });
+/** full-screen start page at launch: its one action opens the Flight Center, the single place every flight starts */
+const intro = new Intro({ enter: () => fc.open() });
 function applySetupPrefs(st: import('./ui/flightsetup').FlightSetupState) {
   if (st.cockpit !== cockpitType) setCockpit(st.cockpit);
   pfdSt.svt = st.svt;
@@ -238,7 +238,7 @@ function startLesson(run: LessonRun) {
   atc.clear();
   lastAtcStep = -1;
   if (run.rt.clearance) atc.say(run.rt.clearance);
-  try { if (exercise(run.ex.id) === run.ex) rememberFlight({ k: 'ex', id: run.ex.id, name: run.ex.title }); } catch { /* a circuit or generated exercise */ }
+  updateCoach(); // the panel shows the first step at once, not on the next coach tick
   maybeTour();
   chromeAfterStart();
 }
@@ -249,21 +249,6 @@ const charts = new ChartsDrawer(sim);
 const ios = new InstructorDrawer(sim, (m, k) => toast(m, k ?? 'info'));
 ios.onBuilder = () => builder.edit();
 
-/** the last flight that can be resumed from the intro (built-in scenarios and catalogue exercises only) */
-type LastFlight = { k: 'sc'; id: string; wx: string; name: string } | { k: 'ex'; id: string; name: string };
-function rememberFlight(f: LastFlight) { store.set('ifr.lastFlight', f); }
-function lastFlight(): { label: string; go: () => void } | null {
-  const f = store.get<LastFlight | null>('ifr.lastFlight', null);
-  if (!f) return null;
-  if (f.k === 'sc') {
-    const sc = SCENARIOS.find((x) => x.id === f.id);
-    return sc ? { label: sc.name, go: () => startScenario(sc, WX_PRESETS.find((w) => w.id === f.wx) ?? WX_PRESETS[0]) } : null;
-  }
-  try {
-    const ex = exercise(f.id);
-    return { label: ex.title, go: () => pickExercise(ex, null) };
-  } catch { return null; }
-}
 function startScenario(sc: Scenario, wx: WxPreset, a: AssessSettings = launcher.assess) {
   hideCrash();
   lesson = null;
@@ -271,7 +256,6 @@ function startScenario(sc: Scenario, wx: WxPreset, a: AssessSettings = launcher.
   // a new flight starts with a quiet radio: no transmission of the previous flight stays on screen
   atc.clear();
   lastAtcStep = -1;
-  if (SCENARIOS.includes(sc)) rememberFlight({ k: 'sc', id: sc.id, wx: wx.id, name: sc.name });
   lastScenario = sc;
   lastWx = wx;
   sim.assess = { ...a };
@@ -494,8 +478,8 @@ const topbar = h('header', { class: 'topbar' },
   h('div', { class: 'menu-wrap scn-wrap' }, scnBtn, flightMenu),
   h('div', { class: 'spacer' }),
   h('div', { class: 'tb-actions' },
-    h('button', { class: 'btn primary', onclick: () => fc.open(), title: 'Flight Center — all flights, exercises and paths (F2)' }, icon(I.plane), h('span', { class: 'lbl' }, 'Flight Center')),
-    h('button', { class: 'btn', onclick: () => setup.start(), title: 'Plan a flight — aircraft, instruments, route, weather (Shift N)' }, icon(I.plan), h('span', { class: 'lbl' }, 'Plan')),
+    // the single way home: every flight, lesson and path starts in the Flight Center (Shift N still plans directly)
+    h('button', { class: 'btn primary', onclick: () => fc.open(), title: 'Flight Center — plan a flight, lessons, paths and records (F2)' }, icon(I.plane), h('span', { class: 'lbl' }, 'Flight Center')),
     h('div', { class: 'tb-group' },
       h('button', { class: 'btn', onclick: () => charts.toggle(), title: 'EFB — charts, airport, navlog, weather, checklists (K)' }, icon(I.tablet), h('span', { class: 'lbl' }, 'EFB')),
       h('button', { class: 'btn', onclick: () => cduPanel.toggle(), title: 'FMC CDU — route, approach, legs, hold (F3)' }, icon(I.keypad), h('span', { class: 'lbl' }, 'CDU')),
@@ -606,6 +590,9 @@ const apKeyEls = () => {
     k('HDG', () => sim.ap.pressHdg(d()), 'Heading mode (H)'),
     k('ALT', () => sim.ap.pressAlt(d()), 'Altitude hold (L)'),
     k('NAV', () => sim.ap.pressNav(d(), n()), 'Nav mode (N)'),
+    // the GFC 700 keeps VNV here: not modelled, so the slot stays empty and every other key sits where a G1000
+    // pilot expects it (APR BC, VS FLC, UP DN)
+    h('i', { class: 'ap-gap', 'aria-hidden': 'true' }),
     k('APR', () => sim.ap.pressApr(d(), n()), 'Approach mode (R)'),
     k('BC', () => sim.ap.pressApr(d(), n()), 'Back course (auto via APR)'),
     k('VS', () => sim.ap.pressVs(d()), 'Vertical speed (V)'),

@@ -1,16 +1,12 @@
-// Full-screen start page shown at launch, before the Flight Center: one photo, the product name, one promise,
-// one obvious way to start. Enter starts a flight; F2 / Esc opens the Flight Center. "Skip this screen" is kept in
-// localStorage (ifr.intro.skip).
+// Full-screen start page shown at launch: one photo, the product name, one promise and ONE way in. Everything
+// starts from the Flight Center, so the only action here opens it (Enter, Esc or F2 do the same). "Skip this screen"
+// is kept in localStorage (ifr.intro.skip).
 import { h, store } from "./dom";
 import { svgIcon, I } from "./icons";
 
 export interface IntroHooks {
-  /** primary action: plan a new flight (the real-world planner) */
-  start: () => void;
-  /** secondary action: the Flight Center */
-  flightCenter: () => void;
-  /** the last flight, when there is one to continue */
-  resume?: { label: string; go: () => void } | null;
+  /** the single way in: the Flight Center (where every flight, lesson and path starts) */
+  enter: () => void;
 }
 
 export const INTRO_SKIP_KEY = "ifr.intro.skip";
@@ -92,12 +88,13 @@ export class Intro {
       t !== document.body &&
       this.el.contains(t) &&
       (t.tagName === "BUTTON" || t.tagName === "INPUT");
-    if (e.key === "Enter" && !onControl) {
+    if (
+      (e.key === "Enter" && !onControl) ||
+      e.key === "F2" ||
+      e.key === "Escape"
+    ) {
       e.preventDefault();
-      this.go(this.hooks.start);
-    } else if (e.key === "F2" || e.key === "Escape") {
-      e.preventDefault();
-      this.go(this.hooks.flightCenter);
+      this.go(this.hooks.enter);
     }
     e.stopPropagation();
   }
@@ -109,11 +106,12 @@ export class Intro {
       onchange: (e: Event) =>
         store.set(INTRO_SKIP_KEY, (e.target as HTMLInputElement).checked),
     });
-    const r = this.hooks.resume;
+    const fact = (ic: string, t: string) =>
+      h("li", {}, svgIcon(ic, 16), h("span", {}, t));
     this.el.replaceChildren(
       h("img", {
         class: "intro-photo",
-        src: "/img/departure.jpg",
+        src: "/img/clouds.jpg",
         alt: "",
         decoding: "async",
         fetchpriority: "high",
@@ -125,7 +123,7 @@ export class Intro {
         h(
           "div",
           { class: "intro-brand" },
-          h("img", { src: "/favicon.svg", alt: "", width: 40, height: 40 }),
+          h("img", { src: "/favicon.svg", alt: "", width: 36, height: 36 }),
           h("span", {}, "Instrument flight training"),
         ),
         h("h1", { id: "intro-title" }, "IFR Trainer"),
@@ -142,44 +140,26 @@ export class Intro {
             {
               class: "intro-go",
               type: "button",
-              onclick: () => this.go(this.hooks.start),
+              onclick: () => this.go(this.hooks.enter),
+              title:
+                "Open the Flight Center: plan a flight, pick a lesson or a learning path (Enter)",
             },
-            "Start a flight",
+            "Get started",
             svgIcon(I.arrow, 18),
           ),
           h(
-            "button",
-            {
-              class: "intro-alt",
-              type: "button",
-              onclick: () => this.go(this.hooks.flightCenter),
-              title: "Every flight, exercise and learning path (F2)",
-            },
-            svgIcon(I.plane, 17),
-            "Flight Center",
+            "span",
+            { class: "intro-keys" },
+            "or press ",
+            h("kbd", {}, "Enter"),
           ),
-          r
-            ? h(
-                "button",
-                {
-                  class: "intro-alt intro-resume",
-                  type: "button",
-                  onclick: () => this.go(r.go),
-                  title: `Continue: ${r.label}`,
-                },
-                svgIcon(I.restart, 16),
-                h("span", {}, h("small", {}, "Continue"), h("b", {}, r.label)),
-              )
-            : null,
         ),
         h(
-          "p",
-          { class: "intro-keys" },
-          h("kbd", {}, "Enter"),
-          " start a flight",
-          h("span", { class: "intro-dot" }, "·"),
-          h("kbd", {}, "F2"),
-          " Flight Center",
+          "ul",
+          { class: "intro-facts", "aria-label": "What is inside" },
+          fact(I.approach, "Real airports, charts and procedures"),
+          fact(I.learn, "Guided lessons from basics to checkride"),
+          fact(I.gauge, "G1000, steam gauges or Boeing"),
         ),
       ),
       h(
@@ -195,11 +175,11 @@ export class Intro {
           "a",
           {
             class: "intro-credit",
-            href: "https://www.rawpixel.com/image/5949278/free-public-domain-cc0-photo",
+            href: "https://wordpress.org/photos/photo/8066a70aa6/",
             target: "_blank",
             rel: "noopener",
           },
-          "Photo: rawpixel · CC0",
+          "Photo: Joel Peralta · CC0",
         ),
       ),
     );

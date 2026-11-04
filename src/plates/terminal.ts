@@ -100,10 +100,15 @@ const constraintText = (l: TermLeg) => {
 };
 
 /** the route of a leg sequence in words (Jeppesen route description) */
-function describe(legs: TermLeg[], startFix: Fix | null, fromRunway = false): string {
+function describe(
+  legs: TermLeg[],
+  startFix: Fix | null,
+  fromRunway = false,
+  startVectors = false,
+): string {
   const parts: string[] = [];
   let prev: Fix | null = startFix;
-  let vectors = false;
+  let vectors = startVectors;
   for (const l of legs) {
     if (l.vec) {
       const c = l.vec.course !== null ? `${pad3(l.vec.course)}°` : "";
@@ -131,7 +136,7 @@ function describe(legs: TermLeg[], startFix: Fix | null, fromRunway = false): st
     const f = l.fix!;
     if (prev && prev.ident === f.ident) continue;
     let s: string;
-    if (vectors) s = `expect vectors to ${f.ident}`;
+    if (vectors) s = `expect radar vectors to ${f.ident}`;
     else if (!parts.length && !prev) s = fromRunway ? `climb direct ${f.ident}` : `from ${f.ident}`;
     else if (!prev) s = `direct ${f.ident}`;
     else s = `on track ${pad3(bearingDeg(prev, f))}° to ${f.ident}`;
@@ -193,20 +198,33 @@ function fisheye(
 }
 
 /** every full route of the procedure (runway transition × enroute transition), duplicates merged */
+/** a leg of a full route; `gap`: radar vectors lead to it (the previous part ends at another fix) */
+type RLeg = TermLeg & { gap?: boolean };
 function routes(
   p: TerminalProc,
-): { rw: string | null; enr: string | null; legs: TermLeg[] }[] {
+): { rw: string | null; enr: string | null; legs: RLeg[] }[] {
   const rws = p.rwy.length ? p.rwy : [null];
   const enrs = p.enr.length ? p.enr : [null];
-  const out: { rw: string | null; enr: string | null; legs: TermLeg[] }[] = [];
+  const out: { rw: string | null; enr: string | null; legs: RLeg[] }[] = [];
   for (const r of rws)
     for (const e of enrs) {
       const parts =
         p.kind === "SID"
           ? [r?.legs ?? [], p.common, e?.legs ?? []]
           : [e?.legs ?? [], p.common, r?.legs ?? []];
-      const legs: TermLeg[] = [];
-      for (const l of parts.flat()) {
+      const legs: RLeg[] = [];
+      const flat: RLeg[] = [];
+      for (const part of parts) {
+        if (!part.length) continue;
+        const prev = flat[flat.length - 1];
+        const first = part[0];
+        // parts join at a shared fix; when they do not (a vector SID: 'expect radar vectors to the
+        // transition fix'), no track is drawn between them
+        const gap =
+          !!prev?.fix && !!first.fix && prev.fix.ident !== first.fix.ident;
+        flat.push(gap ? { ...first, gap: true } : first, ...part.slice(1));
+      }
+      for (const l of flat) {
         const last = legs[legs.length - 1];
         if (l.fix && last?.fix?.ident === l.fix.ident) {
           legs[legs.length - 1] = {
@@ -221,6 +239,20 @@ function routes(
         legs.push(l);
       }
       out.push({ rw: r?.name ?? null, enr: e?.name ?? null, legs });
+    }
+  return out;
+}
+/** the fixes the runway transitions / common route of a SID end at (where the enroute transitions begin) */
+function sidJunctions(p: TerminalProc): Set<string> {
+  const lastFix = (t: TermLeg[]) => [...t].reverse().find((l) => l.fix)?.fix?.ident;
+  const out = new Set<string>();
+  if (p.common.length) {
+    const f = lastFix(p.common);
+    if (f) out.add(f);
+  } else
+    for (const r of p.rwy) {
+      const f = lastFix(r.legs);
+      if (f) out.add(f);
     }
   return out;
 }
@@ -337,20 +369,29 @@ function terminalChart(p: TerminalProc): string {
     const x = 10 + i * cw;
     if (i) o.push(line({ x, y: 76 }, { x, y: 110 }));
     o.push(text(x + 6, 87, c[0], { size: 8, halo: false }));
-    const vs = textW(c[1], 13, true) > cw - 12 ? 10.5 : 13;
-    o.push(text(x + 6, 104, c[1], { size: vs, weight: 700, halo: false }));
+    // the value is sized to its cell (a long runway list never runs into the next cell)
+    const vs = Math.max(7, Math.min(13, (13 * (cw - 12)) / Math.max(1, textW(c[1], 13, true))));
+    o.push(text(x + 6, 104, c[1], { size: Math.floor(vs * 2) / 2, weight: 700, halo: false }));
   });
   o.push(line({ x: 10, y: 110 }, { x: W - 10, y: 110 }));
 
   // ---------------------------------------------- route description (sized first: the plan view takes the rest)
   const desc: { head: string; body: string }[] = [];
   const fixOf = (t: TermLeg[]) => t.find((l) => l.fix)?.fix ?? null;
+  const junctions = sid ? sidJunctions(p) : new Set<string>();
+  const vectorTrans = (t: { legs: TermLeg[] }) => {
+    const f = t.legs.find((l) => l.fix)?.fix;
+    return !!f && t.legs[0]?.fix === f && !junctions.has(f.ident);
+  };
   if (sid) {
-    for (const t of p.rwy)
-      desc.push({
-        head: `TAKEOFF RWY ${rwyName(t.name)}:`,
-        body: describe(t.legs, null, true),
-      });
+    const anyVectors = !p.common.length && p.enr.some(vectorTrans);
+    for (const t of p.rwy) {
+      let body = describe(t.legs, null, true);
+      const endsVm = t.legs[t.legs.length - 1]?.vec?.pt === "VM";
+      if (anyVectors && !endsVm)
+        body += " Then expect radar vectors to the transition or the filed route.";
+      desc.push({ head: `TAKEOFF RWY ${rwyName(t.name)}:`, body });
+    }
     if (p.common.length) {
       const startFix = p.rwy.length
         ? ([...p.rwy[0].legs].reverse().find((l) => l.fix)?.fix ?? null)
@@ -363,7 +404,7 @@ function terminalChart(p: TerminalProc): string {
     for (const t of p.enr)
       desc.push({
         head: `${t.name} TRANSITION (${p.id}.${t.name}):`,
-        body: describe(t.legs, null),
+        body: describe(t.legs, null, false, vectorTrans(t)),
       });
     desc.push({
       head: "LOST COMMUNICATIONS:",
@@ -466,7 +507,40 @@ function terminalChart(p: TerminalProc): string {
     }
   }
   const proj0 = fisheye(focus, pts, pv, 48);
-  const proj = Object.assign((q: LatLon) => proj0(q === apt ? aptPos : q), { scaleAt: proj0.scaleAt }) as TermProj;
+  // the runway glyph (40 px) never sits on a fix symbol: it is pushed away from the nearest fixes
+  const aptShift = { x: 0, y: 0 };
+  {
+    const fp = allLegs.filter((l) => l.fix).map((l) => proj0(l.fix!));
+    const c0 = proj0(aptPos);
+    for (let k = 0; k < 14; k++) {
+      const c = { x: c0.x + aptShift.x, y: c0.y + aptShift.y };
+      let near: Pt | null = null,
+        dn = 46;
+      for (const q of fp) {
+        const d = Math.hypot(q.x - c.x, q.y - c.y);
+        if (d < dn) {
+          dn = d;
+          near = q;
+        }
+      }
+      if (!near) break;
+      const d = Math.max(0.5, dn);
+      const ux = dn > 0.5 ? (c.x - near.x) / d : 0.7,
+        uy = dn > 0.5 ? (c.y - near.y) / d : 0.7;
+      const nx = Math.min(pv.x + pv.w - 40, Math.max(pv.x + 40, c.x + ux * 8)),
+        ny = Math.min(pv.y + pv.h - 40, Math.max(pv.y + 40, c.y + uy * 8));
+      aptShift.x = nx - c0.x;
+      aptShift.y = ny - c0.y;
+    }
+  }
+  const proj = Object.assign(
+    (q: LatLon) => {
+      if (q !== apt) return proj0(q);
+      const c = proj0(aptPos);
+      return { x: c.x + aptShift.x, y: c.y + aptShift.y };
+    },
+    { scaleAt: proj0.scaleAt },
+  ) as TermProj;
   const placer = new Placer(pv);
   placer.block(pv.x, pv.y, 40, 46); // north arrow
   placer.block(pv.x + pv.w - 116, pv.y + pv.h - 24, 116, 24); // NOT TO SCALE
@@ -507,9 +581,18 @@ function terminalChart(p: TerminalProc): string {
   >();
   const segDone = new Set<string>();
   const holdDone = new Set<string>();
+  /** radar vectors from the end of a runway transition toward the enroute transition fixes */
+  const gaps = new Map<string, { pt: Pt; prev?: Pt; to: Pt[] }>();
   const vecLen = 40;
   for (const rt of rts) {
-    type Cur = { pt: Pt; ll: LatLon | null; ident: string; vectors: boolean };
+    type Cur = {
+      pt: Pt;
+      ll: LatLon | null;
+      ident: string;
+      vectors: boolean;
+      /** where the track came from (the radar-vector arrow continues it) */
+      prev?: Pt;
+    };
     let cur: Cur | null = null;
     if (sid) {
       const de = depEnd(rt.rw);
@@ -578,6 +661,12 @@ function terminalChart(p: TerminalProc): string {
       }
       const f = l.fix!;
       const pp = proj(f);
+      if (l.gap && cur && !cur.vectors) {
+        const g = gaps.get(cur.ident) ?? { pt: cur.pt, prev: cur.prev, to: [] };
+        g.to.push(pp);
+        gaps.set(cur.ident, g);
+        cur = { ...cur, vectors: true };
+      }
       const rec = fixes.get(f.ident) ?? { fix: f, legs: [], trans: [] };
       rec.legs.push(l);
       const isEnd = sid ? li === rt.legs.length - 1 : li === 0;
@@ -632,7 +721,29 @@ function terminalChart(p: TerminalProc): string {
           ),
         );
       }
-      cur = { pt: pp, ll: f, ident: f.ident, vectors: false };
+      cur = { pt: pp, ll: f, ident: f.ident, vectors: false, prev: cur?.pt };
+    });
+  }
+  // radar vectors: a short dashed arrow from the end of the runway transition toward the transitions
+  for (const g of gaps.values()) {
+    // the arrow continues the track flown to the fix (else it points toward the transitions)
+    const cx = g.prev
+        ? 2 * g.pt.x - g.prev.x
+        : g.to.reduce((a, q) => a + q.x, 0) / g.to.length,
+      cy = g.prev
+        ? 2 * g.pt.y - g.prev.y
+        : g.to.reduce((a, q) => a + q.y, 0) / g.to.length;
+    const L = Math.hypot(cx - g.pt.x, cy - g.pt.y);
+    if (L < 1) continue;
+    const u = { x: (cx - g.pt.x) / L, y: (cy - g.pt.y) / L };
+    const a0 = { x: g.pt.x + u.x * 11, y: g.pt.y + u.y * 11 };
+    const e = { x: g.pt.x + u.x * 46, y: g.pt.y + u.y * 46 };
+    geo.push(line(a0, e, 1.1, "4 3") + arrowHead(e, Math.atan2(u.y, u.x), 6.5));
+    placer.segment(a0, e);
+    later.push(() => {
+      const tt = "RADAR VECTORS";
+      const bx = placer.place(e.x, e.y, textW(tt, 8, true) + 4, 10, 5, tt, 4);
+      return bx ? text(bx.x + 2, bx.y + 8, tt, { size: 8, weight: 700 }) : "";
     });
   }
   // fix symbols block their spot
