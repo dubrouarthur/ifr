@@ -54,8 +54,9 @@ function holdExercise(id: string, title: string, fixId: string, inbound: number,
             s.av.obs1 = Math.round(inbound) || 360;
           }
           if (fx.kind === 'ndb') {
+            // tuned for you; the bearing pointer is part of the student's set-up (coach checklist)
             s.av.adf.active = navaid(fx.ident).freq;
-            s.av.bearing1 = 'ADF';
+            s.av.bearing1 = 'OFF';
           }
           s.fp.setHold({ ident: fx.ident, lat: fx.lat, lon: fx.lon }, inbound, turn, 1, s.ac.s, alt);
         },

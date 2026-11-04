@@ -37,6 +37,35 @@ describe('setup assistant', () => {
     expect(byLabel(/^ALT 4000/).ok).toBe(true);
   });
 
+  it('hold at an NDB: ADF tuned, BRG1 on ADF and the GPS overlay / CDI — none of it "All set" until the student sets it', () => {
+    const sim = sim0();
+    const pa = findFix('PA')!;
+    const ndb = NAVAIDS.find((n) => n.ident === 'PA' && n.type === 'NDB')!;
+    const def = { fix: { ident: 'PA', lat: pa.lat, lon: pa.lon }, inbound: 270, turn: 'R' as const, legMin: 1, altFt: 3000 };
+    sim.av.bearing1 = 'OFF';
+    sim.av.bearing2 = 'OFF';
+    sim.autoCdi = false; // the scenario's ILS would otherwise switch the CDI back to LOC
+    sim.setCdi('NAV1');
+    let items = holdSetup(sim, def);
+    const by = (re: RegExp) => items.find((i) => re.test(i.label))!;
+    expect(by(/^ADF /).label).toContain(String(ndb.freq));
+    expect(by(/^BRG1 on ADF/).ok).toBe(false);
+    expect(by(/CDI on GPS/).ok).toBe(false);
+    sim.av.adf.active = ndb.freq;
+    sim.av.bearing1 = 'ADF';
+    sim.setCdi('GPS');
+    sim.step(0.1);
+    items = holdSetup(sim, def);
+    expect(by(/^ADF /).ok).toBe(true);
+    expect(by(/^BRG1 on ADF/).ok).toBe(true);
+    expect(by(/CDI on GPS/).ok).toBe(true);
+    // without a GPS the inbound course goes on the course arrow as a reference
+    sim.equip.gps = false;
+    items = holdSetup(sim, def);
+    expect(items.some((i) => /GPS/.test(i.label))).toBe(false);
+    expect(by(/^CRS 270° \(inbound reference\)/)).toBeTruthy();
+  });
+
   it('entry instructions follow AIM sectors with headings to fly', () => {
     const fix = { ident: 'X', lat: 0, lon: 0 };
     const def = { fix, inbound: 360, turn: 'R' as const, legMin: 1, altFt: 3000 };

@@ -20,9 +20,16 @@ const pad3 = (n: number) =>
 const angDiff = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);
 const freqEq = (a: number, b: number) => Math.abs(a - b) < 0.006;
 
+/** the cockpit the student flies: a glass panel shows the NDB on a bearing pointer (BRG1/BRG2), a steam
+ *  panel has its own ADF/RMI needle that always shows. The shell sets it when the cockpit changes. */
+let panel: "glass" | "steam" = "glass";
+export function setSetupPanel(p: "glass" | "steam") {
+  panel = p;
+}
+
 /** navigation source the student should use for a fix: a VOR/VORDME (raw data), an NDB, or GPS */
 export function navSourceFor(
-  sim: Sim,
+  _sim: Sim,
   ident: string,
 ): { kind: "VOR" | "NDB" | "GPS"; freq?: number; name?: string } {
   const nav = NAVAIDS.find(
@@ -31,13 +38,29 @@ export function navSourceFor(
       (n.type === "VOR" || n.type === "VORDME" || n.type === "NDB"),
   );
   if (nav && nav.type === "NDB")
-    return {
-      kind: sim.equip.gps ? "GPS" : "NDB",
-      freq: nav.freq,
-      name: nav.name,
-    };
+    return { kind: "NDB", freq: nav.freq, name: nav.name };
   if (nav) return { kind: "VOR", freq: nav.freq, name: nav.name };
   return { kind: "GPS" };
+}
+
+/** ADF tuned to the NDB, and (glass cockpit) a bearing pointer on the ADF */
+function adfItems(sim: Sim, freq: number, ident: string): SetupItem[] {
+  const items: SetupItem[] = [
+    {
+      label: `ADF ${freq.toFixed(0)} (${ident})`,
+      detail:
+        "Tune the NDB in the ADF and identify it (Morse) before using the needle.",
+      ok: Math.abs(sim.av.adf.active - freq) < 1 && sim.adf.valid,
+    },
+  ];
+  if (panel === "glass")
+    items.push({
+      label: "BRG1 on ADF",
+      detail:
+        "PFD softkey BRG1 until the pointer box reads ADF: the cyan needle then points to the NDB (head = QDM to the fix).",
+      ok: sim.av.bearing1 === "ADF" || sim.av.bearing2 === "ADF",
+    });
+  return items;
 }
 
 /** the entry procedure in plain words, from the aircraft's current course to the fix */
@@ -88,11 +111,32 @@ export function holdSetup(sim: Sim, def: HoldDef): SetupItem[] {
       ok: angDiff(av.obs1, def.inbound) <= 2,
     });
   } else if (src.kind === "NDB") {
-    items.push({
-      label: `ADF ${src.freq!.toFixed(0)} (${def.fix.ident})`,
-      detail: "Tune and identify the NDB; set BRG1 to ADF.",
-      ok: Math.abs(sim.av.adf.active - src.freq!) < 1 && sim.adf.valid,
-    });
+    // the NDB is the fix: the bearing pointer is the primary reference (QDM), the CDI gives the inbound course
+    items.push(...adfItems(sim, src.freq!, def.fix.ident));
+    const gpsHold = !!sim.fp.wpts.find(
+      (w) => w.ident === def.fix.ident && w.hold,
+    );
+    if (sim.equip.gps) {
+      items.push({
+        label: `GPS: hold at ${def.fix.ident} loaded`,
+        detail:
+          "GPS overlay: the hold at the NDB in the flight plan (FPL → hold, or D→ the fix then HOLD) draws the racetrack and sequences it.",
+        ok: gpsHold,
+      });
+      items.push({
+        label: "CDI on GPS",
+        detail:
+          "The course needle shows the GPS desired track of each leg; cross-check it with the ADF needle.",
+        ok: av.cdi === "GPS",
+      });
+    } else {
+      items.push({
+        label: `CRS ${pad3(def.inbound)}° (inbound reference)`,
+        detail:
+          "Set the course arrow to the inbound course: the ADF needle on the arrow head means you are on the inbound leg.",
+        ok: angDiff(av.obs1, def.inbound) <= 2,
+      });
+    }
   } else {
     const gpsHold = !!sim.fp.wpts.find(
       (w) => w.ident === def.fix.ident && w.hold,
@@ -179,11 +223,7 @@ export function approachSetup(sim: Sim, approachId: string): SetupItem[] {
       ok: av.cdi === "NAV1",
     });
   } else if (nav) {
-    items.push({
-      label: `ADF ${nav.freq.toFixed(0)} (${nav.ident})`,
-      detail: "Tune and identify the NDB; BRG1 on ADF.",
-      ok: Math.abs(av.adf.active - nav.freq) < 1 && sim.adf.valid,
-    });
+    items.push(...adfItems(sim, nav.freq, nav.ident));
   }
   const m = ap.minimums[0];
   const mins = m?.da ?? m?.mda;

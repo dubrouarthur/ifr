@@ -41,7 +41,7 @@ import { assessTouchdown } from './sim/landing';
 import { currentRegion, leaveRealWorld, toReal } from './nav/world';
 import { chartIndex } from './plates/plates';
 import type { Phase } from './sim/recorder';
-import type { SetupItem } from './train/setupAssist';
+import { setSetupPanel, type SetupItem } from './train/setupAssist';
 import { FAILURE_LABELS } from './sim/sim';
 import type { RemoteCommand, RemoteSnapshot } from './connect/remoteTypes';
 import type { RemoteHostApi } from './connect/remoteLink';
@@ -287,7 +287,7 @@ function startLesson(run: LessonRun) {
   lastAtcStep = -1;
   if (run.rt.clearance) atc.say(run.rt.clearance);
   updateCoach(); // the panel shows the first step at once, not on the next coach tick
-  maybeTour();
+  // no guided tour during a graded exercise: the clock runs (the tour lives in More → Help and in free flights)
   chromeAfterStart();
 }
 const help = new HelpModal();
@@ -923,6 +923,7 @@ const TOUR = [
 ];
 function startTour() {
   Modal.closeAll();
+  chromeShow(true); // several stops point at the top bar: keep it revealed while the tour runs
   new Tour(TOUR, () => store.set('ifr.tour.v1', true)).start();
 }
 function setCockpit(t: CockpitType, announce = true) {
@@ -935,6 +936,7 @@ function setCockpit(t: CockpitType, announce = true) {
   cockpit.classList.toggle('with-mcp', t === 'airliner');
   cockpit.classList.toggle('with-afcs', afcsBar && t !== 'airliner');
   cockpit.dataset.theme = t;
+  setSetupPanel(t === 'steam' ? 'steam' : 'glass');
   closeSteps();
   pfdBezel.querySelector('[data-l]')!.textContent = BEZEL_LABELS[t][0];
   mfdBezel.querySelector('[data-r]')!.textContent = BEZEL_LABELS[t][1];
@@ -1879,6 +1881,7 @@ async function pairInstructor() {
 (window as unknown as { __ifr: unknown }).__ifr = { sim, get outside() { return outside; }, thr27: runway('PARD', '27').threshold, charts: (id: string) => chartIndex().find((c) => c.id === id)?.render() ?? '', world: () => import('./nav/world'), lesson: (id: string) => pickExercise(exercise(id), null), perf, remote: remoteApi, setView: (v: ViewMode) => setView(v), afcs: (on: boolean) => setAfcsBar(on) };
 
 // ------------------------------------------------------------------ boot
+let fitRaf = 0;
 setOtw(otwMode);
 setCockpit(cockpitType, false);
 setAfcsBar(afcsBar, false);
@@ -1941,7 +1944,7 @@ function fitSides() {
   const room = otwMode === 'none' ? 0 : otwMode === 'visual' ? otw.clientHeight - pfdBezel.offsetHeight - 150 : otw.clientHeight - 120;
   cockpit.classList.toggle('coach-compact', room < 300);
 }
-let fitRaf = 0;
+// declared above the first setOtw()/setCockpit() call: they call fitSoon() during start-up
 function fitSoon() {
   cancelAnimationFrame(fitRaf);
   fitRaf = requestAnimationFrame(() => fitSides());
