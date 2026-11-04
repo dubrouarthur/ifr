@@ -1,0 +1,649 @@
+/* =================================================================== touch
+   Tablets and mouse-free flying: the autopilot bar (GMC 710-style controller), the step pad of every selector,
+   long-press tips, ≥ 44 px touch targets, safe-area insets, the iPad portrait layout (instruments first).
+   body.touch is set by main.ts on touch-first devices; body.portrait on narrow, tall windows.
+   NOTE: this file loads before ui-shell.css (alphabetical glob) — selectors that compete with ui-shell are
+   prefixed with `html body` to win on specificity, never with !important (except where styles.css itself uses one). */
+
+/* ------------------------------------------------------------------ global */
+html {
+  /* no double-tap zoom anywhere; pinch-zoom stays available outside the cockpit (charts have their own) */
+  touch-action: manipulation;
+}
+body.touch {
+  -webkit-tap-highlight-color: transparent;
+}
+body.touch .cockpit,
+body.touch .pedestal,
+body.touch .afcs,
+body.touch .steppad {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+body.touch .cockpit .panel,
+body.touch .pedestal,
+body.touch .afcs {
+  touch-action: none;
+}
+body.touch .pedestal input.lever {
+  touch-action: none;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* safe areas (iPad home indicator, rounded corners in the full-screen web app) */
+html body .topbar {
+  padding-left: max(14px, env(safe-area-inset-left));
+  padding-right: max(14px, env(safe-area-inset-right));
+}
+html body .footer.pedestal {
+  padding-left: max(14px, env(safe-area-inset-left));
+  padding-right: max(14px, env(safe-area-inset-right));
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+}
+
+/* ------------------------------------------------------------------ autopilot bar */
+.afcs {
+  display: none;
+  grid-row: 2;
+  position: relative;
+  z-index: 6;
+  align-items: center;
+  justify-content: safe center;
+  flex-wrap: wrap;
+  gap: 6px 0;
+  padding: 6px 12px;
+  background: #15191e;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.cockpit.with-afcs > .afcs {
+  display: flex;
+}
+/* the bar replaces the small AP key column of the bezel */
+html body .cockpit.with-afcs .bezel .ap-col {
+  display: none;
+}
+.afcs-g {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  border-left: 1px solid #2a3139;
+}
+.afcs-g:first-child {
+  border-left: 0;
+}
+html body .afcs .bkey {
+  width: 48px;
+  height: 40px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+html body .afcs .bkey.on::after {
+  top: 4px;
+  right: 5px;
+}
+.afcs-sel {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.afcs-inc {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  border: 1px solid #050606;
+  background: linear-gradient(#2d3035, #17191c 55%, #121315);
+  color: #eef2f5;
+  font: 600 22px/1 var(--font);
+  box-shadow:
+    0 2px 0 #050606,
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  touch-action: none;
+}
+.afcs-inc:active,
+.afcs-inc.rep {
+  transform: translateY(2px);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
+  background: #121315;
+}
+.afcs-val {
+  display: grid;
+  min-width: 66px;
+  height: 40px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid #2a3c4a;
+  background: #05080b;
+  color: #00e4ff;
+  text-align: center;
+  cursor: pointer;
+  align-content: center;
+}
+.afcs-val small {
+  font: 700 9px/1.1 var(--font-cond);
+  letter-spacing: 0.8px;
+  color: #8b97a4;
+}
+.afcs-val b {
+  font:
+    700 15px/1.15 "Roboto Mono",
+    var(--font-cond),
+    monospace;
+  white-space: nowrap;
+}
+.afcs-val:focus-visible,
+.afcs-val.stepping {
+  border-color: #00e4ff;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(0, 228, 255, 0.3);
+}
+.afcs-sel .afcs-val {
+  min-width: 70px;
+}
+/* only the selectors the cockpit really has */
+.cockpit[data-theme="steam"] .afcs [data-k="mins"] {
+  display: none;
+}
+/* narrower windows (iPad landscape): one row — ALT SEL and the UP/DN target open their pad on a tap */
+@media (max-width: 1360px) {
+  .afcs-g {
+    padding: 0 6px;
+    gap: 4px;
+  }
+  html body .afcs .bkey {
+    width: 44px;
+  }
+  html body .afcs [data-k='vert'],
+  html body .afcs-sel[data-k='alt'] .afcs-inc {
+    display: none;
+  }
+  html body .afcs .afcs-val {
+    min-width: 62px;
+    padding: 3px 6px;
+  }
+}
+
+
+/* ------------------------------------------------------------------ step pad (popover) */
+.steppad {
+  position: fixed;
+  z-index: 90;
+  display: grid;
+  gap: 10px;
+  min-width: 260px;
+  padding: 10px 12px 12px;
+  border-radius: 14px;
+  background: #0d1116;
+  border: 1px solid #2a3c4a;
+  color: #e8edf2;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+  font-family: var(--font);
+}
+.sp-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sp-h b {
+  font: 700 12px var(--font);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #cfd8e1;
+}
+.sp-hint {
+  flex: 1;
+  font-size: 11px;
+  color: #7f8b97;
+}
+.sp-x {
+  width: 36px;
+  height: 36px;
+  margin: -4px -6px -4px 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: #9aa6b2;
+  font: 400 24px/1 var(--font);
+  cursor: pointer;
+}
+.sp-x:hover {
+  background: #1a2129;
+}
+.sp-row {
+  display: grid;
+  gap: 6px;
+}
+.sp-l {
+  font: 700 10px var(--font-cond);
+  letter-spacing: 1px;
+  color: #8b97a4;
+}
+.sp-ctl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sp-b {
+  min-width: 52px;
+  height: 48px;
+  padding: 0 8px;
+  border-radius: 9px;
+  border: 1px solid #050606;
+  background: linear-gradient(#2d3035, #17191c 55%, #121315);
+  color: #eef2f5;
+  font: 700 15px var(--font-cond);
+  box-shadow:
+    0 2px 0 #050606,
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  touch-action: none;
+}
+.sp-b.big {
+  color: #b9c4cf;
+  font-size: 13px;
+}
+.sp-b:active,
+.sp-b.rep {
+  transform: translateY(2px);
+  background: #121315;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.sp-b:focus-visible,
+.sp-push:focus-visible {
+  outline: 2px solid #00e4ff;
+  outline-offset: 2px;
+}
+.sp-v {
+  flex: 1;
+  min-width: 96px;
+  padding: 0 6px;
+  font:
+    700 22px "Roboto Mono",
+    var(--font-cond),
+    monospace;
+  color: #00e4ff;
+  text-align: center;
+  white-space: nowrap;
+}
+.sp-push {
+  height: 44px;
+  border-radius: 9px;
+  border: 1px solid #2a3c4a;
+  background: #121a22;
+  color: #dfe7ee;
+  font: 700 13px var(--font);
+  letter-spacing: 0.8px;
+  cursor: pointer;
+}
+.sp-push:active {
+  background: #0b1117;
+}
+.sp-row + .sp-row {
+  padding-top: 10px;
+  border-top: 1px solid #1f2830;
+}
+
+/* ------------------------------------------------------------------ long-press tip */
+.lp-tip {
+  position: fixed;
+  z-index: 95;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: #0d1116;
+  border: 1px solid #2a3c4a;
+  color: #e8edf2;
+  font: 500 13px/1.35 var(--font);
+  white-space: pre-line;
+  pointer-events: none;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+
+/* ------------------------------------------------------------------ touch targets (≥ 44 px) */
+body.touch {
+  --sb-h: 44px;
+}
+body.touch.chrome-auto:not(.chrome-hidden) {
+  --sb-top: var(--tb-h, 60px);
+}
+html body.touch .topbar .btn,
+html body.touch .topbar .scn,
+html body.touch .topbar .brand {
+  min-height: 44px;
+}
+html body.touch .topbar .btn {
+  min-width: 44px;
+}
+html body.touch .tb-group .btn {
+  min-width: 48px;
+}
+html body.touch.chrome-auto .drawer {
+  top: var(--tb-h, 60px);
+}
+html body.touch.chrome-auto.chrome-hidden .drawer {
+  top: 0;
+}
+html body.touch .menu-item {
+  min-height: 46px;
+}
+html body.touch .view-seg button {
+  min-height: 44px;
+}
+/* touch: the handle is a visible tab (no hover to grow it) on a strip the situation bar keeps free for it */
+html body.touch.chrome-auto.chrome-hidden:not(.intro-open) .tb-handle {
+  width: 84px;
+  height: 12px;
+}
+html body.touch .tb-handle svg {
+  opacity: 0.85;
+}
+html body.touch.chrome-auto .cockpit:not(.no-otw) .sitbar {
+  padding-top: 10px;
+}
+html body.touch .tb-handle::before {
+  content: "";
+  position: absolute;
+  inset: -4px -12px -22px;
+}
+/* bezel: keys and knobs keep their look; their hit area grows to the space around them */
+html body.touch .bezel .bkey::before {
+  content: "";
+  position: absolute;
+  inset: -5px -3px;
+}
+html body.touch .bezel .pknob::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+}
+html body.touch .softrow {
+  gap: 5px;
+}
+html body.touch .softrow button {
+  height: 24px;
+  position: relative;
+}
+html body.touch .softrow button::before {
+  content: "";
+  position: absolute;
+  inset: -8px -2px -6px;
+}
+html body.touch .panel.theme-g1000 {
+  --bz-chrome: 60px;
+}
+/* pedestal */
+html body.touch .pedestal .ped-btn {
+  width: 44px;
+  height: 44px;
+  font-size: 12px;
+}
+html body.touch .pedestal .flap-sel button {
+  height: 44px;
+}
+html body.touch .pedestal .flap-sel {
+  grid-template-columns: repeat(4, 48px);
+}
+html body.touch .pedestal .stick {
+  width: 88px;
+  height: 64px;
+}
+html body.touch .pedestal .chrono-b {
+  width: 52px;
+  /* styles.css sets this height with !important */
+  height: 36px !important;
+}
+html body.touch .pedestal .chrono-btns {
+  gap: 6px;
+}
+html body.touch .pedestal .ped-joy {
+  min-height: 44px;
+}
+html body.touch .pedestal input.lever {
+  height: 14px;
+}
+html body.touch .pedestal input.lever::-webkit-slider-thumb {
+  width: 30px;
+  height: 44px;
+}
+html body.touch .pedestal .ped-keys {
+  display: none;
+}
+html body.touch .pedestal .ped-g {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+/* lesson panel, ATC strip, replay and crash buttons */
+html body.touch .cockpit .coach .acts .btn,
+html body.touch .cockpit .coach h4 .coach-fold,
+html body.touch .cockpit .coach .setup-h {
+  min-height: 40px;
+}
+html body.touch .cockpit .coach h4 .coach-fold {
+  min-width: 40px;
+}
+html body.touch .atc-radio .atc-b {
+  min-width: 40px;
+  min-height: 40px;
+}
+html body.touch .replay .btn,
+html body.touch .replay .seg button,
+html body.touch .crash-acts .btn {
+  min-height: 44px;
+}
+/* no hover on touch: the explain overlay answers a tap (focus) instead */
+body.touch .explain .hot:focus .tip,
+body.touch .explain .hot:focus .tag {
+  display: block;
+  opacity: 1;
+}
+
+/* ------------------------------------------------------------------ portrait: instruments first */
+/* never wider than the window (a wide MCP row would stretch the whole grid) */
+html body #app {
+  grid-template-columns: minmax(0, 1fr);
+}
+html body.portrait .cockpit .mcp {
+  flex-wrap: wrap;
+  justify-content: center;
+  row-gap: 6px;
+}
+html body.portrait .cockpit {
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  --side-w: 64px;
+  --knob: 48px;
+}
+html body.portrait .cockpit.no-otw {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+html body.portrait .cockpit .panel {
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 8px;
+  overflow: hidden;
+}
+html body.portrait .cockpit .panel .bezel {
+  width: auto;
+  max-width: none;
+  height: var(--bz-h, 420px);
+  margin: 0;
+  grid-template-columns: var(--side-w) auto var(--side-w);
+}
+html body.portrait .cockpit .panel.theme-airliner .bezel.mfd {
+  grid-template-columns: 0 auto var(--side-w);
+}
+html body.portrait .bezel .screen {
+  height: 100%;
+  width: auto;
+}
+/* Large view in portrait: the PFD alone under a bigger outside view */
+html body.portrait .cockpit.big-otw .bezel.mfd {
+  display: none;
+}
+/* Immersive: the autopilot bar floats too — beside the floating PFD, or above it when the window is narrow */
+html body .cockpit.vis-otw.with-afcs > .afcs {
+  position: absolute;
+  left: calc(var(--pfd-w, 560px) + 28px);
+  right: 14px;
+  bottom: 14px;
+  z-index: 7;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(21, 25, 30, 0.94);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+}
+@media (max-width: 1500px) {
+  html body .cockpit.vis-otw.with-afcs > .afcs {
+    left: 14px;
+    right: auto;
+    max-width: calc(100% - 28px);
+    bottom: calc(var(--pfd-h, 420px) + 24px);
+  }
+  html body .cockpit.vis-otw.with-afcs .coach {
+    max-height: calc(100% - var(--ov-top) - var(--pfd-h, 420px) - var(--afcs-h, 56px) - 44px);
+  }
+}
+/* pedestal on two rows */
+html body.portrait .footer.pedestal {
+  flex-wrap: wrap;
+  justify-content: center;
+  row-gap: 0;
+  overflow: visible;
+}
+html body.portrait .pedestal > .spacer,
+html body.portrait .pedestal .ped-keys {
+  display: none;
+}
+html body.portrait .pedestal .ped-g {
+  padding: 5px 10px;
+}
+/* situation bar: the six cells on two rows of three */
+html body.portrait .cockpit .sitbar {
+  flex-wrap: wrap;
+}
+html body.portrait .cockpit .sitbar .sb {
+  flex: 1 1 30%;
+  min-width: 0;
+}
+html body.portrait .cockpit .sitbar .sb-fill {
+  display: none;
+}
+/* the lesson panel and the ATC strip dock above the instruments when the outside view is small */
+html body.portrait .cockpit:not(.no-otw) .coach {
+  max-height: calc(100% - var(--ov-top) - 12px);
+}
+/* autopilot bar on one row in portrait: the mode keys, HDG − / + and ALT SEL (its pad also sets VS / FLC speed);
+   CRS, BARO and MINS stay on the bezel knobs (a tap opens their step pad) */
+html body.portrait .afcs {
+  flex-wrap: nowrap;
+  padding: 6px 6px;
+}
+html body.portrait .afcs-g {
+  padding: 0 6px;
+  gap: 4px;
+}
+html body.portrait .afcs .bkey {
+  width: 42px;
+}
+html body.portrait .afcs .g-nav2,
+html body.portrait .afcs [data-k='vert'],
+html body.portrait .afcs-sel[data-k='alt'] .afcs-inc {
+  display: none;
+}
+html body.portrait .afcs-sel .afcs-val {
+  min-width: 64px;
+}
+/* compact pedestal rows */
+html body.portrait .pedestal .ped-g {
+  padding: 4px 10px;
+}
+html body.portrait .pedestal .ped-t {
+  margin-bottom: 2px;
+}
+html body.portrait .pedestal .stick {
+  width: 76px;
+  height: 48px;
+}
+html body.portrait .pedestal .chrono-b {
+  height: 32px !important;
+}
+/* touch: no keyboard / joystick status group in the pedestal (Controllers stays in the More menu) */
+html body.touch .pedestal .ped-g:has(.ped-joy) {
+  display: none;
+}
+html body.touch .cockpit .coach .acts {
+  padding-top: 6px;
+  padding-bottom: 8px;
+}
+html body.touch .cockpit .coach .acts .btn {
+  min-height: 38px;
+}
+.steppad:focus {
+  outline: none;
+}
+/* Instruments layout: the docked top bar is taller on touch screens */
+html body.touch.chrome-auto .cockpit.no-otw > .otw {
+  padding-top: var(--tb-h, 60px);
+}
+html body.touch.chrome-auto .cockpit.no-otw {
+  --chrome-pad: var(--tb-h, 60px);
+}
+/* the look-around hint waits for the flight to resume */
+.cockpit .otw:has(.pause-veil.on) .look-hint {
+  opacity: 0;
+}
+/* iPad portrait: the outside view is a strip — messages drop in from the top, over the situation bar, instead
+   of covering the lesson panel's buttons */
+html body.portrait .cockpit:not(.no-otw):not(.vis-otw) .toasts {
+  top: calc(var(--sb-top) + 6px);
+  bottom: auto;
+}
+/* portrait: the top bar, when shown, lies over the situation bar instead of pushing it (and everything under it)
+   down — the outside view is only a strip and the instruments must not jump */
+html body.portrait.chrome-auto:not(.chrome-hidden) {
+  --sb-top: 0px;
+}
+html body.portrait.chrome-auto:not(.chrome-hidden) .cockpit:not(.no-otw):not(.vis-otw) .toasts {
+  top: calc(var(--tb-h, 60px) + 6px);
+}
+/* portrait: the lesson panel and the ATC strip fill the strip — the veil only dims; the lesson panel carries
+   Resume and a tap on the PAUSED pill resumes too */
+html body.portrait .cockpit .otw:has(.coach.lesson:not(.empty)) .pause-veil > *,
+html body.portrait .cockpit .otw:has(.atc-radio:not(.empty)) .pause-veil > * {
+  display: none;
+}
+.cockpit .sitbar .sb.paused {
+  cursor: pointer;
+}
+html body .cockpit .coach .acts .btn.coach-resume,
+html body .cockpit .coach .acts .btn.coach-resume:hover {
+  border-color: transparent;
+  background: #f4f7fa;
+  color: #0b0e12;
+}
+/* short of space (iPad landscape, Standard): a slimmer action row so the setup header stays in view */
+html body.touch .cockpit.coach-compact .coach .acts {
+  margin-top: 6px;
+  padding-top: 5px;
+  padding-bottom: 6px;
+}
+html body.touch .cockpit.coach-compact .coach .setup.compact {
+  margin-top: 5px;
+}
+/* portrait: while the top bar is shown over it, the situation bar steps aside (half a bar reads as broken) */
+html body.portrait.chrome-auto:not(.chrome-hidden) .cockpit:not(.no-otw) .sitbar {
+  visibility: hidden;
+}

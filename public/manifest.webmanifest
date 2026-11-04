@@ -1,0 +1,18 @@
+{
+  "name": "IFR Trainer",
+  "short_name": "IFR Trainer",
+  "description": "Instrument flight training: G1000, steam gauges and airliner cockpits, real approaches with charts, lessons with corrective feedback and scored debriefs.",
+  "id": "/",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#0b0e12",
+  "theme_color": "#0b0e12",
+  "categories": ["education", "games", "simulation"],
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

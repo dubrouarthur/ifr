@@ -4,17 +4,19 @@ import './styles.css';
 import './styles/load';
 import { FlightPlan } from './nav/flightplan';
 import { Sim, SCENARIOS, type Scenario } from './sim/sim';
-import { InputManager, type ButtonAction } from './sim/input';
+import { InputManager, KB_SENSITIVITY, type ButtonAction } from './sim/input';
 import { drawPfd, newPfdState, PFD_W, PFD_H, softkeyAt, PFD_SOFTKEYS } from './avionics/pfd';
 import { drawMfd, newMfdState, MFD_W, MFD_H, MFD_SOFTKEYS } from './avionics/mfd';
 import { drawOtw, inCloud } from './avionics/otw';
 import type { Outside3D, TimeOfDay, Quality } from './avionics/outside3d';
+// type only: the camera module pulls three.js, which stays in the lazily loaded 3D chunk
+import type { ViewMode } from './avionics/cameras';
 import { drawSixPack, drawStack } from './avionics/steam';
 import { drawAirlinerPfd, drawNd } from './avionics/airliner';
 import { mfdRange } from './avionics/mfd';
 import { fitCanvas } from './avionics/draw';
 import { h, store, fmtTime } from './ui/dom';
-import { knob, bkey } from './ui/knob';
+import { knob, bkey, autoRepeat, openSteps, closeSteps, installLongPressTips, type StepRow } from './ui/knob';
 import { svgIcon, I } from './ui/icons';
 import { ChartsDrawer } from './ui/charts';
 import { InstructorDrawer, HistoryModal } from './ui/instructor';
@@ -30,15 +32,19 @@ import { AtcRadio } from './ui/atcRadio';
 import { CircuitBuilder, decodeCircuit } from './ui/circuitBuilder';
 import { circuitToExercise, type Circuit } from './train/circuits';
 import { LessonRun, type Exercise } from './train/engine';
-import { exercise, type Path } from './train/curriculum';
+import { exercise, PATHS, type Path } from './train/curriculum';
 import type { AssessSettings } from './sim/sim';
 import { Launcher, ProcModal, DirectModal, JoystickModal, DebriefModal, HelpModal, Modal, WX_PRESETS, type WxPreset } from './ui/modals';
 import { distanceNm, wrap180 } from './nav/geo';
 import { runway } from './nav/data';
 import { assessTouchdown } from './sim/landing';
-import { currentRegion, leaveRealWorld } from './nav/world';
+import { currentRegion, leaveRealWorld, toReal } from './nav/world';
 import { chartIndex } from './plates/plates';
 import type { Phase } from './sim/recorder';
+import type { SetupItem } from './train/setupAssist';
+import { FAILURE_LABELS } from './sim/sim';
+import type { RemoteCommand, RemoteSnapshot } from './connect/remoteTypes';
+import type { RemoteHostApi } from './connect/remoteLink';
 import { CockpitAudio } from './sim/audio';
 import { Intro, introWanted } from './ui/intro';
 
@@ -59,8 +65,37 @@ let endTimer = 0;
 
 const input = new InputManager({ onAction: (a) => doAction(a) });
 const audio = new CockpitAudio(store.get('ifr.muted', false));
-window.addEventListener('pointerdown', () => audio.start(), { once: true });
-window.addEventListener('keydown', () => audio.start(), { once: true });
+// ------------------------------------------------------------------ touch / tablet
+/** a touch-first device (iPad, Android tablet): bigger targets, the autopilot bar, step pads, long-press tips.
+ *  iPadOS reports itself as a Mac: a Mac with a multi-touch screen is an iPad. */
+const isTouchDevice = (): boolean =>
+  matchMedia('(hover: none) and (pointer: coarse)').matches || (navigator.maxTouchPoints > 1 && /Macintosh|iPad/.test(navigator.userAgent));
+let touchUi = isTouchDevice();
+document.body.classList.toggle('touch', touchUi);
+installLongPressTips();
+/** audio (and speech) can only start inside a user gesture: on iOS that has to be a touchend / click */
+function unlockAudio() {
+  audio.start();
+  try {
+    if ('speechSynthesis' in window && !audio.muted) {
+      const u = new SpeechSynthesisUtterance(' ');
+      u.volume = 0;
+      speechSynthesis.speak(u);
+    }
+  } catch { /* speech unavailable */ }
+  for (const ev of ['pointerdown', 'touchend', 'click', 'keydown']) window.removeEventListener(ev, unlockAudio, true);
+}
+for (const ev of ['pointerdown', 'touchend', 'click', 'keydown']) window.addEventListener(ev, unlockAudio, true);
+// the first finger on a hybrid laptop switches the touch layout on
+window.addEventListener('pointerdown', (e) => {
+  if (e.pointerType !== 'touch' || touchUi) return;
+  touchUi = true;
+  document.body.classList.add('touch');
+  if (!store.get<boolean | null>('ifr.afcsBar', null)) setAfcsBar(true, false);
+  fitSoon();
+}, true);
+// no pinch / double-tap zoom on the cockpit (Safari ignores user-scalable=no; its gesture events can be cancelled)
+for (const ev of ['gesturestart', 'gesturechange']) document.addEventListener(ev, (e) => { if ((e.target as Element | null)?.closest?.('.cockpit, .pedestal, .topbar, .afcs')) e.preventDefault(); }, { passive: false });
 
 // ------------------------------------------------------------------ toasts
 const toasts = h('div', { class: 'toasts', 'aria-live': 'polite' });
@@ -304,11 +339,50 @@ const LAYOUTS = [
 ] as const;
 const layoutName = (m: OtwMode) => LAYOUTS.find((x) => x[0] === m)?.[1] ?? 'Standard';
 const layoutMenu = h('div', { class: 'menu layout-menu', role: 'menu' });
-const layoutBtn = h('button', { class: 'btn', title: 'Screen layout (Tab cycles)', 'aria-haspopup': 'menu', onclick: (e: Event) => { e.stopPropagation(); renderLayoutMenu(); layoutMenu.classList.toggle('open'); } }, icon(I.layout), h('span', { class: 'lbl' }, 'Layout'));
+const layoutBtn = h('button', { class: 'btn', title: 'Screen layout (Tab) and outside view (V)', 'aria-haspopup': 'menu', onclick: (e: Event) => { e.stopPropagation(); renderLayoutMenu(); layoutMenu.classList.toggle('open'); } }, icon(I.layout), h('span', { class: 'lbl' }, 'Layout'));
 function renderLayoutMenu() {
   layoutMenu.innerHTML = '';
+  layoutMenu.append(menuHead('Screen layout'));
   for (const [m, t, d] of LAYOUTS)
     layoutMenu.append(h('button', { class: `menu-item layout-item${otwMode === m ? ' on' : ''}`, role: 'menuitemradio', 'aria-checked': String(otwMode === m), onclick: () => { layoutMenu.classList.remove('open'); setOtw(m); } }, h('i', { class: `lay-ic lay-${m}` }), h('span', {}, h('b', {}, t), h('small', {}, d))));
+  // exterior cameras exist only with the 3D outside view
+  if (!outside) return;
+  layoutMenu.append(
+    h('div', { class: 'menu-h view-h', role: 'presentation' }, h('span', {}, 'Outside view'), h('kbd', {}, 'V')),
+    h('div', { class: 'view-seg', role: 'radiogroup', 'aria-label': 'Outside view' },
+      ...viewList.map((v) => h('button', { type: 'button', role: 'radio', class: viewMode === v ? 'on' : '', 'aria-checked': String(viewMode === v), title: VIEW_HINT[v], onclick: (e: Event) => { e.stopPropagation(); setView(v); renderLayoutMenu(); } }, viewNames[v]))),
+  );
+}
+// ------------------------------------------------------------------ exterior views (Cockpit / Chase / Orbit / Tower / Fly-by)
+/** the list and names come from the 3D module once it is loaded (outside3d re-exports them); these are the defaults */
+let viewList: readonly ViewMode[] = ['cockpit', 'chase', 'orbit', 'tower', 'flyby'];
+let viewNames: Record<ViewMode, string> = { cockpit: 'Cockpit', chase: 'Chase', orbit: 'Orbit', tower: 'Tower', flyby: 'Fly-by' };
+const VIEW_HINT: Record<ViewMode, string> = {
+  cockpit: 'From the pilot seat — drag to look around',
+  chase: 'Behind the aircraft — drag to move the camera, pinch or scroll to zoom',
+  orbit: 'Around the aircraft — drag to orbit, pinch or scroll to zoom',
+  tower: 'From the control tower of the nearest airport',
+  flyby: 'A fixed camera ahead on the flight path, the aircraft flies past',
+};
+let viewMode: ViewMode = store.get<ViewMode>('ifr.view', 'cockpit');
+if (!viewList.includes(viewMode)) viewMode = 'cockpit';
+function setView(v: ViewMode, announce = false) {
+  if (!viewList.includes(v)) return;
+  viewMode = v;
+  store.set('ifr.view', v);
+  outside?.setView(v);
+  syncView();
+  if (announce) toast(`View: ${viewNames[v]}`, 'info', 1800);
+}
+function cycleView(dir: 1 | -1) {
+  if (!outside) return;
+  const i = viewList.indexOf(viewMode);
+  setView(viewList[(i + dir + viewList.length) % viewList.length], true);
+}
+function syncView() {
+  const ext = viewMode !== 'cockpit';
+  otw.classList.toggle('ext-view', ext);
+  if (ext) lookHint.classList.remove('show');
 }
 document.addEventListener('click', (e) => { if (!layoutMenu.contains(e.target as Node) && !layoutBtn.contains(e.target as Node)) layoutMenu.classList.remove('open'); });
 
@@ -366,6 +440,18 @@ const moreItem = (ic: string, label: string, kbd: string, fn: () => void) =>
 const menuHead = (t: string) => h('div', { class: 'menu-h', role: 'presentation' }, t);
 const autoHideSw = h('i', { class: 'sw', 'aria-hidden': 'true' });
 const autoHideItem = h('button', { class: 'menu-item', role: 'menuitemcheckbox', 'aria-checked': 'true', onclick: () => { setAutoHide(!autoHide); toast(autoHide ? 'Top bar hides in flight — touch the top edge of the screen or press F10 to show it' : 'Top bar always visible'); } }, icon(I.eye), h('span', {}, 'Auto-hide top bar'), autoHideSw);
+const afcsSw = h('i', { class: 'sw', 'aria-hidden': 'true' });
+const afcsItem = h('button', { class: 'menu-item', role: 'menuitemcheckbox', 'aria-checked': 'false', title: 'Big autopilot keys and − / + buttons for heading, altitude, course, baro and minimums — for touch screens and flying without a mouse', onclick: () => { setAfcsBar(!afcsBar); toast(afcsBar ? 'Autopilot bar on: tap − / + to set heading, altitude, course; tap a value for more steps' : 'Autopilot bar off'); } }, icon(I.keypad), h('span', {}, 'Autopilot bar (touch)'), afcsSw);
+/** keyboard sensitivity: how fast and how far the arrow keys move the yoke */
+const sensLabel = () => (KB_SENSITIVITY.reduce((a, b) => (Math.abs(b.v - input.sensitivity) < Math.abs(a.v - input.sensitivity) ? b : a)).label);
+const sensVal = h('kbd', {}, sensLabel());
+const sensItem = h('button', { class: 'menu-item', role: 'menuitem', title: 'How fast and how far the arrow keys move the yoke (click to change)', onclick: (e: Event) => {
+  e.stopPropagation();
+  const i = KB_SENSITIVITY.findIndex((x) => x.label === sensLabel());
+  input.sensitivity = KB_SENSITIVITY[(i + 1) % KB_SENSITIVITY.length].v;
+  sensVal.textContent = sensLabel();
+  toast(`Keyboard sensitivity: ${sensLabel()}`);
+} }, icon(I.keyboard), h('span', {}, 'Keyboard sensitivity'), sensVal);
 moreMenu.append(
   menuHead('Flight'),
   moreItem(I.approach, 'Procedures', 'X', () => procModal.open()),
@@ -375,6 +461,7 @@ moreMenu.append(
   moreItem(I.cloud, 'Weather station', '', () => weatherModal.open()),
   moreItem(I.pattern, 'Circuit builder', 'U', () => builder.edit()),
   moreItem(I.link, 'Connections', '', () => connect.open()),
+  moreItem(I.instructor, 'Pair instructor (phone/tablet)…', '', () => void pairInstructor()),
   menuHead('Learn'),
   moreItem(I.learn, 'Learning paths', 'J', () => learn.open()),
   moreItem(I.records, 'Training records', '', () => historyModal.open()),
@@ -384,6 +471,8 @@ moreMenu.append(
   menuHead('App'),
   moreItem(I.gear, 'Settings', ',', () => settings.open()),
   moreItem(I.joystick, 'Controllers', '', () => joyModal.open()),
+  sensItem,
+  afcsItem,
   autoHideItem,
 );
 // auto-hiding top bar in flight (game-style HUD). It comes back only on purpose: the pointer touches the very top
@@ -403,7 +492,8 @@ function chromeShow(on: boolean) {
   document.body.classList.toggle('chrome-hidden', hide);
 }
 /** something in the top bar is in use: an open menu or window, the pointer on it, the keyboard focus in it */
-const chromeBusy = () => Modal.anyOpen() || !!document.querySelector('.menu.open') || topbar.matches(':hover') || topbar.contains(document.activeElement);
+// (touch screens keep :hover on the last tapped element: it says nothing about a finger on the bar)
+const chromeBusy = () => Modal.anyOpen() || !!document.querySelector('.menu.open') || (!touchUi && topbar.matches(':hover')) || topbar.contains(document.activeElement);
 function scheduleHide(ms = 700) {
   clearTimeout(hideTimer);
   if (!autoHide) return;
@@ -474,6 +564,8 @@ flightMenu.append(
   flightItem(I.restart, 'Restart this flight', '', () => restartFlight()),
   flightItem(I.flag, 'End flight & debrief', 'Shift D', () => endFlight()),
   h('div', { class: 'menu-sep' }),
+  flightItem(I.instructor, 'Pair instructor (phone/tablet)…', '', () => void pairInstructor()),
+  h('div', { class: 'menu-sep' }),
   flightItem(I.plan, 'Plan a new flight…', 'Shift N', () => setup.start()),
   flightItem(I.plane, 'Flight Center', 'F2', () => fc.open()),
 );
@@ -505,7 +597,7 @@ const otwCanvas = h('canvas', { 'aria-label': 'Outside view' });
 const coach = h('div', { class: `coach${store.get('ifr.coachMin', false) ? ' min' : ''}` });
 const glCanvas = h('canvas', { 'aria-label': 'Outside view (3D)', class: 'gl' });
 const glare = h('div', { class: 'glare' });
-const lookHint = h('div', { class: 'look-hint', 'aria-hidden': 'true' }, 'Drag to look around · double-click to recentre');
+const lookHint = h('div', { class: 'look-hint', 'aria-hidden': 'true' }, touchUi ? 'Drag to look around · double-tap to recentre' : 'Drag to look around · double-click to recentre');
 /** the look hint appears once per session, under the situation bar, and fades after 6 s or on the first drag */
 function showLookHint() {
   let seen = false;
@@ -515,13 +607,19 @@ function showLookHint() {
   setTimeout(() => lookHint.classList.remove('show'), 6000);
 }
 const sitbar = h('div', { class: 'sitbar', role: 'status', 'aria-label': 'Flight situation' });
-const pauseVeil = h('div', { class: 'pause-veil' }, h('b', {}, 'Paused'), h('span', {}, 'Press Esc or the Resume button to continue'));
+// a tap on the PAUSED pill resumes (handy on a tablet, where the top bar may be hidden)
+sitbar.addEventListener('click', (e) => { if (sim.paused && !sim.replaying && (e.target as HTMLElement).closest('.sb.paused')) togglePause(); });
+// the pause veil carries its own Resume button: on a tablet the top bar may be hidden and there is no Esc key
+const pauseKeyHint = h('span', { class: 'pv-key' }, 'or press Esc');
+const pauseVeil = h('div', { class: 'pause-veil' }, h('b', {}, 'Paused'),
+  h('div', { class: 'pv-acts' }, h('button', { class: 'btn primary pv-resume', type: 'button', onclick: () => { if (sim.paused) togglePause(); } }, icon(I.play), h('span', {}, 'Resume')), pauseKeyHint));
 const replayBar = h('div', { class: 'replay' });
 const atc = new AtcRadio(sim, () => audio.squelch());
 const otw = h('section', { class: 'otw' }, otwCanvas, glCanvas, glare, lookHint, sitbar, pauseVeil, coach, toasts, replayBar, atc.el);
 let outside: Outside3D | null = null;
 let timeOfDay = store.get<TimeOfDay>('ifr.tod', 'day');
-let gfx = store.get<Quality>('ifr.gfx', 'high');
+// tablets: the lighter scene at native pixel ratio 1 (a 2x retina canvas costs 4x the fill rate on an iPad GPU)
+let gfx = store.get<Quality>('ifr.gfx', touchUi ? 'low' : 'high');
 let outsideLoading = false;
 async function initOutside() {
   if (outside || outsideLoading) return;
@@ -531,7 +629,13 @@ async function initOutside() {
     if (!mod.webglAvailable()) return;
     outside = new mod.Outside3D(glCanvas, gfx, timeOfDay);
     otw.classList.add('has-gl');
-    if (otwMode !== 'none') showLookHint();
+    viewList = mod.VIEWS;
+    viewNames = mod.VIEW_LABELS;
+    // the camera survives a rebuild (graphics quality, region change): re-apply the saved view
+    outside.onViewChange = (v) => { viewMode = v; store.set('ifr.view', v); syncView(); };
+    outside.setView(viewList.includes(viewMode) ? viewMode : 'cockpit');
+    syncView();
+    if (otwMode !== 'none' && viewMode === 'cockpit') showLookHint();
   } catch (e) {
     console.warn('WebGL outside view unavailable', e);
     outside = null;
@@ -549,7 +653,7 @@ function rebuildOutside() {
 // mouse look
 {
   let drag: { x: number; y: number } | null = null;
-  glCanvas.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; glCanvas.setPointerCapture(e.pointerId); otw.classList.add('looked'); lookHint.classList.remove('show'); });
+  glCanvas.addEventListener('pointerdown', (e) => { if (outside && outside.view !== 'cockpit') return; drag = { x: e.clientX, y: e.clientY }; glCanvas.setPointerCapture(e.pointerId); otw.classList.add('looked'); lookHint.classList.remove('show'); });
   glCanvas.addEventListener('pointermove', (e) => {
     if (!drag || !outside) return;
     outside.lookYaw = Math.max(-2.6, Math.min(2.6, outside.lookYaw + (e.clientX - drag.x) * 0.005));
@@ -557,7 +661,8 @@ function rebuildOutside() {
     drag = { x: e.clientX, y: e.clientY };
   });
   glCanvas.addEventListener('pointerup', () => (drag = null));
-  glCanvas.addEventListener('dblclick', () => { if (outside) outside.lookYaw = outside.lookPitch = 0; });
+  glCanvas.addEventListener('pointercancel', () => (drag = null));
+  glCanvas.addEventListener('dblclick', () => { if (outside && outside.view === 'cockpit') outside.lookYaw = outside.lookPitch = 0; });
 }
 
 // PFD bezel
@@ -581,6 +686,30 @@ const tune = (r: { standby: number }, d: number, coarse: boolean, min: number, m
   r.standby = Math.round(v * 1000) / 1000;
 };
 const swap = (r: { active: number; standby: number }) => ([r.active, r.standby] = [r.standby, r.active]);
+const hdgSync = () => (sim.ap.hdgBug = Math.round(sim.ac.data.hdgTrue) || 360);
+const altSync = () => (sim.ap.altSel = Math.round(sim.indicatedAlt() / 100) * 100);
+const minsBy = (d: number, coarse: boolean) => (sim.av.minimums = Math.max(0, (sim.av.minimums ?? Math.round(sim.indicatedAlt() / 100) * 100) + d * (coarse ? 100 : 10)));
+const baroBy = (d: number, coarse: boolean) => (sim.av.baro = Math.round((sim.av.baro + d * (coarse ? 0.1 : 0.01)) * 100) / 100);
+// ------------------------------------------------------------------ step rows (step pads, the autopilot bar)
+/** one definition per selector, shared by the bezel knobs (finger tap / right-click) and the autopilot bar */
+const ROW = {
+  hdg: (): StepRow => ({ label: 'HDG', value: () => `${pad3(sim.ap.hdgBug)}°`, fine: '1°', coarse: '10°', onStep: (d, c) => hdgBy(d, c), push: { label: 'SYNC', fn: hdgSync, title: 'Heading bug to the current heading' } }),
+  alt: (): StepRow => ({ label: 'ALT SEL', value: () => `${sim.ap.altSel} FT`, fine: '100', coarse: '1000', onStep: (d, c) => altBy(d, c), push: { label: 'SYNC', fn: altSync, title: 'Selected altitude to the current altitude' } }),
+  /** the G1000 UP / DN wheel: VS target, FLC speed or pitch reference, in the active vertical mode */
+  vert: (): StepRow => {
+    const v = sim.ap.vert;
+    if (v === 'FLC') return { label: 'IAS (FLC)', value: () => `${Math.round(sim.ap.iasSel)} KT`, fine: '1', onStep: (d) => sim.ap.nose(d === 1 ? -1 : 1) };
+    if (v === 'VS') return { label: 'VS', value: () => `${sim.ap.vsSel > 0 ? '+' : ''}${sim.ap.vsSel} FPM`, fine: '100', onStep: (d) => sim.ap.nose(d) };
+    return { label: 'PITCH', value: () => `${sim.ap.pitchRef > 0 ? '+' : ''}${sim.ap.pitchRef.toFixed(1)}°`, fine: '0.5°', onStep: (d) => sim.ap.nose(d) };
+  },
+  crs: (): StepRow => ({ label: 'CRS', value: () => `${pad3(sim.course())}°`, fine: '1°', coarse: '10°', onStep: (d, c) => sim.setCourse(sim.course() + d * (c ? 10 : 1)), push: { label: 'CENTER', fn: () => centerCdi(), title: 'Course to centre the CDI on the station' } }),
+  baro: (): StepRow => ({ label: 'BARO', value: () => `${sim.av.baro.toFixed(2)} IN`, fine: '.01', coarse: '.10', onStep: (d, c) => baroBy(d, c), push: { label: 'SET QNH', fn: () => setQnh(), title: 'Altimeter to the reported QNH (B)' } }),
+  mins: (): StepRow => ({ label: 'MINS', value: () => (sim.av.minimums === null ? 'OFF' : `${sim.av.minimums} FT`), fine: '10', coarse: '100', onStep: (d, c) => minsBy(d, c), push: { label: 'OFF', fn: () => (sim.av.minimums = null), title: 'Minimums off' } }),
+  radio: (name: string, r: { active: number; standby: number }, min: number, max: number, fine: number, digits: number): StepRow => ({
+    label: `${name} SBY`, value: () => r.standby.toFixed(digits), fine: 'kHz', coarse: 'MHz', onStep: (d, c) => tune(r, d, c, min, max, fine), push: { label: '⇆ SWAP', fn: () => swap(r), title: `Swap ${name} active / standby` },
+  }),
+};
+
 
 const apKeyEls = () => {
   const d = () => sim.ac.data;
@@ -601,7 +730,7 @@ const apKeyEls = () => {
     h('i', { class: 'ap-gap', 'aria-hidden': 'true' }),
     k('APR', () => sim.ap.pressApr(d(), n()), 'Approach mode (R)'),
     k('BC', () => sim.ap.pressApr(d(), n()), 'Back course (auto via APR)'),
-    k('VS', () => sim.ap.pressVs(d()), 'Vertical speed (V)'),
+    k('VS', () => sim.ap.pressVs(d()), 'Vertical speed (Y)'),
     k('FLC', () => sim.ap.pressFlc(d()), 'Flight level change (K)'),
     k('UP', () => sim.ap.nose(1), 'Nose up'),
     k('DN', () => sim.ap.nose(-1), 'Nose down'),
@@ -619,30 +748,31 @@ const tag = <T extends HTMLElement>(el: T, k: string): T => { el.dataset.k = k; 
 const pfdBezel = h('div', { class: 'bezel pfd' },
   h('div', { class: 'brand-mark', 'data-l': '1' }, 'PFD'),
   h('div', { class: 'side left' },
-    tag(knob({ label: 'NAV', sub: 'MHz · kHz', dual: true, onTurn: (d, c) => tune(sim.av.nav1, d, c, 108, 118, 0.05), readout: () => `NAV1 SBY ${sim.av.nav1.standby.toFixed(2)}` }), 'nav'),
+    tag(knob({ label: 'NAV', sub: 'MHz · kHz', dual: true, onTurn: (d, c) => tune(sim.av.nav1, d, c, 108, 118, 0.05), readout: () => `NAV1 SBY ${sim.av.nav1.standby.toFixed(2)}`, steps: () => [ROW.radio('NAV1', sim.av.nav1, 108, 118, 0.05, 2)] }), 'nav'),
     tag(bkey('NAV ⇆', () => swap(sim.av.nav1), 'Swap NAV1 active/standby'), 'nav'),
-    tag(knob({ label: 'HDG', sub: 'Push sync', onTurn: hdgBy, onPush: () => (sim.ap.hdgBug = Math.round(sim.ac.data.hdgTrue) || 360), readout: () => `HDG ${pad3(sim.ap.hdgBug)}°` }), 'hdg'),
+    tag(knob({ label: 'HDG', sub: 'Push sync', onTurn: hdgBy, onPush: hdgSync, readout: () => `HDG ${pad3(sim.ap.hdgBug)}°`, steps: () => [ROW.hdg()] }), 'hdg'),
     apKeyEls(),
-    tag(knob({ label: 'ALT', sub: '1000 · 100', dual: true, onTurn: altBy, onPush: () => (sim.ap.altSel = Math.round(sim.indicatedAlt() / 100) * 100), readout: () => `ALT ${sim.ap.altSel} FT` }), 'alt'),
+    tag(knob({ label: 'ALT', sub: '1000 · 100', dual: true, onTurn: altBy, onPush: altSync, readout: () => `ALT ${sim.ap.altSel} FT`, steps: () => [ROW.alt(), ROW.vert()] }), 'alt'),
   ),
   h('div', { class: 'screen' }, pfdCanvas),
   softRow(PFD_SOFTKEYS, (i) => pfdSoftkey(i)),
   h('div', { class: 'side right' },
-    tag(knob({ label: 'COM', sub: 'MHz · kHz', dual: true, onTurn: (d, c) => tune(sim.av.com1, d, c, 118, 137, 0.025), readout: () => `COM1 SBY ${sim.av.com1.standby.toFixed(3)}` }), 'com'),
+    tag(knob({ label: 'COM', sub: 'MHz · kHz', dual: true, onTurn: (d, c) => tune(sim.av.com1, d, c, 118, 137, 0.025), readout: () => `COM1 SBY ${sim.av.com1.standby.toFixed(3)}`, steps: () => [ROW.radio('COM1', sim.av.com1, 118, 137, 0.025, 3)] }), 'com'),
     tag(bkey('COM ⇆', () => swap(sim.av.com1), 'Swap COM1'), 'com'),
     tag(knob({
       label: 'CRS',
       sub: 'Outer BARO',
       dual: true,
       onTurn: (d, c) => {
-        if (c) sim.av.baro = Math.round((sim.av.baro + d * 0.01) * 100) / 100;
+        if (c) baroBy(d, false);
         else sim.setCourse(sim.course() + d);
       },
+      steps: () => [ROW.crs(), ROW.baro()],
       onPush: () => centerCdi(),
       readout: () => `CRS ${pad3(sim.course())}° · ${sim.av.baro.toFixed(2)} IN`,
       title: 'CRS/BARO — inner knob: course (push = centre CDI) · outer ring: altimeter setting',
     }), 'crs'),
-    tag(knob({ label: 'MINS', sub: 'Push off', onTurn: (d, c) => (sim.av.minimums = Math.max(0, (sim.av.minimums ?? Math.round(sim.indicatedAlt() / 100) * 100) + d * (c ? 100 : 10))), onPush: () => (sim.av.minimums = null), readout: () => (sim.av.minimums === null ? 'MINS OFF' : `BARO MIN ${sim.av.minimums}`) }), 'mins'),
+    tag(knob({ label: 'MINS', sub: 'Push off', onTurn: minsBy, onPush: () => (sim.av.minimums = null), readout: () => (sim.av.minimums === null ? 'MINS OFF' : `BARO MIN ${sim.av.minimums}`), steps: () => [ROW.mins()] }), 'mins'),
     h('div', { class: 'bkey-grid' },
       bkey('D→', () => directModal.open(), 'Direct-To (D)'),
       bkey('PROC', () => procModal.open(), 'Procedures (X)'),
@@ -656,15 +786,15 @@ const pfdBezel = h('div', { class: 'bezel pfd' },
 const mfdBezel = h('div', { class: 'bezel mfd' },
   h('div', { class: 'brand-mark', 'data-r': '1' }, 'MFD'),
   h('div', { class: 'side left' },
-    tag(knob({ label: 'NAV2', sub: 'MHz · kHz', dual: true, onTurn: (d, c) => tune(sim.av.nav2, d, c, 108, 118, 0.05), readout: () => `NAV2 SBY ${sim.av.nav2.standby.toFixed(2)}` }), 'nav2'),
+    tag(knob({ label: 'NAV2', sub: 'MHz · kHz', dual: true, onTurn: (d, c) => tune(sim.av.nav2, d, c, 108, 118, 0.05), readout: () => `NAV2 SBY ${sim.av.nav2.standby.toFixed(2)}`, steps: () => [ROW.radio('NAV2', sim.av.nav2, 108, 118, 0.05, 2)] }), 'nav2'),
     tag(bkey('NAV2 ⇆', () => swap(sim.av.nav2), 'Swap NAV2'), 'nav2'),
-    tag(knob({ label: 'ADF', sub: '100 · 1 kHz', dual: true, onTurn: (d, c) => (sim.av.adf.active = Math.max(190, Math.min(1750, sim.av.adf.active + d * (c ? 100 : 1)))), readout: () => `ADF ${sim.av.adf.active} kHz` }), 'adf'),
+    tag(knob({ label: 'ADF', sub: '100 · 1 kHz', dual: true, onTurn: (d, c) => (sim.av.adf.active = Math.max(190, Math.min(1750, sim.av.adf.active + d * (c ? 100 : 1)))), readout: () => `ADF ${sim.av.adf.active} kHz`, stepLabels: ['1', '100'] }), 'adf'),
     tag(bkey('CDI', () => doAction('cdi'), 'Cycle CDI (C)'), 'cdi'),
   ),
   h('div', { class: 'screen' }, mfdCanvas),
   softRow(MFD_SOFTKEYS, (i) => mfdSoftkey(i)),
   h('div', { class: 'side right' },
-    tag(knob({ label: 'RANGE', sub: 'Map', onTurn: (d) => (mfdSt.rangeIdx = Math.max(0, Math.min(8, mfdSt.rangeIdx - d))), readout: () => `RANGE ${mfdRange(mfdSt)} NM` }), 'range'),
+    tag(knob({ label: 'RANGE', sub: 'Map', onTurn: (d) => (mfdSt.rangeIdx = Math.max(0, Math.min(8, mfdSt.rangeIdx - d))), readout: () => `RANGE ${mfdRange(mfdSt)} NM`, steps: () => [{ label: 'RANGE', value: () => `${mfdRange(mfdSt)} NM`, fine: '', onStep: (d) => (mfdSt.rangeIdx = Math.max(0, Math.min(8, mfdSt.rangeIdx - d))) }] }), 'range'),
     h('div', { class: 'bkey-grid' },
       bkey('D→', () => directModal.open(), 'Direct-To (D)'),
       bkey('PROC', () => procModal.open(), 'Procedures (X)'),
@@ -684,6 +814,7 @@ const mcpSpd = mcpWin('IAS');
 const mcpHdg = mcpWin('HEADING');
 const mcpAlt = mcpWin('ALTITUDE');
 const mcpVs = mcpWin('VERT SPD');
+const mcpVsBy = (d: number) => { if (sim.ap.vert !== 'VS') sim.ap.pressVs(sim.ac.data); sim.ap.vsSel = Math.max(-2000, Math.min(1500, sim.ap.vsSel + d * 100)); };
 const mcpKey = (label: string, fn: () => void, key: string) => {
   const b = h('button', { class: 'mcp-key', onclick: fn }, h('i', {}), label);
   b.dataset.mcp = key;
@@ -691,15 +822,59 @@ const mcpKey = (label: string, fn: () => void, key: string) => {
 };
 const mcp = h('section', { class: 'mcp' },
   h('div', { class: 'mcp-group' }, mcpKey('F/D', () => sim.ap.toggleFd(sim.ac.data), 'FD'), mcpKey('CMD A', () => doAction('apToggle'), 'AP')),
-  h('div', { class: 'mcp-group' }, mcpSpd.el, knob({ label: 'IAS', onTurn: (d, c) => (sim.ap.iasSel = Math.max(60, Math.min(180, sim.ap.iasSel + d * (c ? 10 : 1)))), readout: () => `IAS ${sim.ap.iasSel} KT` }), mcpKey('FLCH', () => sim.ap.pressFlc(sim.ac.data), 'FLC')),
+  h('div', { class: 'mcp-group' }, mcpSpd.el, knob({ label: 'IAS', onTurn: (d, c) => (sim.ap.iasSel = Math.max(60, Math.min(180, sim.ap.iasSel + d * (c ? 10 : 1)))), readout: () => `IAS ${sim.ap.iasSel} KT`, steps: () => [{ label: 'IAS', value: () => `${Math.round(sim.ap.iasSel)} KT`, fine: '1', coarse: '10', onStep: (d, c) => (sim.ap.iasSel = Math.max(60, Math.min(180, sim.ap.iasSel + d * (c ? 10 : 1)))) }] }), mcpKey('FLCH', () => sim.ap.pressFlc(sim.ac.data), 'FLC')),
   h('div', { class: 'mcp-group' }, mcpKey('LNAV', () => { if (sim.av.cdi !== 'GPS') sim.setCdi('GPS'); sim.ap.pressNav(sim.ac.data, sim.navInputs()); }, 'LNAV'), mcpKey('VOR LOC', () => { if (sim.av.cdi === 'GPS') sim.setCdi('NAV1'); sim.ap.pressNav(sim.ac.data, sim.navInputs()); }, 'VORLOC'), mcpKey('APP', () => sim.ap.pressApr(sim.ac.data, sim.navInputs()), 'APR')),
-  h('div', { class: 'mcp-group' }, mcpHdg.el, knob({ label: 'HDG', onTurn: hdgBy, onPush: () => (sim.ap.hdgBug = Math.round(sim.ac.data.hdgTrue) || 360) }), mcpKey('HDG SEL', () => sim.ap.pressHdg(sim.ac.data), 'HDG')),
-  h('div', { class: 'mcp-group' }, mcpAlt.el, knob({ label: 'ALT', dual: true, onTurn: altBy }), mcpKey('ALT HOLD', () => sim.ap.pressAlt(sim.ac.data), 'ALT')),
-  h('div', { class: 'mcp-group' }, mcpVs.el, knob({ label: 'V/S', onTurn: (d) => { if (sim.ap.vert !== 'VS') sim.ap.pressVs(sim.ac.data); sim.ap.vsSel = Math.max(-2000, Math.min(1500, sim.ap.vsSel + d * 100)); } }), mcpKey('V/S', () => sim.ap.pressVs(sim.ac.data), 'VS')),
+  h('div', { class: 'mcp-group' }, mcpHdg.el, knob({ label: 'HDG', onTurn: hdgBy, onPush: hdgSync, readout: () => `HDG ${pad3(sim.ap.hdgBug)}°`, steps: () => [ROW.hdg()] }), mcpKey('HDG SEL', () => sim.ap.pressHdg(sim.ac.data), 'HDG')),
+  h('div', { class: 'mcp-group' }, mcpAlt.el, knob({ label: 'ALT', dual: true, onTurn: altBy, readout: () => `ALT ${sim.ap.altSel} FT`, steps: () => [ROW.alt()] }), mcpKey('ALT HOLD', () => sim.ap.pressAlt(sim.ac.data), 'ALT')),
+  h('div', { class: 'mcp-group' }, mcpVs.el, knob({ label: 'V/S', onTurn: mcpVsBy, readout: () => `V/S ${sim.ap.vsSel > 0 ? '+' : ''}${sim.ap.vsSel}`, steps: () => [{ label: 'V/S', value: () => `${sim.ap.vsSel > 0 ? '+' : ''}${sim.ap.vsSel} FPM`, fine: '100', onStep: (d) => mcpVsBy(d) }] }), mcpKey('V/S', () => sim.ap.pressVs(sim.ac.data), 'VS')),
   h('div', { class: 'mcp-group' }, mcpKey('A/P DISC', () => sim.ap.disconnect(), 'DISC'), mcpKey('TO/GA', () => goAround(), 'TOGA')),
 );
 const mcpKeys = [...mcp.querySelectorAll<HTMLElement>('[data-mcp]')];
-const cockpit = h('main', { class: 'cockpit' }, otw, mcp, panel);
+// ------------------------------------------------------------------ autopilot bar (touch / mouse-free)
+/** GMC 710-style autopilot controller across the panel: big AP mode keys and − / + step buttons for every
+ *  selector (HDG, ALT, the UP/DN target, CRS, BARO, MINS). On by default on tablets; More menu on desktop. */
+const afcsVals: (() => void)[] = [];
+const afcsAp = (label: string, fn: () => void, title: string) => {
+  const b = bkey(label, fn, title);
+  b.dataset.ap = label;
+  b.classList.add('afcs-k');
+  return b;
+};
+const afcsInc = (sign: '−' | '+', aria: string, fn: () => void) => autoRepeat(h('button', { type: 'button', class: 'afcs-inc', 'aria-label': aria }, sign), fn);
+/** a selector readout: tap opens its step pad (fine + coarse steps and the push action) */
+const afcsVal = (row: () => StepRow, k: string, short?: () => string, rows?: () => StepRow[]) => {
+  const lab = h('small', {}, '');
+  const val = h('b', {}, '');
+  const el = h('button', { type: 'button', class: 'afcs-val', 'data-k': k, title: 'Tap for the step buttons', onclick: () => openSteps(el, rows ? rows() : [row()]) }, lab, val);
+  afcsVals.push(() => { const r = row(); setText(lab, r.label); setText(val, short ? short() : r.value()); });
+  return el;
+};
+/** − value + : tap = one step, hold = repeat faster */
+const afcsSel = (row: () => StepRow, k: string, short?: () => string, rows?: () => StepRow[]) =>
+  h('div', { class: 'afcs-sel', 'data-k': k },
+    afcsInc('−', `${row().label} down`, () => row().onStep(-1, false)),
+    afcsVal(row, k, short, rows),
+    afcsInc('+', `${row().label} up`, () => row().onStep(1, false)));
+const afcsGrp = (cls: string, ...kids: HTMLElement[]) => h('div', { class: `afcs-g ${cls}` }, ...kids);
+const afcs = h('section', { class: 'afcs', 'aria-label': 'Autopilot and selectors' },
+  afcsGrp('g-ap', afcsAp('AP', () => doAction('apToggle'), 'Autopilot (A)'), afcsAp('FD', () => sim.ap.toggleFd(sim.ac.data), 'Flight director (Shift+A)')),
+  afcsGrp('g-hdg', afcsAp('HDG', () => sim.ap.pressHdg(sim.ac.data), 'Heading mode (H)'), afcsSel(ROW.hdg, 'hdg', () => `${pad3(sim.ap.hdgBug)}°`)),
+  afcsGrp('g-nav', afcsAp('NAV', () => sim.ap.pressNav(sim.ac.data, sim.navInputs()), 'Nav mode (N)'), afcsAp('APR', () => sim.ap.pressApr(sim.ac.data, sim.navInputs()), 'Approach mode (R)'), afcsAp('BC', () => sim.ap.pressApr(sim.ac.data, sim.navInputs()), 'Back course (auto via APR)')),
+  afcsGrp('g-alt', afcsAp('ALT', () => sim.ap.pressAlt(sim.ac.data), 'Altitude hold (L)'), afcsSel(ROW.alt, 'alt', () => String(sim.ap.altSel), () => [ROW.alt(), ROW.vert()])),
+  afcsGrp('g-vert', afcsAp('VS', () => sim.ap.pressVs(sim.ac.data), 'Vertical speed (Y)'), afcsAp('FLC', () => sim.ap.pressFlc(sim.ac.data), 'Flight level change (Shift+K)'),
+    afcsAp('DN', () => sim.ap.nose(-1), 'Nose down: VS −100, FLC speed +1, pitch −0.5°'), afcsVal(ROW.vert, 'vert', () => { const v = sim.ap.vert; return v === 'VS' ? `${sim.ap.vsSel > 0 ? '+' : ''}${sim.ap.vsSel}` : v === 'FLC' ? `${Math.round(sim.ap.iasSel)}` : `${sim.ap.pitchRef > 0 ? '+' : ''}${sim.ap.pitchRef.toFixed(1)}°`; }), afcsAp('UP', () => sim.ap.nose(1), 'Nose up: VS +100, FLC speed −1, pitch +0.5°')),
+  afcsGrp('g-nav2', afcsVal(ROW.crs, 'crs', () => `${pad3(sim.course())}°`), afcsVal(ROW.baro, 'baro', () => sim.av.baro.toFixed(2)), afcsVal(ROW.mins, 'mins', () => (sim.av.minimums === null ? 'OFF' : String(sim.av.minimums)))),
+);
+let afcsBar = store.get<boolean | null>('ifr.afcsBar', null) ?? touchUi;
+function setAfcsBar(on: boolean, persist = true) {
+  afcsBar = on;
+  if (persist) store.set('ifr.afcsBar', on);
+  cockpit.classList.toggle('with-afcs', on && cockpitType !== 'airliner');
+  afcsSw.classList.toggle('on', on);
+  afcsItem.setAttribute('aria-checked', String(on));
+  fitSoon();
+}
+const cockpit = h('main', { class: 'cockpit' }, otw, mcp, afcs, panel);
 /** only the G1000 has engraved PFD / MFD labels; the steam panel and the airliner displays carry none */
 const BEZEL_LABELS: Record<CockpitType, [string, string]> = { g1000: ['PFD', 'MFD'], steam: ['', ''], airliner: ['', ''] };
 let explain: ExplainOverlay | null = null;
@@ -711,11 +886,13 @@ function toggleExplain(force?: boolean) {
 const TOUR = [
   { sel: '.tb-actions .btn.primary', title: 'Flight Center', text: 'Every flight lives here, sorted by type: approaches, holdings and procedures, IFR cross-country flights, basics, abnormals, checkrides, your own IFR circuits and the learning paths.' },
   { sel: '.sitbar', title: 'Situation bar', text: 'The essentials at a glance: flight phase, next fix and its altitude constraint, selected altitude, wind with headwind/crosswind and drift, distance to minimums, IMC or VMC.' },
-  { sel: '.otw', title: 'Outside view', text: 'A 3D view of the Ardent Islands with real runway lighting and PAPI. Drag to look around, double-click to recentre. Tab cycles the layout: Standard, Large view, Immersive, Instruments.' },
+  { sel: '.otw', title: 'Outside view', text: 'A 3D view of the Ardent Islands with real runway lighting and PAPI. Drag to look around, double-click to recentre. Tab cycles the layout (Standard, Large view, Immersive, Instruments); V cycles the camera (Cockpit, Chase, Orbit, Tower, Fly-by) — both also in the Layout menu.' },
   { sel: '.bezel.pfd .screen', title: 'Primary flight display', text: 'Attitude, airspeed, altitude, vertical speed and the HSI. Press F1 at any time to label and explain every instrument — in all three cockpits.' },
-  { sel: '.bezel.pfd .side.left', title: 'Knobs & autopilot', text: 'Drag or scroll a knob to turn it; on dual knobs the outer ring is coarse and the inner knob fine. Click without dragging to push. The keys are the autopilot: HDG, NAV, APR, ALT, VS, FLC.' },
+  { sel: '.bezel.pfd .side.left', title: 'Knobs & autopilot', text: touchUi
+    ? 'Tap a knob for big − / + step buttons (hold to repeat) and its push action; or drag it to turn it. The autopilot bar above the displays has the mode keys and − / + for heading and altitude.'
+    : 'Drag or scroll a knob to turn it; on dual knobs the outer ring is coarse and the inner knob fine. Click without dragging to push; right-click for − / + step buttons. The keys are the autopilot: HDG, NAV, APR, ALT, VS, FLC.' },
   { sel: '.bezel.mfd', title: 'Multi-function display', text: 'Moving map with terrain and the active flight plan. RANGE zooms; PROC loads an approach; ACT activates it.' },
-  { sel: '.footer', title: 'Flight controls', text: 'Throttle, flaps, trim and yoke position. Use a joystick or yoke (Controllers in the More menu), the keyboard (arrows, +/−, Home/End, F), or the touch stick.' },
+  { sel: '.footer', title: 'Flight controls', text: 'Throttle, flaps, trim and yoke position. Use a joystick or yoke (Controllers in the More menu), the keyboard (arrows, +/−, Home/End, F — sensitivity in the More menu), or the touch stick (drag it; it eases back to neutral when you let go).' },
   { sel: '.tb-group', title: 'EFB & CDU', text: 'EFB: approach plates (your aircraft is drawn on them), airport data, navlog, weather and checklists. CDU: the flight management computer — route, departure/arrival, legs, holds, progress.' },
   { sel: '.tb-actions > .menu-wrap:last-child', title: 'Everything else', text: 'Procedures, Direct-To and the debrief; the weather station and circuit builder; learning paths, training records and keyboard shortcuts; Settings and controllers.' },
 ];
@@ -731,6 +908,9 @@ function setCockpit(t: CockpitType, announce = true) {
   panel.classList.remove('theme-g1000', 'theme-steam', 'theme-airliner');
   panel.classList.add(`theme-${t}`);
   cockpit.classList.toggle('with-mcp', t === 'airliner');
+  cockpit.classList.toggle('with-afcs', afcsBar && t !== 'airliner');
+  cockpit.dataset.theme = t;
+  closeSteps();
   pfdBezel.querySelector('[data-l]')!.textContent = BEZEL_LABELS[t][0];
   mfdBezel.querySelector('[data-r]')!.textContent = BEZEL_LABELS[t][1];
   cockpitSeg.querySelectorAll('button').forEach((b) => { const on = (b as HTMLElement).dataset.c === t; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
@@ -744,6 +924,9 @@ const thr = h('input', { type: 'range', min: 0, max: 100, value: 60, class: 'lev
 let thrDragging = false;
 thr.addEventListener('pointerdown', () => (thrDragging = true));
 window.addEventListener('pointerup', () => (thrDragging = false));
+window.addEventListener('pointercancel', () => (thrDragging = false));
+thr.addEventListener('lostpointercapture', () => (thrDragging = false));
+thr.addEventListener('change', () => (thrDragging = false));
 thr.addEventListener('input', () => (sim.controls.throttle = Number(thr.value) / 100));
 thr.addEventListener('keydown', (e) => e.stopPropagation());
 const thrPct = h('b', {}, '');
@@ -780,7 +963,7 @@ const footer = h('footer', { class: 'footer pedestal' },
   group('Trim', h('button', { class: 'ped-btn', onclick: () => (sim.controls.trim = Math.max(-1, sim.controls.trim - 0.05)), title: 'Nose down (Home)' }, '▼'), h('div', { class: 'trim-box' }, trimWheel, h('div', { class: 'trim-scale' }, h('span', {}, 'DN'), h('b', {}, 'T/O'), h('span', {}, 'UP'), trimMark)), h('button', { class: 'ped-btn', onclick: () => (sim.controls.trim = Math.min(1, sim.controls.trim + 0.05)), title: 'Nose up (End)' }, '▲')),
   group('Yoke & rudder', stick, h('div', { class: 'ped-col' }, rudderBar, brakeLight)),
   group('Chrono', h('div', { class: 'chrono' }, chronoRead, h('div', { class: 'chrono-btns' }, chronoSS, chronoRst))),
-  group('Controller', h('button', { class: 'ped-joy', onclick: () => joyModal.open(), title: 'Flying with the keyboard — click to connect a joystick, yoke or pedals' }, joyDot, joyLbl)),
+  group('Controller', h('button', { class: 'ped-joy', 'data-tip': 'Joystick, yoke or gamepad (Controllers in the More menu)', onclick: () => joyModal.open(), title: 'Flying with the keyboard — click to connect a joystick, yoke or pedals' }, joyDot, joyLbl)),
   h('div', { class: 'spacer' }),
   h('div', { class: 'ped-keys' }, h('span', {}, h('kbd', {}, 'F1'), ' explain'), h('span', {}, h('kbd', {}, '?'), ' shortcuts'), h('span', {}, h('kbd', {}, 'G'), ' go-around'), h('span', {}, h('kbd', {}, 'K'), ' charts')),
 );
@@ -788,23 +971,53 @@ const footer = h('footer', { class: 'footer pedestal' },
 document.getElementById('app')!.append(topbar, cockpit, footer);
 document.body.append(charts.el, ios.el, chromeHandle);
 
-// touch stick
+// touch stick: relative drag (the yoke does not jump to where the finger lands), eased back to neutral on release
 {
-  let active = false;
-  const move = (e: PointerEvent) => {
-    const r = stick.getBoundingClientRect();
-    const x = Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width) * 2 - 1));
-    const y = Math.max(-1, Math.min(1, ((e.clientY - r.top) / r.height) * 2 - 1));
-    input.virtual.roll = x * 0.7;
-    input.virtual.pitch = y * 0.7;
+  let active: { id: number; x0: number; y0: number; vx: number; vy: number } | null = null;
+  let ease = 0;
+  const show = (x: number, y: number) => {
     stickDot.style.left = `${50 + x * 40}%`;
     stickDot.style.top = `${50 + y * 40}%`;
   };
-  stick.addEventListener('pointerdown', (e) => { active = true; stick.classList.add('active'); stick.setPointerCapture(e.pointerId); move(e); });
-  stick.addEventListener('pointermove', (e) => active && move(e));
-  const end = () => { active = false; stick.classList.remove('active'); input.virtual.roll = input.virtual.pitch = 0; };
+  const move = (e: PointerEvent) => {
+    if (!active || e.pointerId !== active.id) return;
+    const r = stick.getBoundingClientRect();
+    // full deflection = half the pad (and at least 60 px of finger travel on a small pad)
+    const span = Math.max(30, r.width / 2);
+    const x = Math.max(-1, Math.min(1, active.vx + (e.clientX - active.x0) / span));
+    const y = Math.max(-1, Math.min(1, active.vy + (e.clientY - active.y0) / span));
+    input.virtual.roll = x * 0.7;
+    input.virtual.pitch = y * 0.7;
+    show(x, y);
+  };
+  stick.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    cancelAnimationFrame(ease);
+    active = { id: e.pointerId, x0: e.clientX, y0: e.clientY, vx: input.virtual.roll / 0.7, vy: input.virtual.pitch / 0.7 };
+    stick.classList.add('active');
+    try { stick.setPointerCapture(e.pointerId); } catch { /* synthetic */ }
+  });
+  stick.addEventListener('pointermove', move);
+  const end = (e: PointerEvent) => {
+    if (!active || e.pointerId !== active.id) return;
+    active = null;
+    // a short ease back to neutral, never a snap (a snap is a control jerk the AP-off aircraft feels)
+    const t0 = performance.now();
+    const r0 = input.virtual.roll;
+    const p0 = input.virtual.pitch;
+    const step = () => {
+      const k = Math.max(0, 1 - (performance.now() - t0) / 220);
+      input.virtual.roll = r0 * k;
+      input.virtual.pitch = p0 * k;
+      show(input.virtual.roll / 0.7, input.virtual.pitch / 0.7);
+      if (k > 0 && !active) ease = requestAnimationFrame(step);
+      else if (!active) stick.classList.remove('active');
+    };
+    step();
+  };
   stick.addEventListener('pointerup', end);
   stick.addEventListener('pointercancel', end);
+  stick.addEventListener('lostpointercapture', end);
 }
 
 // softkeys
@@ -1017,7 +1230,8 @@ window.addEventListener('keydown', (e) => {
     case 'n': sim.ap.pressNav(d, n); break;
     case 'r': sim.ap.pressApr(d, n); break;
     case 'l': sim.ap.pressAlt(d); break;
-    case 'v': sim.ap.pressVs(d); break;
+    case 'v': cycleView(e.shiftKey ? -1 : 1); break;
+    case 'y': sim.ap.pressVs(d); break;
     case 'k': if (e.shiftKey) sim.ap.pressFlc(d); else charts.toggle(); break;
     case 'q': hdgBy(-1, e.shiftKey); break;
     case 'e': hdgBy(1, e.shiftKey); break;
@@ -1117,6 +1331,50 @@ function setCoachCollapsed(on: boolean) {
 }
 const foldBtn = (collapsed: boolean, fn: () => void, what: string) => h('button', { class: 'coach-fold', type: 'button', 'aria-expanded': String(!collapsed), 'aria-label': collapsed ? `Expand ${what}` : `Collapse ${what}`, title: collapsed ? `Expand ${what}` : `Collapse ${what}`, onclick: fn }, svgIcon(collapsed ? I.chevDown : I.chevUp, 15));
 let coachTimer: HTMLElement | null = null;
+/** the setup checklist of the current step (source, frequency, course, altitude, entry), folded on request */
+let coachSetupOpen = store.get('ifr.coachSetup', true);
+let setupAllOpen = false;
+function setupChecklist(items: SetupItem[]): HTMLElement {
+  const checks = items.filter((i) => i.ok !== null);
+  const done = checks.filter((i) => i.ok).length;
+  const all = checks.length > 0 && done === checks.length;
+  // everything set: the checklist folds to its header (a tap shows the items again)
+  const open = all ? setupAllOpen : coachSetupOpen;
+  const toggle = () => {
+    if (all) setupAllOpen = !setupAllOpen;
+    else { coachSetupOpen = !coachSetupOpen; store.set('ifr.coachSetup', coachSetupOpen); }
+    coachKey = '';
+    updateCoach();
+  };
+  const head = h('button', { type: 'button', class: 'setup-h', 'aria-expanded': String(open), title: open ? 'Fold the setup checklist' : 'Show the setup checklist', onclick: toggle },
+    h('b', {}, 'Set up'),
+    h('span', { class: `setup-n${all ? ' all' : ''}` }, checks.length ? (all ? 'All set' : `${done} of ${checks.length} done`) : ''),
+    svgIcon(open ? I.chevUp : I.chevDown, 14));
+  const firstInfo = items.find((i) => i.ok === null);
+  const compact = cockpit.classList.contains('coach-compact') && !coachDetails;
+  // short of space and everything set: one quiet line (Details shows the whole list)
+  if (compact && all && !setupAllOpen) return h('div', { class: 'setup-done' }, svgIcon(I.check, 13), h('span', {}, 'Set up complete'));
+  const wrap = h('div', { class: `setup${open ? ' open' : ''}${all ? ' all' : ''}` }, head);
+  // folded: nothing more, except when everything is set and there is room — the instruction to fly (the hold
+  // entry, how to fly it) stays in view; short of space the readout above already names the entry
+  if (!open && !(all && firstInfo && !compact)) return wrap;
+  const shown = open ? items : [firstInfo!];
+  // short of space (small outside view): what is still to do, one chip each, and the first instruction (the hold
+  // entry, cut to one line, the whole text in its tip); the full list behind Details
+  if (compact) {
+    wrap.classList.add('compact');
+    wrap.append(h('div', { class: 'setup-chips' }, ...shown.filter((i) => i.ok === false || i === firstInfo).map((i) =>
+      h('span', { class: `setup-chip ${i.ok === null ? 'info' : 'todo'}`, title: i.detail ? `${i.label} — ${i.detail}` : i.label },
+        i.ok === null ? null : h('i', { class: 'mk-todo', 'aria-hidden': 'true' }), h('span', { class: 'setup-chip-t' }, i.label)))));
+    return wrap;
+  }
+  wrap.append(h('ul', { class: 'setup-list', 'aria-label': 'Setup checklist' }, ...shown.map((i) =>
+    h('li', { class: i.ok === null ? 'info' : i.ok ? 'ok' : 'todo' },
+      i.ok === null ? h('i', { class: 'mk-info', 'aria-hidden': 'true' }) : i.ok ? svgIcon(I.check, 13) : h('i', { class: 'mk-todo', 'aria-hidden': 'true' }),
+      h('span', { class: 'setup-t' }, h('b', {}, i.label), i.detail ? h('small', {}, i.detail) : null),
+      h('span', { class: 'sr-only' }, i.ok === null ? '' : i.ok ? ' (done)' : ' (to do)')))));
+  return wrap;
+}
 const coachBtn = (label: string, fn: () => void, cls = '', title = '') => h('button', { class: `btn ${cls}`, type: 'button', title: title || label, onclick: fn }, label);
 function updateCoach() {
   updateSitbar();
@@ -1131,8 +1389,16 @@ function updateCoach() {
     }
     const ctx = run.ctx(0);
     const ro = st?.readout ? st.readout(ctx) : '';
+    const ride0 = sim.assess.mode === 'checkride';
+    let setupItems: SetupItem[] = [];
+    if (st?.setup && !ride0 && !run.finished) {
+      try { setupItems = st.setup(ctx); } catch { setupItems = []; }
+    }
     if (coachTimer) setText(coachTimer, fmtTime(run.totalT));
-    const key = `lesson|${run.idx}|${run.currentViolation}|${ro}|${!!run.finished}|${coachDetails}|${coachCollapsed}`;
+    const setupKey = setupItems.map((i) => `${i.label}:${i.ok}`).join(',');
+    // iPad portrait: the lesson panel covers the pause veil, so it carries the Resume button itself
+    const resumeHere = sim.paused && !sim.ac.s.crashed && !run.finished && document.body.classList.contains('portrait');
+    const key = `lesson|${run.idx}|${run.currentViolation}|${ro}|${!!run.finished}|${coachDetails}|${coachCollapsed}|${setupKey}|${coachSetupOpen}|${setupAllOpen}|${cockpit.classList.contains('coach-compact')}|${resumeHere}`;
     if (key === coachKey) return;
     coachKey = key;
     coach.innerHTML = '';
@@ -1155,18 +1421,22 @@ function updateCoach() {
     coach.append(h('div', { class: 'next' }, st ? st.text : run.finished ? 'Complete' : ''));
     if (run.currentViolation && !ride) coach.append(h('div', { class: 'viol' }, svgIcon(I.warning, 14), h('span', {}, run.currentViolation)));
     if (coachCollapsed) return;
-    if (ro) coach.append(h('div', { class: 'ro' }, ro));
+    const setupEl = setupItems.length ? setupChecklist(setupItems) : null;
+    // short of space, the to-do chips replace the readout (the entry is one of them); once all is set it is back
+    if (ro && !setupEl?.querySelector('.setup-chip.todo')) coach.append(h('div', { class: 'ro' }, ro));
+    if (setupEl) coach.append(setupEl);
     const more = h('div', { class: 'coach-more' });
     if (st?.hint && !ride) more.append(h('div', { class: 'hint' }, st.hint));
     if (n > 1) {
       const others = run.rt.steps.map((x, i) => ({ x, i })).filter(({ i }) => i !== run.idx);
       more.append(h('ol', { class: 'steps', 'aria-label': 'Other steps' }, ...others.map(({ x, i }) => h('li', { class: i < run.idx ? 'ok' : 'todo' }, i < run.idx ? svgIcon(I.check, 13) : h('i', { class: 'dot' }), h('span', {}, x.text)))));
     }
-    const hasMore = more.childElementCount > 0;
-    if (hasMore) coach.append(more);
+    const hasMore = more.childElementCount > 0 || setupItems.length > 0;
+    if (more.childElementCount) coach.append(more);
     coach.append(h('div', { class: 'acts' },
       hasMore ? coachBtn(coachDetails ? 'Hide details' : 'Details', () => { coachDetails = !coachDetails; store.set('ifr.coachDetails', coachDetails); updateCoach(); }, 'coach-more-btn', 'Show the hint and the other steps') : null,
       h('span', { class: 'acts-sp' }),
+      resumeHere ? coachBtn('Resume', () => { if (sim.paused) togglePause(); }, 'primary coach-resume', 'Resume the flight') : null,
       run.ex.plate ? coachBtn('Plate', () => { charts.toggle(true); charts.show(run.ex.plate!); }, '', 'Open the approach plate in the EFB') : null,
       coachBtn('Restart', () => pickExercise(run.ex, lessonPath), '', 'Restart this exercise from the briefing'),
       coachBtn('End', () => { if (confirm('End lesson and see debrief?')) endFlight(); }, 'danger', 'End the exercise and see the result'),
@@ -1333,7 +1603,9 @@ function frame(now: number) {
 }
 function frameBody(now: number) {
   perfT = performance.now();
-  const dt = Math.min(0.1, (now - last) / 1000);
+  // the first rAF timestamp can be older than the module's performance.now(): a negative dt would poison the
+  // flight model with NaN on the first frame
+  const dt = Math.max(0, Math.min(0.1, (now - last) / 1000));
   last = now;
   if (intro.isOpen) return; // the start page covers everything: no sim, no drawing
   if (sim.ac.s.crashed && !crashShown && !sim.replaying) showCrash(sim.ac.s.crashed);
@@ -1455,13 +1727,14 @@ function frameBody(now: number) {
   const joy = input.current();
   setClass(joyDot, 'on', !!joy);
   setText(joyLbl, joy ? joy.id.split('(')[0].trim().slice(0, 22) || 'Joystick' : 'Keyboard');
-  if (!apKeyCache.length || !apKeyCache[0].isConnected) apKeyCache = [...pfdBezel.querySelectorAll<HTMLElement>('[data-ap]')];
+  if (!apKeyCache.length || !apKeyCache[0].isConnected) apKeyCache = [...cockpit.querySelectorAll<HTMLElement>('[data-ap]')];
   const ap = sim.ap;
   for (const b of apKeyCache) {
     const l = b.dataset.ap;
     const on = (l === 'AP' && ap.ap) || (l === 'FD' && ap.fd) || (l === 'HDG' && ap.engaged && ap.lat === 'HDG') || (l === 'ALT' && ap.engaged && ap.vert === 'ALT') || (l === 'NAV' && ap.engaged && (['GPS', 'VOR', 'LOC'].includes(ap.lat) || !!ap.latArmed)) || (l === 'APR' && ap.apprMode) || (l === 'BC' && ap.lat === 'BC') || (l === 'VS' && ap.engaged && ap.vert === 'VS') || (l === 'FLC' && ap.engaged && ap.vert === 'FLC');
     setClass(b, 'on', !!on);
   }
+  if (afcsBar && cockpitType !== 'airliner') for (const f of afcsVals) f();
   coachAcc += dt;
   if (coachAcc > 0.25) {
     coachAcc = 0;
@@ -1470,16 +1743,148 @@ function frameBody(now: number) {
   mark('dom');
 }
 
+// ------------------------------------------------------------------ instructor pairing (phone / tablet companion)
+/** what the shell gives the instructor companion (src/connect/remoteLink.ts, src/ui/remotePair.ts): a live snapshot
+ *  of the flight and the command entry point (the link validates commands; they are re-checked here) */
+let remoteFrozen = false;
+const num = (v: unknown, lo: number, hi: number): number | null => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : null);
+function remoteSnapshot(): RemoteSnapshot {
+  const d = sim.ac.data;
+  const s0 = sim.ac.s;
+  const p = toReal({ lat: s0.lat, lon: s0.lon });
+  const g = sim.fp.out;
+  const to = g.valid ? sim.fp.wpts[sim.fp.active] : null;
+  const w = sim.weather;
+  return {
+    t: sim.time,
+    lat: p.lat,
+    lon: p.lon,
+    altFt: Math.round(sim.indicatedAlt()),
+    iasKt: Math.round(d.iasKt),
+    gsKt: Math.round(d.gsKt),
+    hdg: Math.round(d.hdgTrue),
+    trk: Math.round(d.trackTrue),
+    vsFpm: Math.round(d.vsFpm),
+    pitch: Math.round(d.pitchDeg * 10) / 10,
+    roll: Math.round(d.rollDeg * 10) / 10,
+    onGround: s0.onGround,
+    crashed: s0.crashed || null,
+    phase: sim.rec.phase(sim),
+    lesson: lesson ? { id: lesson.ex.id, title: lesson.ex.title, step: lesson.step?.text ?? '', stepIdx: lesson.idx, steps: lesson.rt.steps.length } : null,
+    flight: lesson?.ex.title ?? sim.scenario?.name ?? 'Free flight',
+    wpt: to ? { ident: to.ident, distNm: Math.round(g.distNm * 10) / 10 } : null,
+    approach: sim.fp.approach ? { id: sim.fp.approach.id, name: sim.fp.approach.name, airport: sim.fp.approach.airport, active: sim.fp.approachActive } : null,
+    failures: { ...sim.failures },
+    weather: { windDir: Math.round(w.windDir), windKt: Math.round(w.windKt), gustKt: Math.round(w.gustKt), ceilingFt: Math.round(w.ceilingFt), visibilitySm: w.visibilitySm, turbulence: w.turbulence, qnh: w.qnh },
+    ap: { on: sim.ap.ap, lat: sim.ap.lat, vert: sim.ap.vert, hdgBug: sim.ap.hdgBug, altSel: sim.ap.altSel },
+    paused: sim.paused,
+    frozen: remoteFrozen,
+  };
+}
+function remoteCommand(c: RemoteCommand) {
+  if (!c || typeof c !== 'object' || typeof (c as { type?: unknown }).type !== 'string') return;
+  const say = (m: string, k: 'info' | 'good' | 'warn' | 'bad' = 'warn') => { sim.rec.log(sim.time, 'info', `Instructor: ${m}`); toast(`Instructor: ${m}`, k, 5000); };
+  switch (c.type) {
+    case 'pause': sim.paused = true; break;
+    case 'resume': if (!remoteFrozen) sim.paused = false; break;
+    case 'freeze': remoteFrozen = true; sim.paused = true; say('simulation frozen'); break;
+    case 'unfreeze': remoteFrozen = false; sim.paused = false; say('simulation running'); break;
+    case 'restart': Modal.closeAll(); restartFlight(); break;
+    case 'end': endFlight(); break;
+    case 'reposition': {
+      const ok = (['iaf', 'if', 'final10', 'final5', 'runway'] as const).includes(c.where) && sim.reposition(c.where);
+      if (ok) say(`repositioned (${c.where})`, 'info');
+      break;
+    }
+    case 'failure':
+      if (typeof c.on === 'boolean' && c.key in FAILURE_LABELS) { sim.setFailure(c.key, c.on); say(`${c.on ? 'failed' : 'restored'} ${FAILURE_LABELS[c.key]}`, c.on ? 'warn' : 'good'); }
+      break;
+    case 'weather': {
+      const w = sim.weather;
+      const x = c as Record<string, unknown>;
+      const set = (k: 'ceilingFt' | 'visibilitySm' | 'windDir' | 'windKt' | 'gustKt' | 'turbulence', lo: number, hi: number) => { const v = num(x[k], lo, hi); if (v !== null) w[k] = v; };
+      set('ceilingFt', 0, 30000); set('visibilitySm', 0, 50); set('windDir', 0, 360); set('windKt', 0, 80); set('gustKt', 0, 100); set('turbulence', 0, 1);
+      if (w.gustKt && w.gustKt < w.windKt) w.gustKt = 0;
+      say(`weather changed — wind ${String(Math.round(w.windDir)).padStart(3, '0')}/${Math.round(w.windKt)}${w.gustKt ? `G${Math.round(w.gustKt)}` : ''}`, 'info');
+      break;
+    }
+    case 'vector': {
+      const hdg = num(c.hdg, 1, 360);
+      const alt = num(c.alt, 0, 18000);
+      const parts: string[] = [];
+      if (hdg !== null) parts.push(`turn heading ${pad3(hdg)}`);
+      if (alt !== null) parts.push(`${alt > sim.indicatedAlt() ? 'climb' : 'descend'} and maintain ${Math.round(alt / 100) * 100}`);
+      if (parts.length) { const t = parts.join(', '); atc.say(t.charAt(0).toUpperCase() + t.slice(1)); sim.rec.log(sim.time, 'info', `ATC (instructor): ${t}`); }
+      break;
+    }
+    case 'directTo':
+      if (typeof c.ident === 'string' && /^[A-Z0-9]{2,7}$/i.test(c.ident)) {
+        if (sim.directTo(c.ident.toUpperCase())) { atc.say(`Proceed direct ${c.ident.toUpperCase()}`); sim.rec.log(sim.time, 'info', `ATC (instructor): direct ${c.ident.toUpperCase()}`); }
+        else toast(`Instructor: unknown fix ${c.ident}`, 'warn');
+      }
+      break;
+    case 'message':
+      if (typeof c.text === 'string' && c.text.trim()) say(c.text.trim().slice(0, 200));
+      break;
+    default: break;
+  }
+  syncPauseBtn();
+}
+const remoteApi: RemoteHostApi = { sim, snapshot: remoteSnapshot, command: remoteCommand };
+/** the pairing window (QR + code) loads on demand: peerjs and the QR generator stay out of the main bundle */
+async function pairInstructor() {
+  try {
+    const mod = await import('./ui/remotePair');
+    mod.openRemotePair(remoteApi);
+  } catch (e) {
+    console.warn('instructor pairing', e);
+    toast('Could not open instructor pairing', 'bad');
+  }
+}
+
 // test/automation hook
-(window as unknown as { __ifr: unknown }).__ifr = { sim, get outside() { return outside; }, thr27: runway('PARD', '27').threshold, charts: (id: string) => chartIndex().find((c) => c.id === id)?.render() ?? '', world: () => import('./nav/world'), lesson: (id: string) => pickExercise(exercise(id), null), perf };
+(window as unknown as { __ifr: unknown }).__ifr = { sim, get outside() { return outside; }, thr27: runway('PARD', '27').threshold, charts: (id: string) => chartIndex().find((c) => c.id === id)?.render() ?? '', world: () => import('./nav/world'), lesson: (id: string) => pickExercise(exercise(id), null), perf, remote: remoteApi, setView: (v: ViewMode) => setView(v), afcs: (on: boolean) => setAfcsBar(on) };
 
 // ------------------------------------------------------------------ boot
 setOtw(otwMode);
 setCockpit(cockpitType, false);
+setAfcsBar(afcsBar, false);
+new ResizeObserver(fitSoon).observe(afcs);
+// portrait: the outside view grows with the lesson panel
+new ResizeObserver(() => { if (document.body.classList.contains('portrait')) fitSoon(); }).observe(coach);
 requestAnimationFrame(() => setTimeout(() => void initOutside(), 50));
 // keep the bezel controls inside the bezel whatever the window size: ONE scale for every side column of
 // both bezels (PFD and MFD knobs and keys are always the same size), plus a few sizes the CSS lays out with
+/** tablet portrait (and any narrow, tall window): instruments first — the PFD then the MFD, each at its 4:3
+ *  aspect across the width, the autopilot bar above them, the outside view in what is left */
+const portraitMq = matchMedia('(orientation: portrait) and (max-width: 1100px)');
+function fitPortrait() {
+  const on = portraitMq.matches;
+  document.body.classList.toggle('portrait', on);
+  if (!on) { cockpit.style.removeProperty('--bz-h'); return; }
+  const H = cockpit.clientHeight;
+  const W = cockpit.clientWidth;
+  if (H < 50 || W < 50) return;
+  const strip = (afcs.offsetParent ? afcs.offsetHeight : 0) + (mcp.offsetParent ? mcp.offsetHeight : 0);
+  const dock = otwMode === 'none' ? otw.offsetHeight : 0;
+  const n = otwMode === 'big' || otwMode === 'visual' ? 1 : 2;
+  // the outside view keeps room for the situation bar, the lesson panel (folded to its essentials) and a strip of view
+  const sbH = sitbar.offsetHeight || 80;
+  const coachOn = coach.offsetParent !== null && !coach.classList.contains('empty') && getComputedStyle(coach).display !== 'none';
+  const coachH = coachOn ? Math.min(coach.scrollHeight, H * 0.23) + 12 : 0;
+  const base = otwMode === 'normal' ? Math.max(130, Math.min(240, H * 0.15)) : H * 0.4;
+  const otwMin = otwMode === 'none' ? 0 : Math.max(base, sbH + 12 + Math.max(coachH, 70));
+  const scr = pfdBezel.querySelector<HTMLElement>('.screen')!;
+  const chrome = Math.max(24, pfdBezel.offsetHeight - scr.offsetHeight);
+  const sideW = parseFloat(getComputedStyle(cockpit).getPropertyValue('--side-w')) || 74;
+  // panel padding + bezel padding + the two grid gaps
+  const fitW = (W - 16 - 16 - 16 - 2 * sideW) * 0.75 + chrome;
+  const per = (H - strip - dock - otwMin - 16 - (n - 1) * 8) / n;
+  cockpit.style.setProperty('--bz-h', `${Math.floor(Math.max(170, Math.min(fitW, per)))}px`);
+}
+portraitMq.addEventListener?.('change', () => fitSoon());
 function fitSides() {
+  fitPortrait();
   const sides = [...panel.querySelectorAll<HTMLElement>('.bezel .side')].filter((x) => x.offsetParent !== null);
   for (const side of sides) side.style.zoom = '1';
   let k = 1;
@@ -1494,6 +1899,11 @@ function fitSides() {
   cockpit.style.setProperty('--pfd-w', `${pfdBezel.offsetWidth}px`);
   cockpit.style.setProperty('--pfd-h', `${pfdBezel.offsetHeight}px`);
   document.body.style.setProperty('--ped-h', `${footer.offsetHeight}px`);
+  document.body.style.setProperty('--afcs-h', `${afcs.offsetParent ? afcs.offsetHeight : 0}px`);
+  // overlays start under the situation bar, whatever its height (two rows in portrait)
+  if (otwMode !== 'none' && sitbar.offsetHeight > 20) document.body.style.setProperty('--sb-h', `${sitbar.offsetHeight}px`);
+  else document.body.style.removeProperty('--sb-h');
+  document.body.style.setProperty('--tb-h', `${topbar.offsetHeight}px`);
   // the lesson panel shows its hint and steps behind "Details" when its space is short
   const room = otwMode === 'none' ? 0 : otwMode === 'visual' ? otw.clientHeight - pfdBezel.offsetHeight - 150 : otw.clientHeight - 120;
   cockpit.classList.toggle('coach-compact', room < 300);
@@ -1510,7 +1920,22 @@ setTimeout(fitSides, 100);
 updateHeader();
 updateCoach();
 requestAnimationFrame(frame);
-if (introWanted()) intro.show();
+// deep links: ?lesson=<exerciseId>[&path=<pathId>] opens that lesson's briefing (IFR Academy "Fly it now"),
+// ?builder opens the IFR circuit builder; both skip the start page
+const deepQ = new URLSearchParams(location.search);
+const deepLesson = deepQ.get('lesson');
+const deepBuilder = deepQ.has('builder');
+if (deepLesson) {
+  try {
+    const ex = exercise(deepLesson);
+    const path = PATHS.find((p) => p.id === deepQ.get('path') && p.exercises.includes(ex.id)) ?? null;
+    pickExercise(ex, path);
+  } catch {
+    fc.open();
+    toast(`Lesson "${deepLesson}" not found — pick one in the Flight Center`, 'warn', 6000);
+  }
+} else if (deepBuilder) builder.edit();
+else if (introWanted()) intro.show();
 else fc.open();
 // shared circuit: #circuit=<base64>
 if (location.hash.startsWith('#circuit=')) {

@@ -87,6 +87,51 @@ function saveProfiles(p: Record<string, Profile>) {
   }
 }
 
+const SENS_STORE = 'ifr.kbSens';
+const clampSens = (v: number) => (Number.isFinite(v) ? Math.max(0.5, Math.min(1.6, v)) : 1);
+function loadSens(): number {
+  try {
+    const v = localStorage.getItem(SENS_STORE);
+    return v === null ? 1 : clampSens(Number(v));
+  } catch {
+    return 1;
+  }
+}
+/** keyboard sensitivity presets, as offered in the UI */
+export const KB_SENSITIVITY: readonly { v: number; label: string }[] = [
+  { v: 0.6, label: 'Gentle' },
+  { v: 1, label: 'Normal' },
+  { v: 1.4, label: 'Brisk' },
+];
+
+/** deflection limits for a held key: normal / with Shift */
+const KB_LIMIT = { pitch: [0.42, 1], roll: [0.5, 1], yaw: [0.6, 1] } as const;
+
+/**
+ * Pure step of one keyboard axis (exported for tests). `held` keeps the hold time per axis (signed: + while
+ * the key pushes the axis positive). Returns the new deflection in -1..1.
+ */
+export function kbAxisStep(v: number, input: number, big: boolean, dt: number, sens: number, held: Record<string, number>, name: 'pitch' | 'roll' | 'yaw'): number {
+  if (!(dt > 0)) return v;
+  const h0 = held[name] ?? 0;
+  if (!input) {
+    held[name] = 0;
+    // ease back to neutral (time constant ~0.18 s), and snap the last bit
+    const nv = v * Math.exp(-dt / 0.18);
+    return Math.abs(nv) < 0.01 ? 0 : nv;
+  }
+  const t = Math.sign(h0) === input ? Math.abs(h0) + dt : dt;
+  held[name] = t * input;
+  const [lo, hi] = KB_LIMIT[name];
+  // the limit grows with the hold time: a tap is a small nudge, a held key reaches the limit after ~1.2 s
+  const ramp = Math.min(1, 0.35 + (t * sens) / 1.2);
+  const lim = Math.min(1, (big ? hi : lo) * Math.min(1.25, 0.75 + sens * 0.25) * ramp);
+  const target = input * lim;
+  // first-order approach to the target; opposite direction (passing neutral) is faster
+  const tau = (Math.sign(v) !== 0 && Math.sign(v) !== input ? 0.07 : big ? 0.12 : 0.22) / sens;
+  return v + (target - v) * (1 - Math.exp(-dt / tau));
+}
+
 export interface InputCallbacks {
   onAction: (a: ButtonAction) => void;
 }
@@ -166,6 +211,34 @@ export class InputManager {
   }
 
   /**
+   * Keyboard sensitivity (0.5 gentle … 1 normal … 1.6 brisk): scales how fast and how far a held arrow key
+   * deflects the virtual yoke. Persisted in localStorage ('ifr.kbSens').
+   */
+  get sensitivity(): number {
+    return this.sens;
+  }
+  set sensitivity(v: number) {
+    this.sens = clampSens(v);
+    try {
+      localStorage.setItem(SENS_STORE, String(this.sens));
+    } catch {
+      /* storage unavailable */
+    }
+  }
+  private sens = loadSens();
+  /** how long each keyboard axis has been held in its current direction (s) */
+  private held = { pitch: 0, roll: 0, yaw: 0 };
+
+  /**
+   * One keyboard axis. A tap gives a small, precise input; holding the key eases the deflection out to its
+   * limit over about a second (Shift: full deflection, faster); releasing it eases back to neutral instead of
+   * snapping. Reversing direction first passes through neutral quickly, so corrections feel immediate.
+   */
+  private kbAxis(name: 'pitch' | 'roll' | 'yaw', v: number, input: number, big: boolean, dt: number): number {
+    return kbAxisStep(v, input, big, dt, this.sens, this.held, name);
+  }
+
+  /**
    * Updates the control state from keyboard/joystick. Returns true if the pilot is
    * overpowering the autopilot (caller should disconnect).
    */
@@ -174,28 +247,22 @@ export class InputManager {
   update(dt: number, c: Controls, apEngaged: boolean): boolean {
     const k = this.keys;
     const has = (...names: string[]) => names.some((n) => k.has(n));
-    // keyboard virtual yoke: deflect while held, re-center when released
-    // progressive: gentle pressure while held, full deflection with Shift
-    const big = has('Shift');
-    const rate = (big ? 2.4 : 1.0) * dt;
-    const center = 2.2 * dt;
+    // keyboard virtual yoke: progressive deflection while a key is held, smooth return when released
     const pitchIn = (has('ArrowDown') ? 1 : 0) - (has('ArrowUp') ? 1 : 0);
     const rollIn = (has('ArrowRight') ? 1 : 0) - (has('ArrowLeft') ? 1 : 0);
     const yawIn = (has('.', '>') ? 1 : 0) - (has(',', '<') ? 1 : 0);
-    const step = (v: number, input: number, lim: number) => {
-      if (input) return Math.max(-lim, Math.min(lim, v + input * rate));
-      return Math.abs(v) < center ? 0 : v - Math.sign(v) * center;
-    };
-    this.kb.pitch = step(this.kb.pitch, pitchIn, big ? 1 : 0.42);
-    this.kb.roll = step(this.kb.roll, rollIn, big ? 1 : 0.5);
-    this.kb.yaw = step(this.kb.yaw, yawIn, 1);
+    const big = has('Shift');
+    this.kb.pitch = this.kbAxis('pitch', this.kb.pitch, pitchIn, big, dt);
+    this.kb.roll = this.kbAxis('roll', this.kb.roll, rollIn, big, dt);
+    this.kb.yaw = this.kbAxis('yaw', this.kb.yaw, yawIn, big, dt);
 
     let elev = Math.max(-1, Math.min(1, this.kb.pitch + this.virtual.pitch));
     let ail = Math.max(-1, Math.min(1, this.kb.roll + this.virtual.roll));
     let rud = this.kb.yaw;
     // throttle keys
-    if (has('=', '+', 'PageUp')) c.throttle = Math.min(1, c.throttle + dt * 0.4);
-    if (has('-', '_', 'PageDown')) c.throttle = Math.max(0, c.throttle - dt * 0.4);
+    const thrRate = dt * 0.4 * this.sensitivity;
+    if (has('=', '+', 'PageUp')) c.throttle = Math.min(1, c.throttle + thrRate);
+    if (has('-', '_', 'PageDown')) c.throttle = Math.max(0, c.throttle - thrRate);
     // trim keys
     if (has('End')) c.trim = Math.min(1, c.trim + dt * 0.12);
     if (has('Home')) c.trim = Math.max(-1, c.trim - dt * 0.12);

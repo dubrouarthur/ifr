@@ -2,8 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#0b0e12" />
+    <!-- installable web app: add to home screen, full screen on iPad / Android tablets -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="IFR Trainer" />
+    <meta name="format-detection" content="telephone=no" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
     <meta name="description" content="Browser IFR trainer: G1000-style glass cockpit, ILS / LOC / BC / VOR / NDB / RNAV approaches with charts, joystick support and scored debriefs." />
     <title>IFR Trainer</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
