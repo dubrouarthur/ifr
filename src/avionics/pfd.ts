@@ -13,7 +13,8 @@ const CX = 512;
 const CY = 268;
 const PPD = 10; // pixels per degree of pitch
 
-export const PFD_SOFTKEYS = ['', 'INSET', 'SVT', 'BRG1', 'BRG2', 'CDI', 'DME', 'TMR/REF', 'XPDR', 'IDENT', 'MINS', 'ALERTS'];
+/** slot 1 is OBS (it reads SUSP while the GPS sequencing is suspended: past the MAP, in a hold) */
+export const PFD_SOFTKEYS = ['OBS', 'INSET', 'SVT', 'BRG1', 'BRG2', 'CDI', 'DME', 'TMR/REF', 'XPDR', 'IDENT', 'MINS', 'ALERTS'];
 /** softkeys the trainer does not model: drawn dimmed so they never look like a live function */
 const INERT_SOFTKEYS = new Set(['ENGINE', 'ALERTS']);
 
@@ -160,6 +161,8 @@ export interface PfdState {
   lastAlt: number;
   flash: number;
   softkeyFlash: number | null;
+  /** softkey flash seen on the previous frame (press edge detection) */
+  lastFlash: number | null;
   // display filtering on the sim clock (on top of the air-data filter): steady tapes, digits and trend vectors
   filtInit: boolean;
   /** displayed airspeed / altitude / vertical speed */
@@ -184,6 +187,7 @@ export const newPfdState = (): PfdState => ({
   lastAlt: 0,
   flash: 0,
   softkeyFlash: null,
+  lastFlash: null,
   filtInit: false,
   iasF: 0,
   altF: 0,
@@ -195,6 +199,81 @@ export const newPfdState = (): PfdState => ({
 });
 
 const fin = (v: number, dflt = 0) => (Number.isFinite(v) ? v : dflt);
+/** localizer channel: 108.10–111.95 MHz with an odd tenth (108.10, 108.15, 108.30 …) */
+export const isLocFreq = (mhz: number) => mhz >= 108.05 && mhz < 112 && Math.floor(mhz * 10 + 1e-6) % 2 === 1;
+
+// ------------------------------------------------------------------ indication geometry (what is drawn, and its sign)
+/** slip/skid bar width (px): one bar width = one ball width (G1000 Pilot's Guide, 'Slip/Skid Indicator') */
+export const SLIP_BAR_W = 28;
+/** a full ±1 sideslip reading is two ball widths on the steam inclinometer (13° of its 180-px arc, 20-px ball) */
+export const SLIP_BALLS_PER_UNIT = 2;
+/** roll pointer rotation (deg, + = clockwise on screen). G1000 sky pointer: it turns with the horizon over the
+ *  fixed roll scale, so a right bank moves it LEFT. */
+export const rollPointerDeg = (rollDeg: number) => -fin(rollDeg);
+/** slip/skid bar offset from the roll pointer (px, + = right), in the pointer's frame: it moves like the ball */
+export const slipBarPx = (slip: number) => Math.max(-1.2, Math.min(1.2, fin(slip))) * SLIP_BALLS_PER_UNIT * SLIP_BAR_W;
+/** turn-rate trend vector on the HSI (deg of arc: heading in 6 s, ±24° max; + = right) */
+export const turnVectorDeg = (turnRateDps: number) => Math.max(-24, Math.min(24, fin(turnRateDps) * 6));
+/** CDI needle offset (px from the course line, + = right; 2 dots = full scale) */
+export const cdiNeedlePx = (dev: number) => Math.max(-1.2, Math.min(1.2, fin(dev))) * 68;
+/** wind arrow rotation (deg, 0 = up along the nose, + = clockwise): it points where the wind blows to */
+export const windArrowDeg = (windFrom: number, hdg: number) => wrap180(windFrom + 180 - hdg);
+
+/** Signs and sizes of every PFD indication (screen x right, y down), from the functions the drawing uses. */
+export interface PfdIndications {
+  rollPointerDeg: number;
+  slipBarPx: number;
+  turnVectorDeg: number;
+  /** trend vectors and VSI pointer (px, − = up) */
+  iasTrendPx: number;
+  altTrendPx: number;
+  vsiPx: number;
+  /** CDI needle (px, + = right of the course pointer) and TO/FROM flag */
+  cdiPx: number;
+  toFrom: 'TO' | 'FROM' | 'OFF';
+  /** course pointer and bearing pointers relative to the lubber line (deg, + = right) */
+  coursePointerDeg: number;
+  brg1Deg: number | null;
+  brg2Deg: number | null;
+  windArrowDeg: number | null;
+  /** crosswind arrow: 'left' = the wind blows to the left (from the right); headwind arrow 'down' */
+  crosswindArrow: 'left' | 'right' | null;
+  headwindArrow: 'down' | 'up' | null;
+}
+
+function bearingOf(sim: Sim, src: string): number | null {
+  if (src === 'NAV1') return sim.nav1.valid ? sim.nav1.bearingTo : null;
+  if (src === 'NAV2') return sim.nav2.valid ? sim.nav2.bearingTo : null;
+  if (src === 'GPS') return sim.fp.out.valid ? sim.fp.out.bearingTo : null;
+  if (src === 'ADF') return sim.adf.valid ? sim.adf.bearingTo : null;
+  return null;
+}
+
+export function pfdIndications(sim: Sim, st: PfdState): PfdIndications {
+  const d = sim.ac.data;
+  const n = sim.navInputs();
+  const isGps = n.cdi === 'GPS';
+  const valid = isGps ? n.gps.valid : n.nav.valid;
+  const rel = (b: number | null) => (b === null ? null : wrap180(b - d.hdgTrue));
+  const wind = d.windKt > 0.5 && !sim.ac.s.onGround;
+  return {
+    rollPointerDeg: rollPointerDeg(d.rollDeg),
+    slipBarPx: slipBarPx(d.slip),
+    turnVectorDeg: turnVectorDeg(d.turnRateDps),
+    iasTrendPx: st.trendOn ? -st.iasTrend * IAS_KPX : 0,
+    altTrendPx: st.altTrendOn ? -st.altTrend * ALT_FPX : 0,
+    vsiPx: -Math.max(-2050, Math.min(2050, st.vsF)) * VSI_K,
+    cdiPx: valid ? cdiNeedlePx(isGps ? n.gps.dev : n.nav.dev) : 0,
+    toFrom: valid ? (isGps ? n.gps.toFrom : n.nav.toFrom) : 'OFF',
+    coursePointerDeg: wrap180(sim.course() - d.hdgTrue),
+    brg1Deg: rel(bearingOf(sim, sim.av.bearing1)),
+    brg2Deg: rel(bearingOf(sim, sim.av.bearing2)),
+    windArrowDeg: wind ? windArrowDeg(d.windDir, d.hdgTrue) : null,
+    crosswindArrow: wind ? (Math.round(d.crosswindKt) >= 0 ? 'left' : 'right') : null,
+    headwindArrow: wind ? (Math.round(d.headwindKt) >= 0 ? 'down' : 'up') : null,
+  };
+}
+
 const lagK = (dt: number, tau: number) => 1 - Math.exp(-dt / tau);
 /** airspeed trend dead band (kt): shown above TREND_ON, hidden again below TREND_OFF */
 export const TREND_ON = 1.5;
@@ -262,15 +341,30 @@ export function drawPfd(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState, d
   drawHsi(ctx, sim, st);
   drawLowerWindows(ctx, sim, st);
   drawFailures(ctx, sim, st);
-  drawSoftkeys(ctx, PFD_SOFTKEYS, st.softkeyFlash, {
+  const keys = PFD_SOFTKEYS.slice();
+  keys[0] = sim.obsKeyLabel();
+  // the shell flashes a softkey on every press (bezel button or a tap on its label): the OBS / SUSP press is
+  // acted on here, where the key is drawn (Sim.obsKey ignores a second call for the same press)
+  if (st.softkeyFlash === 0 && st.lastFlash !== 0) sim.obsKey();
+  st.lastFlash = st.softkeyFlash;
+  drawSoftkeys(ctx, keys, st.softkeyFlash, {
+    OBS: sim.fp.obsMode,
     INSET: sim.av.inset,
     SVT: st.svt,
     BRG1: sim.av.bearing1 !== 'OFF',
     BRG2: sim.av.bearing2 !== 'OFF',
     DME: st.dmeWindow,
     'TMR/REF': sim.chrono() !== null,
-  });
+  }, obsAvailable(sim) ? INERT_SOFTKEYS : INERT_WITH_OBS);
   ctx.restore();
+}
+
+const INERT_WITH_OBS: ReadonlySet<string> = new Set([...INERT_SOFTKEYS, 'OBS']);
+/** OBS works on the GPS CDI with a flight plan; SUSP (resume sequencing) whatever the CDI source */
+function obsAvailable(sim: Sim) {
+  const o = sim.fp.out;
+  if (!o.valid || !sim.equip.gps) return false;
+  return sim.av.cdi === 'GPS' || sim.fp.obsMode || (o.suspended && !sim.fp.obsMode);
 }
 
 // ------------------------------------------------------------------ attitude
@@ -410,10 +504,11 @@ function drawAttitude(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   }
   poly(ctx, [[0, -RR - 1], [-9, -RR - 16], [9, -RR - 16]], C.white);
   // roll pointer + slip
-  ctx.rotate(-roll);
+  ctx.rotate(rollPointerDeg(d.rollDeg) * DEG);
   poly(ctx, [[0, -RR + 1], [-11, -RR + 18], [11, -RR + 18]], C.white, C.black, 1);
-  const slip = sim.ac.data.slip * 18;
-  poly(ctx, [[-13 + slip, -RR + 22], [13 + slip, -RR + 22], [15 + slip, -RR + 28], [-15 + slip, -RR + 28]], C.white, C.black, 1);
+  const slip = slipBarPx(d.slip);
+  const hb = SLIP_BAR_W / 2;
+  poly(ctx, [[-hb + 1 + slip, -RR + 22], [hb - 1 + slip, -RR + 22], [hb + 1 + slip, -RR + 28], [-hb - 1 + slip, -RR + 28]], C.white, C.black, 1);
   ctx.restore();
 
   // flight director (magenta command bars)
@@ -629,6 +724,10 @@ function drawApBar(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
 
 // ------------------------------------------------------------------ airspeed
 const IAS_X = 120;
+/** tape scales: px per knot, px per foot, VSI px per fpm */
+const IAS_KPX = 5.6;
+const ALT_FPX = 0.62;
+const VSI_K = 150 / 2000;
 const IAS_W = 100;
 const TAPE_TOP = 92;
 const TAPE_BOT = 448;
@@ -640,7 +739,7 @@ function drawAirspeed(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   const top = TAPE_TOP;
   const bot = TAPE_BOT;
   const cy = CY;
-  const kpx = 5.6;
+  const kpx = IAS_KPX;
   const air = !sim.ac.s.onGround;
   const iasV = st.iasF; // display-filtered airspeed
   const valid = iasV >= 20;
@@ -776,7 +875,7 @@ function drawAltimeter(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   const top = TAPE_TOP;
   const bot = TAPE_BOT;
   const cy = CY;
-  const fpx = 0.62;
+  const fpx = ALT_FPX;
   cbox(ctx, x, top, w, bot - top, 'rgba(30,34,38,0.6)');
   ctx.save();
   ctx.beginPath();
@@ -890,7 +989,7 @@ function drawVsi(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   const top = 118;
   const bot = 418;
   const cy = CY;
-  const k = 150 / 2000;
+  const k = VSI_K;
   poly(ctx, [[x, top], [x + 44, top], [x + 44, bot], [x, bot], [x, cy + 20], [x - 6, cy], [x, cy - 20]], 'rgba(30,34,38,0.6)');
   for (const v of [-2000, -1500, -1000, -500, 500, 1000, 1500, 2000]) {
     const y = cy - v * k;
@@ -954,7 +1053,7 @@ function drawHsi(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
     const ang = (a - 90) * DEG;
     line(ctx, Math.cos(ang) * (R + 10), Math.sin(ang) * (R + 10), Math.cos(ang) * (R + (Math.abs(a) === 18 ? 22 : 16)), Math.sin(ang) * (R + (Math.abs(a) === 18 ? 22 : 16)), C.white, 2);
   }
-  const tr = Math.max(-24, Math.min(24, d.turnRateDps * 6));
+  const tr = turnVectorDeg(d.turnRateDps);
   if (Math.abs(tr) > 0.5) {
     ctx.strokeStyle = C.magenta;
     ctx.lineWidth = 5;
@@ -987,13 +1086,7 @@ function drawHsi(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   ctx.restore();
 
   // bearing pointers (BRG1 single line, BRG2 double line, cyan)
-  const bearing = (src: string): number | null => {
-    if (src === 'NAV1') return sim.nav1.valid ? sim.nav1.bearingTo : null;
-    if (src === 'NAV2') return sim.nav2.valid ? sim.nav2.bearingTo : null;
-    if (src === 'GPS') return sim.fp.out.valid ? sim.fp.out.bearingTo : null;
-    if (src === 'ADF') return sim.adf.valid ? sim.adf.bearingTo : null;
-    return null;
-  };
+  const bearing = (src: string): number | null => bearingOf(sim, src);
   const b1 = bearing(sim.av.bearing1);
   if (b1 !== null) {
     ctx.save();
@@ -1029,7 +1122,7 @@ function drawHsi(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   poly(ctx, [[0, -R + 6], [-13, -R + 28], [13, -R + 28]], col);
   line(ctx, 0, 58, 0, R - 8, col, 5);
   if (valid) {
-    const dx = Math.max(-1.2, Math.min(1.2, dev)) * 68;
+    const dx = cdiNeedlePx(dev);
     line(ctx, dx, -52, dx, 52, col, 5);
     if (toFrom !== 'OFF') {
       const ty = toFrom === 'TO' ? -1 : 1;
@@ -1039,16 +1132,17 @@ function drawHsi(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   ctx.restore();
   ctx.restore();
   // source and flight-phase labels: after the needle, on black backing, clear of the dots
-  const srcLabel = isGps ? 'GPS' : `${n.nav.isLoc ? 'LOC' : 'VOR'}${n.cdi === 'NAV1' ? '1' : '2'}`;
+  // LOC / VOR follows the tuned frequency (108.10–111.95 MHz with an odd tenth is a localizer), signal or not
+  const freq = n.cdi === 'NAV1' ? sim.av.nav1.active : sim.av.nav2.active;
+  const srcLabel = isGps ? 'GPS' : `${n.nav.isLoc || isLocFreq(freq) ? 'LOC' : 'VOR'}${n.cdi === 'NAV1' ? '1' : '2'}`;
   const ls = fs(17);
   tag(ctx, srcLabel, hx - 95, hy - 45, col, ls);
   if (isGps) {
-    tag(ctx, n.gps.mode, hx + 95, hy - 45, col, ls);
-    if (n.gps.approachName && n.gps.mode === 'APR') {
-      const ap = sim.fp.approach;
-      const lbl = ap?.type === 'RNAV' ? (ap.minimums[0].label === 'LPV' ? 'LPV' : 'L/VNAV') : 'LNAV';
-      tag(ctx, lbl, hx + 95, hy - 45 + ls + 6, col, fs(14));
-    }
+    // flight phase: DPRT / ENR / TERM / MAPR, or the approach service level in place of APR (LPV, L/VNAV, LNAV+V, LNAV)
+    const g = n.gps;
+    tag(ctx, g.phaseLabel || g.mode, hx + 95, hy - 45, g.downgrade ? C.amber : col, ls);
+    // OBS / SUSP: automatic sequencing off (G1000 HSI annunciation, right of the aircraft symbol)
+    if (g.valid && (g.obs || g.suspended)) tag(ctx, g.obs ? 'OBS' : 'SUSP', hx + 95, hy + 45, g.obs ? C.white : C.yellow, fs(15));
   } else if (!valid) tag(ctx, 'NO SIG', hx + 95, hy - 45, C.amber, fs(15));
   // deviation dots (over the labels), then the aircraft symbol
   ctx.save();
@@ -1294,7 +1388,7 @@ function drawLowerWindows(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState)
 }
 
 /** Softkey labels along the bottom edge. Active keys are inverse (light grey, black text), a pressed key flashes a cyan border. */
-export function drawSoftkeys(ctx: CanvasRenderingContext2D, labels: string[], flashIdx: number | null, active: Record<string, boolean>) {
+export function drawSoftkeys(ctx: CanvasRenderingContext2D, labels: string[], flashIdx: number | null, active: Record<string, boolean>, inertKeys: ReadonlySet<string> = INERT_SOFTKEYS) {
   const h = 24;
   const y = PFD_H - h;
   cbox(ctx, 0, y, PFD_W, h, '#000');
@@ -1306,7 +1400,7 @@ export function drawSoftkeys(ctx: CanvasRenderingContext2D, labels: string[], fl
     if (i) line(ctx, x + 0.5, y + 4, x + 0.5, PFD_H - 2, '#2c3137', 1);
     if (!l) return;
     const on = !!active[l];
-    const inert = INERT_SOFTKEYS.has(l);
+    const inert = inertKeys.has(l);
     if (on) cbox(ctx, x + 4, y + 2, w - 8, h - 3, '#c9ced3');
     if (flashIdx === i) strokeBox(ctx, x + 3, y + 1, w - 6, h - 1, C.cyan, 2);
     const fit = Math.min(size, size * ((w - 12) / Math.max(1, tw(ctx, l, size, 700))));
@@ -1318,3 +1412,4 @@ export function softkeyAt(xLogical: number, yLogical: number, h = PFD_H, w = PFD
   if (yLogical < h - 28) return null;
   return Math.floor(xLogical / (w / 12));
 }
+

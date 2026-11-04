@@ -5,9 +5,9 @@ import { defaultWeather, KT, type Weather } from './environment';
 import { Autopilot, type CdiSource, type NavInputs } from '../avionics/autopilot';
 import { computeAdf, computeNav, EMPTY_NAV, markerBeacon, type AdfOutput, type NavOutput } from '../nav/radios';
 import { Recorder } from './recorder';
-import { FlightPlan } from '../nav/flightplan';
+import { FlightPlan, isLocApproach } from '../nav/flightplan';
 import { AIRPORTS, NAVAIDS, groundElevation, runway, findFix, approach, terrainEpoch } from '../nav/data';
-import { destination, distanceNm, bearingDeg, DEG, FT_PER_NM, crossTrackNm, alongTrackNm, type LatLon } from '../nav/geo';
+import { destination, distanceNm, bearingDeg, DEG, FT_PER_NM, crossTrackNm, alongTrackNm, wrap180, type LatLon } from '../nav/geo';
 
 export interface Radio {
   active: number;
@@ -181,6 +181,15 @@ export class Sim {
   /** pilot eye height above the wheels (ft): 7 for a C172, ~18 in the airliner cockpit */
   cockpitEyeFt = 7;
   rate = 1;
+  /**
+   * Garmin automatic GPS → LOC1 CDI switch on a localizer-based approach (G1000; GNS 'ILS CDI: Auto').
+   * false = Manual (GNS 430W AUX setting, or the instructor's 'CDI left on GPS' trap): the pilot presses CDI.
+   */
+  autoCdi = true;
+  /** approach phase already switched automatically (the pilot may switch back by hand without a fight) */
+  private autoCdiDone = '';
+  private lastMissed = false;
+  private lastFmsKey = -1e9;
   scenario: Scenario | null = null;
   private lastPitch = 0;
   private lastRoll = 0;
@@ -195,6 +204,9 @@ export class Sim {
     this.scenario = sc;
     this.ap = new Autopilot();
     this.fp = new FlightPlan();
+    this.wireFlightPlan();
+    this.autoCdiDone = '';
+    this.lastMissed = false;
     this.failures = noFailures();
     this.equip = fullEquipment();
     this.weather = defaultWeather();
@@ -234,9 +246,15 @@ export class Sim {
     this.rec.start(this);
   }
 
+  /** every pilot edit of the flight plan goes in the flight record (debrief timeline, box-task grading) */
+  private wireFlightPlan() {
+    this.fp.onEdit = (op, detail) => this.rec.log(this.time, 'info', `FMS ${op}${detail ? ': ' + detail : ''}`);
+  }
+
   /** Load an approach the way a pilot would: FPL, minimums, CRS and NAV frequency. */
   loadApproach(id: string, transition: string | null, mode: 'load' | 'activate' | 'vtf' = 'activate') {
     this.fp.loadApproach(id, transition);
+    this.autoCdiDone = '';
     const ap = this.fp.approach!;
     const m = ap.minimums[0];
     this.av.minimums = (m.da ?? m.mda) ?? null;
@@ -321,7 +339,9 @@ export class Sim {
       this.fp.out.gpValid = false;
       if (this.av.cdi === 'GPS') this.av.cdi = 'NAV1';
     }
+    if (this.fp.onEdit === null) this.wireFlightPlan(); // a plan swapped in from outside (planner, real world)
     this.fp.update(pos, d.gsKt, d.trackTrue);
+    this.autoCdiSwitch();
     if (dt > 0) {
       const pr = (d.pitchDeg - this.lastPitch) / dt;
       const rr = (d.rollDeg - this.lastRoll) / dt;
@@ -421,8 +441,11 @@ export class Sim {
 
   setCdi(src: CdiSource) {
     this.av.cdi = src;
-    // G1000 auto-slews the course to the localizer when a LOC is selected
-    const nav = src === 'NAV1' ? this.nav1 : src === 'NAV2' ? this.nav2 : null;
+    // G1000 auto-slews the course to the localizer when a LOC is selected (the receiver as tuned now, not as it was
+    // on the last frame)
+    const s = this.ac?.s;
+    const pos = s ? { lat: s.lat, lon: s.lon, altFt: s.altFt } : null;
+    const nav = !pos ? null : src === 'NAV1' ? (this.failures.nav1 ? null : computeNav(this.av.nav1.active, this.av.obs1, pos)) : src === 'NAV2' ? computeNav(this.av.nav2.active, this.av.obs2, pos) : null;
     if (nav && nav.isLoc) {
       if (src === 'NAV1') this.av.obs1 = nav.course;
       else this.av.obs2 = nav.course;
@@ -436,21 +459,102 @@ export class Sim {
 
   /** current course pointer value for the HSI */
   course(): number {
-    if (this.av.cdi === 'GPS') return this.fp.out.dtk;
+    if (this.av.cdi === 'GPS') return this.fp.obsMode ? this.fp.obsCourse || 360 : this.fp.out.dtk;
     return this.av.cdi === 'NAV1' ? this.av.obs1 : this.av.obs2;
   }
 
+  /** CRS knob. With the GPS CDI in OBS mode it sets the OBS course through the active waypoint. */
   setCourse(v: number) {
     const n = ((Math.round(v) % 360) + 360) % 360 || 360;
-    if (this.av.cdi === 'NAV2') this.av.obs2 = n;
+    if (this.av.cdi === 'GPS' && this.fp.obsMode) this.fp.obsCourse = n;
+    else if (this.av.cdi === 'NAV2') this.av.obs2 = n;
     else this.av.obs1 = n;
   }
 
-  directTo(ident: string): boolean {
+  /** Direct-To a fix by ident (optionally on a selected course, magnetic). The flight plan is kept. */
+  directTo(ident: string, course?: number): boolean {
     const f = findFix(ident);
     if (!f) return false;
-    this.fp.directTo({ ident: f.ident, lat: f.lat, lon: f.lon }, this.ac.s);
+    this.fp.directTo({ ident: f.ident, lat: f.lat, lon: f.lon }, this.ac.s, course !== undefined ? { course } : {});
+    this.updateAvionics(0);
     return true;
+  }
+
+  /** a second call for the same physical press (bezel key and screen both wired) is ignored */
+  private fmsDebounce(): boolean {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (now - this.lastFmsKey < 120) return false;
+    this.lastFmsKey = now;
+    return true;
+  }
+
+  /**
+   * G1000 PFD OBS softkey. It reads SUSP while automatic sequencing is suspended (past the MAP, in a hold):
+   * pressing it then resumes sequencing (missed approach / exit hold). Otherwise it toggles OBS mode on the GPS
+   * CDI, with the OBS course starting at the current desired track.
+   */
+  obsKey(): 'obs-on' | 'obs-off' | 'resume' | null {
+    const fp = this.fp;
+    if (!fp.out.valid || !this.equip.gps) return null;
+    if (!this.fmsDebounce()) return null;
+    if (fp.obsMode) {
+      fp.setObs(false);
+      this.updateAvionics(0);
+      return 'obs-off';
+    }
+    if (fp.out.suspended) {
+      fp.resume();
+      this.updateAvionics(0);
+      return 'resume';
+    }
+    if (this.av.cdi !== 'GPS') return null;
+    fp.setObs(true, fp.out.dtk);
+    this.updateAvionics(0);
+    return 'obs-on';
+  }
+
+  /** the PFD softkey label for slot 1: OBS, or SUSP while sequencing is suspended */
+  obsKeyLabel(): 'OBS' | 'SUSP' {
+    return this.fp.out.valid && this.fp.out.suspended && !this.fp.obsMode ? 'SUSP' : 'OBS';
+  }
+
+  /**
+   * Garmin automatic CDI switching (G1000 Pilot's Guide, 'Automatic CDI switching'): GPS → LOC1 when a localizer
+   * approach is active, the FAF is the active waypoint, within 15 NM and being approached, the localizer is tuned
+   * in NAV1 and received, and the GPS deviation is under 1.2 × full scale; at once after Activate Vector-To-Final.
+   * Activating the missed approach switches back to GPS.
+   */
+  private autoCdiSwitch() {
+    const fp = this.fp;
+    const g = fp.out;
+    if (fp.missedActive && !this.lastMissed && this.autoCdi && this.equip.gps && this.av.cdi !== 'GPS' && g.valid) {
+      this.setCdi('GPS');
+      this.rec.log(this.time, 'info', 'CDI auto-switch: GPS (missed approach)');
+    }
+    this.lastMissed = fp.missedActive;
+    const ap = fp.approach;
+    if (!this.autoCdi || !ap || !isLocApproach(ap) || this.av.cdi !== 'GPS' || !g.valid || fp.missedActive || !fp.approachActive) return;
+    const to = fp.wpts[fp.active];
+    if (!to || to.role !== 'FAF' || to.appr !== 'final') return;
+    const key = `${fp.approachId}|${fp.active}|${fp.vtf ? 'vtf' : 'leg'}`;
+    if (this.autoCdiDone === key) return;
+    const nav = ap.navaid ? NAVAIDS.find((n) => n.ident === ap.navaid) : undefined;
+    const tuned = !!nav && Math.abs(this.av.nav1.active - nav.freq) < 0.005 && this.nav1.valid && this.nav1.isLoc;
+    if (!tuned) return;
+    const s = this.ac.s;
+    const approaching = Math.abs(wrap180(bearingDeg(s, to) - this.ac.data.trackTrue)) < 90;
+    const ok = fp.vtf || (g.distNm < 15 && approaching && Math.abs(g.dev) < 1.2);
+    if (!ok) return;
+    this.autoCdiDone = key;
+    const coupled = this.ap.lat === 'GPS' || this.ap.latArmed === 'GPS';
+    this.setCdi('NAV1');
+    // GFC 700: with APR armed the autopilot goes on to capture the localizer and the glideslope
+    if (this.ap.apprMode && coupled) {
+      this.ap.latArmed = this.nav1.backCourse ? 'BC' : 'LOC';
+      this.ap.vertArmed.gp = false;
+      this.ap.vertArmed.gs = ap.type === 'ILS';
+    }
+    this.rec.log(this.time, 'info', `CDI auto-switch: LOC1 (${to.ident} ${g.distNm.toFixed(1)} NM)`);
   }
 }
 
@@ -522,7 +626,7 @@ export const SCENARIOS: Scenario[] = [
     weather: { ceilingFt: 700, visibilitySm: 1 },
     briefing: [
       'Fly the GPS (CDI GPS) to TOBEY, then KEDDY at 3000.',
-      'Before KEDDY switch the CDI to LOC1 (CDI softkey or V key) and press APR.',
+      'Inside 15 NM of MARLO (the FAF active) the CDI switches to LOC1 by itself: confirm the green LOC1 and press APR.',
       'Descend to 3000 after TOBEY; GS intercept just after KEDDY.',
     ],
     setup: (s) => {

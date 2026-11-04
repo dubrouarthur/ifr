@@ -2,14 +2,16 @@
 import type { Sim } from '../sim/sim';
 import { C, line, poly, text, pad3 } from './draw';
 import { drawTopBar, drawSoftkeys, setTextScaleFor, fs, tw, cbox } from './pfd';
-import { AIRPORTS, FIXES, NAVAIDS, groundElevation, terrainProviderActive, terrainEpoch } from '../nav/data';
+import { AIRPORTS, APPROACHES, FIXES, NAVAIDS, groundElevation, terrainProviderActive, terrainEpoch } from '../nav/data';
 import { destination, distanceNm, toLocal, DEG, bearingDeg, type LatLon } from '../nav/geo';
 import { flyablePath, type PathFix } from '../nav/pathgeom';
-import type { Waypoint } from '../nav/flightplan';
+import { isLocApproach, type Waypoint } from '../nav/flightplan';
+import type { Approach } from '../nav/types';
 
 export const MFD_W = 1024;
 export const MFD_H = 768;
-export const MFD_SOFTKEYS = ['ENGINE', '', 'MAP', '', 'TERRAIN', 'NORTH UP', 'DCLTR', '', '', 'FPL', 'PROC', 'CHKLIST'];
+/** slot 8 ACT LEG (G1000 NXi FPL page): active only while the FPL cursor is on a waypoint */
+export const MFD_SOFTKEYS = ['ENGINE', '', 'MAP', '', 'TERRAIN', 'NORTH UP', 'DCLTR', 'ACT LEG', '', 'FPL', 'PROC', 'CHKLIST'];
 const RANGES = [1, 2, 5, 10, 15, 20, 30, 50, 80];
 
 export interface MfdState {
@@ -20,6 +22,8 @@ export interface MfdState {
   showFpl: boolean;
   terrainCache: { key: string; img: ImageData | null; canvas: HTMLCanvasElement | null };
   softkeyFlash: number | null;
+  /** flight-plan management: cursor, windows, touch regions */
+  fms: FmsUi;
 }
 
 export const newMfdState = (): MfdState => ({
@@ -30,6 +34,7 @@ export const newMfdState = (): MfdState => ({
   showFpl: true,
   terrainCache: { key: '', img: null, canvas: null },
   softkeyFlash: null,
+  fms: newFmsUi(),
 });
 
 export function mfdRange(st: MfdState) {
@@ -38,6 +43,7 @@ export function mfdRange(st: MfdState) {
 
 const EIS_W = 152;
 const TITLE_H = 22;
+const FPL_X = 718;
 const SOFT_Y = MFD_H - 24;
 
 export function drawMfd(ctx: CanvasRenderingContext2D, sim: Sim, st: MfdState) {
@@ -49,7 +55,7 @@ export function drawMfd(ctx: CanvasRenderingContext2D, sim: Sim, st: MfdState) {
   // the FPL pane hides itself when there is no flight plan (full-width map)
   const fpl = st.showFpl && sim.fp.wpts.length > 0;
   const mx = EIS_W + 2;
-  const fplX = 718;
+  const fplX = FPL_X;
   const mw = (fpl ? fplX : MFD_W) - mx;
   // page title in its own strip above the map
   cbox(ctx, mx, 54, mw, TITLE_H, '#000');
@@ -62,8 +68,16 @@ export function drawMfd(ctx: CanvasRenderingContext2D, sim: Sim, st: MfdState) {
   ctx.clip();
   drawMap(ctx, sim, mapRect, mfdRange(st), false, st);
   ctx.restore();
-  if (fpl) drawFpl(ctx, sim, { x: fplX, y: 54, w: MFD_W - fplX, h: SOFT_Y - 54 });
-  drawSoftkeys(ctx, MFD_SOFTKEYS, st.softkeyFlash, { TERRAIN: st.terrain, 'NORTH UP': st.northUp, DCLTR: st.declutter > 0, FPL: st.showFpl });
+  const f = st.fms;
+  f.hits = [];
+  bindMfdPointer(ctx.canvas, st, sim);
+  // the shell flashes the pressed softkey (bezel button or a tap on its label): ACT LEG is acted on here
+  if (st.softkeyFlash !== null && st.softkeyFlash !== f.lastFlash && MFD_SOFTKEYS[st.softkeyFlash] === 'ACT LEG') fmsKey(sim, st, 'actleg');
+  f.lastFlash = st.softkeyFlash;
+  if (fpl) drawFpl(ctx, sim, st, { x: fplX, y: 54, w: MFD_W - fplX, h: SOFT_Y - 54 });
+  drawFmsWindows(ctx, sim, st, fpl);
+  const keys = MFD_SOFTKEYS.map((k) => (k === 'ACT LEG' && !(f.page === 'fpl' && f.cursor && typeof f.cursor === 'object') ? '' : k));
+  drawSoftkeys(ctx, keys, st.softkeyFlash, { TERRAIN: st.terrain, 'NORTH UP': st.northUp, DCLTR: st.declutter > 0, FPL: st.showFpl });
 }
 
 // ------------------------------------------------------------------ engine indication
@@ -580,18 +594,28 @@ export function drawMap(
       ctx.lineCap = 'butt';
     };
     // inactive legs (white) first, the active leg (magenta) on top
+    const obs = fp.obsMode && fp.out.valid && !!fp.wpts[fp.active];
     for (let i = 1; i < fp.wpts.length; i++) {
-      if (i === fp.active && !fp.out.holding && !direct) continue;
+      if (i === fp.active && !fp.out.holding && !direct && !obs) continue;
       if (fp.wpts[i].appr === 'missed') ctx.setLineDash([8, 6]);
       strokeLeg(legs[i], C.white, 2.5);
       ctx.setLineDash([]);
     }
-    if (fp.active > 0 && fp.active < fp.wpts.length && !fp.out.holding && !direct) {
+    if (obs) {
+      // OBS: the pilot's course through the active waypoint, magenta TO it, then on past it (no sequencing)
+      const to = fp.wpts[fp.active];
+      const L = Math.max(30, rangeNm * 3);
+      const a = xy(destination(to, fp.obsCourse + 180, L));
+      const b = xy(to);
+      const c = xy(destination(to, fp.obsCourse, L));
+      line(ctx, a.x, a.y, b.x, b.y, C.magenta, 4);
+      line(ctx, b.x, b.y, c.x, c.y, C.magenta, 2);
+    } else if (fp.active > 0 && fp.active < fp.wpts.length && !fp.out.holding && !direct) {
       if (fp.wpts[fp.active].appr === 'missed') ctx.setLineDash([8, 6]);
       strokeLeg(legs[fp.active], C.magenta, 4);
       ctx.setLineDash([]);
     }
-    if (direct) {
+    if (direct && !obs) {
       const to = xy(fp.wpts[fp.active]);
       const f = xy(fp.directFrom!);
       line(ctx, f.x, f.y, to.x, to.y, C.magenta, 4);
@@ -739,7 +763,616 @@ function holdGlyph(ctx: CanvasRenderingContext2D, x: number, y: number, color: s
 
 const ROLE_SUFFIX: Partial<Record<string, string>> = { IAF: 'iaf', IF: 'if', FAF: 'faf', MAP: 'map', MAHP: 'mahp', STEPDOWN: 'sdf' };
 
-function drawFpl(ctx: CanvasRenderingContext2D, sim: Sim, r: { x: number; y: number; w: number; h: number }) {
+// ================================================================== G1000 flight-plan management (FMS)
+// The FPL page cursor, the page menu, 'Remove XXXXX?' / 'Activate leg?' confirmations, the Direct-To window, the
+// PROC window, Hold At Waypoint / Present Position and Insert. Driven by the FMS knob and the bezel keys
+// (fmsKey) or by touch on the drawn screen (hit regions registered while drawing).
+
+/** FMS inputs: FMS knob (outer / inner ring, push for the cursor) and the bezel keys. */
+export type FmsKey = 'push' | 'outer+' | 'outer-' | 'inner+' | 'inner-' | 'ent' | 'clr' | 'menu' | 'direct' | 'proc' | 'fpl' | 'actleg';
+
+type Hit = { x: number; y: number; w: number; h: number; run: () => void };
+type MenuItem = { label: string; enabled: boolean; run: () => void };
+type PickItem = { ident: string; lat: number; lon: number; kind: string; name?: string; wpt?: Waypoint };
+
+export interface FmsUi {
+  page: 'fpl' | 'direct' | 'proc';
+  /** FPL cursor: the waypoint object, the approach header, the blank add row; null = no cursor */
+  cursor: Waypoint | 'appr' | 'blank' | null;
+  menu: { title: string; items: MenuItem[]; sel: number } | null;
+  confirm: { text: string; ok: string; run: () => void; cancel?: () => void } | null;
+  direct: { list: PickItem[]; nFpl: number; sel: number; field: 'ident' | 'course' | 'activate'; listOpen: boolean; course: number | null } | null;
+  proc: { stage: 'menu' | 'approach' | 'transition' | 'action'; sel: number; apId: string | null; trans: string | null } | null;
+  hold: { at: number | 'ppos'; ident: string; inbound: number; turn: 'R' | 'L'; legMin: number; field: number } | null;
+  insert: { at: number; title: string; list: PickItem[]; sel: number } | null;
+  msg: { text: string; until: number } | null;
+  hits: Hit[];
+  lastFlash: number | null;
+}
+
+export const newFmsUi = (): FmsUi => ({ page: 'fpl', cursor: null, menu: null, confirm: null, direct: null, proc: null, hold: null, insert: null, msg: null, hits: [], lastFlash: null });
+
+const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+const say = (f: FmsUi, text: string) => (f.msg = { text, until: nowMs() + 3500 });
+
+type FplRow = { kind: 'sec'; label: string; sec: 'enr' | 'appr' | 'missed' } | { kind: 'wpt'; i: number } | { kind: 'blank'; at: number };
+
+/** section of a waypoint: an off-plan Direct-To fix between two approach fixes belongs to the approach */
+function sectionOf(wpts: Waypoint[], i: number): 'enr' | 'appr' | 'missed' {
+  const w = wpts[i];
+  const s = (x: Waypoint | undefined) => (x?.appr === 'missed' ? 'missed' : x?.appr ? 'appr' : 'enr');
+  if (w.appr) return s(w);
+  if (w.user && wpts[i - 1]?.appr && wpts[i + 1]?.appr) return s(wpts[i + 1]);
+  return 'enr';
+}
+
+/** FPL page rows: section headers, waypoints, and the blank row where a waypoint is added at the end of the route */
+export function fplRows(sim: Sim): FplRow[] {
+  const fp = sim.fp;
+  const rows: FplRow[] = [];
+  let last = '';
+  let enrEnd = 0;
+  fp.wpts.forEach((_w, i) => {
+    const sec = sectionOf(fp.wpts, i);
+    if (sec === 'enr') enrEnd = i + 1;
+    if (sec !== last) {
+      if (last === 'enr' || (last === '' && sec !== 'enr')) rows.push({ kind: 'blank', at: last === '' ? 0 : enrEnd });
+      const label = sec === 'missed' ? 'MISSED APPROACH' : sec === 'appr' ? `${fp.approach?.airport ?? ''} ${fp.approach?.name ?? 'APPROACH'}`.trim() : 'ENROUTE';
+      rows.push({ kind: 'sec', label, sec });
+      last = sec;
+    }
+    rows.push({ kind: 'wpt', i });
+  });
+  if (last === 'enr' || last === '') rows.push({ kind: 'blank', at: fp.wpts.length });
+  return rows;
+}
+
+const selectable = (r: FplRow) => r.kind === 'wpt' || r.kind === 'blank' || (r.kind === 'sec' && r.sec === 'appr');
+
+function cursorRow(sim: Sim, f: FmsUi, rows = fplRows(sim)): number {
+  const c = f.cursor;
+  if (c === null) return -1;
+  if (c === 'appr') return rows.findIndex((r) => r.kind === 'sec' && r.sec === 'appr');
+  if (c === 'blank') return rows.findIndex((r) => r.kind === 'blank');
+  return rows.findIndex((r) => r.kind === 'wpt' && sim.fp.wpts[r.i] === c);
+}
+
+function setCursorRow(sim: Sim, f: FmsUi, r: FplRow | undefined) {
+  if (!r) return;
+  f.cursor = r.kind === 'wpt' ? sim.fp.wpts[r.i] : r.kind === 'blank' ? 'blank' : 'appr';
+}
+
+function moveCursor(sim: Sim, f: FmsUi, d: number) {
+  const rows = fplRows(sim);
+  let k = cursorRow(sim, f, rows);
+  if (k < 0) {
+    k = rows.findIndex((r) => r.kind === 'wpt' && r.i === sim.fp.active);
+    if (k < 0) k = rows.findIndex(selectable);
+    setCursorRow(sim, f, rows[k]);
+    return;
+  }
+  const step = d > 0 ? 1 : -1;
+  for (let n = 0; n < Math.abs(d); n++) {
+    let j = k + step;
+    while (j >= 0 && j < rows.length && !selectable(rows[j])) j += step;
+    if (j < 0 || j >= rows.length) break;
+    k = j;
+  }
+  setCursorRow(sim, f, rows[k]);
+}
+
+/** waypoint index under the cursor (-1 when the cursor is on a header or the blank row) */
+const cursorWpt = (sim: Sim, f: FmsUi) => (f.cursor && typeof f.cursor === 'object' ? sim.fp.wpts.indexOf(f.cursor) : -1);
+
+function nearestPicks(sim: Sim, around: LatLon, n: number, exclude: Set<string>): PickItem[] {
+  const out: (PickItem & { d: number })[] = [];
+  const add = (ident: string, lat: number, lon: number, kind: string, name?: string) => {
+    if (exclude.has(ident)) return;
+    const d = distanceNm(around, { lat, lon });
+    if (d > 120) return;
+    out.push({ ident, lat, lon, kind, name, d });
+  };
+  for (const a of AIRPORTS) add(a.icao, a.lat, a.lon, 'APT', a.name);
+  // localizers are not Direct-To waypoints
+  for (const v of NAVAIDS) if (!/ILS|LOC|LDA/.test(v.type)) add(v.ident, v.lat, v.lon, v.type === 'VORDME' ? 'VOR/DME' : v.type, v.name);
+  for (const x of FIXES) add(x.ident, x.lat, x.lon, 'INT');
+  out.sort((a, b) => a.d - b.d);
+  const seen = new Set<string>();
+  const res: PickItem[] = [];
+  for (const p of out) {
+    if (seen.has(p.ident) || /^RW\d/.test(p.ident)) continue;
+    seen.add(p.ident);
+    res.push({ ident: p.ident, lat: p.lat, lon: p.lon, kind: p.kind, name: p.name });
+    if (res.length >= n) break;
+  }
+  void sim;
+  return res;
+}
+
+function closeAll(f: FmsUi) {
+  f.menu = null;
+  f.confirm = null;
+  f.hold = null;
+  f.insert = null;
+}
+
+// ---------------------------------------------------------------- actions
+function askActivateLeg(sim: Sim, f: FmsUi, i: number) {
+  const fp = sim.fp;
+  if (!fp.requestActivateLeg(i)) {
+    say(f, 'Select a waypoint after the first one');
+    return;
+  }
+  const from = fp.wpts[i - 1]?.ident ?? '';
+  f.confirm = {
+    text: `Activate leg ${from}–${fp.wpts[i].ident}?`,
+    ok: 'ACTIVATE',
+    run: () => {
+      const to = fp.wpts[i]?.ident;
+      if (fp.activeLegConfirm(true)) say(f, `Leg to ${to} active`);
+      sim.updateAvionics(0);
+      f.cursor = null;
+    },
+    cancel: () => fp.activeLegConfirm(false),
+  };
+}
+
+function askRemove(sim: Sim, f: FmsUi) {
+  const fp = sim.fp;
+  if (f.cursor === 'appr') {
+    f.confirm = { text: 'Remove Approach?', ok: 'OK', run: () => { fp.removeApproach(); sim.updateAvionics(0); f.cursor = null; say(f, 'Approach removed'); } };
+    return;
+  }
+  const i = cursorWpt(sim, f);
+  if (i < 0) return;
+  const w = fp.wpts[i];
+  if (w.appr) {
+    say(f, 'Procedure waypoints: remove the approach');
+    return;
+  }
+  f.confirm = {
+    text: `Remove ${w.ident}?`,
+    ok: 'OK',
+    run: () => {
+      if (fp.removeWaypoint(i)) {
+        sim.updateAvionics(0);
+        // the cursor moves to the waypoint that took its place in the same section (else the blank add row)
+        const nxt = fp.wpts[i];
+        f.cursor = nxt && !nxt.appr ? nxt : 'blank';
+        if (cursorRow(sim, f) < 0) f.cursor = null;
+        say(f, `${w.ident} removed`);
+      }
+    },
+  };
+}
+
+function openHold(sim: Sim, f: FmsUi, at: number | 'ppos') {
+  const fp = sim.fp;
+  closeAll(f);
+  if (at === 'ppos') {
+    f.hold = { at, ident: 'PRESENT POSITION', inbound: Math.round(sim.ac.data.trackTrue) % 360 || 360, turn: 'R', legMin: 1, field: 0 };
+    return;
+  }
+  const w = fp.wpts[at];
+  if (!w) return;
+  const prev = fp.wpts[at - 1];
+  const inbound = w.hold?.inbound ?? (prev ? bearingDeg(prev, w) : sim.ac.data.trackTrue);
+  f.hold = { at, ident: w.ident, inbound: Math.round(inbound) % 360 || 360, turn: w.hold?.turn ?? 'R', legMin: w.hold?.legMin ?? 1, field: 0 };
+}
+
+function loadHold(sim: Sim, f: FmsUi) {
+  const h = f.hold;
+  if (!h) return;
+  const spec = { inbound: h.inbound, turn: h.turn, legMin: h.legMin, kind: 'user' as const };
+  const s = sim.ac.s;
+  const i = sim.fp.holdAt(h.at, spec, { lat: s.lat, lon: s.lon, trackDeg: sim.ac.data.trackTrue });
+  sim.updateAvionics(0);
+  f.hold = null;
+  f.cursor = null;
+  if (i >= 0) say(f, `Hold at ${h.at === 'ppos' ? 'present position' : h.ident} loaded`);
+}
+
+function openInsert(sim: Sim, f: FmsUi) {
+  const fp = sim.fp;
+  let at: number;
+  let title: string;
+  if (f.cursor === 'blank') {
+    const b = fplRows(sim).find((r) => r.kind === 'blank') as { kind: 'blank'; at: number } | undefined;
+    at = b?.at ?? fp.wpts.length;
+    title = 'ADD WAYPOINT';
+  } else {
+    at = cursorWpt(sim, f);
+    if (at < 0) return;
+    if (fp.wpts[at].appr && fp.wpts[at - 1]?.appr) {
+      say(f, 'Procedures cannot be edited inside');
+      return;
+    }
+    title = `INSERT BEFORE ${fp.wpts[at].ident}`;
+  }
+  const around = fp.wpts[at] ?? fp.wpts[at - 1] ?? sim.ac.s;
+  const inPlan = new Set(fp.wpts.map((w) => w.ident));
+  closeAll(f);
+  f.insert = { at, title, list: nearestPicks(sim, around, 10, inPlan), sel: 0 };
+}
+
+function doInsert(sim: Sim, f: FmsUi) {
+  const ins = f.insert;
+  if (!ins) return;
+  const p = ins.list[ins.sel];
+  if (!p) return;
+  const w: Waypoint = { ident: p.ident, lat: p.lat, lon: p.lon };
+  if (sim.fp.insertWaypoint(ins.at, w)) {
+    sim.updateAvionics(0);
+    f.cursor = sim.fp.wpts[ins.at] ?? null;
+    say(f, `${p.ident} inserted`);
+  } else say(f, `${p.ident} cannot go there`);
+  f.insert = null;
+}
+
+function openDirect(sim: Sim, f: FmsUi) {
+  const fp = sim.fp;
+  closeAll(f);
+  const seen = new Set<string>();
+  const fpl: PickItem[] = [];
+  for (const w of fp.wpts) {
+    if (w.ptPoint || seen.has(w.ident)) continue;
+    seen.add(w.ident);
+    fpl.push({ ident: w.ident, lat: w.lat, lon: w.lon, kind: 'FPL', wpt: w });
+  }
+  const nrst = nearestPicks(sim, sim.ac.s, 6, seen);
+  const list = [...fpl, ...nrst];
+  // default: the waypoint under the cursor, else the active waypoint
+  const target = (f.cursor && typeof f.cursor === 'object' ? f.cursor : fp.wpts[fp.active]) ?? null;
+  const sel = Math.max(0, target ? list.findIndex((p) => p.wpt === target || p.ident === target.ident) : 0);
+  f.direct = { list, nFpl: fpl.length, sel, field: 'ident', listOpen: false, course: null };
+  f.page = 'direct';
+}
+
+function activateDirect(sim: Sim, f: FmsUi) {
+  const d = f.direct;
+  if (!d) return;
+  const p = d.list[d.sel];
+  if (!p) return;
+  const opts = d.course !== null ? { course: d.course } : {};
+  if (p.wpt && sim.fp.wpts.includes(p.wpt)) sim.fp.directTo(p.wpt, sim.ac.s, opts);
+  else sim.fp.directTo({ ident: p.ident, lat: p.lat, lon: p.lon }, sim.ac.s, opts);
+  sim.updateAvionics(0);
+  say(f, `Direct-To ${p.ident} active`);
+  f.direct = null;
+  f.page = 'fpl';
+  f.cursor = null;
+}
+
+function procItems(sim: Sim, f: FmsUi): MenuItem[] {
+  const fp = sim.fp;
+  const ap = fp.approach;
+  const loaded = !!ap && fp.wpts.some((w) => w.appr);
+  const hasFaf = fp.wpts.some((w) => w.role === 'FAF' && w.appr === 'final');
+  const firstAppr = fp.wpts.find((w) => w.appr);
+  const done = (m: string) => {
+    sim.updateAvionics(0);
+    say(f, m);
+    f.proc = null;
+    f.page = 'fpl';
+  };
+  return [
+    { label: 'Activate Vector-to-Final', enabled: loaded && hasFaf, run: () => { fp.vectorsToFinal(); done('Vectors to final active'); } },
+    { label: firstAppr ? `Activate Approach (D→ ${firstAppr.ident})` : 'Activate Approach', enabled: loaded, run: () => { fp.activateApproach(sim.ac.s); done('Approach active'); } },
+    { label: 'Activate Missed Approach', enabled: loaded && fp.approachActive && !fp.missedActive, run: () => { fp.activateMissed(); done('Missed approach active'); } },
+    { label: 'Select Approach', enabled: true, run: () => { if (f.proc) Object.assign(f.proc, { stage: 'approach', sel: 0 }); } },
+  ];
+}
+
+/** approaches, the destination airport first (then the airport nearest the aircraft) */
+function approachList(sim: Sim): Approach[] {
+  const dest = sim.fp.approach?.airport;
+  const s = sim.ac.s;
+  const dist = (ap: Approach) => {
+    const a = AIRPORTS.find((x) => x.icao === ap.airport);
+    return ap.airport === dest ? -1 : a ? distanceNm(s, a) : 9999;
+  };
+  return [...APPROACHES].sort((a, b) => dist(a) - dist(b) || a.airport.localeCompare(b.airport) || a.name.localeCompare(b.name));
+}
+
+function procTransitions(apId: string | null): string[] {
+  const ap = apId ? APPROACHES.find((a) => a.id === apId) : undefined;
+  return ap ? ['VECTORS', ...ap.transitions.map((t) => t.name)] : [];
+}
+
+function procAction(sim: Sim, f: FmsUi, activate: boolean) {
+  const p = f.proc;
+  if (!p?.apId) return;
+  const vectors = p.trans === 'VECTORS' || p.trans === null;
+  sim.loadApproach(p.apId, vectors ? null : p.trans, activate ? (vectors ? 'vtf' : 'activate') : 'load');
+  sim.updateAvionics(0);
+  const ap = sim.fp.approach;
+  say(f, `${ap ? ap.airport + ' ' + ap.name : 'Approach'} ${activate ? (vectors ? '— vectors to final' : 'activated') : 'loaded'}`);
+  f.proc = null;
+  f.page = 'fpl';
+}
+
+function fplMenu(sim: Sim, f: FmsUi): FmsUi['menu'] {
+  const fp = sim.fp;
+  const i = cursorWpt(sim, f);
+  const w = i >= 0 ? fp.wpts[i] : null;
+  const direct = fp.out.valid && fp.out.fromIdent === 'DCT';
+  const items: MenuItem[] = [
+    { label: 'Activate Leg', enabled: i > 0, run: () => askActivateLeg(sim, f, i) },
+    { label: 'Hold At Waypoint', enabled: !!w, run: () => openHold(sim, f, i) },
+    { label: 'Hold At Present Position', enabled: fp.out.valid && !sim.ac.s.onGround, run: () => openHold(sim, f, 'ppos') },
+    { label: 'Insert Waypoint', enabled: f.cursor === 'blank' || (!!w && !(w.appr && fp.wpts[i - 1]?.appr)), run: () => openInsert(sim, f) },
+    { label: 'Remove Approach', enabled: !!fp.approachId && fp.wpts.some((x) => x.appr), run: () => { f.cursor = 'appr'; askRemove(sim, f); } },
+    { label: 'Cancel Direct-To', enabled: direct, run: () => { fp.cancelDirect(); sim.updateAvionics(0); say(f, 'Direct-To cancelled'); } },
+  ];
+  const sel = Math.max(0, items.findIndex((x) => x.enabled));
+  return { title: 'PAGE MENU', items, sel };
+}
+
+const stepEnabled = (items: { enabled: boolean }[], sel: number, d: number) => {
+  let j = sel;
+  for (let n = 0; n < items.length; n++) {
+    j = (j + (d > 0 ? 1 : -1) + items.length) % items.length;
+    if (items[j].enabled) return j;
+  }
+  return sel;
+};
+
+/** One FMS input (knob detent, knob push, bezel key). Returns true when it was used. */
+export function fmsKey(sim: Sim, st: MfdState, key: FmsKey): boolean {
+  const f = st.fms;
+  const fp = sim.fp;
+  const d = key.endsWith('+') ? 1 : key.endsWith('-') ? -1 : 0;
+  const turn = key.startsWith('outer') || key.startsWith('inner');
+  // global keys
+  if (key === 'direct') {
+    openDirect(sim, f);
+    return true;
+  }
+  if (key === 'proc') {
+    closeAll(f);
+    f.page = 'proc';
+    f.proc = { stage: 'menu', sel: 0, apId: null, trans: null };
+    const it = procItems(sim, f);
+    // default cursor: Activate Approach while it is only loaded; once active, the harmless Select Approach (an ENT
+    // pressed by habit must never drop the transition or start the missed approach)
+    const want = fp.approachActive ? 3 : 1;
+    f.proc.sel = it[want]?.enabled ? want : Math.max(0, it.findIndex((x) => x.enabled));
+    return true;
+  }
+  if (key === 'fpl') {
+    closeAll(f);
+    f.page = 'fpl';
+    f.direct = null;
+    f.proc = null;
+    return true;
+  }
+  // confirmation window: ENT = OK, CLR = cancel
+  if (f.confirm) {
+    const c = f.confirm;
+    if (key === 'ent') {
+      f.confirm = null;
+      c.run();
+    } else if (key === 'clr' || key === 'menu') {
+      f.confirm = null;
+      c.cancel?.();
+    }
+    return true;
+  }
+  if (f.menu) {
+    const m = f.menu;
+    if (turn) m.sel = stepEnabled(m.items, m.sel, d);
+    else if (key === 'ent') {
+      f.menu = null;
+      if (m.items[m.sel]?.enabled) m.items[m.sel].run();
+    } else if (key === 'clr' || key === 'menu') f.menu = null;
+    return true;
+  }
+  if (f.hold) {
+    const h = f.hold;
+    if (key === 'outer+' || key === 'outer-') h.field = Math.max(0, Math.min(3, h.field + d));
+    else if (key === 'inner+' || key === 'inner-') holdAdjust(h, d);
+    else if (key === 'ent') {
+      if (h.field < 3) h.field++;
+      else loadHold(sim, f);
+    } else if (key === 'clr') f.hold = null;
+    return true;
+  }
+  if (f.insert) {
+    const ins = f.insert;
+    if (turn) ins.sel = Math.max(0, Math.min(ins.list.length - 1, ins.sel + d));
+    else if (key === 'ent') doInsert(sim, f);
+    else if (key === 'clr') f.insert = null;
+    return true;
+  }
+  if (f.page === 'direct' && f.direct) {
+    const dr = f.direct;
+    if (key === 'outer+' || key === 'outer-') {
+      if (dr.listOpen) dr.sel = Math.max(0, Math.min(dr.list.length - 1, dr.sel + d));
+      else {
+        const order = ['ident', 'course', 'activate'] as const;
+        dr.field = order[Math.max(0, Math.min(2, order.indexOf(dr.field) + d))];
+      }
+    } else if (key === 'inner+' || key === 'inner-') {
+      if (dr.field === 'course') {
+        const p = dr.list[dr.sel];
+        const base = dr.course ?? (p ? Math.round(bearingDeg(sim.ac.s, p)) : 360);
+        dr.course = ((base + d - 1 + 360) % 360) + 1;
+      } else {
+        dr.field = 'ident';
+        if (!dr.listOpen) dr.listOpen = true;
+        else dr.sel = Math.max(0, Math.min(dr.list.length - 1, dr.sel + d));
+      }
+    } else if (key === 'ent') {
+      if (dr.field === 'activate') activateDirect(sim, f);
+      else {
+        dr.listOpen = false;
+        dr.field = 'activate';
+      }
+    } else if (key === 'clr') {
+      if (dr.listOpen) dr.listOpen = false;
+      else if (dr.course !== null && dr.field === 'course') dr.course = null;
+      else {
+        f.direct = null;
+        f.page = 'fpl';
+      }
+    } else if (key === 'menu') {
+      const items: MenuItem[] = [{ label: 'Cancel Direct-To NAV', enabled: fp.out.valid && fp.out.fromIdent === 'DCT', run: () => { fp.cancelDirect(); sim.updateAvionics(0); f.direct = null; f.page = 'fpl'; say(f, 'Direct-To cancelled'); } }];
+      f.menu = { title: 'PAGE MENU', items, sel: 0 };
+    }
+    return true;
+  }
+  if (f.page === 'proc' && f.proc) {
+    const p = f.proc;
+    if (p.stage === 'menu') {
+      const items = procItems(sim, f);
+      if (turn) p.sel = stepEnabled(items, p.sel, d);
+      else if (key === 'ent' && items[p.sel]?.enabled) items[p.sel].run();
+      else if (key === 'clr') {
+        f.proc = null;
+        f.page = 'fpl';
+      }
+    } else if (p.stage === 'approach') {
+      const list = approachList(sim);
+      if (turn) p.sel = Math.max(0, Math.min(list.length - 1, p.sel + d));
+      else if (key === 'ent' && list[p.sel]) Object.assign(p, { apId: list[p.sel].id, stage: 'transition', sel: 0 });
+      else if (key === 'clr') Object.assign(p, { stage: 'menu', sel: 0 });
+    } else if (p.stage === 'transition') {
+      const list = procTransitions(p.apId);
+      if (turn) p.sel = Math.max(0, Math.min(list.length - 1, p.sel + d));
+      else if (key === 'ent') Object.assign(p, { trans: list[p.sel] ?? 'VECTORS', stage: 'action', sel: 1 });
+      else if (key === 'clr') Object.assign(p, { stage: 'approach', sel: 0 });
+    } else {
+      if (turn) p.sel = p.sel === 0 ? 1 : 0;
+      else if (key === 'ent') procAction(sim, f, p.sel === 1);
+      else if (key === 'clr') Object.assign(p, { stage: 'transition', sel: 0 });
+    }
+    return true;
+  }
+  // FPL page
+  if (key === 'push') {
+    if (f.cursor !== null) f.cursor = null;
+    else moveCursor(sim, f, 0);
+    return true;
+  }
+  if (key === 'outer+' || key === 'outer-') {
+    moveCursor(sim, f, f.cursor === null ? 0 : d);
+    return true;
+  }
+  if (key === 'inner+' || key === 'inner-') {
+    if (f.cursor === null) moveCursor(sim, f, 0);
+    else openInsert(sim, f);
+    return true;
+  }
+  if (key === 'menu') {
+    f.menu = fplMenu(sim, f);
+    return true;
+  }
+  if (key === 'actleg') {
+    const i = cursorWpt(sim, f);
+    if (i > 0) askActivateLeg(sim, f, i);
+    else say(f, 'Push FMS, select the leg end waypoint');
+    return true;
+  }
+  if (key === 'clr') {
+    if (f.cursor !== null) askRemove(sim, f);
+    else return false;
+    return true;
+  }
+  return false;
+}
+
+function holdAdjust(h: NonNullable<FmsUi['hold']>, d: number) {
+  if (h.field === 0) h.inbound = ((h.inbound + d - 1 + 360) % 360) + 1;
+  else if (h.field === 1) h.turn = h.turn === 'R' ? 'L' : 'R';
+  else if (h.field === 2) h.legMin = Math.max(0.5, Math.min(5, Math.round((h.legMin + d * 0.5) * 10) / 10));
+}
+
+/** What the FMS shows (for tests, the remote companion and grading): page, cursor, windows. */
+export function fmsView(sim: Sim, st: MfdState) {
+  const f = st.fms;
+  return {
+    page: f.page,
+    cursor: f.cursor && typeof f.cursor === 'object' ? sim.fp.wpts.indexOf(f.cursor) : null,
+    cursorOn: f.cursor,
+    menu: f.menu ? { items: f.menu.items.map((i) => i.label), sel: f.menu.sel } : null,
+    confirm: f.confirm ? { text: f.confirm.text } : null,
+    direct: f.direct ? { fpl: f.direct.list.slice(0, f.direct.nFpl).map((p) => p.ident), nearest: f.direct.list.slice(f.direct.nFpl).map((p) => p.ident), sel: f.direct.sel, field: f.direct.field } : null,
+    proc: f.proc ? { stage: f.proc.stage, sel: f.proc.sel, items: procItems(sim, f).map((i) => ({ label: i.label.startsWith('Activate Approach') ? 'Activate Approach' : i.label, enabled: i.enabled })) } : null,
+    hold: f.hold ? { ...f.hold } : null,
+    insert: f.insert ? { title: f.insert.title, list: f.insert.list.map((p) => p.ident), sel: f.insert.sel } : null,
+    msg: f.msg && f.msg.until > nowMs() ? f.msg.text : null,
+  };
+}
+
+// ---------------------------------------------------------------- touch
+const mfdBound = new WeakMap<HTMLCanvasElement, { st: MfdState; sim: Sim }>();
+/** Taps on the drawn FPL rows, windows and buttons run the hit region drawn under the finger (softkeys stay with
+ *  the shell's own handler). */
+function bindMfdPointer(canvas: HTMLCanvasElement | null | undefined, st: MfdState, sim: Sim) {
+  if (!canvas || typeof canvas.addEventListener !== 'function') return;
+  const b = mfdBound.get(canvas);
+  if (b) {
+    b.st = st;
+    b.sim = sim;
+    return;
+  }
+  const ref = { st, sim };
+  mfdBound.set(canvas, ref);
+  // automation hook (screenshots, the remote companion): the same inputs as the FMS knob and bezel keys
+  (canvas as HTMLCanvasElement & { ifrFms?: unknown }).ifrFms = { key: (k: FmsKey) => fmsKey(ref.sim, ref.st, k), view: () => fmsView(ref.sim, ref.st) };
+  canvas.addEventListener('click', (e: MouseEvent) => {
+    const r = canvas.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    const x = ((e.clientX - r.left) / r.width) * MFD_W;
+    const y = ((e.clientY - r.top) / r.height) * MFD_H;
+    if (y >= SOFT_Y) return;
+    const hits = ref.st.fms.hits;
+    for (let k = hits.length - 1; k >= 0; k--) {
+      const h = hits[k];
+      if (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) {
+        h.run();
+        e.stopPropagation();
+        return;
+      }
+    }
+  });
+}
+
+// ---------------------------------------------------------------- drawing
+const WIN_BG = '#05080c';
+const WIN_EDGE = '#5f656b';
+const DIM = '#5d636a';
+
+function hit(f: FmsUi, x: number, y: number, w: number, h: number, run: () => void) {
+  f.hits.push({ x, y, w, h, run });
+}
+
+/** G1000 cursor: the selected field is drawn inverse (black on cyan) */
+function field(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, w: number, h: number, on: boolean, size: number, color = C.white, align: CanvasTextAlign = 'left') {
+  if (on) cbox(ctx, x, y - h / 2, w, h, C.cyan);
+  const tx = align === 'left' ? x + 6 : align === 'right' ? x + w - 6 : x + w / 2;
+  text(ctx, s, tx, y + 1, on ? '#000' : color, size, align, 700);
+}
+
+function button(ctx: CanvasRenderingContext2D, f: FmsUi, label: string, x: number, y: number, w: number, h: number, on: boolean, enabled: boolean, run: () => void) {
+  cbox(ctx, x, y, w, h, on ? C.cyan : '#11171e', enabled ? '#6b7178' : '#2c3137');
+  const size = Math.min(fs(14), fs(14) * ((w - 10) / Math.max(1, tw(ctx, label, fs(14), 700))));
+  text(ctx, label, x + w / 2, y + h / 2 + 1, on ? '#000' : enabled ? C.white : DIM, size, 'center', 700);
+  if (enabled) hit(f, x, y, w, h, run);
+}
+
+function windowFrame(ctx: CanvasRenderingContext2D, f: FmsUi, title: string, x: number, y: number, w: number, h: number) {
+  // the whole window swallows taps (nothing under it runs)
+  hit(f, x, y, w, h, () => undefined);
+  cbox(ctx, x, y, w, h, WIN_BG, WIN_EDGE);
+  cbox(ctx, x + 1, y + 1, w - 2, TITLE_H + 4, '#000');
+  text(ctx, title, x + w / 2, y + TITLE_H / 2 + 3, C.white, fs(14), 'center', 700);
+  line(ctx, x + 1, y + TITLE_H + 5.5, x + w - 1, y + TITLE_H + 5.5, '#2c3137', 1);
+  return y + TITLE_H + 6;
+}
+
+function drawFpl(ctx: CanvasRenderingContext2D, sim: Sim, st: MfdState, r: { x: number; y: number; w: number; h: number }) {
+  const f = st.fms;
   cbox(ctx, r.x, r.y, r.w, r.h, '#05080c');
   line(ctx, r.x + 0.5, r.y, r.x + 0.5, r.y + r.h, '#4a4f55', 1);
   const fp = sim.fp;
@@ -760,58 +1393,73 @@ function drawFpl(ctx: CanvasRenderingContext2D, sim: Sim, r: { x: number; y: num
   text(ctx, 'ALT', cols.alt, y, C.gray, ch, 'right');
   line(ctx, r.x + 8, y + 10, r.x + r.w - 8, y + 10, '#3a4048', 1);
   y += 26;
-  // rows: section headers + waypoints, scrolled so the active waypoint stays in view
-  type Row = { kind: 'sec'; label: string } | { kind: 'wpt'; i: number };
-  const rows: Row[] = [];
-  let lastSection = '';
-  fp.wpts.forEach((w, i) => {
-    const section = w.appr === 'missed' ? 'MISSED APPROACH' : w.appr ? `${fp.approach?.airport ?? ''} ${fp.approach?.name ?? 'APPROACH'}`.trim() : 'ENROUTE';
-    if (section !== lastSection) {
-      rows.push({ kind: 'sec', label: section });
-      lastSection = section;
-    }
-    rows.push({ kind: 'wpt', i });
-  });
-  const rowH = Math.max(24, fs(16) + 8);
-  const footerH = fs(14) * 2 + 20;
-  const maxRows = Math.max(1, Math.floor((r.y + r.h - footerH - 6 - y) / rowH));
-  const activeRow = rows.findIndex((q) => q.kind === 'wpt' && q.i === fp.active);
+  const rows = fplRows(sim);
+  const cur = cursorRow(sim, f, rows);
+  if (f.cursor !== null && cur < 0) f.cursor = null; // the row went away (sequenced off, removed)
+  const rowH = Math.max(26, fs(16) + 10);
+  const cursorOn = f.cursor !== null && f.page === 'fpl';
+  const liveMsg = f.msg && f.msg.until > nowMs() ? f.msg.text : null;
+  const footerH = cursorOn ? 2 * 40 + 22 + (liveMsg ? fs(13) + 8 : 0) : fs(14) * 2 + 26;
+  const maxRows = Math.max(1, Math.floor((r.y + r.h - footerH - 6 - y + rowH / 2) / rowH));
+  const focus = cursorOn ? cur : rows.findIndex((q) => q.kind === 'wpt' && q.i === fp.active);
   let start = 0;
-  if (rows.length > maxRows && activeRow >= 0) start = Math.max(0, Math.min(rows.length - maxRows, activeRow - 2));
+  if (rows.length > maxRows && focus >= 0) start = Math.max(0, Math.min(rows.length - maxRows, focus - 2));
   const ids = fs(16);
   const nums = fs(15);
   // hold glyph column: just left of the widest DTK value, so it never touches it at any text scale
   const holdX = cols.dtk - tw(ctx, '000°', nums, 600) - 12;
+  const rowY = new Map<number, number>();
   for (let k = start; k < Math.min(rows.length, start + maxRows); k++) {
     const row = rows[k];
     const ry = y + (k - start) * rowH;
+    const sel = cursorOn && k === cur;
+    // a tap on a selectable row puts the cursor on it (a second tap on the same row clears it)
+    if (selectable(row) && f.page === 'fpl')
+      hit(f, r.x + 2, ry - rowH / 2, r.w - 4, rowH, () => {
+        if (sel) f.cursor = null;
+        else setCursorRow(sim, f, row);
+      });
     if (row.kind === 'sec') {
       ctx.save();
       ctx.beginPath();
       ctx.rect(r.x + 8, ry - rowH / 2, r.w - 16, rowH);
       ctx.clip();
-      text(ctx, row.label, r.x + 12, ry, '#c9ced3', fs(13), 'left', 700);
+      const lw = Math.min(r.w - 22, tw(ctx, row.label, fs(13), 700) + 10);
+      if (sel) cbox(ctx, r.x + 8, ry - rowH / 2 + 3, lw, rowH - 6, C.cyan);
+      text(ctx, row.label, r.x + 12, ry, sel ? '#000' : '#c9ced3', fs(13), 'left', 700);
       ctx.restore();
+      continue;
+    }
+    if (row.kind === 'blank') {
+      const bw = tw(ctx, '_____', ids, 700) + 12;
+      if (sel) cbox(ctx, cols.id - 6, ry - rowH / 2 + 3, bw, rowH - 6, C.cyan);
+      text(ctx, '_____', cols.id, ry - 2, sel ? '#000' : '#6b7178', ids, 'left', 700);
       continue;
     }
     const i = row.i;
     const w = fp.wpts[i];
     const active = i === fp.active;
+    const pending = fp.pendingLeg === i;
     const prev = i > 0 ? fp.wpts[i - 1] : null;
-    const dtk = prev ? bearingDeg(prev, w) : null;
-    const dis = prev ? distanceNm(prev, w) : null;
-    if (active) poly(ctx, [[r.x + 8, ry - 6], [r.x + 16, ry], [r.x + 8, ry + 6]], C.magenta);
+    // the active leg reads the desired track and the distance to go from the present position (G1000 FPL page)
+    const live = active && fp.out.valid;
+    const dtk = live ? fp.out.dtk : prev ? bearingDeg(prev, w) : null;
+    const dis = live ? fp.out.distNm : prev ? distanceNm(prev, w) : null;
+    rowY.set(i, ry);
+    if (active) poly(ctx, [[r.x + 9, ry - 6], [r.x + 17, ry], [r.x + 9, ry + 6]], C.magenta);
     const col = active ? C.magenta : C.white;
-    // ident cell (clipped) + role suffix in grey
+    // ident cell (clipped) + role suffix in grey; the cursor is an inverse cyan box on the ident
+    const idW = tw(ctx, w.ident, ids, 700);
     ctx.save();
     ctx.beginPath();
-    ctx.rect(cols.id - 2, ry - rowH / 2, holdX - 9 - cols.id, rowH);
+    ctx.rect(cols.id - 6, ry - rowH / 2, holdX - 3 - cols.id, rowH);
     ctx.clip();
-    text(ctx, w.ident, cols.id, ry, col, ids, 'left', 700);
+    if (sel || pending) cbox(ctx, cols.id - 5, ry - rowH / 2 + 3, idW + 10, rowH - 6, sel ? C.cyan : 'transparent', pending ? C.cyan : undefined);
+    text(ctx, w.ident, cols.id, ry, sel ? '#000' : col, ids, 'left', 700);
     const suf = w.role ? ROLE_SUFFIX[w.role] : undefined;
-    if (suf) text(ctx, suf, cols.id + tw(ctx, w.ident, ids, 700) + 4, ry + 1, '#8a9097', fs(12));
+    if (suf) text(ctx, suf, cols.id + idW + 10, ry + 1, '#8a9097', fs(12));
     ctx.restore();
-    if (w.hold) holdGlyph(ctx, holdX, ry, col);
+    if (w.hold) holdGlyph(ctx, holdX, ry, w.hold.kind === 'user' ? C.cyan : col);
     if (dtk !== null) text(ctx, `${pad3(dtk)}°`, cols.dtk, ry, col, nums, 'right');
     if (dis !== null) text(ctx, dis.toFixed(1), cols.dis, ry, col, nums, 'right');
     if (w.altMin) {
@@ -821,19 +1469,273 @@ function drawFpl(ctx: CanvasRenderingContext2D, sim: Sim, r: { x: number; y: num
       line(ctx, cols.alt - aw, ry + nums / 2 + 2, cols.alt, ry + nums / 2 + 2, C.cyan, 1.5);
     }
   }
+  // G1000 active-leg arrow: a magenta bracket from the FROM waypoint down to the TO waypoint (not on a Direct-To)
+  const yTo = rowY.get(fp.active);
+  const yFrom = rowY.get(fp.active - 1);
+  if (yTo !== undefined && yFrom !== undefined && fp.out.valid && fp.out.fromIdent !== 'DCT') {
+    ctx.save();
+    ctx.strokeStyle = C.magenta;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(r.x + 15, yFrom);
+    ctx.lineTo(r.x + 5, yFrom);
+    ctx.lineTo(r.x + 5, yTo);
+    ctx.lineTo(r.x + 10, yTo);
+    ctx.stroke();
+    ctx.restore();
+  }
   // scroll hints
   if (start > 0) poly(ctx, [[r.x + r.w - 14, y - 16], [r.x + r.w - 20, y - 8], [r.x + r.w - 8, y - 8]], C.gray);
   if (start + maxRows < rows.length) {
     const yb = y + maxRows * rowH - rowH / 2 + 2;
     poly(ctx, [[r.x + r.w - 14, yb + 8], [r.x + r.w - 20, yb], [r.x + r.w - 8, yb]], C.gray);
   }
-  // footer
+  // footer: waypoint options while the cursor is shown, the plan status otherwise
   const o = fp.out;
   const fy = r.y + r.h - footerH;
   cbox(ctx, r.x + 1, fy, r.w - 1, footerH, '#0b1118');
   line(ctx, r.x + 1, fy + 0.5, r.x + r.w, fy + 0.5, '#2c3137', 1);
   const fsz = fs(14);
-  const status = fp.approachActive ? (fp.missedActive ? 'MISSED APPROACH ACTIVE' : 'APPROACH ACTIVE') : fp.approachId ? 'APPROACH LOADED' : 'ENROUTE';
-  text(ctx, status, r.x + 14, fy + 8 + fsz / 2, fp.approachActive ? C.green : C.white, fsz, 'left', 700);
-  if (o.valid) text(ctx, `CDI ${o.mode}  ±${o.fullScaleNm.toFixed(1)}NM`, r.x + 14, fy + 14 + fsz * 1.5, C.magenta, fsz);
+  if (cursorOn) {
+    const i = cursorWpt(sim, f);
+    const w = i >= 0 ? fp.wpts[i] : null;
+    const inProc = !!w && !!w.appr && !!fp.wpts[i - 1]?.appr;
+    const bw = (r.w - 8 * 2 - 6 * 2) / 3;
+    const bh = 38;
+    const bx = (k: number) => r.x + 8 + k * (bw + 6);
+    if (liveMsg) text(ctx, liveMsg, r.x + 12, fy + 6 + fs(13) / 2, C.cyan, fs(13));
+    const y1 = fy + 8 + (liveMsg ? fs(13) + 8 : 0);
+    const y2 = y1 + bh + 6;
+    if (f.cursor === 'appr') {
+      // approach header: the procedure actions (PROC window), then remove the whole approach
+      const hasFaf = fp.wpts.some((x) => x.role === 'FAF' && x.appr === 'final');
+      button(ctx, f, 'PROC', bx(0), y1, bw, bh, false, true, () => fmsKey(sim, st, 'proc'));
+      button(ctx, f, 'VTF', bx(1), y1, bw, bh, false, hasFaf, () => { fp.vectorsToFinal(); sim.updateAvionics(0); say(f, 'Vectors to final active'); f.cursor = null; });
+      button(ctx, f, 'ACTIVATE', bx(2), y1, bw, bh, false, true, () => { fp.activateApproach(sim.ac.s); sim.updateAvionics(0); say(f, 'Approach active'); f.cursor = null; });
+    } else {
+      button(ctx, f, 'ACT LEG', bx(0), y1, bw, bh, false, i > 0, () => askActivateLeg(sim, f, i));
+      button(ctx, f, 'D→', bx(1), y1, bw, bh, false, !!w, () => openDirect(sim, f));
+      button(ctx, f, 'HOLD', bx(2), y1, bw, bh, false, !!w, () => openHold(sim, f, i));
+    }
+    button(ctx, f, 'INSERT', bx(0), y2, bw, bh, false, f.cursor === 'blank' || (!!w && !inProc), () => openInsert(sim, f));
+    button(ctx, f, 'REMOVE', bx(1), y2, bw, bh, false, f.cursor === 'appr' || (!!w && !w.appr), () => askRemove(sim, f));
+    button(ctx, f, 'MENU', bx(2), y2, bw, bh, false, true, () => fmsKey(sim, st, 'menu'));
+  } else {
+    const status = fp.approachActive ? (fp.missedActive ? 'MISSED APPROACH ACTIVE' : fp.vtf ? 'VECTORS TO FINAL' : 'APPROACH ACTIVE') : fp.approachId ? 'APPROACH LOADED' : 'ENROUTE';
+    text(ctx, status, r.x + 14, fy + 10 + fsz / 2, fp.approachActive ? C.green : C.white, fsz, 'left', 700);
+    if (liveMsg) text(ctx, liveMsg, r.x + 14, fy + 16 + fsz * 1.5, C.cyan, fsz);
+    else if (o.valid) {
+      const susp = o.suspended ? `  ${o.obs ? '' : 'SUSP'}` : o.obs ? '  OBS' : '';
+      text(ctx, `GPS ${o.phaseLabel}  ±${o.fullScaleNm.toFixed(o.fullScaleNm < 1 ? 2 : 1)}NM${susp}`, r.x + 14, fy + 16 + fsz * 1.5, C.magenta, fsz);
+    }
+  }
+}
+
+/** pop-up windows: page menu, confirmations, Direct-To, PROC, hold, insert (drawn over the map and FPL pane) */
+function drawFmsWindows(ctx: CanvasRenderingContext2D, sim: Sim, st: MfdState, fplShown: boolean) {
+  const f = st.fms;
+  const fp = sim.fp;
+  const W = 392;
+  // over the right part of the map, next to the flight plan (which stays readable while it is edited)
+  const X = (fplShown ? FPL_X : MFD_W) - 10 - W;
+  const top = 54 + TITLE_H + 8;
+  const rowH = Math.max(30, fs(15) + 14);
+  const s15 = fs(15);
+  const s13 = fs(13);
+  const listRows = (items: { label: string; sub?: string; enabled: boolean }[], sel: number, y0: number, maxN: number, onPick: (k: number) => void) => {
+    const start = Math.max(0, Math.min(items.length - maxN, sel - Math.floor(maxN / 2)));
+    for (let k = start; k < Math.min(items.length, start + maxN); k++) {
+      const it = items[k];
+      const ry = y0 + (k - start) * rowH + rowH / 2;
+      const on = k === sel;
+      field(ctx, it.label, X + 10, ry, W - 20, rowH - 4, on, s15, it.enabled ? C.white : DIM);
+      if (it.sub) text(ctx, it.sub, X + W - 16, ry + 1, on ? '#000' : C.gray, s13, 'right');
+      if (it.enabled) hit(f, X + 6, ry - rowH / 2, W - 12, rowH, () => onPick(k));
+    }
+    if (start > 0) poly(ctx, [[X + W - 10, y0 - 2], [X + W - 15, y0 + 5], [X + W - 5, y0 + 5]], C.gray);
+    if (start + maxN < items.length) {
+      const yb = y0 + maxN * rowH;
+      poly(ctx, [[X + W - 10, yb + 2], [X + W - 15, yb - 5], [X + W - 5, yb - 5]], C.gray);
+    }
+    return y0 + Math.min(items.length, maxN) * rowH;
+  };
+
+  if (f.page === 'direct' && f.direct) {
+    const dr = f.direct;
+    const p = dr.list[dr.sel];
+    // the window fits its content: the FLIGHT PLAN and NEAREST groups under the fields, scrolled when too long
+    type DRow = { head: string } | { k: number };
+    const drows: DRow[] = [];
+    dr.list.forEach((_, k) => {
+      if (k === 0 && dr.nFpl > 0) drows.push({ head: 'FLIGHT PLAN' });
+      if (k === dr.nFpl) drows.push({ head: 'NEAREST' });
+      drows.push({ k });
+    });
+    const fieldsH = 6 + 8 + (rowH + 4) + (rowH - 4) + (rowH + 8) + 38 + 12;
+    const maxH = SOFT_Y - 10 - top;
+    const h = Math.min(maxH, fieldsH + drows.length * rowH + 10);
+    let y = windowFrame(ctx, f, 'DIRECT TO', X, top, W, h) + 8;
+    // ident field + bearing / distance / course
+    text(ctx, 'IDENT', X + 14, y + 12, C.gray, s13);
+    field(ctx, p?.ident ?? '_____', X + 80, y + 12, 140, rowH - 4, dr.field === 'ident' && !dr.listOpen, fs(18), C.cyan);
+    hit(f, X + 80, y + 12 - rowH / 2, 140, rowH, () => { dr.field = 'ident'; dr.listOpen = !dr.listOpen; });
+    const nav = p ? NAVAIDS.find((v) => v.ident === p.ident) ?? null : null;
+    const apt = p ? AIRPORTS.find((a) => a.icao === p.ident) ?? null : null;
+    const what = p ? (p.wpt ? 'FLIGHT PLAN' : p.kind) : '';
+    const name = p?.name ?? nav?.name ?? apt?.name ?? '';
+    text(ctx, what, X + W - 14, y + 4, C.gray, s13, 'right');
+    if (name) text(ctx, name.toUpperCase(), X + W - 14, y + 4 + s13 + 4, C.white, s13, 'right');
+    y += rowH + 4;
+    if (p) {
+      const brg = bearingDeg(sim.ac.s, p);
+      const dis = distanceNm(sim.ac.s, p);
+      text(ctx, `BRG ${pad3(brg)}°    DIS ${dis.toFixed(dis < 100 ? 1 : 0)}NM`, X + 14, y + 6, C.white, s15);
+    }
+    y += rowH - 4;
+    text(ctx, 'COURSE', X + 14, y + 12, C.gray, s13);
+    const crs = dr.course ?? (p ? Math.round(bearingDeg(sim.ac.s, p)) : null);
+    field(ctx, crs !== null ? `${pad3(crs)}°` : '___°', X + 80, y + 12, 90, rowH - 4, dr.field === 'course', fs(18), dr.course !== null ? C.cyan : C.white);
+    hit(f, X + 80, y + 12 - rowH / 2, 90, rowH, () => (dr.field = 'course'));
+    const nudge = (dd: number) => {
+      dr.field = 'course';
+      const base = dr.course ?? (crs ?? 360);
+      dr.course = ((base + dd - 1 + 3600) % 360) + 1;
+    };
+    button(ctx, f, '−5°', X + W - 14 - 2 * 58 - 6, y + 12 - (rowH - 4) / 2, 58, rowH - 4, false, true, () => nudge(-5));
+    button(ctx, f, '+5°', X + W - 14 - 58, y + 12 - (rowH - 4) / 2, 58, rowH - 4, false, true, () => nudge(5));
+    y += rowH + 8;
+    button(ctx, f, 'ACTIVATE?', X + 14, y, W - 28, 38, dr.field === 'activate', !!p, () => activateDirect(sim, f));
+    y += 38 + 12;
+    line(ctx, X + 8, y - 4.5, X + W - 8, y - 4.5, '#2c3137', 1);
+    // one cursor at a time: the list row is filled while the knob scrolls the list, outlined otherwise
+    const maxN = Math.max(1, Math.floor((top + h - 8 - y) / rowH));
+    const selRow = drows.findIndex((r) => 'k' in r && r.k === dr.sel);
+    const start = Math.max(0, Math.min(drows.length - maxN, selRow - Math.floor(maxN / 2)));
+    for (let j = start; j < Math.min(drows.length, start + maxN); j++) {
+      const r = drows[j];
+      const ry = y + (j - start) * rowH + rowH / 2;
+      if ('head' in r) {
+        text(ctx, r.head, X + 16, ry + 2, C.gray, s13, 'left', 700);
+        continue;
+      }
+      const q = dr.list[r.k];
+      const on = r.k === dr.sel;
+      if (on && !dr.listOpen) cbox(ctx, X + 10, ry - (rowH - 4) / 2, W - 20, rowH - 4, 'transparent', C.cyan);
+      field(ctx, q.ident, X + 10, ry, W - 20, rowH - 4, on && dr.listOpen, s15, on ? C.cyan : C.white);
+      const sub = r.k < dr.nFpl ? (q.wpt?.role ? q.wpt.role : '') : q.kind;
+      if (sub) text(ctx, sub, X + W - 16, ry + 1, on && dr.listOpen ? '#000' : C.gray, s13, 'right');
+      hit(f, X + 6, ry - rowH / 2, W - 12, rowH, () => { dr.sel = r.k; dr.course = null; dr.listOpen = false; dr.field = 'activate'; });
+    }
+    if (start > 0) poly(ctx, [[X + W - 10, y - 2], [X + W - 15, y + 5], [X + W - 5, y + 5]], C.gray);
+    if (start + maxN < drows.length) {
+      const yb = y + maxN * rowH;
+      poly(ctx, [[X + W - 10, yb + 2], [X + W - 15, yb - 5], [X + W - 5, yb - 5]], C.gray);
+    }
+  }
+
+  if (f.page === 'proc' && f.proc) {
+    const p = f.proc;
+    if (p.stage === 'menu') {
+      const items = procItems(sim, f);
+      const ap = fp.approach;
+      const h = TITLE_H + 6 + 8 + items.length * rowH + (ap ? 24 + rowH * 0.75 + s13 + 6 : 0) + 12;
+      let y = windowFrame(ctx, f, 'PROCEDURES', X, top, W, h) + 8;
+      y = listRows(items.map((i) => ({ label: i.label.toUpperCase(), enabled: i.enabled })), p.sel, y, items.length, (k) => { p.sel = k; items[k].run(); });
+      if (ap) {
+        line(ctx, X + 8, y + 6.5, X + W - 8, y + 6.5, '#2c3137', 1);
+        text(ctx, 'LOADED', X + 14, y + 22, C.gray, s13);
+        text(ctx, `${ap.airport} ${ap.name}`, X + 80, y + 22, C.white, s15, 'left', 700);
+        const tr = fp.wpts.find((w) => w.appr === 'trans' && w.role === 'IAF')?.ident ?? (fp.vtf ? 'VECTORS' : '');
+        text(ctx, `${tr ? tr + ' · ' : ''}${fp.approachActive ? (fp.missedActive ? 'MISSED ACTIVE' : 'ACTIVE') : 'NOT ACTIVE'}`, X + 80, y + 22 + rowH * 0.75, fp.approachActive ? C.green : C.gray, s13);
+      }
+    } else if (p.stage === 'approach') {
+      const list = approachList(sim);
+      const n = Math.min(list.length, 12);
+      const h = TITLE_H + 6 + 16 + n * rowH + 12;
+      const y = windowFrame(ctx, f, 'SELECT APPROACH', X, top, W, h) + 8;
+      listRows(list.map((a) => ({ label: `${a.airport}  ${a.name}`, enabled: true })), p.sel, y, n, (k) => Object.assign(p, { apId: list[k].id, stage: 'transition', sel: 0 }));
+    } else if (p.stage === 'transition') {
+      const list = procTransitions(p.apId);
+      const ap = APPROACHES.find((a) => a.id === p.apId);
+      const h = TITLE_H + 6 + 16 + rowH + list.length * rowH + 12;
+      let y = windowFrame(ctx, f, 'TRANSITION', X, top, W, h) + 8;
+      text(ctx, ap ? `${ap.airport} ${ap.name}` : '', X + 14, y + rowH / 2, C.cyan, s15, 'left', 700);
+      y += rowH;
+      listRows(list.map((t) => ({ label: t, enabled: true })), p.sel, y, list.length, (k) => Object.assign(p, { trans: list[k], stage: 'action', sel: 1 }));
+    } else {
+      const ap = APPROACHES.find((a) => a.id === p.apId);
+      const loc = isLocApproach(ap);
+      const h = TITLE_H + 6 + 16 + rowH * 3 + (loc ? rowH : 0) + 54;
+      let y = windowFrame(ctx, f, 'LOAD APPROACH', X, top, W, h) + 8;
+      text(ctx, ap ? `${ap.airport} ${ap.name}` : '', X + 14, y + rowH / 2, C.cyan, s15, 'left', 700);
+      y += rowH;
+      text(ctx, 'TRANS', X + 14, y + rowH / 2, C.gray, s13);
+      text(ctx, p.trans ?? 'VECTORS', X + 80, y + rowH / 2, C.white, s15, 'left', 700);
+      y += rowH;
+      const m = ap?.minimums[0];
+      text(ctx, 'MINS', X + 14, y + rowH / 2, C.gray, s13);
+      text(ctx, m ? `BARO ${m.da ?? m.mda}FT  ${m.label}` : '—', X + 80, y + rowH / 2, C.cyan, s15, 'left', 700);
+      y += rowH;
+      if (loc) {
+        text(ctx, 'NOT APPROVED FOR GPS', X + W / 2, y + rowH / 2, C.yellow, s13, 'center', 700);
+        y += rowH;
+      }
+      const bw = (W - 28 - 10) / 2;
+      button(ctx, f, 'LOAD?', X + 14, y + 6, bw, 38, p.sel === 0, true, () => procAction(sim, f, false));
+      button(ctx, f, p.trans === 'VECTORS' ? 'ACTIVATE VTF?' : 'ACTIVATE?', X + 24 + bw, y + 6, bw, 38, p.sel === 1, true, () => procAction(sim, f, true));
+    }
+  }
+
+  if (f.hold) {
+    const hd = f.hold;
+    const h = TITLE_H + 6 + 16 + rowH * 3 + 58;
+    let y = windowFrame(ctx, f, `HOLD AT ${hd.ident}`, X, top, W, h) + 10;
+    const rowsDef: [string, string][] = [
+      ['INBOUND CRS', `${pad3(hd.inbound)}°`],
+      ['TURNS', hd.turn === 'R' ? 'RIGHT' : 'LEFT'],
+      ['LEG TIME', `${hd.legMin.toFixed(1)} MIN`],
+    ];
+    rowsDef.forEach(([lbl, val], k) => {
+      const ry = y + rowH / 2;
+      text(ctx, lbl, X + 14, ry, C.gray, s13);
+      field(ctx, val, X + 150, ry, 120, rowH - 4, hd.field === k, s15, C.cyan, 'center');
+      hit(f, X + 150, ry - rowH / 2, 120, rowH, () => (hd.field = k));
+      button(ctx, f, '◂', X + 282, ry - (rowH - 6) / 2, 44, rowH - 6, false, true, () => { hd.field = k; holdAdjust(hd, k === 0 ? -5 : -1); });
+      button(ctx, f, '▸', X + 332, ry - (rowH - 6) / 2, 44, rowH - 6, false, true, () => { hd.field = k; holdAdjust(hd, k === 0 ? 5 : 1); });
+      y += rowH;
+    });
+    button(ctx, f, 'LOAD HOLD?', X + 14, y + 8, W - 28, 38, hd.field === 3, true, () => loadHold(sim, f));
+  }
+
+  if (f.insert) {
+    const ins = f.insert;
+    const n = Math.min(ins.list.length, 10);
+    const h = TITLE_H + 6 + 16 + rowH + n * rowH + 12;
+    let y = windowFrame(ctx, f, ins.title, X, top, W, h) + 8;
+    text(ctx, 'NEAREST', X + 14, y + rowH / 2, C.gray, s13);
+    y += rowH;
+    listRows(ins.list.map((q) => ({ label: q.ident, sub: q.kind, enabled: true })), ins.sel, y, n, (k) => { ins.sel = k; doInsert(sim, f); });
+  }
+
+  if (f.menu) {
+    const m = f.menu;
+    const h = TITLE_H + 6 + 16 + m.items.length * rowH;
+    const y = windowFrame(ctx, f, m.title, X, top, W, h) + 8;
+    listRows(m.items.map((i) => ({ label: i.label.toUpperCase(), enabled: i.enabled })), m.sel, y, m.items.length, (k) => { f.menu = null; m.items[k].run(); });
+  }
+
+  if (f.confirm) {
+    const c = f.confirm;
+    const w = 340;
+    const x = X + (W - w) / 2;
+    const h = TITLE_H + 6 + rowH + 66;
+    hit(f, 0, 0, MFD_W, SOFT_Y, () => undefined); // modal
+    const y0 = 290;
+    const y = windowFrame(ctx, f, 'CONFIRM', x, y0, w, h) + 8;
+    text(ctx, c.text, x + w / 2, y + rowH / 2, C.white, fs(16), 'center', 700);
+    const bw = (w - 28 - 10) / 2;
+    button(ctx, f, c.ok, x + 14, y + rowH + 10, bw, 38, true, true, () => { f.confirm = null; c.run(); });
+    button(ctx, f, 'CANCEL', x + 24 + bw, y + rowH + 10, bw, 38, false, true, () => { f.confirm = null; c.cancel?.(); });
+  }
 }
