@@ -10,6 +10,11 @@ import { currentRegion } from '../nav/world';
 import { CloudLayers } from './clouds3d';
 import { terrainMaterial } from './terrain3d';
 import { cloudLayer } from './otw';
+import { Aircraft3D } from './aircraft3d';
+import { CameraRig, VIEWS, type ViewMode, type AircraftFrame, type CameraEnv } from './cameras';
+
+export type { ViewMode } from './cameras';
+export { VIEWS, VIEW_LABELS } from './cameras';
 
 const NM = 1852;
 const FT = 0.3048;
@@ -161,6 +166,18 @@ export class Outside3D {
   private frameMs = 16;
   private lastRenderAt = 0;
   private prCooldown = 0;
+  /** exterior model and camera rig */
+  readonly aircraft: Aircraft3D;
+  private rig = new CameraRig();
+  private towers: THREE.Vector3[] = [];
+  private camEnv: CameraEnv;
+  private baseFov = 62;
+  private lastT = NaN;
+  private acGroundY = 0;
+  private acPos = new THREE.Vector3();
+  private readonly acFrame: AircraftFrame = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), hdg: 0, pitch: 0, vel: new THREE.Vector3(), onGround: true };
+  /** called after the view changes (UI can reflect the current view) */
+  onViewChange: ((v: ViewMode) => void) | null = null;
 
   constructor(canvas: HTMLCanvasElement, quality: Quality, time: TimeOfDay) {
     const reg = currentRegion();
@@ -182,7 +199,107 @@ export class Outside3D {
     this.buildAirports();
     this.buildScenery();
     this.buildClouds();
+    this.aircraft = new Aircraft3D();
+    this.scene.add(this.aircraft.group, this.aircraft.shadow, this.aircraft.pool);
+    this.aircraft.group.visible = false;
+    this.buildTowers();
+    this.camEnv = {
+      towers: this.towers,
+      groundAt: (x, z) => {
+        // terrain (the sea surface at 0.5 m), and never below the runway the aircraft is on when close by
+        const e = Math.max(0.5, groundElevation(fromLocal(x / NM, -z / NM)) * FT);
+        const near = Math.hypot(x - this.acPos.x, z - this.acPos.z) < 1500;
+        return near ? Math.max(e, this.acGroundY) : e;
+      },
+    };
+    this.attachPointer(canvas);
     this.setTime(time);
+  }
+
+  // ---------------------------------------------------------------- views
+  /** the current camera view */
+  get view(): ViewMode {
+    return this.rig.mode;
+  }
+  /** all views, in cycling order */
+  static readonly VIEWS = VIEWS;
+
+  setView(v: ViewMode) {
+    if (!VIEWS.includes(v) || v === this.rig.mode) return;
+    this.rig.setMode(v);
+    this.lookYaw = this.lookPitch = 0;
+    this.camera.fov = this.baseFov;
+    this.camera.near = 3;
+    this.camera.updateProjectionMatrix();
+    this.onViewChange?.(v);
+  }
+
+  cycleView(dir: 1 | -1 = 1) {
+    const i = VIEWS.indexOf(this.rig.mode);
+    this.setView(VIEWS[(i + dir + VIEWS.length) % VIEWS.length]);
+  }
+
+  /** orbit / chase drag, wheel and pinch zoom on the canvas (the cockpit look-around drag is handled by the shell) */
+  private attachPointer(canvas: HTMLCanvasElement) {
+    const pts = new Map<number, { x: number; y: number }>();
+    let pinch = 0;
+    const spread = () => {
+      const p = [...pts.values()];
+      return p.length >= 2 ? Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) : 0;
+    };
+    canvas.style.touchAction = 'none';
+    canvas.addEventListener('pointerdown', (e) => {
+      if (this.view === 'cockpit') return;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      this.rig.dragging = true;
+      if (pts.size === 2) pinch = spread();
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      const p = pts.get(e.pointerId);
+      if (!p || this.view === 'cockpit') return;
+      if (pts.size >= 2) {
+        p.x = e.clientX;
+        p.y = e.clientY;
+        const d = spread();
+        if (pinch > 10 && d > 10) this.rig.zoomBy(d / pinch);
+        pinch = d;
+        return;
+      }
+      this.rig.drag(e.clientX - p.x, e.clientY - p.y);
+      p.x = e.clientX;
+      p.y = e.clientY;
+    });
+    const up = (e: PointerEvent) => {
+      pts.delete(e.pointerId);
+      this.rig.dragging = pts.size > 0;
+      pinch = spread();
+    };
+    canvas.addEventListener('pointerup', up);
+    canvas.addEventListener('pointercancel', up);
+    canvas.addEventListener(
+      'wheel',
+      (e) => {
+        if (this.view === 'cockpit') return;
+        e.preventDefault();
+        this.rig.zoomBy(Math.exp(-Math.max(-300, Math.min(300, e.deltaY)) * 0.0016));
+      },
+      { passive: false },
+    );
+    canvas.addEventListener('dblclick', () => {
+      if (this.view !== 'cockpit') this.rig.reset();
+    });
+  }
+
+  /** tower cab eye points, matching the towers airport3d puts beside each airport's primary runway */
+  private buildTowers() {
+    for (const a of sceneryAirports()) {
+      const r = a.runways[0];
+      if (!r) continue;
+      const L = r.lengthFt;
+      const along = Math.min(L * 0.56 + 1500, L - 1100) + 160;
+      const ll = destination(destination(r.threshold, r.heading, along / FT_PER_NM), r.heading + 90, 520 / FT_PER_NM);
+      this.towers.push(w(ll, groundElevation(ll) + 100));
+    }
   }
 
   // ---------------------------------------------------------------- sky
@@ -472,6 +589,14 @@ export class Outside3D {
     }
     sky.uSunDir.value.copy(this.sun.position).normalize();
     this.stars.visible = t === 'night';
+    if (this.aircraft) {
+      const gnd = new THREE.Color(t === 'night' ? 0x030405 : t === 'dusk' ? 0x2a2420 : 0x3d4433);
+      try {
+        this.aircraft.setEnvironment(this.renderer, sky.uTop.value, sky.uHorizon.value, gnd, t === 'night' ? 0.25 : t === 'dusk' ? 0.6 : 0.75);
+      } catch (e) {
+        console.warn('aircraft reflections unavailable', e);
+      }
+    }
   }
 
   resize(wPx: number, hPx: number) {
@@ -479,7 +604,8 @@ export class Outside3D {
     this.camera.aspect = wPx / Math.max(1, hPx);
     // keep a realistic ~78° horizontal field of view whatever the window shape
     const hfov = 78 * DEG;
-    this.camera.fov = Math.min(70, Math.max(24, (2 * Math.atan(Math.tan(hfov / 2) / this.camera.aspect)) / DEG));
+    this.baseFov = Math.min(70, Math.max(24, (2 * Math.atan(Math.tan(hfov / 2) / this.camera.aspect)) / DEG));
+    this.camera.fov = this.baseFov;
     this.camera.updateProjectionMatrix();
     this.lightsMat.uniforms.uScale.value = Math.min(1.6, window.devicePixelRatio || 1) * (hPx / 400);
   }
@@ -487,15 +613,39 @@ export class Outside3D {
   render(sim: Sim, t: number) {
     const s = sim.ac.s;
     const d = sim.ac.data;
-    const eye = w(s, s.altFt + sim.cockpitEyeFt);
-    this.camera.position.copy(eye);
-    this.camera.rotation.set((d.pitchDeg - 4) * DEG + this.lookPitch, -d.hdgTrue * DEG + this.lookYaw, -d.rollDeg * DEG);
+    const dt = Number.isFinite(this.lastT) ? Math.max(0, Math.min(0.25, t - this.lastT)) : 0;
+    this.lastT = t;
+    this.placeAircraft(sim);
+    const cockpit = this.view === 'cockpit';
+    if (cockpit) {
+      this.camera.position.copy(w(s, s.altFt + sim.cockpitEyeFt));
+      this.camera.rotation.set((d.pitchDeg - 4) * DEG + this.lookPitch, -d.hdgTrue * DEG + this.lookYaw, -d.rollDeg * DEG);
+      if (this.camera.fov !== this.baseFov || this.camera.near !== 3) {
+        this.camera.fov = this.baseFov;
+        this.camera.near = 3;
+        this.camera.updateProjectionMatrix();
+      }
+    } else {
+      const shot = this.rig.update(dt, this.acFrame, this.camEnv);
+      this.camera.position.copy(shot.pos);
+      this.camera.up.set(0, 1, 0);
+      this.camera.lookAt(shot.target);
+      const fov = shot.fov ?? this.baseFov;
+      if (Math.abs(this.camera.fov - fov) > 1e-3 || Math.abs(this.camera.near - shot.near) > 1e-3) {
+        this.camera.fov = fov;
+        this.camera.near = shot.near;
+        this.camera.updateProjectionMatrix();
+      }
+    }
+    this.aircraft.group.visible = !cockpit;
+    const eye = this.camera.position;
+    const camAltFt = eye.y / FT;
     // weather
     const wx = sim.weather;
     const { base, top } = cloudLayer(sim);
     const overcast = wx.ceilingFt < 15000;
-    const inside = overcast && s.altFt > base && s.altFt < top;
-    const above = overcast && s.altFt >= top;
+    const inside = overcast && camAltFt > base && camAltFt < top;
+    const above = overcast && camAltFt >= top;
     const visM = Math.max(150, wx.visibilitySm * 1609);
     this.cloudBase.visible = overcast;
     this.cloudTop.visible = overcast;
@@ -519,7 +669,7 @@ export class Outside3D {
       this.fog.near = Math.min(visM * 0.15, 800);
       this.fog.far = overcast || wx.visibilitySm < 8 ? visM * 1.25 : 90000;
       // wisps near the base
-      const toBase = base - s.altFt;
+      const toBase = base - camAltFt;
       if (overcast && toBase < 250) {
         this.fog.far = Math.min(this.fog.far, 60 + toBase * 6);
         this.fog.near = 5;
@@ -549,18 +699,54 @@ export class Outside3D {
     u.uTime.value = t;
     u.uVis.value = inside ? 40 : overcast || wx.visibilitySm < 8 ? visM : 30000;
     u.uDay.value = night ? 0 : dusk ? 0.4 : overcast ? 0.55 : 1;
-    // PAPI: glide angle to the nearest site ahead
+    // PAPI: glide angle from the viewer to the nearest site ahead
+    const viewer = cockpit ? s : fromLocal(eye.x / NM, -eye.z / NM);
+    const viewerFt = cockpit ? s.altFt + 5 : camAltFt;
     let best: { ang: number; dist: number } | null = null;
     for (const p of this.papiSites) {
-      const dist = distanceNm(s, p.pos);
-      const ahead = Math.abs(((bearingDeg(s, p.pos) - p.heading + 540) % 360) - 180) < 45;
+      const dist = distanceNm(viewer, p.pos);
+      const ahead = Math.abs(((bearingDeg(viewer, p.pos) - p.heading + 540) % 360) - 180) < 45;
       if (!ahead || dist > 12) continue;
-      const ang = Math.atan2((s.altFt + 5 - p.elev) / FT_PER_NM, dist) / DEG;
+      const ang = Math.atan2((viewerFt - p.elev) / FT_PER_NM, dist) / DEG;
       if (!best || dist < best.dist) best = { ang, dist };
     }
     u.uPapiAngle.value = best ? best.ang : 3;
+    // aircraft lights, reflections, shadow and landing-light pool
+    {
+      const dayK = night ? 0 : dusk ? 0.35 : overcast && !above ? 0.6 : 1;
+      const a = this.aircraft;
+      a.setFocal(this.renderer.domElement.height / 2 / Math.tan((this.camera.fov * DEG) / 2));
+      a.update({ aileron: sim.controls.aileron, elevator: sim.controls.elevator + sim.controls.trim, trim: sim.controls.trim, rudder: sim.controls.rudder, flaps: s.flapPos, rpm: s.rpm, gsMps: d.gsKt * 0.514444, onGround: s.onGround, aglFt: d.aglFt, dt, t, day: dayK });
+      const sunDir = this.sun.position.clone().normalize();
+      const shadowK = night || inside ? 0 : dusk ? 0.45 : overcast && !above ? 0.38 : 1;
+      const poolK = night ? 1 : dusk ? 0.6 : overcast && !above ? 0.2 : 0.05;
+      a.placeGround(this.acPos, d.hdgTrue * DEG, d.pitchDeg * DEG, d.rollDeg * DEG, this.acGroundY, sunDir, shadowK, poolK);
+    }
     this.adaptResolution();
     this.renderer.render(this.scene, this.camera);
+  }
+
+  /** pose the model from the sim and fill the camera rig's aircraft frame */
+  private placeAircraft(sim: Sim) {
+    const s = sim.ac.s;
+    const d = sim.ac.data;
+    const pos = w(s, s.altFt);
+    const f = this.acFrame;
+    // velocity from the sim (ground speed along the track, vertical speed)
+    const gs = d.gsKt * 0.514444, tr = d.trackTrue * DEG;
+    f.vel.set(Math.sin(tr) * gs, (s.onGround ? 0 : d.vsFpm) * 0.00508, -Math.cos(tr) * gs);
+    if (!Number.isFinite(f.vel.x + f.vel.y + f.vel.z)) f.vel.set(0, 0, 0);
+    this.acPos.copy(pos);
+    this.acGroundY = (s.altFt - d.aglFt) * FT;
+    const g = this.aircraft.group;
+    g.position.copy(pos);
+    g.rotation.set(d.pitchDeg * DEG, -d.hdgTrue * DEG, -d.rollDeg * DEG);
+    g.updateMatrix();
+    f.pos.copy(pos);
+    f.quat.copy(g.quaternion);
+    f.hdg = d.hdgTrue * DEG;
+    f.pitch = d.pitchDeg * DEG;
+    f.onGround = s.onGround;
   }
 
   /** current render scale (1 = native for the chosen quality) */
