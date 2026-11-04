@@ -91,7 +91,6 @@ window.addEventListener('pointerdown', (e) => {
   if (e.pointerType !== 'touch' || touchUi) return;
   touchUi = true;
   document.body.classList.add('touch');
-  if (!store.get<boolean | null>('ifr.afcsBar', null)) setAfcsBar(true, false);
   fitSoon();
 }, true);
 // no pinch / double-tap zoom on the cockpit (Safari ignores user-scalable=no; its gesture events can be cancelled)
@@ -449,7 +448,7 @@ const menuHead = (t: string) => h('div', { class: 'menu-h', role: 'presentation'
 const autoHideSw = h('i', { class: 'sw', 'aria-hidden': 'true' });
 const autoHideItem = h('button', { class: 'menu-item', role: 'menuitemcheckbox', 'aria-checked': 'true', onclick: () => { setAutoHide(!autoHide); toast(autoHide ? 'Top bar hides in flight — touch the top edge of the screen or press F10 to show it' : 'Top bar always visible'); } }, icon(I.eye), h('span', {}, 'Auto-hide top bar'), autoHideSw);
 const afcsSw = h('i', { class: 'sw', 'aria-hidden': 'true' });
-const afcsItem = h('button', { class: 'menu-item', role: 'menuitemcheckbox', 'aria-checked': 'false', title: 'Big autopilot keys and − / + buttons for heading, altitude, course, baro and minimums — for touch screens and flying without a mouse', onclick: () => { setAfcsBar(!afcsBar); toast(afcsBar ? 'Autopilot bar on: tap − / + to set heading, altitude, course; tap a value for more steps' : 'Autopilot bar off'); } }, icon(I.keypad), h('span', {}, 'Autopilot bar (touch)'), afcsSw);
+const afcsItem = h('button', { class: 'menu-item', role: 'menuitemcheckbox', 'aria-checked': 'false', title: 'Autopilot keys and − / + buttons for heading, altitude, course, baro and minimums above the panel', onclick: () => { setAfcsBar(!afcsBar); toast(afcsBar ? 'Autopilot bar on: tap − / + to set heading, altitude, course; tap a value for more steps' : 'Autopilot bar off'); } }, icon(I.keypad), h('span', {}, 'Autopilot bar'), afcsSw);
 /** keyboard sensitivity: how fast and how far the arrow keys move the yoke */
 const sensLabel = () => (KB_SENSITIVITY.reduce((a, b) => (Math.abs(b.v - input.sensitivity) < Math.abs(a.v - input.sensitivity) ? b : a)).label);
 const sensVal = h('kbd', {}, sensLabel());
@@ -890,10 +889,11 @@ const afcs = h('section', { class: 'afcs', 'aria-label': 'Autopilot and selector
     afcsAp('DN', () => sim.ap.nose(-1), 'Nose down: VS −100, FLC speed +1, pitch −0.5°'), afcsVal(ROW.vert, 'vert', () => { const v = sim.ap.vert; return v === 'VS' ? `${sim.ap.vsSel > 0 ? '+' : ''}${sim.ap.vsSel}` : v === 'FLC' ? `${Math.round(sim.ap.iasSel)}` : `${sim.ap.pitchRef > 0 ? '+' : ''}${sim.ap.pitchRef.toFixed(1)}°`; }), afcsAp('UP', () => sim.ap.nose(1), 'Nose up: VS +100, FLC speed −1, pitch +0.5°')),
   afcsGrp('g-nav2', afcsVal(ROW.crs, 'crs', () => `${pad3(sim.course())}°`), afcsVal(ROW.baro, 'baro', () => sim.av.baro.toFixed(2)), afcsVal(ROW.mins, 'mins', () => (sim.av.minimums === null ? 'OFF' : String(sim.av.minimums)))),
 );
-let afcsBar = store.get<boolean | null>('ifr.afcsBar', null) ?? touchUi;
+// the autopilot bar shows on every device by default (v2 key: the earlier mouse-only default was 'off')
+let afcsBar = store.get<boolean | null>('ifr.afcsBar.v2', null) ?? true;
 function setAfcsBar(on: boolean, persist = true) {
   afcsBar = on;
-  if (persist) store.set('ifr.afcsBar', on);
+  if (persist) store.set('ifr.afcsBar.v2', on);
   cockpit.classList.toggle('with-afcs', on && cockpitType !== 'airliner');
   afcsSw.classList.toggle('on', on);
   afcsItem.setAttribute('aria-checked', String(on));
