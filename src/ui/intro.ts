@@ -145,12 +145,15 @@ export class Intro {
             "Get started",
             svgIcon(I.arrow, 18),
           ),
-          h(
-            "span",
-            { class: "intro-keys" },
-            "or press ",
-            h("kbd", {}, "Enter"),
-          ),
+          // the keyboard hint only where there is a keyboard (not on a touch-only tablet)
+          matchMedia("(pointer: coarse)").matches
+            ? null
+            : h(
+                "span",
+                { class: "intro-keys" },
+                "or press ",
+                h("kbd", {}, "Enter"),
+              ),
         ),
       ),
       h(

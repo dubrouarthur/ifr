@@ -10,11 +10,13 @@ export type IconName = keyof typeof I;
 
 export type CatId = 'approaches' | 'procedures' | 'xc' | 'circuits' | 'basics' | 'abnormal' | 'checkride' | 'free';
 
+/** the sub-type of the IFR circuits category that holds the user's own saved / shared flights */
+export const MINE_SUB = 'My flights';
 export const CATEGORIES: { id: CatId; title: string; short: string; icon: IconName; desc: string; subs: string[] }[] = [
   { id: 'approaches', title: 'Approaches', short: 'Approach', icon: I.approach, desc: 'Every instrument approach type, coupled or hand-flown.', subs: ['ILS & precision', 'LOC / LDA / BC', 'VOR & NDB', 'RNAV (GPS)', 'Circling'] },
   { id: 'procedures', title: 'Procedures', short: 'Procedure', icon: I.hold, desc: 'Holdings, entries, DME arcs, procedure turns, interceptions and tracking.', subs: ['Holdings', 'Interceptions', 'Arcs & PTs', 'Tracking & nav aids'] },
   { id: 'xc', title: 'IFR flights', short: 'XC', icon: I.route, desc: 'Gate-to-gate IFR cross-country flights between airports.', subs: ['Cross-country'] },
-  { id: 'circuits', title: 'IFR circuits', short: 'Circuit', icon: I.tools, desc: 'Instructor-built circuits: start, legs, holds, approaches, weather and scheduled failures.', subs: ['School presets', 'My circuits'] },
+  { id: 'circuits', title: 'IFR circuits', short: 'Circuit', icon: I.tools, desc: 'Graded multi-leg flights: departure, holds, approaches, weather and scheduled failures.', subs: ['School presets', MINE_SUB] },
   { id: 'basics', title: 'Instrument basics', short: 'Basics', icon: I.attitude, desc: 'Attitude instrument flying and partial panel.', subs: ['Attitude instrument flying', 'Partial panel'] },
   { id: 'abnormal', title: 'Emergencies', short: 'Emergency', icon: I.warning, desc: 'Missed approaches, failures, partial-panel approaches.', subs: ['Missed approach & failures'] },
   { id: 'checkride', title: 'Checkride', short: 'Checkride', icon: I.badge, desc: 'Full profiles graded against the ACS.', subs: ['Practical test profiles'] },
@@ -152,7 +154,7 @@ function circuitItem(c: Circuit, preset: boolean): Item {
   const ex = circuitToExercise(c);
   const apt = ex.plate ? approach(ex.plate).airport : c.start.type === 'runway' ? c.start.airport : 'PARD';
   const diff: 1 | 2 | 3 = c.failures.length || !c.allowAp ? 3 : c.legs.length > 3 ? 2 : 1;
-  return { id: ex.id, kind: 'exercise', cat: 'circuits', sub: preset ? 'School presets' : 'My circuits', title: c.name, summary: ex.summary, difficulty: diff, airport: apt, minutes: circuitStats(c).minutes, ap: c.allowAp, plate: ex.plate, graded: true, ex, circuit: c, tag: `CIRCUIT${ex.plate ? ' · ' + plateTag(ex.plate) : ''}`, tags: ['circuit', c.description] };
+  return { id: ex.id, kind: 'exercise', cat: 'circuits', sub: preset ? 'School presets' : MINE_SUB, title: c.name, summary: ex.summary, difficulty: diff, airport: apt, minutes: circuitStats(c).minutes, ap: c.allowAp, plate: ex.plate, graded: true, ex, circuit: c, tag: `CIRCUIT${ex.plate ? ' · ' + plateTag(ex.plate) : ''}`, tags: ['circuit', c.description] };
 }
 
 export function catalog(): Item[] {
