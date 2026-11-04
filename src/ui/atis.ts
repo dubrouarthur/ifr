@@ -70,11 +70,18 @@ export function approachInUse(
 ): Approach | undefined {
   if (!AIRPORTS.some((x) => x.icao === icao)) return undefined;
   const rw = runwayInUse(icao, w);
+  // RNAV (RNP) AR approaches need a special authorization: offered last
+  const score = (a: Approach) => APPROACH_RANK[a.type] + (/RNP/.test(a.name) ? 5 : 0);
   const apps = APPROACHES.filter((x) => x.airport === icao && allowed(x)).sort(
-    (a, b) => APPROACH_RANK[a.type] - APPROACH_RANK[b.type],
+    (a, b) => score(a) - score(b),
   );
+  // the runway in use, or its parallel (28L in use: the ILS 28R is as good)
+  const num = (r: string) => r.replace(/[LRC]$/, "");
+  const same = apps
+    .filter((x) => num(x.runway) === num(rw.id))
+    .sort((a, b) => score(a) - score(b) || Number(b.runway === rw.id) - Number(a.runway === rw.id));
   return (
-    apps.find((x) => x.runway === rw.id) ??
+    same[0] ??
     apps.find((x) => (runwayWind(icao, x.runway, w)?.head ?? 0) >= 0) ??
     apps[0]
   );
@@ -85,9 +92,12 @@ const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 export function atisText(icao: string, w: Weather, letterIdx = 0): string {
   const a = AIRPORTS.find((x) => x.icao === icao)!;
   const rw = runwayInUse(icao, w);
-  const ap = APPROACHES.filter(
-    (x) => x.airport === icao && x.runway === rw.id,
-  ).sort((p, q) => APPROACH_RANK[p.type] - APPROACH_RANK[q.type])[0];
+  // the same approach the flight builder and ATC pick (precision first, RNP AR last, parallels count)
+  const best = approachInUse(icao, w);
+  const ap =
+    best && best.runway.replace(/[LRC]$/, "") === rw.id.replace(/[LRC]$/, "")
+      ? best
+      : undefined;
   const letter = PHON[letterIdx % PHON.length];
   const wind =
     w.windKt < CALM_KT

@@ -11,16 +11,17 @@ import { svgIcon, I } from "./icons";
 import {
   AIRPORTS,
   NAVAIDS,
+  FIXES,
   findFix,
   approach as getApproach,
   landMask,
   groundElevation,
   runway as getRunway,
 } from "../nav/data";
-import { currentRegion, toReal } from "../nav/world";
+import { currentRegion, toReal, toSim } from "../nav/world";
 import { racetrack } from "../nav/holding";
 import { bearingDeg, destination, distanceNm, type LatLon } from "../nav/geo";
-import type { Circuit } from "../train/circuits";
+import { expandLegs, type Circuit } from "../train/circuits";
 import type { Approach, ProcLeg } from "../nav/types";
 
 // ------------------------------------------------------------------ geometry of the plan (pure)
@@ -46,6 +47,8 @@ export type MapPoint = {
 export interface PlanGeometry {
   lines: MapLine[];
   points: MapPoint[];
+  /** the fixes of the circuit's hold legs (drag handles in the builder) */
+  holds?: { leg: number; p: LatLon; ident: string }[];
   /** every point that must be in view when fitting */
   bounds: LatLon[];
 }
@@ -248,37 +251,54 @@ export function planGeometry(c: Circuit): PlanGeometry {
         g.bounds.push(cur);
       }
     }
-    c.legs.forEach((l, i) => {
+    for (const l of expandLegs(c)) {
+      const i = l.src;
+      if (l.type === "hold" && l.ppos) {
+        // hold at present position: where the aircraft is when cleared (the end of the previous leg)
+        if (!cur) continue;
+        const pts = holdPts(cur, l.inbound, l.turn, l.legMin);
+        g.lines.push({ kind: "hold", pts, leg: i });
+        g.points.push({ ident: "PPOS", kind: "fix", p: cur, alt: String(l.alt), leg: i });
+        g.bounds.push(...pts);
+        continue;
+      }
       if (l.type === "fix" || l.type === "hold") {
         const f = findFix(l.ident);
-        if (!f) return;
+        if (!f) continue;
         if (cur) g.lines.push({ kind: "route", pts: [cur, f], leg: i });
         cur = f;
         g.bounds.push(f);
+        const proc = "proc" in l ? l : null;
         if (!g.points.some((p) => p.ident === f.ident))
           g.points.push({
             ident: f.ident,
             kind: fixKind(f.ident),
             p: f,
             alt: l.alt ? String(l.alt) : undefined,
+            amin: proc?.amin,
+            amax: proc?.amax,
             leg: i,
           });
         if (l.type === "hold") {
           const pts = holdPts(f, l.inbound, l.turn, l.legMin);
           g.lines.push({ kind: "hold", pts, leg: i });
           g.bounds.push(...pts);
+          (g.holds ??= []).push({ leg: i, p: f, ident: f.ident });
         }
       } else if (l.type === "approach") {
         let ap: Approach;
         try {
           ap = getApproach(l.approachId);
         } catch {
-          return;
+          continue;
         }
         approachGeometry(ap, l.transition, l.outcome === "missed", g, cur, i);
-        cur = ap.final[ap.final.length - 1]?.fix ?? cur;
+        cur =
+          (l.outcome === "missed" ? ap.missed[ap.missed.length - 1]?.fix : undefined) ??
+          ap.final[ap.final.length - 1]?.fix ??
+          cur;
       }
-    });
+    }
   } catch {
     /* a plan referring to data that is not loaded: draw what resolved */
   }
@@ -304,6 +324,8 @@ export interface PlanProfile {
   /** decision / minimum descent altitude over the final segment */
   mins?: { alt: number; label: string; d0: number; d1: number };
   gp?: { angle: number; d0: number; d1: number };
+  /** minimum enroute altitudes of the airway segments */
+  mea?: { d0: number; d1: number; alt: number; via: string }[];
   ground: { d: number; elev: number }[];
   total: number;
 }
@@ -369,31 +391,55 @@ export function planProfile(c: Circuit, sampleGround = true): PlanProfile {
       assigned = c.start.altFt;
       pts.push({ d: 0, alt, ident: "START", leg: -1, seg: "route" });
     }
-    c.legs.forEach((l, i) => {
+    for (const l of expandLegs(c)) {
+      const i = l.src;
       if (l.type === "alt") {
         assigned = l.alt;
-        return;
+        continue;
+      }
+      if (l.type === "hold" && l.ppos) {
+        // hold at present position: the altitude change happens in the hold
+        alt = l.alt;
+        assigned = l.alt;
+        pts.push({ d, alt, ident: "PPOS", leg: i, seg: "route", hold: true });
+        continue;
       }
       if (l.type === "fix" || l.type === "hold") {
         const f = findFix(l.ident);
-        if (!f) return;
-        const target = l.type === "hold" ? l.alt : (l.alt ?? assigned);
+        if (!f) continue;
+        const proc = "proc" in l ? l : null;
+        // SID / STAR fixes: the assigned altitude within the published window
+        const target =
+          l.type === "hold"
+            ? l.alt
+            : (l.alt ??
+              (proc
+                ? Math.max(proc.amin ?? -Infinity, Math.min(assigned, proc.amax ?? Infinity))
+                : assigned));
         assigned = target;
         const seg = alt < target - 20 ? "climb" : "route";
-        if (l.type === "fix") goTo(f, target, { ident: f.ident, leg: i, seg });
-        else {
+        const d0 = d;
+        if (l.type === "fix") {
+          goTo(f, target, { ident: f.ident, leg: i, seg, amin: proc?.amin, amax: proc?.amax });
+          if (l.mea && "via" in l && l.via) {
+            // contiguous segments of the same airway and MEA merge into one step
+            const m = out.mea?.[out.mea.length - 1];
+            if (m && m.via === l.via && m.alt === l.mea && Math.abs(m.d1 - d0) < 1e-6) m.d1 = d;
+            else (out.mea ??= []).push({ d0, d1: d, alt: l.mea, via: l.via });
+          }
+        } else {
           // the altitude still missing at the fix is gained / lost in the hold
           goTo(f, target, { leg: i, seg });
           alt = target;
           pts.push({ d, alt, ident: f.ident, leg: i, seg, hold: true });
         }
-        return;
+        continue;
       }
       let ap: Approach;
       try {
         ap = getApproach(l.approachId);
       } catch {
-        return;
+        continue;
       }
       const seq = approachSequence(ap, l.transition);
       const rw = (() => {
@@ -473,10 +519,13 @@ export function planProfile(c: Circuit, sampleGround = true): PlanProfile {
           }
         } else {
           const target = pl.altMin ?? pl.altMax ?? alt;
+          // first fix of the approach: at least the altitude assigned so far (a direct flight from
+          // the runway climbs to its initial altitude), within the published window
+          const cur = Math.max(alt, assigned);
           goTo(
             pl.fix,
             k === 0
-              ? Math.max(target, Math.min(alt, pl.altMax ?? Infinity))
+              ? Math.max(pl.altMin ?? -Infinity, Math.min(cur, pl.altMax ?? Infinity))
               : target,
             { ...base, seg: k === 0 ? "route" : "approach" },
             path,
@@ -510,7 +559,7 @@ export function planProfile(c: Circuit, sampleGround = true): PlanProfile {
       } else if (l.outcome === "land" && rw) {
         alt = thrElev;
       }
-    });
+    }
   } catch {
     /* unresolved data: profile of what resolved */
   }
@@ -623,6 +672,11 @@ export interface RouteMapOpts {
   highlight?: number | null;
   /** click on a numbered leg badge */
   onPickLeg?: (leg: number) => void;
+  /** click on the map away from a badge: the point (sim coordinates), the nearest fix within reach (or
+   *  null) and the click position on screen — the builder offers "direct to" / "hold at" there */
+  onMapClick?: (p: LatLon, fix: string | null, at: { x: number; y: number }) => void;
+  /** a hold fix dragged onto another fix */
+  onMoveHold?: (leg: number, fix: string) => void;
 }
 
 type Box = [number, number, number, number];
@@ -746,8 +800,10 @@ export class RouteMap {
     this.airportsShown = new Set<string>();
     if (c) {
       if (c.start.type === "runway") this.airportsShown.add(c.start.airport);
+      if (c.dest) this.airportsShown.add(c.dest);
       for (const l of c.legs)
-        if (l.type === "approach")
+        if (l.type === "star") this.airportsShown.add(l.airport);
+        else if (l.type === "approach")
           try {
             this.airportsShown.add(getApproach(l.approachId).airport);
           } catch {
@@ -851,6 +907,32 @@ export class RouteMap {
     this.draw();
   }
 
+  /** screen pixel → position (sim coordinates) */
+  private unpx(x: number, y: number): LatLon {
+    const q = {
+      lat: uny(y - this.H / 2 + this.cy, this.z),
+      lon: unx(x - this.W / 2 + this.cx, this.z),
+    };
+    return this.real ? toSim(q) : q;
+  }
+  /** the fix nearest to a screen point, within `r` px */
+  private fixAt(x: number, y: number, r = 16): string | null {
+    let best: string | null = null;
+    let bd = r;
+    for (const f of FIXES) {
+      if (f.kind === "runway") continue;
+      const [fx, fy] = this.px(f);
+      const d = Math.hypot(fx - x, fy - y);
+      if (d < bd) {
+        bd = d;
+        best = f.ident;
+      }
+    }
+    return best;
+  }
+  /** hold being dragged: the ghost drawn at the pointer, snapped to the nearest fix */
+  private ghost: { x: number; y: number; fix: string | null } | null = null;
+
   private interact() {
     let drag: {
       x: number;
@@ -858,25 +940,55 @@ export class RouteMap {
       cx: number;
       cy: number;
       moved: boolean;
+      hold?: number;
     } | null = null;
     const v = this.view;
+    const local = (e: PointerEvent | MouseEvent) => {
+      const r = v.getBoundingClientRect();
+      return [e.clientX - r.left, e.clientY - r.top] as const;
+    };
     v.addEventListener("pointerdown", (e) => {
       if ((e.target as Element).closest(".rm-ctl")) return;
+      const [lx, ly] = local(e);
+      const hold = this.o.onMoveHold
+        ? this.g.holds?.find((hd) => {
+            const [hx, hy] = this.px(hd.p);
+            return Math.hypot(hx - lx, hy - ly) < 13;
+          })
+        : undefined;
       drag = {
         x: e.clientX,
         y: e.clientY,
         cx: this.cx,
         cy: this.cy,
         moved: false,
+        hold: hold?.leg,
       };
       v.setPointerCapture(e.pointerId);
     });
     v.addEventListener("pointermove", (e) => {
-      if (!drag) return;
+      const [lx, ly] = local(e);
+      if (!drag) {
+        // hover feedback: a hold fix can be dragged
+        const over = this.o.onMoveHold && this.g.holds?.some((hd) => {
+          const [hx, hy] = this.px(hd.p);
+          return Math.hypot(hx - lx, hy - ly) < 13;
+        });
+        this.el.classList.toggle("grab-hold", !!over);
+        return;
+      }
       if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 3) {
         drag.moved = true;
-        this.userView = true;
-        this.el.classList.add("drag");
+        if (drag.hold === undefined) {
+          this.userView = true;
+          this.el.classList.add("drag");
+        }
+      }
+      if (drag.hold !== undefined) {
+        if (!drag.moved) return;
+        this.ghost = { x: lx, y: ly, fix: this.fixAt(lx, ly, 28) };
+        this.drawOverlay();
+        return;
       }
       this.cx = drag.cx - (e.clientX - drag.x);
       this.cy = drag.cy - (e.clientY - drag.y);
@@ -884,15 +996,25 @@ export class RouteMap {
     });
     const end = (e: PointerEvent) => {
       if (!drag) return;
-      const click = !drag.moved;
+      const d = drag;
       drag = null;
+      const click = !d.moved;
       this.el.classList.remove("drag");
-      this.draw();
-      if (click && this.o.onPickLeg) {
-        const r = v.getBoundingClientRect();
-        const hit = this.badgeAt(e.clientX - r.left, e.clientY - r.top);
-        if (hit !== null) this.o.onPickLeg(hit);
+      const [lx, ly] = local(e);
+      if (d.hold !== undefined && !click) {
+        const fix = this.ghost?.fix ?? null;
+        this.ghost = null;
+        this.draw();
+        if (fix && e.type === "pointerup") this.o.onMoveHold?.(d.hold, fix);
+        return;
       }
+      this.ghost = null;
+      this.draw();
+      if (!click || e.type !== "pointerup") return;
+      const hit = this.badgeAt(lx, ly);
+      if (hit !== null && this.o.onPickLeg) this.o.onPickLeg(hit);
+      else if (hit === null && this.o.onMapClick)
+        this.o.onMapClick(this.unpx(lx, ly), this.fixAt(lx, ly), { x: e.clientX, y: e.clientY });
     };
     v.addEventListener("pointerup", end);
     v.addEventListener("pointercancel", end);
@@ -1380,6 +1502,14 @@ export class RouteMap {
     out.push(
       `<g class="rm-scale" transform="translate(12,${f1(sy)})"><rect x="-4" y="-13" width="${f1(bw + 40)}" height="19" rx="4"/><path d="M0,-4 V2 H${f1(bw)} V-4"/><path d="M${f1(bw / 2)},-2 V2"/><text x="${f1(bw + 5)}" y="1.5">${nice} NM</text></g>`,
     );
+    if (this.ghost) {
+      const gh = this.ghost;
+      const f = gh.fix ? findFix(gh.fix) : undefined;
+      const [gx, gy] = f ? P(f) : [gh.x, gh.y];
+      out.push(
+        `<g class="rm-ghost${f ? " snap" : ""}" transform="translate(${f1(gx)},${f1(gy)})"><circle r="11"/><text x="15" y="4">${f ? esc(f.ident) : "Drop on a fix"}</text></g>`,
+      );
+    }
     svg.innerHTML = out.join("");
   }
 
@@ -1513,6 +1643,7 @@ export function profileSvg(
     B = 30;
   const maxAlt = Math.max(
     ...pr.pts.map((p) => p.alt),
+    ...(pr.mea ?? []).map((m) => m.alt),
     ...pr.ground.map((g) => g.elev),
     1000,
   );
@@ -1533,16 +1664,35 @@ export function profileSvg(
       `<polygon class="rp-ground" points="${f1(X(0))},${f1(Y(0))} ${gp} ${f1(X(pr.total))},${f1(Y(0))}"/>`,
     );
   }
-  // minimums
-  if (pr.mins)
+  // minimum enroute altitudes of the airway segments (Jeppesen: MEA along the airway)
+  for (const m of pr.mea ?? []) {
+    const x0 = X(m.d0),
+      x1 = X(m.d1),
+      y = Y(m.alt);
+    o.push(`<line class="rp-mea" x1="${f1(x0)}" x2="${f1(x1)}" y1="${f1(y)}" y2="${f1(y)}"/>`);
+    if (x1 - x0 > 70) o.push(`<text class="rp-mea-t" x="${f1((x0 + x1) / 2)}" y="${f1(y + 11)}">${esc(m.via)} MEA ${m.alt}</text>`);
+  }
+  // minimums (its label box is kept to place the glidepath label clear of it)
+  let minsBox: [number, number, number, number] | null = null;
+  if (pr.mins) {
+    const mw = pr.mins.label.length * 6.2;
+    // a short final (long circuit): the label goes left of the final approach fix
+    const short = X(pr.mins.d1) - X(pr.mins.d0) < 64;
+    const mx = short ? X(pr.mins.d0) - 4 : X(pr.mins.d0) + 3;
+    const my = short
+      ? Math.min(H - B - 3, Y(pr.mins.alt) + 3)
+      : Y(pr.mins.alt) + 11 <= H - B - 2
+        ? Y(pr.mins.alt) + 11
+        : Y(pr.mins.alt) - 4;
+    minsBox = short ? [mx - mw, my - 10, mx, my + 2] : [mx, my - 10, mx + mw, my + 2];
     o.push(
       `<line class="rp-mins" x1="${f1(X(pr.mins.d0))}" x2="${f1(X(pr.mins.d1))}" y1="${f1(Y(pr.mins.alt))}" y2="${f1(Y(pr.mins.alt))}"/>${
-        // a short final (long circuit): the label goes left of the final approach fix
-        X(pr.mins.d1) - X(pr.mins.d0) < 64
-          ? `<text class="rp-mins-t" style="text-anchor:end" x="${f1(X(pr.mins.d0) - 4)}" y="${f1(Math.min(H - B - 3, Y(pr.mins.alt) + 3))}">${pr.mins.label}</text>`
-          : `<text class="rp-mins-t" x="${f1(X(pr.mins.d0) + 3)}" y="${f1(Y(pr.mins.alt) + 11 <= H - B - 2 ? Y(pr.mins.alt) + 11 : Y(pr.mins.alt) - 4)}">${pr.mins.label}</text>`
+        short
+          ? `<text class="rp-mins-t" style="text-anchor:end" x="${f1(mx)}" y="${f1(my)}">${pr.mins.label}</text>`
+          : `<text class="rp-mins-t" x="${f1(mx)}" y="${f1(my)}">${pr.mins.label}</text>`
       }`,
     );
+  }
   // the path, by segment kind
   const col = (s: ProfilePt["seg"]) =>
     s === "approach" || s === "gp"
@@ -1567,12 +1717,29 @@ export function profileSvg(
     const x = (X(pr.gp.d0) + X(pr.gp.d1)) / 2;
     const a0 = pr.pts.find((p) => Math.abs(p.d - pr.gp!.d0) < 1e-6)?.alt ?? 0;
     const a1 = pr.pts.find((p) => Math.abs(p.d - pr.gp!.d1) < 1e-6)?.alt ?? 0;
-    o.push(
-      // right of the middle of the glidepath, or left of it when it would leave the plot
-      x + 58 < W - R
-        ? `<text class="rp-gp" x="${f1(x + 6)}" y="${f1(Y((a0 + a1) / 2) - 5)}">GP ${pr.gp.angle.toFixed(2)}°</text>`
-        : `<text class="rp-gp" text-anchor="end" style="text-anchor:end" x="${f1(x - 6)}" y="${f1(Y((a0 + a1) / 2) + 12)}">GP ${pr.gp.angle.toFixed(2)}°</text>`,
-    );
+    const t = `GP ${pr.gp.angle.toFixed(2)}°`;
+    const gw = t.length * 6;
+    const ym = Y((a0 + a1) / 2);
+    // right of the middle of the glidepath, else left of it (below, then above), never over the minimums label
+    const cands: [number, number, boolean][] = [
+      [x + 6, ym - 5, false],
+      [x - 6, ym + 12, true],
+      [x - 6, ym - 5, true],
+    ];
+    const box = ([cx, cy, end]: [number, number, boolean]): [number, number, number, number] =>
+      end ? [cx - gw, cy - 10, cx, cy + 2] : [cx, cy - 10, cx + gw, cy + 2];
+    const hit = (a: [number, number, number, number], b: [number, number, number, number] | null) =>
+      !!b && a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
+    const pick = cands.find((c) => {
+      const b = box(c);
+      return b[0] >= L && b[2] <= W - R && b[1] >= 0 && b[3] <= H - B && !hit(b, minsBox);
+    });
+    if (pick)
+      o.push(
+        pick[2]
+          ? `<text class="rp-gp" text-anchor="end" style="text-anchor:end" x="${f1(pick[0])}" y="${f1(pick[1])}">${t}</text>`
+          : `<text class="rp-gp" x="${f1(pick[0])}" y="${f1(pick[1])}">${t}</text>`,
+      );
   }
   // fixes: tick + ident on the distance axis, altitude above the point (min underlined, max overlined)
   let lastAltX = -99;
@@ -1592,7 +1759,7 @@ export function profileSvg(
       );
     else if (p.hold)
       o.push(
-        `<rect class="rp-hold" x="${f1(x - 7)}" y="${f1(y - 12)}" width="14" height="7" rx="3.5"/>`,
+        `<rect class="rp-hold" x="${f1(Math.max(L, Math.min(W - R - 14, x - 7)))}" y="${f1(y - 12)}" width="14" height="7" rx="3.5"/>`,
       );
     else o.push(`<circle class="rp-pt" cx="${f1(x)}" cy="${f1(y)}" r="2.6"/>`);
     idl.push({ x, text: p.ident, dim: dimmed, pri: p.role === "FAF" || p.role === "IAF" || p.hold || p.role === "MAHP" ? 0 : p.leg < 0 ? 3 : p.ident.startsWith("RW") ? 1 : 2 });

@@ -420,3 +420,35 @@
   text-anchor: middle;
 }
 .rm-chip[hidden] { display: none; }
+/* airway MEA on the profile: thin grey step under the route */
+.rp-mea {
+  stroke: #667085;
+  stroke-width: 1;
+  stroke-dasharray: 6 3;
+}
+.rp-mea-t {
+  font: 600 9px var(--font);
+  fill: #475467;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+/* builder: a hold fix can be dragged onto another fix */
+.rm.grab-hold .rm-view { cursor: grab; }
+.rm-ghost circle {
+  fill: rgb(183 121 31 / 0.12);
+  stroke: #b7791f;
+  stroke-width: 1.6;
+  stroke-dasharray: 3 3;
+}
+.rm-ghost.snap circle { stroke-dasharray: none; fill: rgb(183 121 31 / 0.22); }
+.rm-ghost text {
+  font: 700 11px var(--font);
+  fill: #7a4f12;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
