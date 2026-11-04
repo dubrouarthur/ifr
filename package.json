@@ -20,6 +20,8 @@
   },
   "dependencies": {
     "navigraph": "^1.4.7",
+    "peerjs": "^1.5.5",
+    "qrcode-generator": "^2.0.4",
     "three": "^0.187.0"
   }
 }
