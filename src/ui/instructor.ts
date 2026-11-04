@@ -11,14 +11,52 @@ export class InstructorDrawer {
   private live: HTMLElement;
   private acc = 0;
   onBuilder?: () => void;
+  /** open the phone / tablet pairing window (the shell sets it; without it the drawer opens src/ui/remotePair.ts itself) */
+  onPair?: () => void;
+  /** last state of the instructor companion link (src/connect/remoteLink.ts announces it on window) */
+  private remote: { state: string; device?: string; code?: string } = { state: 'off' };
+  private pairRow = h('div', { class: 'ios-pair' });
   constructor(private sim: Sim, private toast: (m: string, k?: 'info' | 'good' | 'warn' | 'bad') => void) {
     this.body = h('div', { class: 'ios-body' });
     this.live = h('div', { class: 'ios-live' });
     this.el = h('aside', { class: 'drawer left ios', 'aria-label': 'Instructor station' },
       h('header', {}, h('h3', {}, 'Instructor station'), h('button', { class: 'x', onclick: () => this.toggle(false), title: 'Close (I)', 'aria-label': 'Close' }, '×')),
-      h('div', { class: 'ios-scroll' }, this.live, this.body),
+      h('div', { class: 'ios-scroll' }, this.pairRow, this.live, this.body),
     );
     this.render();
+    this.renderPair();
+    window.addEventListener('ifr-remote-status', (e: Event) => {
+      const d = (e as CustomEvent<{ state: string; device?: string; code?: string }>).detail;
+      if (!d) return;
+      const was = this.remote.state;
+      this.remote = d;
+      if (d.state === 'connected' && was !== 'connected') this.toast(`Instructor connected: ${d.device ?? 'phone or tablet'}`, 'good');
+      else if (was === 'connected' && d.state !== 'connected') this.toast('Instructor console disconnected', 'info');
+      this.renderPair();
+    });
+  }
+  /** "Pair a phone or tablet": the instructor runs the session from a phone or tablet (remote.html) */
+  private renderPair() {
+    const r = this.remote;
+    const on = r.state === 'connected';
+    const live = on || r.state === 'waiting' || r.state === 'reconnecting' || r.state === 'starting';
+    clear(this.pairRow);
+    this.pairRow.className = `ios-pair${on ? ' on' : live ? ' live' : ''}`;
+    this.pairRow.append(
+      h('i', { 'aria-hidden': 'true' }),
+      h('div', {},
+        h('b', {}, 'Instructor on a phone or tablet'),
+        h('small', {}, on ? `Connected: ${r.device ?? 'instructor console'}` : live ? 'Waiting for the instructor to scan the code' : 'Scan a code to run failures, weather and vectors remotely'),
+      ),
+      h('button', { class: `btn${live ? '' : ' primary'}`, type: 'button', onclick: () => this.pair() }, svgIcon(I.tablet, 16), on || live ? 'Show pairing' : 'Pair a phone or tablet'),
+    );
+  }
+  private pair() {
+    if (this.onPair) { this.onPair(); return; }
+    const api = (window as unknown as { __ifr?: { remote?: unknown } }).__ifr?.remote;
+    import('./remotePair')
+      .then((m) => m.openRemotePair((api as Parameters<typeof m.openRemotePair>[0] | undefined) ?? this.sim))
+      .catch(() => this.toast('Could not open instructor pairing', 'bad'));
   }
   get isOpen() {
     return this.el.classList.contains('open');

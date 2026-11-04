@@ -1,0 +1,222 @@
+/* Instructor companion inside the simulator: the pairing window (src/ui/remotePair.ts) and the
+   "Pair a phone or tablet" row of the Instructor station (src/ui/instructor.ts). */
+
+.modal.rp {
+  width: min(720px, 100%);
+}
+.modal.rp .body {
+  padding: 22px 24px 20px;
+}
+.rp-grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 28px;
+  align-items: center;
+}
+.rp-qr {
+  width: 248px;
+  height: 248px;
+  padding: 8px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: #fff;
+  display: grid;
+  place-items: center;
+}
+.rp-qr svg {
+  display: block;
+  width: 232px;
+  height: 232px;
+}
+.rp-side {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+.rp-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: rp;
+  display: grid;
+  gap: 12px;
+}
+.rp-steps li {
+  counter-increment: rp;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  column-gap: 10px;
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--text-2);
+}
+.rp-steps li::before {
+  content: counter(rp);
+  grid-row: span 2;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  display: grid;
+  place-items: center;
+  font: 700 12px var(--font);
+  color: var(--text);
+}
+.rp-steps b {
+  color: var(--text);
+  font-weight: 650;
+}
+.rp-steps span {
+  color: var(--muted);
+}
+.rp-code {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.rp-code small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.rp-code > b {
+  font: 700 34px/1.1 var(--font-cond);
+  letter-spacing: 0.12em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.rp-url {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.rp-url span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rp-url .btn {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  flex: none;
+}
+.rp-note {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff7e8;
+  border: 1px solid #f0d9a8;
+  color: #5c3d00;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.rp-note b {
+  color: #5c3d00;
+}
+
+.rp-status {
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.rp-status i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--line-strong);
+}
+.rp-status div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.rp-status b {
+  font-size: 14px;
+}
+.rp-status span {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.rp-status span:empty {
+  display: none;
+}
+.rp-status.wait i {
+  background: var(--accent);
+  animation: rp-pulse 1.6s ease-in-out infinite;
+}
+.rp-status.on {
+  border-color: #b9dcc9;
+  background: #f1f8f4;
+}
+.rp-status.on i {
+  background: var(--good);
+}
+.rp-status.on b {
+  color: var(--good);
+}
+.rp-status.warn i {
+  background: var(--warn);
+}
+.rp-status.bad {
+  border-color: #efc4ca;
+  background: #fdf3f4;
+}
+.rp-status.bad i {
+  background: var(--bad);
+}
+@keyframes rp-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rp-status.wait i {
+    animation: none;
+  }
+}
+
+@media (max-width: 620px) {
+  .rp-grid {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 18px;
+  }
+  .rp-side {
+    width: 100%;
+  }
+}
+
+/* Instructor station: pairing row */
+.ios-pair { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 10px; row-gap: 10px; padding: 12px; margin-bottom: 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); }
+.ios-pair > div { min-width: 0; display: grid; gap: 1px; }
+.ios-pair b { font-size: 13.5px; }
+.ios-pair small { font-size: 12.5px; color: var(--muted); }
+.ios-pair i { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); }
+/* no dot until there is something to say: waiting (accent) or connected (green) */
+.ios-pair:not(.on):not(.live) { grid-template-columns: minmax(0, 1fr); }
+.ios-pair:not(.on):not(.live) i { display: none; }
+.ios-pair.live i { background: var(--accent, #0b63ce); }
+.ios-pair.on { border-color: #b9dcc9; background: #f1f8f4; }
+.ios-pair.on i { background: var(--good); }
+.ios-pair.on small { color: var(--good); }
+.ios-pair .btn { grid-column: 1 / -1; justify-content: center; height: 38px; }
+.ios-pair .btn svg { width: 16px; height: 16px; }
+.rp-qr svg path, .rp-qr svg rect { stroke: none !important; }
+
+/* the code is not registered yet: a scan now would find nobody */
+.rp-qr.pending svg { opacity: 0.18; transition: opacity 0.2s; }

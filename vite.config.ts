@@ -6,8 +6,9 @@ export default defineConfig({
     chunkSizeWarningLimit: 700,
     target: 'es2022',
     rollupOptions: {
-      // two pages: the simulator and the IFR Academy (interactive lessons, also reachable on its own)
-      input: { main: resolve(__dirname, 'index.html'), academy: resolve(__dirname, 'academy.html') },
+      // three pages: the simulator, the IFR Academy (interactive lessons, also reachable on its own) and the
+      // instructor console a phone or tablet opens by scanning the simulator's pairing QR code
+      input: { main: resolve(import.meta.dirname, 'index.html'), academy: resolve(import.meta.dirname, 'academy.html'), remote: resolve(import.meta.dirname, 'remote.html') },
     },
   },
 });
