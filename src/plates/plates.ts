@@ -41,8 +41,12 @@ export const esc = (s: string) =>
 const f1 = (n: number) => n.toFixed(1);
 export const pad3 = (n: number) =>
   String(Math.round(norm360(n)) || 360).padStart(3, "0");
-export const freq = (f?: number) =>
-  f ? f.toFixed((f * 1000) % 10 ? 3 : 2).replace(/0$/, "") : "—";
+/** VHF communication frequency; a source value with its leading '1' lost (33.82 for 133.82) is restored */
+export const freq = (f?: number) => {
+  if (!f) return "—";
+  if (f >= 18 && f < 37) f += 100;
+  return f.toFixed(Math.round(f * 1000) % 10 ? 3 : 2).replace(/0$/, "");
+};
 /** leg distance as printed on charts: one decimal below 100 NM */
 export const distTxt = (nm: number) =>
   nm < 100 ? nm.toFixed(1) : String(Math.round(nm));
@@ -56,6 +60,62 @@ const navFreq = (n: Navaid) =>
     ? String(n.freq)
     : n.freq.toFixed(n.type === "ILS" || n.type === "LOC" ? 2 : 1);
 const EFF = "05 NOV 26";
+
+const EFF_END = "03 DEC 26";
+/** latitude / longitude as printed in the bottom margin: 41°08'N-75°23'W */
+const latLonTxt = (lat: number, lon: number) => {
+  const dm = (v: number, w: number) => {
+    const a = Math.abs(v);
+    let d = Math.floor(a),
+      m = Math.round((a - d) * 60);
+    if (m === 60) (d += 1), (m = 0);
+    return `${String(d).padStart(w, "0")}°${String(m).padStart(2, "0")}'`;
+  };
+  return `${dm(lat, 2)}${lat >= 0 ? "N" : "S"}-${dm(lon, 3)}${lon >= 0 ? "E" : "W"}`;
+};
+/**
+ * Margin identification (FAA TPP / Jeppesen): the bottom margin repeats the airport (name + ident, effective
+ * date) left, the reference position centre and the procedure name right; the effective dates run vertically
+ * in both side margins.
+ */
+export function chartMargins(
+  a: { icao: string; name: string; lat: number; lon: number },
+  procName: string,
+  source?: string,
+): string {
+  const o: string[] = [];
+  o.push(line({ x: 10, y: H - 32 }, { x: W - 10, y: H - 32 }, 1.2));
+  const rightSize = Math.min(12, (12 * (W / 2 - 92)) / Math.max(1, textW(procName, 12, true)));
+  const maxL = W / 2 - 92 - 20;
+  let nm = a.name.toUpperCase().replace(/\bINTERNATIONAL\b/, "INTL").replace(/\s+AIRPORT$/, "").trim();
+  let lt = `${nm} (${a.icao})`;
+  while (textW(lt, 8.5, true) > maxL && nm.length > 6) {
+    nm = nm.slice(0, -1).trimEnd();
+    lt = `${nm}… (${a.icao})`;
+  }
+  o.push(text(20, H - 21.5, lt, { size: 8.5, weight: 700, halo: false }));
+  o.push(
+    text(20, H - 13, `Eff ${EFF}${source ? `  ·  ${source}` : ""}`, {
+      size: 7.5,
+      fill: MUTED,
+      halo: false,
+    }),
+  );
+  o.push(text(W / 2, H - 21.5, latLonTxt(a.lat, a.lon), { size: 7.5, anchor: "middle", halo: false }));
+  o.push(
+    text(W / 2, H - 13, "SIMULATED — NOT FOR NAVIGATION", {
+      size: 7.5,
+      weight: 700,
+      anchor: "middle",
+      halo: false,
+    }),
+  );
+  o.push(text(W - 20, H - 15.5, procName, { size: rightSize, weight: 700, anchor: "end", halo: false }));
+  const dates = `${EFF} to ${EFF_END}`;
+  o.push(text(6.8, H / 2, dates, { size: 6.5, weight: 700, anchor: "middle", rotate: -90, halo: false }));
+  o.push(text(W - 6.8, H / 2, dates, { size: 6.5, weight: 700, anchor: "middle", rotate: 90, halo: false }));
+  return o.join("");
+}
 
 // ------------------------------------------------------------------ fixed layout of the approach chart
 // (fixed so the UI can overlay own-ship on the plan view: see planProjection)
@@ -342,11 +402,29 @@ export class Placer {
   softPoly(p: Pt[]) {
     this.soft.push(p);
   }
+  /** the strips along each leg where its course label goes: other labels avoid them when they can */
+  reserve: Pt[][] = [];
+  private legSegs: [Pt, Pt][] = [];
   segment(a: Pt, b: Pt) {
     this.soft.push([a, b]);
+    if (Math.hypot(b.x - a.x, b.y - a.y) > 24) this.legSegs.push([a, b]);
   }
   polyline(pts: Pt[]) {
-    for (let i = 1; i < pts.length; i++) this.segment(pts[i - 1], pts[i]);
+    for (let i = 1; i < pts.length; i++) this.soft.push([pts[i - 1], pts[i]]);
+  }
+  /** reserve both sides of the middle of every leg registered so far for its course label */
+  reserveLegCorridors(th = 13) {
+    for (const [a, b] of this.legSegs) {
+      const L = Math.hypot(b.x - a.x, b.y - a.y);
+      if (L < 70) continue; // too short to carry its label along the track anyway
+      const ang = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+      const nx = -(b.y - a.y) / L,
+        ny = (b.x - a.x) / L;
+      const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const w = Math.min(L * 0.45, 64);
+      for (const sd of [-1, 1])
+        this.reserve.push(orientedRect(m.x + nx * sd * (th / 2 + 2), m.y + ny * sd * (th / 2 + 2), w, th, ang));
+    }
   }
   /** a symbol of radius r, blocked as its bounding square */
   circle(c: Pt, r: number) {
@@ -439,14 +517,22 @@ export class Placer {
         const from: Pt[] = [leaderFrom, { x: leaderFrom.x + 0.01, y: leaderFrom.y + 0.01 }];
         if (this.hard.some((h) => polysOverlap(ld, h) && !polysOverlap(from, h))) continue;
       }
-      // a crossed line costs as much as two rings of distance
-      const score = c * 16 + Math.floor(i / 8);
+      // a crossed line costs as much as two rings of distance; so does a leader crossing a chart line
+      let lc = 0;
+      if (i >= FAR && leaderFrom) {
+        const ld = leadOf(cands[i])!;
+        for (const sg of this.soft) if (polysOverlap(ld, sg)) lc++;
+      }
+      let rc = 0;
+      for (const r of this.reserve) if (polysOverlap(boxPoly(cands[i]), r)) rc++;
+      // a reserved leg-label strip costs about three rings of distance (a fix name stays next to its symbol)
+      const score = (c + lc) * 16 + rc * 3 + Math.floor(i / 8);
       if (score < bestC) {
         bestC = score;
         best = cands[i];
         bestI = i;
       }
-      if (c === 0) break;
+      if (c + lc + rc === 0) break;
     }
     if (!best) return null;
     this.commit(boxPoly(best), label);
@@ -530,9 +616,15 @@ export function legLabel(
       B = segs.slice(si + 1);
     for (const off of offs.slice(0, 3))
       for (const t of ts)
-        for (const side of [-1, 1]) {
+        for (const [side, side2, off2] of [
+          [-1, 1, off],
+          [1, -1, off],
+          // stacked on one side (FAA: course / distance, altitude above it, along the track)
+          [-1, -1, off + th + 1],
+          [1, 1, off + th + 1],
+        ]) {
           const c1 = cand(A, t, off, side, 0),
-            c2 = cand(B, t, off, -side, 0);
+            c2 = cand(B, t, off2, side2, 0);
           if (!c1 || !c2) continue;
           const k1 = placer.cost(c1.poly),
             k2 = placer.cost(c2.poly);
@@ -569,9 +661,10 @@ export function legLabel(
   const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
   const tw = wOf(segs);
   const small = size <= 7.5;
+  // a leader never crosses a symbol or a label: try a smaller size first, cross only as the last resort
   const bx =
     placer.place(m.x, m.y, tw, th, 4, label, small ? 14 : 6, m) ??
-    placer.place(m.x, m.y, tw, th, 4, label, small ? 14 : 6, m, false);
+    (small ? placer.place(m.x, m.y, tw, th, 4, label, 14, m, false) : null);
   if (bx) {
     const lead = bx.lead ? line(m, bx.lead[1], 0.5) : "";
     return done(lead + draw({ cx: bx.x + tw / 2, cy: bx.y + th / 2, segs }, 0, true));
@@ -1394,12 +1487,38 @@ export function approachPlate(ap: Approach): string {
       ih = 100;
     const right = q.x > c0.x,
       bottom = q.y > c0.y;
-    inset = {
-      x: right ? pv.x + pv.w - 6 - iw : pv.x + (bottom ? 6 : 40),
-      y: bottom ? pv.y + pv.h - 6 - ih - (right ? 30 : 0) : pv.y + 6,
+    const corner = (r: boolean, bt: boolean): Box => ({
+      x: r ? pv.x + pv.w - 6 - iw : pv.x + (bt ? 6 : 40),
+      y: bt ? pv.y + pv.h - 6 - ih - (r ? 30 : 0) : pv.y + 6,
       w: iw,
       h: ih,
+    });
+    // the corner the fix lies towards, unless the approach itself (fixes, legs, the airport) is there:
+    // then the free corner that hides the least of it
+    const onScale = [
+      ...ap.transitions.map((t) => t.legs),
+      ap.final,
+      ap.missed,
+    ].map((ls) => ls.filter((l) => !offscale.has(l.fix.ident)).map((l) => proj(l.fix)));
+    const rwyPts = [rwy.threshold, rwy.end].map((e) => proj(e));
+    const hits = (b: Box) => {
+      const g = { x: b.x - 10, y: b.y - 10, w: b.w + 20, h: b.h + 20 };
+      const inB = (p: Pt) => p.x > g.x && p.x < g.x + g.w && p.y > g.y && p.y < g.y + g.h;
+      let n = 0;
+      for (const ls of onScale) {
+        for (const p of ls) if (inB(p)) n += 10;
+        for (let i = 1; i < ls.length; i++) if (polysOverlap([ls[i - 1], ls[i]], boxPoly(g))) n += 3;
+      }
+      if (polysOverlap(rwyPts, boxPoly(g))) n += 30;
+      return n;
     };
+    const cands = [
+      corner(right, bottom),
+      corner(right, !bottom),
+      corner(!right, bottom),
+      corner(!right, !bottom),
+    ];
+    inset = cands.reduce((best, b) => (hits(b) < hits(best) ? b : best), cands[0]);
     placer.block(inset.x - 2, inset.y - 2, inset.w + 4, inset.h + 4);
   }
   // 10 NM ring around the airport (FAA)
@@ -1432,21 +1551,39 @@ export function approachPlate(ap: Approach): string {
   if (nav && (nav.type === "ILS" || nav.type === "LOC")) {
     const ant = proj(nav);
     const crs = nav.course ?? ap.finalCourse;
-    const ifFix = ap.final[0].fix;
-    const fl = Math.max(6, Math.min(13, distanceNm(nav, ifFix) + 1.2));
-    const feather = (dir: number, d: number, shade: number) => {
-      const f = (off: number) => proj(destination(nav, dir + off, d));
-      const [l, m, r] = [f(1.9), f(0), f(-1.9)];
-      geo.push(
-        `<path d="M${P(ant.x)},${P(ant.y)} L${P(l.x)},${P(l.y)} L${P(m.x)},${P(m.y)} Z" fill="${shade > 0 ? "#fff" : "#9a9a9a"}" stroke="${INK}" stroke-width="0.6"/>`,
-      );
-      geo.push(
-        `<path d="M${P(ant.x)},${P(ant.y)} L${P(r.x)},${P(r.y)} L${P(m.x)},${P(m.y)} Z" fill="${shade > 0 ? "#9a9a9a" : "#fff"}" stroke="${INK}" stroke-width="0.6"/>`,
-      );
-      placer.softPoly([ant, l, m, r]);
+    // a fixed-size feather (as printed on FAA / Jeppesen plates: ~1 inch, narrow, notched), starting just
+    // beyond the runway end it extends from, so it never hides the runway, the fixes or the final course
+    const feather = (dir: number, shade: number) => {
+      const one = proj(destination(nav, dir, 1));
+      const len = Math.hypot(one.x - ant.x, one.y - ant.y) || 1;
+      const u = { x: (one.x - ant.x) / len, y: (one.y - ant.y) / len };
+      const n = { x: -u.y, y: u.x };
+      // along-track distance (px) of the farthest runway end in that direction
+      let s0 = 0;
+      for (const e of [rwy.threshold, rwy.end]) {
+        const q = proj(e);
+        s0 = Math.max(s0, (q.x - ant.x) * u.x + (q.y - ant.y) * u.y);
+      }
+      s0 += 4;
+      const fafPx = faf ? Math.hypot(proj(faf.fix).x - ant.x, proj(faf.fix).y - ant.y) : s0 + 120;
+      const fLen = Math.max(34, Math.min(70, (fafPx - s0) * 0.8));
+      const hw = 5;
+      const at = (s: number, w: number): Pt => ({
+        x: ant.x + u.x * s + n.x * w,
+        y: ant.y + u.y * s + n.y * w,
+      });
+      const t = at(s0, 0),
+        l = at(s0 + fLen, hw),
+        r = at(s0 + fLen, -hw),
+        m = at(s0 + fLen - 6, 0);
+      const half = (q: Pt, fill: string) =>
+        `<path d="M${P(t.x)},${P(t.y)} L${P(q.x)},${P(q.y)} L${P(m.x)},${P(m.y)} Z" fill="${fill}" stroke="${INK}" stroke-width="0.6" stroke-linejoin="round"/>`;
+      geo.push(half(l, shade > 0 ? "#fff" : "#7a7a7a"), half(r, shade > 0 ? "#7a7a7a" : "#fff"));
+      placer.softPoly([t, l, m, r]);
+      return at(s0 + fLen, 0);
     };
-    feather(crs + 180, fl, ap.type === "LOCBC" ? -1 : 1);
-    if (ap.type === "LOCBC") feather(crs, 5, 1);
+    const featherEnd = feather(crs + 180, ap.type === "LOCBC" ? -1 : 1);
+    if (ap.type === "LOCBC") feather(crs, 1);
     // navaid box near the outer end of the feather
     lastLater.push(() => {
       const lbl = [
@@ -1454,13 +1591,7 @@ export function approachPlate(ap: Approach): string {
         `${nav.freq.toFixed(2)}  ${identTxt(nav)}`,
         `${pad3(ap.type === "LOCBC" ? ap.finalCourse : crs)}°${nav.dme ? `  ·  Chan ${Math.round((nav.freq - 108) * 20 + 17)}` : ""}`,
       ];
-      const fp = proj(
-        destination(
-          nav,
-          crs + 180 + (ap.type === "LOCBC" ? 0 : 0),
-          Math.min(fl, distanceNm(nav, ifFix)) * 0.72,
-        ),
-      );
+      const fp = featherEnd;
       const bw = Math.max(...lbl.map((t, i) => textW(t, 8.5, i === 1) + 12)),
         bh = 33;
       const b = placer.place(fp.x, fp.y, bw, bh, 14, lbl.join(" "));
@@ -1896,7 +2027,8 @@ export function approachPlate(ap: Approach): string {
       });
     });
   }
-  // fix names (with role and DME), placed before the leg labels
+  // fix names (with role and DME), placed before the leg labels but out of the legs' label strips if possible
+  placer.reserveLegCorridors();
   const dmeNav = !rnav && nav?.dme ? nav : undefined;
   const fixLabels: string[] = [];
   for (const { leg: l, p } of symbols.values()) {
@@ -1936,6 +2068,7 @@ export function approachPlate(ap: Approach): string {
     );
   }
   o.push(...fixLabels);
+  placer.reserve = [];
   for (const f of holdLater) o.push(f());
   for (const f of later) o.push(f());
   for (const f of lastLater) o.push(f());
@@ -2123,31 +2256,8 @@ export function approachPlate(ap: Approach): string {
     o.push(airportSketch(ap, sk));
     o.push(conversionTable(ap, { x: 18, y: bY + 6, w: sk.x - 26 }));
   }
-  // footer
-  o.push(line({ x: 10, y: H - 32 }, { x: W - 10, y: H - 32 }, 1.2));
-  o.push(
-    text(20, H - 17, `${apt.icao}${ap.source ? `  ·  ${ap.source}` : ""}`, {
-      size: 9,
-      weight: 700,
-      halo: false,
-    }),
-  );
-  o.push(
-    text(W / 2, H - 17, "SIMULATED — NOT FOR NAVIGATION", {
-      size: 9,
-      weight: 700,
-      anchor: "middle",
-      halo: false,
-    }),
-  );
-  o.push(
-    text(W - 20, H - 17, ap.name, {
-      size: 9,
-      weight: 700,
-      anchor: "end",
-      halo: false,
-    }),
-  );
+  // margins
+  o.push(chartMargins(apt, ap.name, ap.source));
   o.push(`</g>`);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" class="plate">${o.join("")}</svg>`;
 }
@@ -2435,25 +2545,33 @@ function profileView(
     if (locMin) {
       const tt = precision ? `LOC MDA ${locMin}'` : `MDA ${locMin}'`;
       const w = textW(tt, 8) + 4;
-      const x = px(0) - w - 10,
-        y = py(locMin) + 3;
-      if (pl.cost(boxPoly({ x, y, w, h: 10 })) === 0) {
+      const x = px(0) - w - 10;
+      // below the level segment when there is room above the ground, else above it
+      const y = [py(locMin) + 3, py(locMin) - 13].find(
+        (y) => y + 10 <= gy - 2 && pl.cost(boxPoly({ x, y, w, h: 10 })) === 0,
+      );
+      if (y !== undefined) {
         pl.commit(boxPoly({ x, y, w, h: 10 }), tt);
         o.push(text(x + 2, y + 8, tt, { size: 8 }));
       }
     }
   }
+  // segment distances as dimension lines below the ground (FAA: '← 6 NM →' between the fix lines)
   for (let i = 1; i < fin.length; i++) {
-    const a = px(dists[i - 1]),
-      b = px(dists[i]);
-    o.push(
-      text(
-        (a + b) / 2,
-        gy + 12,
-        `${f1(Math.abs(dists[i - 1] - dists[i]))} NM`,
-        { size: 8, anchor: "middle", halo: false },
-      ),
-    );
+    const a = px(dists[i - 1]) + 1.5,
+      b = Math.min(px(dists[i]) - 1.5, px(0) - 13);
+    if (b - a < 12) continue;
+    const yd = gy + 11;
+    const tt = `${f1(Math.abs(dists[i - 1] - dists[i]))} NM`;
+    const tw = textW(tt, 7.5) + 6;
+    o.push(line({ x: a, y: yd }, { x: b, y: yd }, 0.6));
+    o.push(arrowHead({ x: a, y: yd }, Math.PI, 4.5), arrowHead({ x: b, y: yd }, 0, 4.5));
+    if (b - a > tw + 10) {
+      o.push(
+        `<rect x="${P((a + b) / 2 - tw / 2)}" y="${P(yd - 5)}" width="${P(tw)}" height="10" fill="#fff"/>`,
+        text((a + b) / 2, yd + 2.8, tt, { size: 7.5, anchor: "middle", halo: false }),
+      );
+    } else o.push(text((a + b) / 2, yd + 10, tt, { size: 7, anchor: "middle", halo: false }));
   }
   // missed approach: dashed climb from the MAP to the first icon box, then the icon boxes (climb, turn, direct, hold)
   {
@@ -2525,10 +2643,10 @@ function missedIcons(
   out.push({ svg: climb, t: climbAlt ? `${climbAlt}'` : "CLIMB" });
   // does it turn? text says so, or the course to the first missed fix differs from the final course by > 20°
   let turn = mp.textTurn;
+  const start = mp.preTurnNm
+    ? destination(ap.missed[0].fix, ap.finalCourse, mp.preTurnNm)
+    : ap.missed[0].fix;
   if (!turn && first) {
-    const start = mp.preTurnNm
-      ? destination(ap.missed[0].fix, ap.finalCourse, mp.preTurnNm)
-      : ap.missed[0].fix;
     const dc = wrap180(bearingDeg(start, first.fix) - ap.finalCourse);
     // a turn of about 180° without a published direction: no direction can be shown
     if (Math.abs(dc) > 20 && Math.abs(dc) < 165 && distanceNm(start, first.fix) > 0.2)
@@ -2540,9 +2658,11 @@ function missedIcons(
       t:
         mp.lastAlt && mp.lastAlt !== climbAlt
           ? `${mp.lastAlt}'`
-          : turn === "R"
-            ? "RIGHT"
-            : "LEFT",
+          : first && distanceNm(start, first.fix) > 0.2
+            ? `${pad3(bearingDeg(start, first.fix))}°`
+            : turn === "R"
+              ? "RIGHT"
+              : "LEFT",
     });
   if (first)
     out.push({
@@ -2644,15 +2764,27 @@ function airportSketch(ap: Approach, box: Box): string {
   const rwy = runway(ap.airport, ap.runway);
   const inner = { x: box.x + 6, y: box.y + 4, w: box.w - 12, h: box.h - 18 };
   const ends = a.runways.flatMap((r) => [r.threshold, r.end]);
-  const p2 = makeProj([a, ...ends], inner, 30);
+  const p2 = makeProj([a, ...ends], inner, 17);
   const pl = new Placer(inner);
+  // runway half-width: exaggerated for legibility, but never so wide that parallel runways merge
+  let sep = Infinity;
+  for (let i = 0; i < a.runways.length; i += 2)
+    for (let j = i + 2; j < a.runways.length; j += 2) {
+      const r1 = a.runways[i],
+        r2 = a.runways[j];
+      const d = Math.abs(((bearingDeg(r1.threshold, r1.end) - bearingDeg(r2.threshold, r2.end) + 540) % 180));
+      if (Math.min(d, 180 - d) > 10) continue;
+      const t1 = p2(r1.threshold),
+        e1 = p2(r1.end),
+        t2 = p2(r2.threshold);
+      const len = Math.hypot(e1.x - t1.x, e1.y - t1.y) || 1;
+      sep = Math.min(sep, Math.abs(((t2.x - t1.x) * -(e1.y - t1.y) + (t2.y - t1.y) * (e1.x - t1.x)) / len));
+    }
+  const halfW = (r: { widthFt: number }) =>
+    Math.max(0.9, Math.min(Math.max(1.8, (r.widthFt / FT_PER_NM) * p2.scale * 1.8), sep * 0.28));
   for (let i = 0; i < a.runways.length; i += 2) {
     const r = a.runways[i];
-    const q = runwayQuad(
-      p2(r.threshold),
-      p2(r.end),
-      Math.max(2.2, (r.widthFt / FT_PER_NM) * p2.scale * 1.8),
-    );
+    const q = runwayQuad(p2(r.threshold), p2(r.end), halfW(r));
     o.push(
       `<polygon points="${q.map((v) => `${P(v.x)},${P(v.y)}`).join(" ")}" fill="${INK}"/>`,
     );
@@ -2660,6 +2792,14 @@ function airportSketch(ap: Approach, box: Box): string {
   }
   // runway numbers just beyond each threshold (shifted sideways when parallel runways crowd them)
   const numPos = new Map<string, Pt>();
+  const centre = (() => {
+    const c = a.runways.map((r) => {
+      const t = p2(r.threshold),
+        e = p2(r.end);
+      return { x: (t.x + e.x) / 2, y: (t.y + e.y) / 2 };
+    });
+    return { x: c.reduce((s, p) => s + p.x, 0) / c.length, y: c.reduce((s, p) => s + p.y, 0) / c.length };
+  })();
   for (const r of a.runways) {
     const t = p2(r.threshold),
       e = p2(r.end);
@@ -2668,7 +2808,13 @@ function airportSketch(ap: Approach, box: Box): string {
     const n = { x: -u.y, y: u.x };
     const w = textW(r.id, 8.5, true) + 2;
     const base = (Math.abs(u.x) * w) / 2 + Math.abs(u.y) * 6 + 3;
-    for (const [out, side] of [[base, 0], [base + 7, 0], [base, 1], [base, -1], [base + 7, 1], [base + 7, -1], [base + 14, 0], [base, 2], [base, -2], [base + 14, 1], [base + 14, -1]]) {
+    // a number shifted sideways only moves away from the other runways (never next to a parallel one)
+    const mid = { x: (t.x + e.x) / 2, y: (t.y + e.y) / 2 };
+    const away = (mid.x - centre.x) * n.x + (mid.y - centre.y) * n.y;
+    const sgn = Math.abs(away) < 1 ? 0 : Math.sign(away);
+    const sideOk = (side: number) => side === 0 || sgn === 0 || Math.sign(side) === sgn;
+    const steps: [number, number][] = [[base, 0], [base + 7, 0], [base, 1], [base, -1], [base + 7, 1], [base + 7, -1], [base + 14, 0], [base, 2], [base, -2], [base + 14, 1], [base + 14, -1], [base + 21, 0]];
+    for (const [out, side] of steps.filter(([, sd]) => sideOk(sd))) {
       const c = { x: t.x + u.x * out + n.x * side * (w / 2 + 3), y: t.y + u.y * out + n.y * side * 8 };
       const b = { x: c.x - w / 2, y: c.y - 6, w, h: 12 };
       if (pl.cost(boxPoly(b)) < 0) continue;
@@ -2719,7 +2865,7 @@ function airportSketch(ap: Approach, box: Box): string {
     const tw = textW(tt, 7) + 4;
     const len = Math.hypot(e.x - t.x, e.y - t.y);
     if (len < tw + 4) continue;
-    const hw = Math.max(2.2, (r.widthFt / FT_PER_NM) * p2.scale * 1.8);
+    const hw = halfW(r);
     let placed = false;
     for (const along of [0, 0.22, -0.22, 0.34, -0.34])
       for (const s of [-1, 1]) {
@@ -3102,24 +3248,7 @@ export function airportDiagram(icao: string): string {
       ),
     );
   });
-  o.push(line({ x: 10, y: H - 32 }, { x: W - 10, y: H - 32 }, 1.2));
-  o.push(text(20, H - 17, a.icao, { size: 9, weight: 700, halo: false }));
-  o.push(
-    text(W / 2, H - 17, "SIMULATED — NOT FOR NAVIGATION", {
-      size: 9,
-      weight: 700,
-      anchor: "middle",
-      halo: false,
-    }),
-  );
-  o.push(
-    text(W - 20, H - 17, "AIRPORT DIAGRAM", {
-      size: 9,
-      weight: 700,
-      anchor: "end",
-      halo: false,
-    }),
-  );
+  o.push(chartMargins(a, "AIRPORT DIAGRAM"));
   o.push(`</g>`);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" class="plate">${o.join("")}</svg>`;
 }

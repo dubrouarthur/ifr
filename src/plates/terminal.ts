@@ -43,6 +43,7 @@ import {
   type Pt,
   type Seg,
   type Box,
+  chartMargins,
 } from "./plates";
 
 const NUM = [
@@ -452,7 +453,20 @@ function terminalChart(p: TerminalProc): string {
     ? null
     : ([...p.common].reverse().find((l) => l.fix)?.fix ?? [...(p.enr[0]?.legs ?? [])].reverse().find((l) => l.fix)?.fix ?? null);
   const focus: LatLon = endFix && distanceNm(endFix, apt) > 8 ? endFix : apt;
-  const proj = fisheye(focus, pts, pv, 48);
+  // not to scale: on a STAR that ends far from the field, the airport glyph is drawn on its true bearing but
+  // closer (never closer than the fixes that lie on the airport side), so the route fills the plan view
+  let aptPos: LatLon = apt;
+  if (focus !== apt) {
+    const d = distanceNm(focus, apt);
+    const nearest = Math.min(...allLegs.filter((l) => l.fix).map((l) => distanceNm(l.fix!, apt)));
+    const dV = Math.max(10, d - nearest + 4);
+    if (dV < d) {
+      aptPos = destination(focus, bearingDeg(focus, apt), dV);
+      pts.splice(0, pts.length, ...pts.filter((q) => q !== apt && !apt.runways.some((r) => r.threshold === q || r.end === q)), aptPos);
+    }
+  }
+  const proj0 = fisheye(focus, pts, pv, 48);
+  const proj = Object.assign((q: LatLon) => proj0(q === apt ? aptPos : q), { scaleAt: proj0.scaleAt }) as TermProj;
   const placer = new Placer(pv);
   placer.block(pv.x, pv.y, 40, 46); // north arrow
   placer.block(pv.x + pv.w - 116, pv.y + pv.h - 24, 116, 24); // NOT TO SCALE
@@ -746,31 +760,8 @@ function terminalChart(p: TerminalProc): string {
         ),
       );
   }
-  // footer
-  o.push(line({ x: 10, y: H - 32 }, { x: W - 10, y: H - 32 }, 1.2));
-  o.push(
-    text(20, H - 17, `${apt.icao}  ·  ${p.source}`, {
-      size: 9,
-      weight: 700,
-      halo: false,
-    }),
-  );
-  o.push(
-    text(W / 2, H - 17, "SIMULATED — NOT FOR NAVIGATION", {
-      size: 9,
-      weight: 700,
-      anchor: "middle",
-      halo: false,
-    }),
-  );
-  o.push(
-    text(W - 20, H - 17, `${p.id} ${sid ? "SID" : "STAR"}`, {
-      size: 9,
-      weight: 700,
-      anchor: "end",
-      halo: false,
-    }),
-  );
+  // margins
+  o.push(chartMargins(apt, procTitle(p), p.source));
   o.push(`</g>`);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" class="plate">${o.join("")}</svg>`;
 }
