@@ -111,7 +111,7 @@ export class Intro {
     this.el.replaceChildren(
       h("img", {
         class: "intro-photo",
-        src: "/img/clouds.jpg",
+        src: "/img/departure.jpg",
         alt: "",
         decoding: "async",
         fetchpriority: "high",
@@ -179,7 +179,7 @@ export class Intro {
             target: "_blank",
             rel: "noopener",
           },
-          "Photo: Joel Peralta · CC0",
+          "Photo: Marko Pavlichenko · Unsplash",
         ),
       ),
     );
