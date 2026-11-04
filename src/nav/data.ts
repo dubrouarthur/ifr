@@ -3,7 +3,7 @@
 // placed over the open North Atlantic so they can't be confused with real-world data.
 // NOT FOR REAL-WORLD NAVIGATION.
 import { destination, FT_PER_NM, distanceNm, bearingDeg, type LatLon } from './geo';
-import type { Airport, Approach, Fix, Navaid, ProcLeg, Runway, TerminalProc } from './types';
+import type { Airport, Approach, AirwaySeg, Fix, Navaid, ProcLeg, Runway, TerminalProc } from './types';
 
 const ft2nm = (ft: number) => ft / FT_PER_NM;
 /** set once the module is initialised: lookups fall back to the training region while a real region is loaded */
@@ -512,8 +512,11 @@ export const TRAINING_REGION = { airports: [...AIRPORTS], navaids: [...NAVAIDS],
 TRAIN = TRAINING_REGION;
 /** SIDs and STARs of the loaded region (real world only; the training region has none) */
 export const TERMINAL: TerminalProc[] = [];
-export function replaceNavData(d: { airports: Airport[]; navaids: Navaid[]; fixes: Fix[]; approaches: Approach[]; terminal?: TerminalProc[] }) {
+/** enroute airway segments of the loaded region (real world, US) */
+export const AIRWAYS: AirwaySeg[] = [];
+export function replaceNavData(d: { airports: Airport[]; navaids: Navaid[]; fixes: Fix[]; approaches: Approach[]; terminal?: TerminalProc[]; airways?: AirwaySeg[] }) {
   TERMINAL.splice(0, TERMINAL.length, ...(d.terminal ?? []));
+  AIRWAYS.splice(0, AIRWAYS.length, ...(d.airways ?? []));
   AIRPORTS.splice(0, AIRPORTS.length, ...d.airports);
   NAVAIDS.splice(0, NAVAIDS.length, ...d.navaids);
   FIXES.splice(0, FIXES.length, ...d.fixes);

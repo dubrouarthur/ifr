@@ -134,3 +134,12 @@ export interface TerminalProc {
   enr: { name: string; legs: TermLeg[] }[]; // name = transition fix
   source: string;
 }
+
+/** One segment of an enroute airway (V/T low, J/Q high), between two consecutive fixes; MEA in ft */
+export interface AirwaySeg {
+  route: string;
+  from: Fix;
+  to: Fix;
+  mea: number;
+  level: 'L' | 'H' | 'B' | ' ';
+}

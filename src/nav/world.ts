@@ -17,7 +17,7 @@ import {
   FT_PER_NM,
   type LatLon,
 } from "./geo";
-import type { Airport, Approach, Fix, Navaid, ProcLeg, Runway, TermLeg, TerminalProc } from "./types";
+import type { Airport, Approach, AirwaySeg, Fix, Navaid, ProcLeg, Runway, TermLeg, TerminalProc } from "./types";
 
 export type IndexRow = [
   icao: string,
@@ -96,6 +96,8 @@ interface Tile {
     src?: string;
   }[];
   fixes: [string, number, number][];
+  /** airway segments: [route, from, lat, lon, to, lat, lon, MEA, level] */
+  aw?: [string, string, number, number, string, number, number, number, string][];
 }
 type RawLeg = Omit<ProcLeg, "fix"> & {
   fix: Fix;
@@ -783,6 +785,26 @@ export async function loadRegion(
       for (const e of j.stars ?? []) terminal.push(mk("STAR", e));
     }
   }
+  // enroute airways crossing the region
+  const airways: AirwaySeg[] = [];
+  {
+    const seen = new Set<string>();
+    const fixOf = (id: string, la: number, lo: number): Fix => {
+      const p = S(la, lo);
+      const nav = navaids.find((n) => n.ident === id && Math.abs(n.lat - p.lat) < 0.02 && Math.abs(n.lon - p.lon) < 0.02);
+      const f: Fix = { ident: id, kind: nav ? (nav.type === "NDB" ? "ndb" : "vor") : "fix", ...p };
+      if (!nav) addFix(f);
+      return f;
+    };
+    for (const t of tiles)
+      for (const [route, a, la1, lo1, b, la2, lo2, mea, level] of t.aw ?? []) {
+        if (!inBox(la1, lo1) && !inBox(la2, lo2)) continue;
+        const key = `${route}|${a}|${b}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        airways.push({ route, from: fixOf(a, la1, lo1), to: fixOf(b, la2, lo2), mea, level: (level as AirwaySeg["level"]) || " " });
+      }
+  }
   // airports chosen by the pilot without any published procedure in the data set (everything outside the US):
   // generate a standard RNAV (GPS) "T" approach per usable runway end so every real airport can be flown IFR.
   for (const icao of wanted) {
@@ -790,7 +812,7 @@ export async function loadRegion(
     const apt = airports.find((a) => a.icao === icao);
     if (apt) approaches.push(...syntheticApproaches(apt, addFix));
   }
-  replaceNavData({ airports, navaids, fixes, approaches, terminal });
+  replaceNavData({ airports, navaids, fixes, approaches, terminal, airways });
   // terrain: precomputed elevation grid (sim coordinates) with airport surfaces flattened. Navigation is
   // usable immediately; terrain tiles stream in (bounded wait), the grid is rebuilt when late tiles arrive.
   const flat = airports.map((a) => ({

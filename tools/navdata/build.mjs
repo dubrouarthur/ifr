@@ -11,6 +11,7 @@
 //   tiles/<la>_<lo>.json  5°×5° tiles: airport details, navaids, waypoints
 //   proc/<ICAO>.json      instrument approaches (US, from CIFP)
 //   term/<ICAO>.json      SIDs and STARs (US, from CIFP): runway / common / enroute transitions
+//   tiles: .aw = airway segments [route, from, lat, lon, to, lat, lon, MEA, level L/H/B] (US, from CIFP)
 //
 // Usage: node tools/navdata/build.mjs <dir with airports.csv runways.csv navaids.csv airport-frequencies.csv> [FAACIFP18]
 import fs from 'node:fs';
@@ -123,7 +124,7 @@ for (const n of navaidsCsv) {
 // ------------------------------------------------------------------ CIFP (ARINC 424)
 const procs = new Map(); // icao -> [approach]
 const term = new Map(); // icao -> { sids, stars }
-let nCifpWpt = 0, nCifpApp = 0, nSid = 0, nStar = 0;
+let nCifpWpt = 0, nCifpApp = 0, nSid = 0, nStar = 0, nAwSeg = 0;
 if (cifpPath) {
   const lines = fs.readFileSync(cifpPath, 'latin1').split(/\r?\n/);
   const col = (l, a, b) => l.substring(a - 1, b); // 1-based inclusive
@@ -154,6 +155,7 @@ if (cifpPath) {
   const cifpApt = new Map();
   const appRows = new Map(); // `${icao}|${proc}` -> rows
   const termRows = new Map(); // `D|${icao}|${proc}` (SID) / `E|…` (STAR) -> rows
+  const awRows = new Map(); // airway id -> rows
 
   for (const l of lines) {
     if (l[0] !== 'S' || l.length < 120) continue;
@@ -188,6 +190,11 @@ if (cifpPath) {
         if (!termRows.has(k)) termRows.set(k, []);
         termRows.get(k).push(l);
       }
+    } else if (sec === 'E' && l[5] === 'R' && (l[38] === '0' || l[38] === '1')) {
+      // enroute airway (V/T low, J/Q high): ordered fixes with MEA
+      const route = col(l, 14, 18).trim();
+      if (!awRows.has(route)) awRows.set(route, []);
+      awRows.get(route).push({ seq: Number(col(l, 26, 29)), id: col(l, 30, 34).trim(), region: col(l, 35, 36), sect: col(l, 37, 38), level: l[45], mea: Number(col(l, 84, 88)) || null, desc: col(l, 40, 43) });
     } else if (sec === 'E' && l[5] === 'A') {
       const id = col(l, 14, 18).trim();
       const la = coord(col(l, 33, 41)), lo = coord(col(l, 42, 51));
@@ -353,6 +360,27 @@ if (cifpPath) {
     nCifpApp++;
   }
 
+  // ---------------------------------------------------------------- airways
+  // each airway is split into segments between consecutive fixes (a new sequence block, or an end-of-route
+  // description code 'E' in col 40, starts a new chain); segments go to the tile of each end
+  for (const [route, rows] of awRows) {
+    rows.sort((a, b) => a.seq - b.seq);
+    let prev = null;
+    for (const r of rows) {
+      const pos = fixPos('', r.id, r.sect === 'D ' ? 'D ' : r.sect === 'DB' ? 'DB' : 'EA', r.region) ?? enrWpt.get(`${r.id}|${r.region}`);
+      if (!pos) { prev = null; continue; }
+      const cur = { id: r.id, lat: r5(pos[0]), lon: r5(pos[1]), mea: r.mea, level: r.level, kind: r.sect === 'D ' ? 'vor' : r.sect === 'DB' ? 'ndb' : 'fix' };
+      if (prev) {
+        const seg = [route, prev.id, prev.lat, prev.lon, cur.id, cur.lat, cur.lon, prev.mea ?? cur.mea ?? 0, prev.level || ' '];
+        const t1 = tile(prev.lat, prev.lon), t2 = tile(cur.lat, cur.lon);
+        (t1.aw ??= []).push(seg);
+        if (t2 !== t1) (t2.aw ??= []).push(seg);
+        nAwSeg++;
+      }
+      prev = r.desc[1] === 'E' ? null : cur; // end of a continuous route section
+    }
+  }
+
   // ---------------------------------------------------------------- SIDs / STARs
   // ARINC 424 route types — SID: 1/4/F runway transition, 2/5/M common route, 3/6/S/V enroute transition;
   // STAR: 1/4/F enroute transition, 2/5/M common route, 3/6/S runway transition (7/8/9 profile descents).
@@ -418,5 +446,5 @@ fs.writeFileSync(path.join(OUT, 'index.json'), JSON.stringify(index));
 for (const [k, t] of tiles) fs.writeFileSync(path.join(OUT, 'tiles', `${k}.json`), JSON.stringify(t));
 for (const [icao, list] of procs) fs.writeFileSync(path.join(OUT, 'proc', `${icao}.json`), JSON.stringify(list));
 for (const [icao, t] of term) fs.writeFileSync(path.join(OUT, 'term', `${icao}.json`), JSON.stringify(t));
-fs.writeFileSync(path.join(OUT, 'meta.json'), JSON.stringify({ built: new Date().toISOString(), airports: index.length, tiles: tiles.size, cifpWaypoints: nCifpWpt, cifpApproaches: nCifpApp, sids: nSid, stars: nStar, sources: ['OurAirports (public domain)', cifpPath ? 'FAA CIFP (public domain)' : null].filter(Boolean) }));
-console.log(`airports ${index.length} · tiles ${tiles.size} · waypoints ${nCifpWpt} · approaches ${nCifpApp} (${procs.size} airports) · SIDs ${nSid} · STARs ${nStar} (${term.size} airports)`);
+fs.writeFileSync(path.join(OUT, 'meta.json'), JSON.stringify({ built: new Date().toISOString(), airports: index.length, tiles: tiles.size, cifpWaypoints: nCifpWpt, cifpApproaches: nCifpApp, sids: nSid, stars: nStar, airwaySegments: nAwSeg, sources: ['OurAirports (public domain)', cifpPath ? 'FAA CIFP (public domain)' : null].filter(Boolean) }));
+console.log(`airports ${index.length} · tiles ${tiles.size} · waypoints ${nCifpWpt} · approaches ${nCifpApp} (${procs.size} airports) · SIDs ${nSid} · STARs ${nStar} (${term.size} airports) · airway segments ${nAwSeg}`);
