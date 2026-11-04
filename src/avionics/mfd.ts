@@ -1,9 +1,11 @@
 // G1000-style Multi-Function Display: engine strip, moving map, flight plan.
 import type { Sim } from '../sim/sim';
-import { C, box, line, poly, text, pad3 } from './draw';
-import { drawTopBar, drawSoftkeys, setTextScaleFor, fs, tw } from './pfd';
+import { C, line, poly, text, pad3 } from './draw';
+import { drawTopBar, drawSoftkeys, setTextScaleFor, fs, tw, cbox } from './pfd';
 import { AIRPORTS, FIXES, NAVAIDS, groundElevation, terrainProviderActive, terrainEpoch } from '../nav/data';
 import { destination, distanceNm, toLocal, DEG, bearingDeg, type LatLon } from '../nav/geo';
+import { flyablePath, type PathFix } from '../nav/pathgeom';
+import type { Waypoint } from '../nav/flightplan';
 
 export const MFD_W = 1024;
 export const MFD_H = 768;
@@ -41,7 +43,7 @@ const SOFT_Y = MFD_H - 24;
 export function drawMfd(ctx: CanvasRenderingContext2D, sim: Sim, st: MfdState) {
   setTextScaleFor(ctx, MFD_W);
   ctx.clearRect(0, 0, MFD_W, MFD_H);
-  box(ctx, 0, 0, MFD_W, MFD_H, '#000');
+  cbox(ctx, 0, 0, MFD_W, MFD_H, '#000');
   drawTopBar(ctx, sim, 'MFD');
   drawEis(ctx, sim);
   // the FPL pane hides itself when there is no flight plan (full-width map)
@@ -50,7 +52,7 @@ export function drawMfd(ctx: CanvasRenderingContext2D, sim: Sim, st: MfdState) {
   const fplX = 718;
   const mw = (fpl ? fplX : MFD_W) - mx;
   // page title in its own strip above the map
-  box(ctx, mx, 54, mw, TITLE_H, '#000');
+  cbox(ctx, mx, 54, mw, TITLE_H, '#000');
   line(ctx, mx, 54 + TITLE_H - 0.5, mx + mw, 54 + TITLE_H - 0.5, '#2c3137', 1);
   text(ctx, 'MAP - NAVIGATION MAP', mx + mw / 2, 54 + TITLE_H / 2 + 1, C.white, fs(14), 'center', 700);
   const mapRect = { x: mx, y: 54 + TITLE_H, w: mw, h: SOFT_Y - 54 - TITLE_H };
@@ -105,8 +107,8 @@ function hbar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, la
   text(ctx, label, x, y, C.white, ls);
   if (valueText) text(ctx, valueText, x + w, y, C.white, fs(15), 'right', 700);
   const by = y + ls / 2 + 5;
-  box(ctx, x, by, w, 5, '#2a2f35');
-  for (const [a, b, c] of bands) box(ctx, x + w * a, by, w * (b - a), 5, c);
+  cbox(ctx, x, by, w, 5, '#2a2f35');
+  for (const [a, b, c] of bands) cbox(ctx, x + w * a, by, w * (b - a), 5, c);
   const px = x + Math.max(0, Math.min(1, frac)) * w;
   poly(ctx, [[px, by + 4], [px - 5, by + 12], [px + 5, by + 12]], C.white);
   return by + 12 - y; // height used below the label centre
@@ -115,13 +117,13 @@ function hbar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, la
 function drawEis(ctx: CanvasRenderingContext2D, sim: Sim) {
   const d = sim.ac.data;
   const top = 54;
-  box(ctx, 0, top, EIS_W, SOFT_Y - top, '#000');
+  cbox(ctx, 0, top, EIS_W, SOFT_Y - top, '#000');
   line(ctx, EIS_W + 0.5, top, EIS_W + 0.5, SOFT_Y, '#4a4f55', 1);
   const x = 10;
   const w = EIS_W - 20;
   const ls = fs(13);
   const vs = fs(15);
-  gaugeArc(ctx, EIS_W / 2, top + 66, 52, d.rpm, 0, 2800, [2100, 2700], 2700, 'RPM', String(Math.round(d.rpm / 10) * 10));
+  gaugeArc(ctx, EIS_W / 2, top + 66, 52, d.rpm, 0, 2800, [2100, 2700], 2700, 'RPM', Number.isFinite(d.rpm) ? String(Math.round(d.rpm / 10) * 10) : '----');
   // one vertical rhythm for the whole strip: 5 engine bars, fuel (header + 2 bars), flaps, trim, engine hours
   const y0 = top + 146;
   const yEnd = SOFT_Y - 14;
@@ -130,7 +132,7 @@ function drawEis(ctx: CanvasRenderingContext2D, sim: Sim) {
   const thr = sim.controls.throttle;
   let y = y0;
   const g = (a: number, b: number): Band => [a, b, EIS_GREEN];
-  hbar(ctx, x, y, w, 'FFLOW GPH', d.fuelFlowGph / 20, d.fuelFlowGph.toFixed(1), [g(0, 0.6)]);
+  hbar(ctx, x, y, w, 'FFLOW GPH', finite(d.fuelFlowGph) / 20, Number.isFinite(d.fuelFlowGph) ? d.fuelFlowGph.toFixed(1) : '--.-', [g(0, 0.6)]);
   y += pitch;
   const oilP = 60 + thr * 20;
   hbar(ctx, x, y, w, 'OIL PRES', oilP / 115, String(Math.round(oilP)), [[0, 0.17, EIS_RED], g(0.43, 0.87), [0.96, 1, EIS_RED]]);
@@ -149,18 +151,18 @@ function drawEis(ctx: CanvasRenderingContext2D, sim: Sim) {
   y += pitch * 0.1;
   text(ctx, 'FUEL QTY GAL', EIS_W / 2, y, C.white, ls, 'center');
   y += pitch * 0.6;
-  const q = sim.ac.s.fuelGal / 2;
+  const q = finite(sim.ac.s.fuelGal) / 2;
   const fb: Band[] = [[0, 0.06, EIS_RED], [0.06, 0.19, EIS_YELLOW], g(0.19, 1)];
   for (const lbl of ['L', 'R']) {
     text(ctx, lbl, x, y, C.white, ls, 'left', 700);
     const bx = x + 16;
     const bw = w - 16 - tw(ctx, '26', vs, 700) - 8;
     const by = y - 3;
-    box(ctx, bx, by, bw, 5, '#2a2f35');
-    for (const [a, b, c] of fb) box(ctx, bx + bw * a, by, bw * (b - a), 5, c);
+    cbox(ctx, bx, by, bw, 5, '#2a2f35');
+    for (const [a, b, c] of fb) cbox(ctx, bx + bw * a, by, bw * (b - a), 5, c);
     const px = bx + Math.max(0, Math.min(1, q / 26)) * bw;
     poly(ctx, [[px, by + 4], [px - 5, by + 12], [px + 5, by + 12]], C.white);
-    text(ctx, q.toFixed(0), x + w, y, q < 5 ? EIS_YELLOW : C.white, vs, 'right', 700);
+    text(ctx, Number.isFinite(sim.ac.s.fuelGal) ? q.toFixed(0) : '--', x + w, y, q < 5 ? EIS_YELLOW : C.white, vs, 'right', 700);
     y += pitch * 0.75;
   }
   line(ctx, x, y - pitch * 0.15, x + w, y - pitch * 0.15, '#2c3137', 1);
@@ -169,7 +171,7 @@ function drawEis(ctx: CanvasRenderingContext2D, sim: Sim) {
   text(ctx, 'FLAPS', x, y, C.white, ls);
   text(ctx, `${Math.round(d.flapsDeg)}°`, x + w, y, C.white, vs, 'right', 700);
   const fy = y + ls / 2 + 5;
-  box(ctx, x, fy, w, 5, '#2a2f35');
+  cbox(ctx, x, fy, w, 5, '#2a2f35');
   for (const det of [0, 10, 20, 30]) line(ctx, x + (det / 30) * w, fy - 3, x + (det / 30) * w, fy + 8, '#6b7178', 1.5);
   const fpx = x + Math.max(0, Math.min(1, d.flapsDeg / 30)) * w;
   poly(ctx, [[fpx, fy + 4], [fpx - 5, fy + 12], [fpx + 5, fy + 12]], C.white);
@@ -182,13 +184,13 @@ function drawEis(ctx: CanvasRenderingContext2D, sim: Sim) {
   text(ctx, 'UP', x + w, ty + 2, C.gray, fs(11), 'right');
   const tx0 = x + 24;
   const tw0 = w - 48;
-  box(ctx, tx0, ty, tw0, 5, '#2a2f35');
-  box(ctx, tx0 + tw0 * 0.42, ty, tw0 * 0.16, 5, EIS_GREEN);
+  cbox(ctx, tx0, ty, tw0, 5, '#2a2f35');
+  cbox(ctx, tx0 + tw0 * 0.42, ty, tw0 * 0.16, 5, EIS_GREEN);
   const tpx = tx0 + tw0 / 2 - Math.max(-1, Math.min(1, tr)) * (tw0 / 2);
   poly(ctx, [[tpx, ty + 4], [tpx - 5, ty + 12], [tpx + 5, ty + 12]], C.white);
   y += pitch;
   text(ctx, 'ENG HRS', x, y, C.white, ls);
-  text(ctx, (sim.ac.s.hobbs / 3600).toFixed(1), x + w, y, C.white, vs, 'right', 700);
+  text(ctx, (finite(sim.ac.s.hobbs) / 3600).toFixed(1), x + w, y, C.white, vs, 'right', 700);
 }
 
 // ------------------------------------------------------------------ map
@@ -232,6 +234,70 @@ interface MapLabel {
   prio: number; // 0 = FPL (active first), 1 = airports, 2 = navaids, 3 = fixes
 }
 
+const finite = (v: number, d = 0) => (Number.isFinite(v) ? v : d);
+
+/**
+ * The flight plan as flyable legs: legs[i] is the path of the leg that ends at wpts[i] (legs[0] is empty).
+ * Straight legs are joined by fly-by arcs (turn anticipation) or fly-over turns (MAP, MAHP, runway, holding fix)
+ * from the shared path geometry; DME-arc legs are true arcs.
+ */
+export function routeLegs(wpts: Waypoint[], gsKt: number): LatLon[][] {
+  const legs: LatLon[][] = wpts.map(() => []);
+  const arcLeg = (i: number) => {
+    const w = wpts[i];
+    const arc = w.arc!;
+    const th0 = bearingDeg(arc.center, wpts[i - 1]);
+    const th1 = bearingDeg(arc.center, w);
+    let span = th1 - th0;
+    if (arc.dir === 'R') span = ((span % 360) + 360) % 360;
+    else span = -(((-span % 360) + 360) % 360);
+    const n = Math.max(8, Math.ceil(Math.abs(span) / 4));
+    return Array.from({ length: n + 1 }, (_, k) => destination(arc.center, th0 + (span * k) / n, arc.radius));
+  };
+  let j = 0; // start of the current run of straight legs
+  const flush = (k: number) => {
+    // straight legs j+1 .. k as one flyable path, split at the point nearest each interior waypoint
+    if (k <= j) return;
+    const fixes: PathFix[] = wpts.slice(j, k + 1).map((w) => ({ lat: w.lat, lon: w.lon, ident: w.ident, role: w.role, hold: w.hold }));
+    const path = flyablePath(fixes, gsKt);
+    let from = 0;
+    for (let m = j + 1; m <= k; m++) {
+      let to = path.length - 1;
+      if (m < k) {
+        let best = Infinity;
+        for (let q = from; q < path.length; q++) {
+          const dd = distanceNm(path[q], wpts[m]);
+          if (dd < best) {
+            best = dd;
+            to = q;
+          }
+        }
+      }
+      legs[m] = path.slice(from, to + 1);
+      from = to;
+    }
+  };
+  for (let i = 1; i < wpts.length; i++) {
+    if (wpts[i].arc) {
+      flush(i - 1);
+      legs[i] = arcLeg(i);
+      j = i;
+    }
+  }
+  flush(wpts.length - 1);
+  return legs;
+}
+
+/** Runway outline on the map: a true rectangle from the two threshold points and the half width (px). */
+export function runwayQuad(r1: { x: number; y: number }, r2: { x: number; y: number }, halfW: number): [number, number][] {
+  const len = Math.hypot(r2.x - r1.x, r2.y - r1.y) || 1;
+  const ux = (r2.x - r1.x) / len;
+  const uy = (r2.y - r1.y) / len;
+  const nx = -uy * halfW;
+  const ny = ux * halfW;
+  return [[r1.x + nx, r1.y + ny], [r2.x + nx, r2.y + ny], [r2.x - nx, r2.y - ny], [r1.x - nx, r1.y - ny]];
+}
+
 // G1000-like topographic bands (ft MSL → colour), muted so the symbology stays on top
 const TOPO: [number, [number, number, number]][] = [
   [1, [8, 26, 50]], // water
@@ -261,10 +327,15 @@ export function drawMap(
   const s = sim.ac.s;
   const d = sim.ac.data;
   const northUp = st ? st.northUp : false;
-  const rot = northUp ? 0 : d.trackTrue * DEG;
+  // track-up uses the smoothed (GPS-like) track so the map never shakes in turbulence
+  const trk = finite(d.trackSmooth, finite(d.hdgTrue));
+  const gsS = finite(d.gsSmooth);
+  const rot = northUp ? 0 : trk * DEG;
   const cx = r.x + r.w / 2;
-  const cy = r.y + r.h * (northUp ? 0.5 : 0.62);
-  const ppn = (Math.min(r.w, r.h) * (northUp ? 0.45 : 0.55)) / rangeNm;
+  // track-up: ownship in the bottom third, the range arc as large as the map allows
+  const cy = r.y + r.h * (northUp ? 0.5 : 0.68);
+  const arcR = Math.min(cy - r.y - 16, (r.w / 2 - 10) / 0.866);
+  const ppn = northUp ? (Math.min(r.w, r.h) * 0.45) / rangeNm : arcR / (0.92 * rangeNm);
   const xy = (p: LatLon) => {
     const l = toLocal(s, p);
     const x = l.x * Math.cos(rot) - l.y * Math.sin(rot);
@@ -276,10 +347,10 @@ export function drawMap(
   const inside = (p: { x: number; y: number }, rad: number) =>
     p.x - rad >= r.x + padIn && p.x + rad <= r.x + r.w - padIn && p.y - rad >= r.y + padIn && p.y + rad <= r.y + r.h - padIn;
   const reach = rangeNm * 2.2; // nm: anything farther is off the map
-  box(ctx, r.x, r.y, r.w, r.h, inset ? '#0b1620' : '#000');
+  cbox(ctx, r.x, r.y, r.w, r.h, inset ? '#0b1620' : '#000');
   // terrain: quantised topographic bands, relative (TAWS-style) colours when airborne; cached
   if ((st?.terrain ?? true) && !inset && st) {
-    const key = `${rangeNm}|${northUp}|${Math.round(s.lat * 300)}|${Math.round(s.lon * 300)}|${Math.round(s.altFt / 100)}|${northUp ? 0 : Math.round(d.trackTrue / 3)}|${r.w}x${r.h}|${terrainEpoch}`;
+    const key = `${rangeNm}|${northUp}|${Math.round(s.lat * 300)}|${Math.round(s.lon * 300)}|${Math.round(s.altFt / 100)}|${northUp ? 0 : Math.round(trk / 3)}|${r.w}x${r.h}|${terrainEpoch}`;
     const cache = st.terrainCache;
     if (cache.key !== key || !cache.canvas) {
       const off = cache.canvas ?? document.createElement('canvas');
@@ -363,7 +434,7 @@ export function drawMap(
     const lx = cx - ringR * 0.7071;
     const ly = cy - ringR * 0.7071;
     const lw = tw(ctx, rl, rs) + 8;
-    box(ctx, lx - lw / 2, ly - rs / 2 - 2, lw, rs + 4, '#000');
+    cbox(ctx, lx - lw / 2, ly - rs / 2 - 2, lw, rs + 4, '#000');
     text(ctx, rl, lx, ly + 1, '#c9ced3', rs, 'center');
     placer.block({ x: lx - lw / 2, y: ly - rs / 2 - 2, w: lw, h: rs + 4 });
     if (!northUp) {
@@ -373,7 +444,6 @@ export function drawMap(
       ctx.beginPath();
       ctx.arc(cx, cy, R, -Math.PI / 2 - 1.05, -Math.PI / 2 + 1.05);
       ctx.stroke();
-      const trk = d.trackTrue;
       for (let b = Math.ceil((trk - 60) / 5) * 5; b <= trk + 60; b += 5) {
         const a = (b - trk) * DEG - Math.PI / 2;
         const major = ((b % 30) + 30) % 30 === 0;
@@ -426,9 +496,9 @@ export function drawMap(
     if (n.type === 'NDB') {
       for (let k = 0; k < 10; k++) {
         const a = (k / 10) * Math.PI * 2;
-        box(ctx, p.x + Math.cos(a) * 6 - 1, p.y + Math.sin(a) * 6 - 1, 2, 2, '#b98cf0');
+        cbox(ctx, p.x + Math.cos(a) * 6 - 1, p.y + Math.sin(a) * 6 - 1, 2, 2, '#b98cf0');
       }
-      box(ctx, p.x - 2, p.y - 2, 4, 4, '#b98cf0');
+      cbox(ctx, p.x - 2, p.y - 2, 4, 4, '#b98cf0');
     } else {
       const pts: [number, number][] = Array.from({ length: 6 }, (_, i) => [p.x + 7 * Math.cos((i * Math.PI) / 3), p.y + 7 * Math.sin((i * Math.PI) / 3)]);
       poly(ctx, pts, undefined, C.cyan, 1.6);
@@ -437,27 +507,28 @@ export function drawMap(
         ctx.lineWidth = 1.2;
         ctx.strokeRect(p.x - 8.5, p.y - 7, 17, 14);
       }
-      box(ctx, p.x - 1.5, p.y - 1.5, 3, 3, C.cyan);
+      cbox(ctx, p.x - 1.5, p.y - 1.5, 3, 3, C.cyan);
     }
     if (!inset && !inFpl && declutter < 2) labels.push({ s: n.ident, x: p.x, y: p.y, r: 9, color: n.type === 'NDB' ? '#c9a6f5' : C.cyan, size: lblSize(13), weight: 700, prio: 2 });
   }
   // airports: runways at true width (min 4 px), outlined; numbers when zoomed in; ring symbol at long range
   const airportLbl = new Map<string, MapLabel>();
   for (const a of AIRPORTS) {
-    if (Math.abs(a.lat - s.lat) * 60 > reach) continue;
+    if (Math.abs(a.lat - s.lat) * 60 > reach + 3) continue;
     const p = xy(a);
-    if (!inside(p, 8)) continue;
+    // runways are drawn whenever any part is on the map (clipped by the map rect), even with the airport
+    // reference point off screen: on the take-off roll or short final at 1-2 NM range
+    const symOk = inside(p, 8);
     const big = rangeNm <= 10;
     for (let i = 0; i < a.runways.length; i += 2) {
       const rw = a.runways[i];
       const r1 = xy(rw.threshold);
       const r2 = xy(rw.end);
+      if (Math.max(r1.x, r2.x) < r.x - 20 || Math.min(r1.x, r2.x) > r.x + r.w + 20 || Math.max(r1.y, r2.y) < r.y - 20 || Math.min(r1.y, r2.y) > r.y + r.h + 20) continue;
       const len = Math.hypot(r2.x - r1.x, r2.y - r1.y) || 1;
       const ux = (r2.x - r1.x) / len, uy = (r2.y - r1.y) / len;
       const halfW = Math.max(big ? 2.2 : 1.6, ((rw.widthFt / 6076) * ppn) / 2);
-      const nx = -uy * halfW, ny = ux * halfW;
-      const pts: [number, number][] = [[r1.x + nx, r1.y + ny], [r2.x + nx, r2.y + ny], [r2.x - nx, r2.y - ny], [r1.x - nx, r1.y - ny]];
-      poly(ctx, pts, big ? '#4a525b' : '#d7dde3', big ? '#e8ecef' : undefined, 1);
+      poly(ctx, runwayQuad(r1, r2, halfW), big ? '#4a525b' : '#d7dde3', big ? '#e8ecef' : undefined, 1);
       if (big && halfW > 4) {
         ctx.setLineDash([6, 5]);
         line(ctx, r1.x + ux * 8, r1.y + uy * 8, r2.x - ux * 8, r2.y - uy * 8, '#e8ecef', 1);
@@ -474,6 +545,7 @@ export function drawMap(
         }
       }
     }
+    if (!symOk) continue;
     if (!big) {
       ctx.strokeStyle = '#d7dde3';
       ctx.lineWidth = 1.5;
@@ -491,29 +563,32 @@ export function drawMap(
   // flight plan: active leg magenta, others white, missed approach dashed
   if (fp.wpts.length) {
     const direct = fp.out.valid && fp.out.fromIdent === 'DCT' && !!fp.directFrom;
+    const legs = routeLegs(fp.wpts, Math.max(60, gsS || 100));
+    const strokeLeg = (pts: LatLon[], color: string, w: number) => {
+      if (pts.length < 2) return;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = w;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      pts.forEach((q, k) => {
+        const p = xy(q);
+        if (k) ctx.lineTo(p.x, p.y);
+        else ctx.moveTo(p.x, p.y);
+      });
+      ctx.stroke();
+      ctx.lineCap = 'butt';
+    };
+    // inactive legs (white) first, the active leg (magenta) on top
     for (let i = 1; i < fp.wpts.length; i++) {
-      const a = xy(fp.wpts[i - 1]);
-      const b = xy(fp.wpts[i]);
-      const isActive = i === fp.active && !fp.out.holding && !direct;
-      const missed = fp.wpts[i].appr === 'missed';
-      if (missed) ctx.setLineDash([8, 6]);
-      const arc = fp.wpts[i].arc;
-      ctx.strokeStyle = isActive ? C.magenta : C.white;
-      ctx.lineWidth = isActive ? 4 : 2.5;
-      if (arc) {
-        const th0 = bearingDeg(arc.center, fp.wpts[i - 1]);
-        const th1 = bearingDeg(arc.center, fp.wpts[i]);
-        let span = th1 - th0;
-        if (arc.dir === 'R') span = ((span % 360) + 360) % 360;
-        else span = -((((-span) % 360) + 360) % 360);
-        ctx.beginPath();
-        for (let k = 0; k <= 24; k++) {
-          const p = xy(destination(arc.center, th0 + (span * k) / 24, arc.radius));
-          if (k) ctx.lineTo(p.x, p.y);
-          else ctx.moveTo(p.x, p.y);
-        }
-        ctx.stroke();
-      } else line(ctx, a.x, a.y, b.x, b.y, isActive ? C.magenta : C.white, isActive ? 4 : 2.5);
+      if (i === fp.active && !fp.out.holding && !direct) continue;
+      if (fp.wpts[i].appr === 'missed') ctx.setLineDash([8, 6]);
+      strokeLeg(legs[i], C.white, 2.5);
+      ctx.setLineDash([]);
+    }
+    if (fp.active > 0 && fp.active < fp.wpts.length && !fp.out.holding && !direct) {
+      if (fp.wpts[fp.active].appr === 'missed') ctx.setLineDash([8, 6]);
+      strokeLeg(legs[fp.active], C.magenta, 4);
       ctx.setLineDash([]);
     }
     if (direct) {
@@ -574,8 +649,8 @@ export function drawMap(
       labels.push({ s: w.ident, x: p.x, y: p.y, r: 6, color: active ? C.magenta : C.white, size: lblSize(13), weight: 700, prio: active ? -1 : 0 });
     }
   }
-  // track vector (1 minute)
-  const ahead = xy(destination(s, d.trackTrue, d.gsKt / 60));
+  // track vector (1 minute), from the smoothed track / ground speed
+  const ahead = xy(destination(s, trk, gsS / 60));
   ctx.setLineDash([3, 4]);
   line(ctx, cx, cy, ahead.x, ahead.y, '#d6d6d6', 1.5);
   ctx.setLineDash([]);
@@ -591,7 +666,7 @@ export function drawMap(
   const os = fs(13);
   const oh = os + 10;
   const corner = (x: number, y: number, w: number, h: number) => {
-    box(ctx, x, y, w, h, 'rgba(0,0,0,0.78)', '#5f656b');
+    cbox(ctx, x, y, w, h, 'rgba(0,0,0,0.78)', '#5f656b');
     placer.block({ x, y, w, h });
   };
   if (!inset) {
@@ -631,7 +706,7 @@ export function drawMap(
     const rg = `${rangeNm}NM`;
     const rs = fs(12);
     const rw = tw(ctx, rg, rs, 700) + 8;
-    box(ctx, r.x + r.w - rw - 4, r.y + 4, rw, rs + 4, 'rgba(0,0,0,0.7)');
+    cbox(ctx, r.x + r.w - rw - 4, r.y + 4, rw, rs + 4, 'rgba(0,0,0,0.7)');
     text(ctx, rg, r.x + r.w - 4 - rw / 2, r.y + 6 + rs / 2, C.white, rs, 'center', 700);
     placer.block({ x: r.x + r.w - rw - 4, y: r.y + 4, w: rw, h: rs + 4 });
   }
@@ -643,7 +718,7 @@ export function drawMap(
     const h = L.size + 4;
     const q = placer.place(L.x, L.y, w, h, L.r);
     if (!q) continue;
-    box(ctx, q.x, q.y, w, h, 'rgba(0,0,0,0.62)');
+    cbox(ctx, q.x, q.y, w, h, 'rgba(0,0,0,0.62)');
     text(ctx, L.s, q.x + 3, q.y + h / 2 + 1, L.color, L.size, 'left', L.weight);
   }
 }
@@ -665,11 +740,11 @@ function holdGlyph(ctx: CanvasRenderingContext2D, x: number, y: number, color: s
 const ROLE_SUFFIX: Partial<Record<string, string>> = { IAF: 'iaf', IF: 'if', FAF: 'faf', MAP: 'map', MAHP: 'mahp', STEPDOWN: 'sdf' };
 
 function drawFpl(ctx: CanvasRenderingContext2D, sim: Sim, r: { x: number; y: number; w: number; h: number }) {
-  box(ctx, r.x, r.y, r.w, r.h, '#05080c');
+  cbox(ctx, r.x, r.y, r.w, r.h, '#05080c');
   line(ctx, r.x + 0.5, r.y, r.x + 0.5, r.y + r.h, '#4a4f55', 1);
   const fp = sim.fp;
   const hs = fs(14);
-  box(ctx, r.x + 1, r.y, r.w - 1, TITLE_H, '#000');
+  cbox(ctx, r.x + 1, r.y, r.w - 1, TITLE_H, '#000');
   text(ctx, 'ACTIVE FLIGHT PLAN', r.x + r.w / 2, r.y + TITLE_H / 2 + 1, C.white, hs, 'center', 700);
   // origin / destination
   const first = fp.wpts[0]?.ident ?? '';
@@ -753,7 +828,7 @@ function drawFpl(ctx: CanvasRenderingContext2D, sim: Sim, r: { x: number; y: num
   // footer
   const o = fp.out;
   const fy = r.y + r.h - footerH;
-  box(ctx, r.x + 1, fy, r.w - 1, footerH, '#0b1118');
+  cbox(ctx, r.x + 1, fy, r.w - 1, footerH, '#0b1118');
   line(ctx, r.x + 1, fy + 0.5, r.x + r.w, fy + 0.5, '#2c3137', 1);
   const fsz = fs(14);
   const status = fp.approachActive ? (fp.missedActive ? 'MISSED APPROACH ACTIVE' : 'APPROACH ACTIVE') : fp.approachId ? 'APPROACH LOADED' : 'ENROUTE';

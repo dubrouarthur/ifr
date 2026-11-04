@@ -65,7 +65,7 @@ export const AC_CLEAR = 6.4;
 export class CameraRig {
   mode: ViewMode = "cockpit";
   /** orbit: yaw relative to the aircraft heading (0 = behind), pitch above the horizon, distance */
-  orbit = { yaw: 0.75, pitch: 0.2, dist: 18 };
+  orbit = { yaw: -0.7, pitch: 0.2, dist: 18 };
   /** chase: distance behind and the drag offsets (ease back to zero when released) */
   chase = { dist: 19, yawOfs: 0, pitchOfs: 0 };
   /** tower / fly-by zoom (1 = framed automatically, >1 zooms in) */
@@ -119,7 +119,7 @@ export class CameraRig {
   }
 
   reset() {
-    this.orbit = { yaw: 0.75, pitch: 0.2, dist: 18 };
+    this.orbit = { yaw: -0.7, pitch: 0.2, dist: 18 };
     this.chase = { dist: 19, yawOfs: 0, pitchOfs: 0 };
     this.zoom = 1;
     this.flyAnchor = null;
@@ -172,7 +172,7 @@ export class CameraRig {
     }
     const yaw = -this.chaseYaw + this.chase.yawOfs;
     const pitch = clamp(
-      0.2 + this.chasePitch * 0.6 + this.chase.pitchOfs,
+      0.12 + this.chasePitch * 0.6 + this.chase.pitchOfs,
       -0.2,
       1.4,
     );
@@ -188,7 +188,7 @@ export class CameraRig {
       .add(c);
     // aim a little ahead of the aircraft so it sits in the lower-middle of the frame, like a real chase plane
     const fwd = this.tmp.set(
-      -Math.sin(this.chaseYaw),
+      Math.sin(this.chaseYaw),
       0,
       -Math.cos(this.chaseYaw),
     );
@@ -302,7 +302,7 @@ export class CameraRig {
   /** horizontal direction of travel (velocity, or the heading when slow) */
   private horizDir(ac: AircraftFrame) {
     const v = new THREE.Vector3(ac.vel.x, 0, ac.vel.z);
-    if (v.lengthSq() < 4) v.set(-Math.sin(ac.hdg), 0, -Math.cos(ac.hdg));
+    if (v.lengthSq() < 4) v.set(Math.sin(ac.hdg), 0, -Math.cos(ac.hdg));
     return v.normalize();
   }
 }

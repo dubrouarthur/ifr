@@ -590,9 +590,12 @@ export class Outside3D {
     sky.uSunDir.value.copy(this.sun.position).normalize();
     this.stars.visible = t === 'night';
     if (this.aircraft) {
-      const gnd = new THREE.Color(t === 'night' ? 0x030405 : t === 'dusk' ? 0x2a2420 : 0x3d4433);
+      const gnd = new THREE.Color(t === 'night' ? 0x0b0d10 : t === 'dusk' ? 0x3a3430 : 0x5a5c55);
+      // night: a faint moonlit sky so the airframe still reads against the dark
+      const top = t === 'night' ? new THREE.Color(0x1a2438) : sky.uTop.value;
+      const hor = t === 'night' ? new THREE.Color(0x222a38) : sky.uHorizon.value;
       try {
-        this.aircraft.setEnvironment(this.renderer, sky.uTop.value, sky.uHorizon.value, gnd, t === 'night' ? 0.25 : t === 'dusk' ? 0.6 : 0.75);
+        this.aircraft.setEnvironment(this.renderer, top, hor, gnd, t === 'night' ? 0.6 : t === 'dusk' ? 0.6 : 0.75);
       } catch (e) {
         console.warn('aircraft reflections unavailable', e);
       }

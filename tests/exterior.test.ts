@@ -152,6 +152,28 @@ describe("C172 model", () => {
   });
 });
 
+describe("ground effects", () => {
+  it("puts the landing-light pool ahead of the nose and the shadow under the aircraft", () => {
+    const sun = new THREE.Vector3(0, 1, 0);
+    for (const hdgDeg of [0, 90, 270]) {
+      const hdg = (hdgDeg * Math.PI) / 180;
+      ac.update(anim({ onGround: true, gsMps: 20, rpm: 2400 })); // take-off roll: landing light on
+      expect(ac.lights.landing).toBe(true);
+      ac.placeGround(new THREE.Vector3(0, 0, 0), hdg, 0, 0, 0, sun, 1, 1);
+      const fwd = new THREE.Vector3(Math.sin(hdg), 0, -Math.cos(hdg)); // scene: x east, -z north
+      expect(ac.pool.visible).toBe(true);
+      expect(ac.pool.position.clone().setY(0).normalize().dot(fwd)).toBeGreaterThan(0.99);
+      expect(Math.hypot(ac.shadow.position.x, ac.shadow.position.z)).toBeLessThan(0.01);
+      expect(ac.shadow.visible).toBe(true);
+    }
+    // high up: no shadow, no pool
+    ac.update(anim({ onGround: false, aglFt: 3000, rpm: 2400 }));
+    ac.placeGround(new THREE.Vector3(0, 900, 0), 0, 0, 0, 0, sun, 1, 1);
+    expect(ac.shadow.visible).toBe(false);
+    expect(ac.pool.visible).toBe(false);
+  });
+});
+
 describe("exterior cameras", () => {
   const env: CameraEnv = {
     groundAt: () => 0,
@@ -254,6 +276,26 @@ describe("exterior cameras", () => {
     rig.zoomBy(2);
     const d1 = rig.update(0, f, env).pos.distanceTo(rig.centre(f));
     expect(d1).toBeLessThan(d0 * 0.6);
+  });
+
+  it("fly-by waits ahead of the aircraft and repositions once it has passed", () => {
+    const rig = new CameraRig();
+    rig.setMode("flyby");
+    const f: AircraftFrame = { pos: new THREE.Vector3(0, 300, 0), quat: new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0, "YXZ")), hdg: Math.PI / 2, pitch: 0, vel: new THREE.Vector3(50, 0, 0), onGround: false };
+    const first = rig.update(1 / 60, f, env).pos.clone();
+    expect(first.x).toBeGreaterThan(150); // east = ahead
+    const pos = f.pos.clone();
+    let moved = false;
+    for (let i = 0; i < 60 * 20; i++) {
+      pos.x += 50 / 60;
+      const p = rig.update(1 / 60, { ...f, pos }, env).pos;
+      if (p.distanceTo(first) > 50) {
+        moved = true;
+        expect(p.x).toBeGreaterThan(pos.x);
+        break;
+      }
+    }
+    expect(moved).toBe(true);
   });
 
   it("chase follows the heading from behind", () => {

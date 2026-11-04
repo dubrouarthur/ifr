@@ -41,6 +41,59 @@ export function tw(ctx: CanvasRenderingContext2D, s: string, size: number, weigh
   return ctx.measureText(s).width;
 }
 
+/** Ink extent of a string above / below the 'middle' baseline (falls back to font proportions without metrics). */
+export function inkExtent(ctx: CanvasRenderingContext2D, s: string, size: number, weight = 600) {
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textBaseline = 'middle';
+  const m = ctx.measureText(s);
+  const asc = Number.isFinite(m.actualBoundingBoxAscent) && m.actualBoundingBoxAscent > 0 ? m.actualBoundingBoxAscent : size * 0.36;
+  const desc = Number.isFinite(m.actualBoundingBoxDescent) && m.actualBoundingBoxDescent > 0 ? m.actualBoundingBoxDescent : size * 0.36;
+  return { asc, desc };
+}
+
+/**
+ * Rectangle snapped to device pixels: [x, x+w] x [y, y+h] is the OUTER edge; the border is drawn inside it
+ * with a whole number of device pixels, so edges are crisp at every canvas scale and DPR.
+ */
+function snapRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+  const t = typeof ctx.getTransform === 'function' ? ctx.getTransform() : null;
+  if (!t || t.b || t.c || !t.a || !t.d) return null;
+  const X0 = Math.round(x * t.a + t.e);
+  const X1 = Math.round((x + w) * t.a + t.e);
+  const Y0 = Math.round(y * t.d + t.f);
+  const Y1 = Math.round((y + h) * t.d + t.f);
+  return { X0, X1, Y0, Y1, sx: t.a, sy: t.d };
+}
+export function strokeBox(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, color: string, lw = 1.5) {
+  const q = snapRect(ctx, x, y, w, h);
+  ctx.strokeStyle = color;
+  if (!q) {
+    ctx.lineWidth = lw;
+    ctx.strokeRect(x + lw / 2, y + lw / 2, w - lw, h - lw);
+    return;
+  }
+  const L = Math.max(1, Math.round(lw * q.sx));
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.lineWidth = L;
+  ctx.strokeRect(q.X0 + L / 2, q.Y0 + L / 2, q.X1 - q.X0 - L, q.Y1 - q.Y0 - L);
+  ctx.restore();
+}
+/** Filled (and optionally outlined) box with crisp, device-pixel-aligned edges. */
+export function cbox(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, fill: string, stroke?: string) {
+  const q = snapRect(ctx, x, y, w, h);
+  if (!q) {
+    box(ctx, x, y, w, h, fill, stroke);
+    return;
+  }
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = fill;
+  ctx.fillRect(q.X0, q.Y0, q.X1 - q.X0, q.Y1 - q.Y0);
+  ctx.restore();
+  if (stroke) strokeBox(ctx, x, y, w, h, stroke, 1.5);
+}
+
 // ------------------------------------------------------------------ rolling drums
 /**
  * Odometer drum state for a readout whose lowest drum counts `step` units modulo `mod`
@@ -98,13 +151,27 @@ function drawHiDigits(ctx: CanvasRenderingContext2D, hi: number, hiFrac: number,
 export interface PfdState {
   svt: boolean;
   dmeWindow: boolean;
+  /** airspeed predicted 6 s ahead minus the displayed airspeed (kt) */
   iasTrend: number;
+  /** altitude change over the next 6 s (ft) */
   altTrend: number;
   lastIas: number;
   lastT: number;
   lastAlt: number;
   flash: number;
   softkeyFlash: number | null;
+  // display filtering on the sim clock (on top of the air-data filter): steady tapes, digits and trend vectors
+  filtInit: boolean;
+  /** displayed airspeed / altitude / vertical speed */
+  iasF: number;
+  altF: number;
+  vsF: number;
+  /** two-stage filter for the airspeed trend: smoothed airspeed, then smoothed acceleration (kt/s) */
+  trendIas: number;
+  accF: number;
+  /** trend vectors shown (hysteresis around the dead band so they never flicker) */
+  trendOn: boolean;
+  altTrendOn: boolean;
 }
 
 export const newPfdState = (): PfdState => ({
@@ -117,26 +184,72 @@ export const newPfdState = (): PfdState => ({
   lastAlt: 0,
   flash: 0,
   softkeyFlash: null,
+  filtInit: false,
+  iasF: 0,
+  altF: 0,
+  vsF: 0,
+  trendIas: 0,
+  accF: 0,
+  trendOn: false,
+  altTrendOn: false,
 });
 
-export function drawPfd(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState, dt: number) {
+const fin = (v: number, dflt = 0) => (Number.isFinite(v) ? v : dflt);
+const lagK = (dt: number, tau: number) => 1 - Math.exp(-dt / tau);
+/** airspeed trend dead band (kt): shown above TREND_ON, hidden again below TREND_OFF */
+export const TREND_ON = 1.5;
+export const TREND_OFF = 1;
+
+/**
+ * Advances the PFD display filters on the SIM clock (immune to frame drops, pause, sim rate and replay jumps).
+ * Displayed IAS / altitude / VS are lagged a little on top of the air-data filter so the tapes and digits never
+ * jitter in light turbulence; the airspeed trend is the 6-s projection of a two-stage (2nd-order) filtered
+ * acceleration, with a ±1 kt dead band and hysteresis.
+ */
+export function updatePfdFilters(st: PfdState, sim: Sim) {
   const d = sim.ac.data;
+  const ias = fin(d.iasKt);
+  const alt = fin(sim.indicatedAlt());
+  const vs = fin(d.vsFpm);
+  const simDt = sim.time - st.lastT;
+  if (simDt === 0 && st.filtInit) return;
+  st.lastT = sim.time;
+  if (!st.filtInit || !(simDt > 0 && simDt < 1) || sim.replaying) {
+    // first frame, reset, replay or a jump in time: snap to the data, no trend
+    st.filtInit = true;
+    st.iasF = ias;
+    st.altF = alt;
+    st.vsF = vs;
+    st.trendIas = ias;
+    st.accF = 0;
+    st.iasTrend = 0;
+    st.altTrend = 0;
+    st.trendOn = false;
+    st.altTrendOn = false;
+  } else {
+    st.iasF += (ias - st.iasF) * lagK(simDt, 0.3);
+    // the altimeter follows closely (a large step, e.g. a baro change, is shown at once)
+    st.altF = Math.abs(alt - st.altF) > 400 ? alt : st.altF + (alt - st.altF) * lagK(simDt, 0.25);
+    st.vsF += (vs - st.vsF) * lagK(simDt, 0.6);
+    const prev = st.trendIas;
+    st.trendIas += (ias - st.trendIas) * lagK(simDt, 0.7);
+    const accRaw = (st.trendIas - prev) / simDt;
+    st.accF += (accRaw - st.accF) * lagK(simDt, 1.2);
+    st.iasTrend = Math.max(-40, Math.min(40, st.accF * 6));
+    st.altTrend = st.vsF / 10;
+  }
+  const a = Math.abs(st.iasTrend);
+  st.trendOn = st.trendOn ? a > TREND_OFF : a > TREND_ON;
+  const b = Math.abs(st.altTrend);
+  st.altTrendOn = st.altTrendOn ? b > 15 : b > 25;
+  st.lastIas = ias;
+  st.lastAlt = alt;
+}
+
+export function drawPfd(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState, dt: number) {
   setTextScaleFor(ctx, PFD_W);
   st.flash += dt;
-  // trend vectors on the SIM clock (immune to frame drops, pause, sim rate and replay):
-  // airspeed predicted 6 s ahead (G1000), filtered, capped
-  const simDt = sim.time - st.lastT;
-  if (simDt > 0 && simDt < 1 && !sim.replaying) {
-    const accel = (d.iasKt - st.lastIas) / simDt; // kt/s
-    const target = Math.max(-40, Math.min(40, accel * 6));
-    st.iasTrend += (target - st.iasTrend) * Math.min(1, simDt / 0.8);
-    // altitude 6 s ahead (ft)
-    st.altTrend += ((d.vsFpm / 10) - st.altTrend) * Math.min(1, simDt * 2);
-  } else if (simDt >= 1 || simDt < 0) st.iasTrend = 0;
-  if (simDt !== 0) st.lastT = sim.time;
-  if (simDt !== 0) st.lastIas = d.iasKt;
-  void dt;
-  st.lastAlt = d.altFt;
+  updatePfdFilters(st, sim);
 
   ctx.save();
   ctx.clearRect(0, 0, PFD_W, PFD_H);
@@ -145,7 +258,7 @@ export function drawPfd(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState, d
   drawApBar(ctx, sim, st);
   drawAirspeed(ctx, sim, st);
   drawAltimeter(ctx, sim, st);
-  drawVsi(ctx, sim);
+  drawVsi(ctx, sim, st);
   drawHsi(ctx, sim, st);
   drawLowerWindows(ctx, sim, st);
   drawFailures(ctx, sim, st);
@@ -218,8 +331,8 @@ function drawAttitude(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
       }
     }
     // flight path marker
-    const fpaDeg = Math.atan2(d.vsFpm, Math.max(30, d.gsKt) * 101.27) / DEG;
-    const drift = wrap180(d.trackTrue - d.hdgTrue);
+    const fpaDeg = Math.atan2(fin(d.vsFpm), Math.max(30, fin(d.gsSmooth)) * 101.27) / DEG;
+    const drift = wrap180(fin(d.trackSmooth) - d.hdgTrue);
     if (!sim.ac.s.onGround) {
       const x = drift * PPD;
       const y = -fpaDeg * PPD;
@@ -254,16 +367,20 @@ function drawAttitude(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   // pitch ladder (clipped)
   ctx.save();
   ctx.beginPath();
-  ctx.rect(-160, -pitch * PPD - 165, 320, 285);
+  const clipTop = -pitch * PPD - 165;
+  const clipBot = clipTop + 285;
+  ctx.rect(-160, clipTop, 320, 285);
   ctx.clip();
   for (let p = -90; p <= 90; p += 2.5) {
     if (p === 0) continue;
     const y = -p * PPD;
+    if (y < clipTop - 2 || y > clipBot + 2) continue;
     const major = p % 10 === 0;
     const mid = p % 5 === 0;
     const w = major ? 70 : mid ? 35 : 15;
     line(ctx, -w, y, w, y, C.white, 2);
-    if (major) {
+    // numbers only where they fit whole inside the ladder window (no half labels at its edges)
+    if (major && y > clipTop + 11 && y < clipBot - 11) {
       text(ctx, String(Math.abs(p)), -w - 18, y, C.white, 16, 'center');
       text(ctx, String(Math.abs(p)), w + 18, y, C.white, 16, 'center');
     }
@@ -320,18 +437,18 @@ function drawAttitude(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
 
   // annunciations (the outside-view veil and the top bar are the pause cue: nothing is drawn over the attitude)
   if (d.stallWarn && Math.floor(st.flash * 3) % 2 === 0) {
-    box(ctx, CX - 60, CY + 70, 120, 32, C.red);
+    cbox(ctx, CX - 60, CY + 70, 120, 32, C.red);
     text(ctx, 'STALL', CX, CY + 86, C.white, 22, 'center', 700);
   }
   const mins = sim.av.minimums;
   if (mins !== null && sim.indicatedAlt() < mins && !sim.ac.s.onGround) {
     const s = fs(20);
     const w = tw(ctx, 'MINIMUMS', s, 700) + 14;
-    box(ctx, 774 - w, CY + 126, w, s + 8, 'rgba(0,0,0,0.6)');
+    cbox(ctx, 774 - w, CY + 126, w, s + 8, 'rgba(0,0,0,0.6)');
     text(ctx, 'MINIMUMS', 774 - w / 2, CY + 130 + s / 2, C.yellow, s, 'center', 700);
   }
   if (sim.ac.s.crashed) {
-    box(ctx, CX - 210, CY - 40, 420, 80, 'rgba(160,0,0,0.85)', C.white);
+    cbox(ctx, CX - 210, CY - 40, 420, 80, 'rgba(160,0,0,0.85)', C.white);
     text(ctx, 'CRASH', CX, CY - 12, C.white, 28, 'center', 700);
     text(ctx, sim.ac.s.crashed, CX, CY + 20, C.white, 16, 'center');
   }
@@ -374,53 +491,57 @@ const fmtEte = (min: number | null) => {
 
 /** NAV/COM boxes and the navigation status (PFD) or data fields (MFD: GS, DTK, TRK, DIS, ETE). */
 export function drawTopBar(ctx: CanvasRenderingContext2D, sim: Sim, kind: 'PFD' | 'MFD' = 'PFD') {
-  box(ctx, 0, 0, PFD_W, 52, '#000');
+  cbox(ctx, 0, 0, PFD_W, 52, '#000');
   line(ctx, 0, 52.5, PFD_W, 52.5, '#4a4f55', 1);
   const av = sim.av;
-  const ls = fs(15);
-  const fsz = fs(19);
-  const lw = tw(ctx, 'NAV2', ls);
+  // NAV / COM fields: every position is measured from the text, the tuning box is sized from the ink of the
+  // standby digits with an even 3 px gap inside its 2 px border, and the transfer arrow sits in the middle of
+  // equal gaps between the active frequency and the box (G1000 layout)
+  const ls = Math.min(17, fs(15));
+  const fsz = Math.min(21, fs(19));
+  const lwN = tw(ctx, 'NAV2', ls);
+  const lwC = tw(ctx, 'COM2', ls);
   const fwN = tw(ctx, '000.00', fsz);
   const fwC = tw(ctx, '000.000', fsz);
-  const aw = 20;
+  const ink = inkExtent(ctx, '0123456789.', fsz, 600);
+  const PADB = 3; // clear gap between the digits and the border
+  const BW = 2; // border width
+  const G = 8; // gap around the transfer arrow
+  const aw = 18;
+  const tuneBox = (xText: number, w: number, y: number) =>
+    strokeBox(ctx, xText - PADB - BW, y - ink.asc - PADB - BW, w + 2 * (PADB + BW), ink.asc + ink.desc + 2 * (PADB + BW), C.cyan, BW);
+  const rows = [14, 38];
   // NAV (left): label · active · ⇄ · standby (cyan tuning box on NAV1) · ident
-  const xA = 8 + lw + 10;
-  const xArr = xA + fwN + 6 + aw / 2;
-  const xS = xA + fwN + 12 + aw;
+  const xA = 8 + lwN + 10;
+  const xArr = xA + fwN + G + aw / 2;
+  const xS = xA + fwN + G + aw + G + PADB + BW;
+  const xId = xS + fwN + PADB + BW + G;
   const navRow = (y: number, label: string, r: { active: number; standby: number }, selected: boolean, tuning: boolean) => {
     const n = tunedNavaid(r.active);
     text(ctx, label, 8, y, C.white, ls);
     text(ctx, fmtFreq(r.active), xA, y, selected ? C.green : C.white, fsz);
     xferArrow(ctx, xArr, y, aw, C.white);
     text(ctx, fmtFreq(r.standby), xS, y, C.white, fsz);
-    if (tuning) {
-      ctx.strokeStyle = C.cyan;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(xS - 4, y - fsz / 2 - 2, fwN + 8, fsz + 4);
-    }
-    if (n) text(ctx, n.ident, xS + fwN + 12, y, selected ? C.green : C.white, ls);
+    if (tuning) tuneBox(xS, fwN, y);
+    if (n) text(ctx, n.ident, xId, y, selected ? C.green : C.white, ls);
   };
-  navRow(15, 'NAV1', av.nav1, av.cdi === 'NAV1', true);
-  navRow(38, 'NAV2', av.nav2, av.cdi === 'NAV2', false);
+  navRow(rows[0], 'NAV1', av.nav1, av.cdi === 'NAV1', true);
+  navRow(rows[1], 'NAV2', av.nav2, av.cdi === 'NAV2', false);
   // COM (right, mirrored): active (green = transmit) · ⇄ · standby (cyan tuning box on COM1) · label
-  const xCs = PFD_W - 8 - lw - 16 - fwC;
-  const xCarr = xCs - 6 - aw / 2;
-  const xCa = xCs - 12 - aw - fwC;
+  const xCs = PFD_W - 8 - lwC - G - PADB - BW - fwC;
+  const xCarr = xCs - PADB - BW - G - aw / 2;
+  const xCa = xCs - PADB - BW - G - aw - G - fwC;
   const comRow = (y: number, label: string, r: { active: number; standby: number }, sel: boolean, tuning: boolean) => {
     text(ctx, r.active.toFixed(3), xCa, y, sel ? C.green : C.white, fsz);
     xferArrow(ctx, xCarr, y, aw, C.white);
     text(ctx, r.standby.toFixed(3), xCs, y, C.white, fsz);
-    if (tuning) {
-      ctx.strokeStyle = C.cyan;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(xCs - 4, y - fsz / 2 - 2, fwC + 8, fsz + 4);
-    }
+    if (tuning) tuneBox(xCs, fwC, y);
     text(ctx, label, PFD_W - 8, y, C.white, ls, 'right');
   };
-  comRow(15, 'COM1', av.com1, true, true);
-  comRow(38, 'COM2', av.com2, false, false);
+  comRow(rows[0], 'COM1', av.com1, true, true);
+  comRow(rows[1], 'COM2', av.com2, false, false);
   // centre block
-  const left = xS + fwN + 12 + tw(ctx, 'WWWW', ls) + 6;
+  const left = xId + tw(ctx, 'WWWW', ls) + 6;
   const right = xCa - 14;
   const cx = (left + right) / 2;
   line(ctx, left - 4, 4, left - 4, 48, '#2c3137', 1);
@@ -429,12 +550,12 @@ export function drawTopBar(ctx: CanvasRenderingContext2D, sim: Sim, kind: 'PFD' 
   const d = sim.ac.data;
   if (kind === 'MFD') {
     fieldRow(ctx, [
-      { label: 'GS', value: `${Math.round(d.gsKt)}KT` },
+      { label: 'GS', value: Number.isFinite(d.gsSmooth) ? `${Math.round(d.gsSmooth)}KT` : '___KT' },
       { label: 'DTK', value: g.valid ? `${pad3(g.dtk)}°` : '___°' },
-      { label: 'TRK', value: `${pad3(d.trackTrue)}°` },
+      { label: 'TRK', value: Number.isFinite(d.trackSmooth) ? `${pad3(d.trackSmooth)}°` : '___°' },
     ], cx, 15, fs(14), fs(17));
     fieldRow(ctx, [
-      { label: 'DIS', value: g.valid ? `${g.distNm.toFixed(g.distNm < 10 ? 1 : 0)}NM` : '__._NM' },
+      { label: 'DIS', value: g.valid && Number.isFinite(g.distNm) ? `${g.distNm.toFixed(g.distNm < 10 ? 1 : 0)}NM` : '__._NM' },
       { label: 'ETE', value: g.valid ? fmtEte(g.eteMin) : '__:__' },
     ], cx, 38, fs(14), fs(17));
     return;
@@ -459,9 +580,9 @@ export function drawTopBar(ctx: CanvasRenderingContext2D, sim: Sim, kind: 'PFD' 
     }
     if (g.suspended) text(ctx, 'SUSP', right, 15, C.yellow, ls2, 'right');
     fieldRow(ctx, [
-      { label: 'DIS', value: `${g.distNm.toFixed(g.distNm < 10 ? 1 : 0)}NM` },
+      { label: 'DIS', value: Number.isFinite(g.distNm) ? `${g.distNm.toFixed(g.distNm < 10 ? 1 : 0)}NM` : '__._NM' },
       { label: 'DTK', value: `${pad3(g.dtk)}°` },
-      { label: 'TRK', value: `${pad3(d.trackTrue)}°` },
+      { label: 'TRK', value: Number.isFinite(d.trackSmooth) ? `${pad3(d.trackSmooth)}°` : '___°' },
       ...(g.eteMin !== null ? [{ label: 'ETE', value: fmtEte(g.eteMin) }] : []),
     ], cx, 38, fs(14), fs(17));
   } else {
@@ -480,7 +601,7 @@ function drawApBar(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   const s1 = 448;
   const s2 = 576;
   // three compartments (lateral | AP/FD | vertical) on a dark band, no outline
-  box(ctx, x0, y, x1 - x0, h, '#1b1f24');
+  cbox(ctx, x0, y, x1 - x0, h, '#1b1f24');
   line(ctx, s1 + 0.5, y + 4, s1 + 0.5, y + h - 4, '#3a4048', 1);
   line(ctx, s2 + 0.5, y + 4, s2 + 0.5, y + h - 4, '#3a4048', 1);
   const my = y + h / 2 + 1;
@@ -521,11 +642,12 @@ function drawAirspeed(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   const cy = CY;
   const kpx = 5.6;
   const air = !sim.ac.s.onGround;
-  const valid = d.iasKt >= 20;
+  const iasV = st.iasF; // display-filtered airspeed
+  const valid = iasV >= 20;
   // below 20 kt the tape stops: its graduations end at 20 kt
-  const ias = Math.max(20, d.iasKt);
+  const ias = Math.max(20, iasV);
   const A = AIRFRAME;
-  box(ctx, x, top, w, bot - top, 'rgba(30,34,38,0.6)');
+  cbox(ctx, x, top, w, bot - top, 'rgba(30,34,38,0.6)');
   const yOf = (kt: number) => cy - (kt - ias) * kpx;
   const right = x + w;
   ctx.save();
@@ -534,7 +656,7 @@ function drawAirspeed(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   ctx.clip();
   // below 20 kt: no scale
   const y20 = yOf(20);
-  if (y20 < bot) box(ctx, x, y20, w, bot - y20, 'rgba(10,12,14,0.55)');
+  if (y20 < bot) cbox(ctx, x, y20, w, bot - y20, 'rgba(10,12,14,0.55)');
   // colour bands at the tape edge: outer column = red / green / yellow / barber pole, inner column = white flap arc
   const band = (from: number, to: number, color: string, x0: number, bw: number) => {
     const a = Math.max(20, from);
@@ -584,7 +706,7 @@ function drawAirspeed(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   }
   ctx.restore();
   // trend vector (6 s), magenta, along the band column
-  if (Math.abs(st.iasTrend) > 1.5 && valid) {
+  if (st.trendOn && valid) {
     const yt = Math.max(top, Math.min(bot, cy - st.iasTrend * kpx));
     line(ctx, inner - 1, cy, inner - 1, yt, C.magenta, 4);
   }
@@ -602,7 +724,7 @@ function drawAirspeed(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
     if (y < top + 6 || y > bot - 6 || Math.abs(y - cy) < 26) continue;
     line(ctx, right - 2, y, right + 5, y, C.cyan, 2);
     const lw = tw(ctx, l, vsz, 700) + 6;
-    box(ctx, right + 5, y - vsz / 2 - 1, lw, vsz + 2, 'rgba(0,0,0,0.75)');
+    cbox(ctx, right + 5, y - vsz / 2 - 1, lw, vsz + 2, 'rgba(0,0,0,0.75)');
     text(ctx, l, right + 8, y + 1, C.cyan, vsz, 'left', 700);
   }
   // pointer box: tens/hundreds (rolling only on carry), ones on a taller rolling drum
@@ -610,10 +732,10 @@ function drawAirspeed(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   const xd = x + 50; // drum window left
   const xr = x + 76; // drum window right
   poly(ctx, [[xl, cy - 22], [xd, cy - 22], [xd, cy - 33], [xr, cy - 33], [xr, cy - 9], [xr + 11, cy], [xr, cy + 9], [xr, cy + 33], [xd, cy + 33], [xd, cy + 22], [xl, cy + 22]], '#000', C.white, 2);
-  const col = d.stallWarn || d.iasKt >= A.vne ? C.red : d.iasKt > A.vno ? C.yellow : C.white;
+  const col = d.stallWarn || iasV >= A.vne ? C.red : iasV > A.vno ? C.yellow : C.white;
   if (!valid) text(ctx, '---', x + 40, cy + 1, C.white, 26, 'center', 700);
   else {
-    const dr = drum(d.iasKt, 1, 10);
+    const dr = drum(iasV, 1, 10);
     drawHiDigits(ctx, dr.hi, dr.hiFrac, xd + 2, cy + 1, 30, col, 42, { top: cy - 21, bot: cy + 21, left: xl + 1 });
     ctx.save();
     ctx.beginPath();
@@ -628,18 +750,18 @@ function drawAirspeed(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   // TAS box under the tape
   const s1 = fs(14);
   const s2 = fs(16);
-  box(ctx, x, bot, w, 26, '#000', '#5f656b');
-  text(ctx, 'TAS', x + 6, bot + 13, C.white, s1);
-  text(ctx, valid && air ? `${Math.round(d.tasKt)}KT` : '---KT', x + w - 6, bot + 13, C.white, s2, 'right');
+  cbox(ctx, x, bot, w, 28, '#000', '#5f656b');
+  text(ctx, 'TAS', x + 7, bot + 14, C.white, s1);
+  text(ctx, valid && air && Number.isFinite(d.tasKt) ? `${Math.round(d.tasKt)}KT` : '---KT', x + w - 7, bot + 14, C.white, s2, 'right');
   // box above the tape: selected airspeed in FLC, otherwise the unit
-  box(ctx, x, top - 26, w, 26, '#000', '#5f656b');
+  cbox(ctx, x, top - 28, w, 28, '#000', '#5f656b');
   if (sim.ap.vert === 'FLC') {
-    const by = top - 13;
+    const by = top - 14;
     poly(ctx, [[x + 8, by - 7], [x + 16, by - 7], [x + 16, by + 7], [x + 8, by + 7], [x + 8, by + 3], [x + 12, by], [x + 8, by - 3]], C.cyan);
-    text(ctx, `${sim.ap.iasSel}KT`, x + w - 6, by, C.cyan, fs(18), 'right', 700);
+    text(ctx, `${sim.ap.iasSel}KT`, x + w - 7, by, C.cyan, fs(18), 'right', 700);
   } else {
-    text(ctx, 'IAS', x + 6, top - 13, C.white, s1);
-    text(ctx, 'KT', x + w - 6, top - 13, C.gray, s1, 'right');
+    text(ctx, 'IAS', x + 7, top - 14, C.white, s1);
+    text(ctx, 'KT', x + w - 7, top - 14, C.gray, s1, 'right');
   }
 }
 
@@ -648,14 +770,14 @@ const ALT_X = 788;
 const ALT_W = 100;
 
 function drawAltimeter(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
-  const alt = sim.indicatedAlt();
+  const alt = st.altF; // display-filtered indicated altitude
   const x = ALT_X;
   const w = ALT_W;
   const top = TAPE_TOP;
   const bot = TAPE_BOT;
   const cy = CY;
   const fpx = 0.62;
-  box(ctx, x, top, w, bot - top, 'rgba(30,34,38,0.6)');
+  cbox(ctx, x, top, w, bot - top, 'rgba(30,34,38,0.6)');
   ctx.save();
   ctx.beginPath();
   ctx.rect(x, top, w, bot - top);
@@ -698,7 +820,7 @@ function drawAltimeter(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
     }
   }
   // trend vector: altitude 6 s ahead, magenta, left edge
-  if (Math.abs(st.altTrend) > 2) {
+  if (st.altTrendOn) {
     const yt = Math.max(top, Math.min(bot, cy - st.altTrend * fpx));
     line(ctx, x + 3, cy, x + 3, yt, C.magenta, 4);
   }
@@ -724,17 +846,17 @@ function drawAltimeter(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   }
   ctx.restore();
   // selected altitude box (cyan, with the bug glyph)
-  box(ctx, x, top - 26, w, 26, '#000', '#5f656b');
-  const by = top - 13;
+  cbox(ctx, x, top - 28, w, 28, '#000', '#5f656b');
+  const by = top - 14;
   poly(ctx, [[x + 6, by - 8], [x + 13, by - 8], [x + 13, by - 3], [x + 10, by], [x + 13, by + 3], [x + 13, by + 8], [x + 6, by + 8]], C.cyan);
   text(ctx, String(sim.ap.altSel), x + w - 8, by, C.cyan, fs(20), 'right', 700);
   // baro setting box
-  box(ctx, x, bot, w, 26, '#000', '#5f656b');
+  cbox(ctx, x, bot, w, 28, '#000', '#5f656b');
   const std = Math.abs(sim.av.baro - 29.92) < 0.001;
-  text(ctx, std ? 'STD BARO' : `${sim.av.baro.toFixed(2)}IN`, x + w / 2, bot + 13, C.cyan, fs(17), 'center');
+  text(ctx, std ? 'STD BARO' : `${sim.av.baro.toFixed(2)}IN`, x + w / 2, bot + 14, C.cyan, fs(17), 'center');
   // marker beacon
   if (sim.marker && Math.floor(st.flash * 3) % 2 === 0) {
-    box(ctx, x - 40, top + 4, 30, 30, C.cyan, C.white);
+    cbox(ctx, x - 40, top + 4, 30, 30, C.cyan, C.white);
     text(ctx, 'O', x - 25, top + 19, C.black, 20, 'center', 700);
   }
   // vertical deviation (GS / GP)
@@ -743,7 +865,7 @@ function drawAltimeter(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   const showGp = n.cdi === 'GPS' && n.gps.gpValid;
   if (showGs || showGp || (n.cdi !== 'GPS' && n.nav.gsValid)) {
     const gx = x - 26;
-    box(ctx, gx - 12, 150, 24, 236, 'rgba(0,0,0,0.6)');
+    cbox(ctx, gx - 12, 150, 24, 236, 'rgba(0,0,0,0.6)');
     text(ctx, showGp ? 'V' : 'G', gx, 140, showGp ? C.magenta : C.green, fs(16), 'center', 700);
     for (const dot of [-2, -1, 1, 2]) {
       ctx.strokeStyle = C.white;
@@ -762,8 +884,8 @@ function drawAltimeter(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   }
 }
 
-function drawVsi(ctx: CanvasRenderingContext2D, sim: Sim) {
-  const vs = sim.ac.data.vsFpm;
+function drawVsi(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
+  const vs = st.vsF;
   const x = 896;
   const top = 118;
   const bot = 418;
@@ -781,12 +903,15 @@ function drawVsi(ctx: CanvasRenderingContext2D, sim: Sim) {
   if (sim.ap.vert === 'VS') {
     const y = cy - Math.max(-2000, Math.min(2000, sim.ap.vsSel)) * k;
     poly(ctx, [[x, y - 8], [x + 9, y - 8], [x + 9, y - 3], [x + 5, y], [x + 9, y + 3], [x + 9, y + 8], [x, y + 8]], C.cyan);
-    box(ctx, x - 4, top - 26, 62, 24, '#000', '#5f656b');
+    cbox(ctx, x - 4, top - 26, 62, 24, '#000', '#5f656b');
     text(ctx, String(sim.ap.vsSel), x + 27, top - 14, C.cyan, fs(16), 'center', 700);
   }
   const yp = cy - Math.max(-2050, Math.min(2050, vs)) * k;
-  poly(ctx, [[x + 4, yp], [x + 16, yp - 11], [x + 62, yp - 11], [x + 62, yp + 11], [x + 16, yp + 11]], '#000', C.white, 1.5);
-  if (Math.abs(vs) >= 100) text(ctx, String(Math.round(vs / 50) * 50), x + 60, yp + 1, C.white, 15, 'right', 700);
+  // readout rounded to 50 fpm, blank below 100 fpm, never wider than its box
+  const vsTxt = Math.abs(vs) >= 100 ? String(Math.max(-9950, Math.min(9950, Math.round(vs / 50) * 50))) : '';
+  const vw = Math.max(62, (vsTxt ? tw(ctx, vsTxt, 15, 700) : 0) + 24);
+  poly(ctx, [[x + 4, yp], [x + 16, yp - 11], [x + vw, yp - 11], [x + vw, yp + 11], [x + 16, yp + 11]], '#000', C.white, 1.5);
+  if (vsTxt) text(ctx, vsTxt, x + vw - 4, yp + 1, C.white, 15, 'right', 700);
 }
 
 // ------------------------------------------------------------------ HSI
@@ -797,7 +922,7 @@ const HR = 132;
 /** Small label on a black backing box (drawn over the needles). */
 function tag(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, color: string, size: number) {
   const w = tw(ctx, s, size, 700) + 8;
-  box(ctx, x - w / 2, y - size / 2 - 2, w, size + 4, '#000');
+  cbox(ctx, x - w / 2, y - size / 2 - 2, w, size + 4, '#000');
   text(ctx, s, x, y + 1, color, size, 'center', 700);
 }
 
@@ -857,7 +982,7 @@ function drawHsi(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   ctx.restore();
   // track pointer
   ctx.save();
-  ctx.rotate(d.trackTrue * DEG);
+  ctx.rotate(fin(d.trackSmooth, hdg) * DEG);
   poly(ctx, [[0, -R + 1], [-6, -R + 9], [0, -R + 17], [6, -R + 9]], C.magenta);
   ctx.restore();
 
@@ -948,10 +1073,10 @@ function drawHsi(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   const ws = fs(15);
   const vsz = fs(19);
   const ww = Math.max(96, tw(ctx, 'HDG', ws) + tw(ctx, '000°', vsz, 700) + 22);
-  box(ctx, hx - R - 12 - ww, hy - R - 46, ww, 28, '#000', '#5f656b');
+  cbox(ctx, hx - R - 12 - ww, hy - R - 46, ww, 28, '#000', '#5f656b');
   text(ctx, 'HDG', hx - R - 4 - ww, hy - R - 32, C.white, ws);
   text(ctx, `${pad3(sim.ap.hdgBug)}°`, hx - R - 18, hy - R - 32, C.cyan, vsz, 'right', 700);
-  box(ctx, hx + R + 12, hy - R - 46, ww, 28, '#000', '#5f656b');
+  cbox(ctx, hx + R + 12, hy - R - 46, ww, 28, '#000', '#5f656b');
   text(ctx, 'CRS', hx + R + 20, hy - R - 32, C.white, ws);
   text(ctx, `${pad3(crs)}°`, hx + R + 6 + ww, hy - R - 32, col, vsz, 'right', 700);
   // fixed slots, all clear of the rose: DME above BRG1 (left), BRG1 bottom-left, BRG2 bottom-right
@@ -966,7 +1091,7 @@ function drawHsi(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
     const h = s13 + 2 * s16 + 20;
     const x0 = hx - R - 12 - slotW;
     const y0 = 742 - brgH - 6 - h;
-    box(ctx, x0, y0, slotW, h, 'rgba(0,0,0,0.8)', '#5f656b');
+    cbox(ctx, x0, y0, slotW, h, 'rgba(0,0,0,0.8)', '#5f656b');
     text(ctx, 'DME', x0 + 8, y0 + 4 + s13 / 2, C.white, s13, 'left', 700);
     text(ctx, 'NAV1', x0 + slotW - 8, y0 + 4 + s13 / 2, C.white, s13, 'right');
     text(ctx, fmtFreq(sim.av.nav1.active), x0 + 8, y0 + 10 + s13 + s16 / 2, C.green, s16);
@@ -979,7 +1104,7 @@ function drawHsi(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
     const dist = src === 'NAV1' ? sim.nav1.dmeNm : src === 'NAV2' ? sim.nav2.dmeNm : src === 'ADF' ? null : sim.fp.out.valid ? sim.fp.out.distNm : null;
     const y0 = 742 - brgH;
     const x0 = which === 1 ? lRight - slotW : rLeft;
-    box(ctx, x0, y0, slotW, brgH, 'rgba(0,0,0,0.8)', '#5f656b');
+    cbox(ctx, x0, y0, slotW, brgH, 'rgba(0,0,0,0.8)', '#5f656b');
     const right = which === 1;
     const tx = right ? x0 + slotW - 8 : x0 + 8;
     const al: CanvasTextAlign = right ? 'right' : 'left';
@@ -1001,7 +1126,7 @@ function drawHsi(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
 
 // ------------------------------------------------------------------ failures
 function redX(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, label?: string) {
-  box(ctx, x, y, w, h, '#000');
+  cbox(ctx, x, y, w, h, '#000');
   ctx.strokeStyle = C.red;
   ctx.lineWidth = 4;
   ctx.beginPath();
@@ -1012,7 +1137,7 @@ function redX(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h:
   ctx.stroke();
   ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
   if (label) {
-    box(ctx, x + w / 2 - 70, y + h / 2 - 14, 140, 28, '#000');
+    cbox(ctx, x + w / 2 - 70, y + h / 2 - 14, 140, 28, '#000');
     text(ctx, label, x + w / 2, y + h / 2, C.red, 17, 'center', 700);
   }
 }
@@ -1021,7 +1146,10 @@ let compassHdg = 0;
 function drawFailures(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   const f = sim.failures;
   const d = sim.ac.data;
-  if (f.ahrs) {
+  // invalid (non-finite) sensor data is shown like a failure: red X, never "NaN"
+  const ahrsBad = !Number.isFinite(d.pitchDeg) || !Number.isFinite(d.rollDeg) || !Number.isFinite(d.hdgTrue);
+  const adcBad = !Number.isFinite(d.iasKt) || !Number.isFinite(sim.indicatedAlt()) || !Number.isFinite(d.vsFpm);
+  if (f.ahrs || ahrsBad) {
     redX(ctx, 222, 84, 556, 370);
     // standby attitude indicator (vacuum/electric backup)
     const cx = 500, cy = 270, r = 92;
@@ -1046,19 +1174,22 @@ function drawFailures(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
     ctx.stroke();
     line(ctx, cx - 46, cy, cx - 14, cy, C.amber, 4);
     line(ctx, cx + 14, cy, cx + 46, cy, C.amber, 4);
-    box(ctx, cx - 3, cy - 3, 6, 6, C.amber);
+    cbox(ctx, cx - 3, cy - 3, 6, 6, C.amber);
     text(ctx, 'STBY ATTITUDE', cx, cy + r + 18, C.white, fs(14), 'center', 700);
     text(ctx, 'AHRS FAIL', cx, 108, C.red, 18, 'center', 700);
     // HSI red X + magnetic compass with lag (northerly turning errors are left to the pilot!)
     redX(ctx, HX - 150, HY - 165, 300, 300, 'HDG FAIL');
-    let diff = d.hdgTrue - compassHdg;
-    if (diff > 180) diff -= 360;
-    if (diff < -180) diff += 360;
-    compassHdg = (compassHdg + diff * Math.min(1, 0.05 + Math.abs(Math.cos(d.hdgTrue * DEG)) * 0.08) + 360) % 360;
-    box(ctx, HX - 66, 690, 132, 36, '#111', C.gray);
+    if (Number.isFinite(d.hdgTrue)) {
+      let diff = d.hdgTrue - compassHdg;
+      if (diff > 180) diff -= 360;
+      if (diff < -180) diff += 360;
+      compassHdg = (compassHdg + diff * Math.min(1, 0.05 + Math.abs(Math.cos(d.hdgTrue * DEG)) * 0.08) + 360) % 360;
+    }
+    if (!Number.isFinite(compassHdg)) compassHdg = 0;
+    cbox(ctx, HX - 66, 690, 132, 36, '#111', C.gray);
     text(ctx, `COMPASS ${pad3(compassHdg)}`, HX, 708, C.white, fs(15), 'center', 700);
-  } else compassHdg = d.hdgTrue;
-  if (f.airData) {
+  } else compassHdg = fin(d.hdgTrue);
+  if (f.airData || adcBad) {
     redX(ctx, IAS_X, TAPE_TOP, IAS_W, TAPE_BOT - TAPE_TOP);
     redX(ctx, ALT_X, TAPE_TOP, ALT_W, TAPE_BOT - TAPE_TOP);
     redX(ctx, 896, 118, 46, 300);
@@ -1077,7 +1208,7 @@ function drawFailures(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   alerts.forEach((a, i) => {
     const flash = Math.floor(st.flash * 2) % 2 === 0 || st.flash % 10 > 5;
     const y = 436 + i * (ah + 4);
-    box(ctx, 898, y, 120, ah, flash ? C.amber : '#000', C.amber);
+    cbox(ctx, 898, y, 120, ah, flash ? C.amber : '#000', C.amber);
     text(ctx, a, 958, y + ah / 2 + 1, flash ? '#000' : C.amber, as, 'center', 700);
   });
 }
@@ -1088,14 +1219,14 @@ function drawLowerWindows(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState)
   const s15 = fs(15);
   const s16 = fs(16);
   // OAT
-  box(ctx, 0, 716, 110, 26, '#000', '#5f656b');
-  text(ctx, `OAT ${Math.round(d.oatC)}°C`, 8, 729, C.white, s16);
+  cbox(ctx, 0, 716, 110, 26, '#000', '#5f656b');
+  text(ctx, Number.isFinite(d.oatC) ? `OAT ${Math.round(d.oatC)}°C` : 'OAT ---°C', 8, 729, C.white, s16);
   // wind: arrow relative to the nose, direction/speed, head/tail and cross components
   const wx = IAS_X;
   const wy = 480;
   const ww = 124;
   const wh = 50;
-  box(ctx, wx, wy, ww, wh, 'rgba(0,0,0,0.8)', '#5f656b');
+  cbox(ctx, wx, wy, ww, wh, 'rgba(0,0,0,0.8)', '#5f656b');
   if (d.windKt > 0.5 && !sim.ac.s.onGround) {
     const rel = (d.windDir + 180 - d.hdgTrue) * DEG;
     ctx.save();
@@ -1139,12 +1270,10 @@ function drawLowerWindows(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState)
     ctx.clip();
     drawMap(ctx, sim, { x, y, w, h }, 6, true);
     ctx.restore();
-    ctx.strokeStyle = '#5f656b';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    strokeBox(ctx, x, y, w, h, '#5f656b', 1.5);
   }
   // XPDR / time
-  box(ctx, 780, 716, 244, 26, '#000', '#5f656b');
+  cbox(ctx, 780, 716, 244, 26, '#000', '#5f656b');
   const xc = sim.av.xpdrMode === 'STBY' ? C.white : C.green;
   text(ctx, `XPDR ${sim.av.xpdr}`, 790, 729, xc, s16);
   text(ctx, sim.av.xpdrMode, 790 + tw(ctx, 'XPDR 0000', s16) + 12, 729, xc, s16);
@@ -1157,7 +1286,7 @@ function drawLowerWindows(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState)
   if (sim.av.minimums !== null) {
     const s13 = fs(13);
     const s17 = fs(17);
-    box(ctx, ALT_X, 480, ALT_W, s13 + s17 + 14, 'rgba(0,0,0,0.8)', '#5f656b');
+    cbox(ctx, ALT_X, 480, ALT_W, s13 + s17 + 14, 'rgba(0,0,0,0.8)', '#5f656b');
     text(ctx, 'BARO MIN', ALT_X + 8, 485 + s13 / 2, C.white, s13);
     text(ctx, `${sim.av.minimums}FT`, ALT_X + ALT_W - 8, 490 + s13 + s17 / 2, C.cyan, s17, 'right', 700);
   }
@@ -1168,7 +1297,7 @@ function drawLowerWindows(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState)
 export function drawSoftkeys(ctx: CanvasRenderingContext2D, labels: string[], flashIdx: number | null, active: Record<string, boolean>) {
   const h = 24;
   const y = PFD_H - h;
-  box(ctx, 0, y, PFD_W, h, '#000');
+  cbox(ctx, 0, y, PFD_W, h, '#000');
   line(ctx, 0, y + 0.5, PFD_W, y + 0.5, '#2c3137', 1);
   const w = PFD_W / 12;
   const size = fs(14);
@@ -1178,12 +1307,8 @@ export function drawSoftkeys(ctx: CanvasRenderingContext2D, labels: string[], fl
     if (!l) return;
     const on = !!active[l];
     const inert = INERT_SOFTKEYS.has(l);
-    if (on) box(ctx, x + 4, y + 2, w - 8, h - 3, '#c9ced3');
-    if (flashIdx === i) {
-      ctx.strokeStyle = C.cyan;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x + 4, y + 2.5, w - 8, h - 4);
-    }
+    if (on) cbox(ctx, x + 4, y + 2, w - 8, h - 3, '#c9ced3');
+    if (flashIdx === i) strokeBox(ctx, x + 3, y + 1, w - 6, h - 1, C.cyan, 2);
     const fit = Math.min(size, size * ((w - 12) / Math.max(1, tw(ctx, l, size, 700))));
     text(ctx, l, x + w / 2, y + h / 2 + 1, on ? '#000' : inert ? '#6b7178' : C.white, fit, 'center', 700);
   });

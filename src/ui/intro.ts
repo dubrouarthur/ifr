@@ -106,8 +106,6 @@ export class Intro {
       onchange: (e: Event) =>
         store.set(INTRO_SKIP_KEY, (e.target as HTMLInputElement).checked),
     });
-    const fact = (ic: string, t: string) =>
-      h("li", {}, svgIcon(ic, 16), h("span", {}, t));
     this.el.replaceChildren(
       h("img", {
         class: "intro-photo",
@@ -154,13 +152,6 @@ export class Intro {
             h("kbd", {}, "Enter"),
           ),
         ),
-        h(
-          "ul",
-          { class: "intro-facts", "aria-label": "What is inside" },
-          fact(I.approach, "Real airports, charts and procedures"),
-          fact(I.learn, "Guided lessons from basics to checkride"),
-          fact(I.gauge, "G1000, steam gauges or Boeing"),
-        ),
       ),
       h(
         "footer",
@@ -175,7 +166,7 @@ export class Intro {
           "a",
           {
             class: "intro-credit",
-            href: "https://wordpress.org/photos/photo/8066a70aa6/",
+            href: "https://unsplash.com/photos/a-small-plane-is-flying-low-to-the-ground-nLLXwSShKtA",
             target: "_blank",
             rel: "noopener",
           },

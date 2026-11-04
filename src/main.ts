@@ -199,7 +199,13 @@ const setup = new FlightSetup({
 });
 setup.toast = (m) => toast(m, 'good');
 /** full-screen start page at launch: its one action opens the Flight Center, the single place every flight starts */
-const intro = new Intro({ enter: () => fc.open() });
+const intro = new Intro({
+  enter: () => {
+    fc.open();
+    // "Start a flight" is ready: one more Enter plans a flight
+    requestAnimationFrame(() => document.querySelector<HTMLElement>('.modal.fc .fc-go')?.focus({ preventScroll: true }));
+  },
+});
 function applySetupPrefs(st: import('./ui/flightsetup').FlightSetupState) {
   if (st.cockpit !== cockpitType) setCockpit(st.cockpit);
   pfdSt.svt = st.svt;

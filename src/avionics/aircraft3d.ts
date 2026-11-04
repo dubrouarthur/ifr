@@ -957,11 +957,11 @@ export class Aircraft3D {
           const r = s / 2;
           const gr = g.createRadialGradient(r, r, r * 0.16, r, r, r);
           gr.addColorStop(0, "rgba(40,42,46,0)");
-          gr.addColorStop(0.25, "rgba(40,42,46,0.22)");
+          gr.addColorStop(0.25, "rgba(40,42,46,0.2)");
           gr.addColorStop(0.84, "rgba(48,50,54,0.2)");
-          gr.addColorStop(0.86, "rgba(235,235,235,0.32)");
-          gr.addColorStop(0.9, "rgba(190,40,40,0.34)");
-          gr.addColorStop(0.97, "rgba(190,40,40,0.18)");
+          gr.addColorStop(0.86, "rgba(225,225,225,0.2)");
+          gr.addColorStop(0.9, "rgba(170,60,60,0.16)");
+          gr.addColorStop(0.97, "rgba(170,60,60,0.08)");
           gr.addColorStop(1, "rgba(190,40,40,0)");
           g.fillStyle = gr;
           g.fillRect(0, 0, s, s);
@@ -1707,7 +1707,6 @@ export class Aircraft3D {
             .translate(b.x, b.y + 0.03, b.z),
         ),
       );
-      // step on the gear leg
     }
     return out;
   }
@@ -2044,7 +2043,10 @@ export class Aircraft3D {
     pm.transparent = blur > 0.02;
     pm.opacity = 1 - blur * 0.88;
     pm.depthWrite = blur < 0.5;
-    (p.disc.material as THREE.MeshBasicMaterial).opacity = blur;
+    const dm = p.disc.material as THREE.MeshBasicMaterial;
+    dm.opacity = blur;
+    // the disc is unlit: dim it with the ambient light so it does not glow at night
+    dm.color.setScalar(0.25 + 0.75 * Math.max(0, Math.min(1, a.day)));
     p.disc.visible = blur > 0.01;
     p.disc.rotation.z = -a.t * 3;
     // wheels roll on the ground; the nose wheel steers with the rudder
@@ -2093,7 +2095,7 @@ export class Aircraft3D {
     // shadow: projected along the sun direction, fading with height
     const sy = Math.max(0.25, sunDir.y);
     const off = Math.min(60, h / sy);
-    const fade = Math.max(0, 1 - h / 140);
+    const fade = Math.max(0, 1 - h / 90) ** 1.5;
     const sm = this.shadow.material as THREE.MeshBasicMaterial;
     sm.opacity = 0.62 * shadowStrength * fade;
     this.shadow.visible = sm.opacity > 0.01;
@@ -2109,16 +2111,16 @@ export class Aircraft3D {
       1,
       Math.max(0.3, Math.cos(pitch)) * spread,
     );
-    // landing-light pool: where the beam (3° below the body axis) meets the ground
+    // landing-light pool: where the beam (aimed ~6° below the body axis) meets the ground, fading with range
     const pmat = this.pool.material as THREE.MeshBasicMaterial;
     const on = this.lights.landing ? 1 : 0;
-    const down = Math.max(1.5 * DEG, 3.5 * DEG - pitch);
-    const lh = h + 2;
-    const dist = Math.min(260, lh / Math.tan(down)) + 4;
-    const reach = Math.max(0, 1 - h / 160);
-    pmat.opacity = on * poolStrength * reach * Math.min(1, 40 / dist + 0.25);
+    const down = Math.max(2 * DEG, 6 * DEG - pitch);
+    const lh = h + 1.9;
+    const dist = Math.min(150, lh / Math.tan(down)) + 4;
+    const reach = Math.max(0, 1 - h / 70);
+    pmat.opacity = 0.55 * on * poolStrength * reach * Math.max(0.3, Math.min(1, 45 / dist));
     this.pool.visible = pmat.opacity > 0.01;
-    const fx = -Math.sin(hdg),
+    const fx = Math.sin(hdg),
       fz = -Math.cos(hdg);
     const centreD = Math.min(dist * 0.7, 9 + dist * 0.45);
     this.pool.position.set(

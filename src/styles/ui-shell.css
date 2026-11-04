@@ -1110,7 +1110,7 @@ body.chrome-auto .cockpit.no-otw {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   overflow: hidden;
-  background: #0c2a4d;
+  background: #15110d;
   color: #fff;
   opacity: 0;
   transition: opacity 0.25s ease;
@@ -1131,7 +1131,7 @@ body.chrome-auto .cockpit.no-otw {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: 60% 30%;
+  object-position: 50% 22%;
   opacity: 0;
   transform: scale(1.03);
   transition:
@@ -1142,22 +1142,21 @@ body.chrome-auto .cockpit.no-otw {
   opacity: 1;
   transform: scale(1);
 }
-/* legibility only: a soft shade behind the text column (left) and the footer (bottom); the wing stays untouched */
+/* legibility only: a soft shade behind the text column (top left) and the footer (bottom); the aircraft stays untouched */
 .intro-scrim {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(90deg, rgba(5, 18, 36, 0.72) 0%, rgba(5, 18, 36, 0.46) 38%, rgba(5, 18, 36, 0) 66%),
-    linear-gradient(0deg, rgba(5, 18, 36, 0.6) 0%, rgba(5, 18, 36, 0) 34%);
+    linear-gradient(90deg, rgba(12, 9, 7, 0.62) 0%, rgba(12, 9, 7, 0.36) 36%, rgba(12, 9, 7, 0) 62%),
+    linear-gradient(0deg, rgba(12, 9, 7, 0.55) 0%, rgba(12, 9, 7, 0) 26%);
 }
 .intro-main {
   position: relative;
-  align-self: center;
-  padding: 0 clamp(28px, 7vw, 128px);
-  margin-top: 4vh;
+  align-self: start;
+  padding: clamp(56px, 13vh, 150px) clamp(28px, 7vw, 128px) 0;
 }
 .intro-main > * {
-  max-width: 620px;
+  max-width: 680px;
 }
 .intro-brand {
   display: flex;
@@ -1178,14 +1177,14 @@ body.chrome-auto .cockpit.no-otw {
   letter-spacing: -0.035em;
   white-space: nowrap;
   color: #fff;
-  text-shadow: 0 2px 24px rgba(4, 16, 32, 0.35);
+  text-shadow: 0 2px 24px rgba(20, 10, 0, 0.35);
 }
 .intro-lead {
-  max-width: 28em;
+  max-width: 31em;
   margin: 0 0 36px;
   font: 400 clamp(17px, 1.35vw, 21px) / 1.5 var(--font);
   color: rgba(255, 255, 255, 0.9);
-  text-shadow: 0 1px 12px rgba(4, 16, 32, 0.35);
+  text-shadow: 0 1px 12px rgba(20, 10, 0, 0.45);
 }
 .intro-acts {
   display: flex;
@@ -1205,7 +1204,7 @@ body.chrome-auto .cockpit.no-otw {
   color: #fff;
   font: 700 18px var(--font);
   cursor: pointer;
-  box-shadow: 0 10px 30px rgba(4, 30, 70, 0.4);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
   transition:
     background 0.15s,
     transform 0.1s;
@@ -1239,27 +1238,6 @@ body.chrome-auto .cockpit.no-otw {
   background: rgba(255, 255, 255, 0.1);
   color: #fff;
   font: 600 12px var(--font);
-}
-.intro-facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 26px;
-  margin: 44px 0 0;
-  padding: 0;
-  list-style: none;
-  font-size: 13.5px;
-  color: rgba(255, 255, 255, 0.84);
-}
-.intro .intro-main > .intro-facts {
-  max-width: none;
-}
-.intro-facts li {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-.intro-facts svg {
-  opacity: 0.8;
 }
 .intro-foot {
   position: relative;
@@ -1298,9 +1276,6 @@ body.chrome-auto .cockpit.no-otw {
   }
   .intro-lead {
     margin-bottom: 26px;
-  }
-  .intro-facts {
-    margin-top: 30px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
