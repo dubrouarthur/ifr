@@ -13,7 +13,7 @@ import type { Outside3D, TimeOfDay, Quality } from './avionics/outside3d';
 import type { ViewMode } from './avionics/cameras';
 import { drawSixPack, drawStack } from './avionics/steam';
 import { drawAirlinerPfd, drawNd } from './avionics/airliner';
-import { mfdRange } from './avionics/mfd';
+import { mfdRange, fmsKey, fmsView, type FmsKey } from './avionics/mfd';
 import { fitCanvas } from './avionics/draw';
 import { h, store, fmtTime } from './ui/dom';
 import { knob, bkey, autoRepeat, openSteps, closeSteps, installLongPressTips, type StepRow } from './ui/knob';
@@ -99,13 +99,17 @@ for (const ev of ['gesturestart', 'gesturechange']) document.addEventListener(ev
 
 // ------------------------------------------------------------------ toasts
 const toasts = h('div', { class: 'toasts', 'aria-live': 'polite' });
+const modalToasts = h('div', { class: 'toasts toasts-top', 'aria-live': 'polite' });
+document.body.append(modalToasts);
 let proMode = store.get('ifr.pro', false);
 document.body.classList.toggle('pro', proMode);
 function toast(msg: string, kind: 'info' | 'good' | 'warn' | 'bad' = 'info', ms = 3800) {
   if (proMode && (kind === 'info' || kind === 'good') && !/FAILURE|CRASH/.test(msg)) return;
   const t = h('div', { class: `toast ${kind}` }, msg);
-  toasts.append(t);
-  while (toasts.children.length > 4) toasts.firstChild?.remove();
+  // with a window open (Flight Center, builder…) the cockpit's toasts sit under its backdrop: show it above
+  const host = Modal.anyOpen() ? modalToasts : toasts;
+  host.append(t);
+  while (host.children.length > 4) host.firstChild?.remove();
   setTimeout(() => t.remove(), ms);
 }
 sim.rec.onEvent = (e) => {
@@ -212,8 +216,11 @@ const fc = new FlightCenter({
   setCockpit: (t) => setCockpit(t),
   getCockpit: () => cockpitType,
   openBuilder: (c) => builder.edit(c),
-  flyCircuit: (c) => { backToTraining(); flyCircuit(c); },
+  flyCircuit: (c) => { if (c.world === 'real') builder.edit(c); else { backToTraining(); flyCircuit(c); } },
   planFlight: (t, world) => setup.start(t, world),
+  pairInstructor: () => void pairInstructor(),
+  openInstructor: () => ios.toggle(true),
+  openConnections: () => connect.open(),
 });
 const builder = new CircuitBuilder((c) => flyCircuit(c), (m, k) => toast(m, k ?? 'info'));
 const setup = new FlightSetup({
@@ -289,6 +296,7 @@ document.body.append(cduPanel.el);
 const charts = new ChartsDrawer(sim);
 const ios = new InstructorDrawer(sim, (m, k) => toast(m, k ?? 'info'));
 ios.onBuilder = () => builder.edit();
+ios.onPair = () => void pairInstructor();
 
 function startScenario(sc: Scenario, wx: WxPreset, a: AssessSettings = launcher.assess) {
   hideCrash();
@@ -459,7 +467,7 @@ moreMenu.append(
   moreItem(I.chart, 'Debrief', 'Shift D', () => openDebrief()),
   menuHead('Tools'),
   moreItem(I.cloud, 'Weather station', '', () => weatherModal.open()),
-  moreItem(I.pattern, 'Circuit builder', 'U', () => builder.edit()),
+  moreItem(I.pattern, 'Flight builder', 'U', () => builder.edit()),
   moreItem(I.link, 'Connections', '', () => connect.open()),
   moreItem(I.instructor, 'Pair instructor (phone/tablet)…', '', () => void pairInstructor()),
   menuHead('Learn'),
@@ -774,11 +782,11 @@ const pfdBezel = h('div', { class: 'bezel pfd' },
     }), 'crs'),
     tag(knob({ label: 'MINS', sub: 'Push off', onTurn: minsBy, onPush: () => (sim.av.minimums = null), readout: () => (sim.av.minimums === null ? 'MINS OFF' : `BARO MIN ${sim.av.minimums}`), steps: () => [ROW.mins()] }), 'mins'),
     h('div', { class: 'bkey-grid' },
-      bkey('D→', () => directModal.open(), 'Direct-To (D)'),
-      bkey('PROC', () => procModal.open(), 'Procedures (X)'),
-      bkey('FPL', () => (mfdSt.showFpl = !mfdSt.showFpl), 'Flight plan'),
+      bkey('D→', () => g1kKey('direct', () => directModal.open()), 'Direct-To (D)'),
+      bkey('PROC', () => g1kKey('proc', () => procModal.open()), 'Procedures (X)'),
+      bkey('FPL', () => { mfdSt.showFpl = true; g1kKey('fpl', () => {}); }, 'Flight plan'),
       bkey('BARO', () => setQnh(), 'Set altimeter to QNH (B)'),
-      bkey('CLR', () => Modal.closeAll(), 'Clear'),
+      bkey('CLR', () => { if (!(cockpitType === 'g1000' && fmsKey(sim, mfdSt, 'clr'))) Modal.closeAll(); }, 'Clear'),
       bkey('TOGA', () => goAround(), 'Go-around (G)'),
     ),
   ),
@@ -796,12 +804,29 @@ const mfdBezel = h('div', { class: 'bezel mfd' },
   h('div', { class: 'side right' },
     tag(knob({ label: 'RANGE', sub: 'Map', onTurn: (d) => (mfdSt.rangeIdx = Math.max(0, Math.min(8, mfdSt.rangeIdx - d))), readout: () => `RANGE ${mfdRange(mfdSt)} NM`, steps: () => [{ label: 'RANGE', value: () => `${mfdRange(mfdSt)} NM`, fine: '', onStep: (d) => (mfdSt.rangeIdx = Math.max(0, Math.min(8, mfdSt.rangeIdx - d))) }] }), 'range'),
     h('div', { class: 'bkey-grid' },
-      bkey('D→', () => directModal.open(), 'Direct-To (D)'),
-      bkey('PROC', () => procModal.open(), 'Procedures (X)'),
-      bkey('FPL', () => (mfdSt.showFpl = !mfdSt.showFpl), 'Flight plan'),
-      tag(bkey('ACT', () => { sim.fp.activateApproach(sim.ac.s); toast('Approach activated', 'good'); }, 'Activate the loaded approach'), 'act'),
+      bkey('D→', () => g1kKey('direct', () => directModal.open()), 'Direct-To (D)'),
+      bkey('MENU', () => g1kKey('menu', () => {}), 'Page menu (FPL: activate leg, hold, delete…)'),
+      bkey('FPL', () => { mfdSt.showFpl = true; g1kKey('fpl', () => {}); }, 'Flight plan'),
+      bkey('PROC', () => g1kKey('proc', () => procModal.open()), 'Procedures (X): select, activate, vectors to final, missed'),
+      bkey('CLR', () => { if (!(cockpitType === 'g1000' && fmsKey(sim, mfdSt, 'clr'))) Modal.closeAll(); }, 'Clear / cancel'),
+      tag(bkey('ENT', () => g1kKey('ent', () => {}), 'Enter / confirm'), 'act'),
     ),
-    tag(knob({ label: 'FMS', sub: 'Leg select', dual: true, onTurn: (d) => sim.fp.activateLeg(Math.max(1, Math.min(sim.fp.wpts.length - 1, sim.fp.active + d))), readout: () => (sim.fp.out.valid ? `ACTV ${sim.fp.out.toIdent}` : 'NO FPL'), title: 'FMS — select the active leg' }), 'fms'),
+    tag(knob({
+      label: 'FMS',
+      sub: 'Push = cursor',
+      dual: true,
+      onTurn: (d, coarse) => { mfdSt.showFpl = true; fmsKey(sim, mfdSt, `${coarse ? 'outer' : 'inner'}${d > 0 ? '+' : '-'}` as FmsKey); },
+      onPush: () => { mfdSt.showFpl = true; fmsKey(sim, mfdSt, 'push'); },
+      readout: () => {
+        const v = fmsView(sim, mfdSt);
+        if (v.msg) return v.msg;
+        if (v.direct) return 'DIRECT-TO';
+        if (v.proc) return 'PROCEDURES';
+        if (v.cursor !== null && v.cursor >= 0) return `CRSR ${sim.fp.wpts[v.cursor]?.ident ?? ''}`;
+        return sim.fp.out.valid ? `ACTV ${sim.fp.out.toIdent}` : 'NO FPL';
+      },
+      title: 'FMS — push to show the cursor, inner knob moves it, outer knob scrolls; ENT confirms, CLR cancels (the active leg changes only on MENU → Activate Leg or ACT LEG)',
+    }), 'fms'),
   ),
 );
 const panel = h('section', { class: 'panel' }, pfdBezel, mfdBezel);
@@ -894,7 +919,7 @@ const TOUR = [
   { sel: '.bezel.mfd', title: 'Multi-function display', text: 'Moving map with terrain and the active flight plan. RANGE zooms; PROC loads an approach; ACT activates it.' },
   { sel: '.footer', title: 'Flight controls', text: 'Throttle, flaps, trim and yoke position. Use a joystick or yoke (Controllers in the More menu), the keyboard (arrows, +/−, Home/End, F — sensitivity in the More menu), or the touch stick (drag it; it eases back to neutral when you let go).' },
   { sel: '.tb-group', title: 'EFB & CDU', text: 'EFB: approach plates (your aircraft is drawn on them), airport data, navlog, weather and checklists. CDU: the flight management computer — route, departure/arrival, legs, holds, progress.' },
-  { sel: '.tb-actions > .menu-wrap:last-child', title: 'Everything else', text: 'Procedures, Direct-To and the debrief; the weather station and circuit builder; learning paths, training records and keyboard shortcuts; Settings and controllers.' },
+  { sel: '.tb-actions > .menu-wrap:last-child', title: 'Everything else', text: 'Procedures, Direct-To and the debrief; the weather station and flight builder; learning paths, training records and keyboard shortcuts; Settings and controllers.' },
 ];
 function startTour() {
   Modal.closeAll();
@@ -1060,6 +1085,11 @@ pfdCanvas.addEventListener('wheel', (e) => {
   else return;
   e.preventDefault();
 }, { passive: false });
+/** G1000 FMS keys go to the canvas FMS (Garmin windows); other cockpits keep the web dialogs */
+function g1kKey(k: FmsKey, fallback: () => void) {
+  if (cockpitType === 'g1000') fmsKey(sim, mfdSt, k);
+  else fallback();
+}
 function mfdSoftkey(i: number) {
   if (cockpitType !== 'g1000' || DEAD_SOFTKEYS.has(MFD_SOFTKEYS[i] ?? '')) return;
   mfdSt.softkeyFlash = i;
@@ -1069,7 +1099,7 @@ function mfdSoftkey(i: number) {
     case 'NORTH UP': mfdSt.northUp = !mfdSt.northUp; break;
     case 'DCLTR': mfdSt.declutter = (mfdSt.declutter + 1) % 3; break;
     case 'FPL': mfdSt.showFpl = !mfdSt.showFpl; break;
-    case 'PROC': procModal.open(); break;
+    case 'PROC': fmsKey(sim, mfdSt, 'proc'); break;
     case 'CHKLIST': showChecklist(); break;
     case 'MAP': mfdSt.rangeIdx = 4; break;
   }
@@ -1240,8 +1270,8 @@ window.addEventListener('keydown', (e) => {
     case 'o': sim.setCourse(sim.course() - (e.shiftKey ? 10 : 1)); break;
     case 'p': sim.setCourse(sim.course() + (e.shiftKey ? 10 : 1)); break;
     case 'c': doAction('cdi'); break;
-    case 'd': if (e.shiftKey) openDebrief(); else directModal.open(); e.preventDefault(); break;
-    case 'x': procModal.open(); break;
+    case 'd': if (e.shiftKey) openDebrief(); else g1kKey('direct', () => directModal.open()); e.preventDefault(); break;
+    case 'x': g1kKey('proc', () => procModal.open()); break;
     case 'i': ios.toggle(); break;
     case 'j': learn.open(); break;
     case 'f2': fc.open(); break;
@@ -1476,12 +1506,12 @@ function updateCoach() {
     const ete = g.eteMin !== null ? ` · ${fmtTime(g.eteMin * 60)}` : '';
     next = `${g.holding ? 'Holding at' : 'Next'} <em>${to.ident}</em>${to.altMin ? ` · ≥ ${to.altMin} ft` : ''} · ${g.distNm.toFixed(1)} nm${ete}`;
     const ap = fp.approach;
-    if (ap && !fp.approachActive) hints.push('Approach loaded but not active — ACT on the MFD bezel, or Procedures.');
+    if (ap && !fp.approachActive) hints.push(cockpitType === 'g1000' ? 'Approach loaded but not active — PROC → Activate Approach (or Activate Vector-to-Final).' : 'Approach loaded but not active — Procedures (X) → Activate.');
     if (ap && fp.approachActive && !fp.missedActive) {
       const navBased = ap.type === 'ILS' || ap.type === 'LOC' || ap.type === 'LOCBC' || ap.type === 'VOR' || ap.type === 'LDA';
       const faf = fp.wpts.find((x) => x.role === 'FAF' && x.appr === 'final');
       const dFaf = faf ? distanceNm(sim.ac.s, faf) : 99;
-      if (navBased && sim.av.cdi === 'GPS' && dFaf < 12) hints.push(`Switch the CDI to ${ap.type === 'VOR' ? 'VOR1' : 'LOC1'} before the FAF (C key).`);
+      if (navBased && sim.av.cdi === 'GPS' && dFaf < 12) hints.push(cockpitType === 'g1000' && sim.autoCdi && ap.type !== 'VOR' ? 'Confirm the HSI switches to LOC1 (green needle) before the FAF.' : `Switch the CDI to ${ap.type === 'VOR' ? 'VOR1' : 'LOC1'} before the FAF (C key).`);
       if (ap.type === 'NDB' && sim.av.bearing1 !== 'ADF') hints.push('Set BRG1 to ADF (PFD softkey) to see the NDB needle.');
       if (sim.ap.engaged && !sim.ap.apprMode && dFaf < 15 && (ap.gsAngle || navBased)) hints.push('Press APR to arm the approach mode.');
       if (to.altMin && sim.indicatedAlt() > to.altMin + 300 && g.distNm < 6 && ph === 'initial') hints.push(`Descend: you are ${Math.round(sim.indicatedAlt() - to.altMin)} ft above the ${to.ident} crossing altitude.`);
@@ -1497,7 +1527,7 @@ function updateCoach() {
       if (Math.abs(wrap180(sim.av.baro - sim.weather.qnh)) > 0.005) hints.push(`Altimeter not set (QNH ${sim.weather.qnh.toFixed(2)}) — press B.`);
     }
     if (fp.missedActive) hints.push('Climb to the missed approach altitude, then NAV + AP to fly the hold.');
-    if (g.suspended) hints.push('SUSP at the MAP — press G / MISSED to sequence the missed approach.');
+    if (g.suspended) hints.push(fp.out.suspReason === 'HOLD' ? 'In the hold — press SUSP (OBS softkey) to leave the hold at the next fix crossing.' : fp.out.suspReason === 'PILOT' ? 'Sequencing suspended (OBS) — press SUSP to resume the flight plan.' : 'SUSP at the MAP — press G / MISSED to sequence the missed approach.');
   } else {
     next = 'No flight plan';
     hints.push('Press D for Direct-To, or Procedures to load an approach.');
@@ -1771,7 +1801,7 @@ function remoteSnapshot(): RemoteSnapshot {
     crashed: s0.crashed || null,
     phase: sim.rec.phase(sim),
     lesson: lesson ? { id: lesson.ex.id, title: lesson.ex.title, step: lesson.step?.text ?? '', stepIdx: lesson.idx, steps: lesson.rt.steps.length } : null,
-    flight: lesson?.ex.title ?? sim.scenario?.name ?? 'Free flight',
+    flight: lesson?.ex.title ?? (sim.fp.approachId && sim.fp.approach && sim.scenario && !sim.scenario.name.includes(sim.fp.approach.name) ? `${sim.fp.approach.airport} ${sim.fp.approach.name}` : sim.scenario?.name) ?? 'Free flight',
     wpt: to ? { ident: to.ident, distNm: Math.round(g.distNm * 10) / 10 } : null,
     approach: sim.fp.approach ? { id: sim.fp.approach.id, name: sim.fp.approach.name, airport: sim.fp.approach.airport, active: sim.fp.approachActive } : null,
     failures: { ...sim.failures },
@@ -1812,7 +1842,10 @@ function remoteCommand(c: RemoteCommand) {
       const hdg = num(c.hdg, 1, 360);
       const alt = num(c.alt, 0, 18000);
       const parts: string[] = [];
-      if (hdg !== null) parts.push(`turn heading ${pad3(hdg)}`);
+      if (hdg !== null) {
+        const dh = wrap180(hdg - sim.ac.data.hdgTrue); // the region frame is magnetic-aligned
+        parts.push(Math.abs(dh) < 3 ? `fly heading ${pad3(hdg)}` : `turn ${dh > 0 ? 'right' : 'left'} heading ${pad3(hdg)}`);
+      }
       if (alt !== null) parts.push(`${alt > sim.indicatedAlt() ? 'climb' : 'descend'} and maintain ${Math.round(alt / 100) * 100}`);
       if (parts.length) { const t = parts.join(', '); atc.say(t.charAt(0).toUpperCase() + t.slice(1)); sim.rec.log(sim.time, 'info', `ATC (instructor): ${t}`); }
       break;
@@ -1921,7 +1954,7 @@ updateHeader();
 updateCoach();
 requestAnimationFrame(frame);
 // deep links: ?lesson=<exerciseId>[&path=<pathId>] opens that lesson's briefing (IFR Academy "Fly it now"),
-// ?builder opens the IFR circuit builder; both skip the start page
+// ?builder opens the flight builder; both skip the start page
 const deepQ = new URLSearchParams(location.search);
 const deepLesson = deepQ.get('lesson');
 const deepBuilder = deepQ.has('builder');
@@ -1932,7 +1965,7 @@ if (deepLesson) {
     pickExercise(ex, path);
   } catch {
     fc.open();
-    toast(`Lesson "${deepLesson}" not found — pick one in the Flight Center`, 'warn', 6000);
+    toast(`Lesson "${deepLesson}" not found — pick one in the Flight Center`, 'warn', 9000);
   }
 } else if (deepBuilder) builder.edit();
 else if (introWanted()) intro.show();
@@ -1942,8 +1975,10 @@ if (location.hash.startsWith('#circuit=')) {
   try {
     const c = decodeCircuit(location.hash.slice(9));
     Modal.closeAll();
-    flyCircuit(c);
-    toast(`Shared circuit: ${c.name}`, 'good');
+    // a real-world flight needs its region loaded first: the builder does that, then Load & fly
+    if (c.world === 'real') builder.edit(c);
+    else flyCircuit(c);
+    toast(`Shared flight: ${c.name}`, 'good');
   } catch {
     toast('This circuit link is invalid', 'bad');
   }

@@ -1574,3 +1574,10 @@ body.portrait .cockpit .pause-veil b {
   color: #6ee7a2;
   font: 600 12px var(--font);
 }
+
+/* toasts raised while a window is open (Flight Center, builder): above the backdrop, centred at the top */
+body > .toasts.toasts-top {
+  position: fixed; left: 50%; right: auto; top: 18px; bottom: auto; transform: translateX(-50%);
+  flex-direction: column; align-items: center; z-index: 80 !important; width: max-content; max-width: calc(100vw - 32px);
+}
+body > .toasts.toasts-top .toast { color: #e8eef4; background: rgba(12, 16, 21, .95); box-shadow: 0 10px 30px rgba(0, 0, 0, .35); }

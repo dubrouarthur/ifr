@@ -91,8 +91,19 @@ export class InstructorDrawer {
     ));
     this.body.append(sec('Weather'));
     this.body.append(h('div', { class: 'ios-row' }, ...WX_PRESETS.slice(1).map((w) => h('button', { class: 'btn', onclick: () => { Object.assign(sim.weather, w.wx); sim.rec.log(sim.time, 'info', `Weather: ${w.name}`); this.toast(`Weather → ${w.name}`); } }, w.name))));
+    this.body.append(sec('Avionics traps'));
+    const trap = (label: string, on: () => boolean, set: (v: boolean) => void, log: string) => {
+      const b = h('button', { class: 'btn', 'aria-pressed': String(on()) }, label);
+      b.onclick = () => { set(!on()); b.setAttribute('aria-pressed', String(on())); b.classList.toggle('on', on()); sim.rec.log(sim.time, 'info', `Instructor: ${log} ${on() ? 'on' : 'off'}`); this.toast(`${label}: ${on() ? 'on' : 'off'}`); };
+      b.classList.toggle('on', on());
+      return b;
+    };
+    this.body.append(h('div', { class: 'ios-row' },
+      trap('CDI left on GPS', () => !sim.autoCdi, (v) => (sim.autoCdi = !v), 'automatic GPS→LOC CDI switch disabled'),
+      trap('LPV → LNAV downgrade', () => !!sim.fp.downgrade, (v) => (sim.fp.downgrade = v), 'RNAV approach downgrade'),
+    ));
     this.body.append(sec('Training'));
-    this.body.append(h('button', { class: 'btn ios-builder', onclick: () => { this.toggle(false); this.onBuilder?.(); } }, svgIcon(I.tools, 16), 'Build an IFR circuit'));
+    this.body.append(h('button', { class: 'btn ios-builder', onclick: () => { this.toggle(false); this.onBuilder?.(); } }, svgIcon(I.tools, 16), 'Open the flight builder'));
     this.body.append(h('p', { class: 'muted ios-foot' }, 'All instructor actions are time-stamped in the flight record and appear in the debrief timeline.'));
   }
   update(dt: number) {

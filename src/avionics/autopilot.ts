@@ -210,7 +210,11 @@ export class Autopilot {
         this.latArmed = null;
       }
     }
-    if ((this.lat === 'GPS' || this.lat === 'VOR' || this.lat === 'LOC' || this.lat === 'BC') && this.lat !== navMode) {
+    if (this.lat === 'GPS' && navMode === 'LOC' && this.apprMode && n.gps.valid) {
+      // G1000 automatic GPS → LOC switch on an ILS/LOC approach (GFC 700): keep flying the GPS path with LOC armed
+      // until the localizer captures, never drop to ROL in between
+      if (this.latArmed !== 'LOC') this.latArmed = 'LOC';
+    } else if ((this.lat === 'GPS' || this.lat === 'VOR' || this.lat === 'LOC' || this.lat === 'BC') && this.lat !== navMode) {
       // source switched while coupled -> revert to ROL like the real system
       this.lat = 'ROL';
       this.rollRef = 0;

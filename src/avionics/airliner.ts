@@ -4,6 +4,7 @@
 import type { Sim } from "../sim/sim";
 import { AIRFRAME } from "../sim/aircraft";
 import { C, box, line, poly, text, pad3 } from "./draw";
+import { slipBarPx } from "./pfd";
 import { AIRPORTS, FIXES, NAVAIDS } from "../nav/data";
 import {
   toLocal,
@@ -185,7 +186,7 @@ export function drawAirlinerPfd(ctx: CanvasRenderingContext2D, sim: Sim) {
     ],
     Math.abs(d.rollDeg) > 35 ? AMB : WHT,
   );
-  const sl = clamp(d.slip, -1.2, 1.2) * 16;
+  const sl = slipBarPx(d.slip); // 1 brick width = 1 ball width, like the G1000 and the steam inclinometer
   poly(
     ctx,
     [
