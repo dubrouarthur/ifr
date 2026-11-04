@@ -838,8 +838,12 @@ body .modal.fs .fs-tog.on { border-color: rgb(var(--accent-rgb) / 0.4); backgrou
 .modal.fs .wx-presets button.custom { cursor: default; }
 .modal.fs .wx-presets button.custom span { font-variant-numeric: tabular-nums; }
 .modal.fs .fs-wx { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 16px; gap: 14px 20px; }
-@media (max-width: 1300px) { .modal.fs .fs-wx { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1100px) { .modal.fs .fs-wx { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.modal.fs .fs-wx { column-gap: 16px; }
 .modal.fs .wx-f b { font: 700 13px var(--font); font-variant-numeric: tabular-nums; }
+.modal.fs .wx-f > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.modal.fs .wx-f b { white-space: nowrap; }
+.modal.fs .wx-presets button.custom span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* training */
 .fs-btnrow { display: flex; flex-wrap: wrap; gap: 8px; }
 .fs-btnrow .btn { gap: 6px; }
@@ -889,3 +893,25 @@ body .modal.fs .fs-tog.on { border-color: rgb(var(--accent-rgb) / 0.4); backgrou
 
 .modal.cbx .cbx-leg.approach .cbx-leg-b .cb-f:first-child { grid-column: 1 / -1; }
 .cbx-low { display: flex; align-items: center; gap: 6px; margin: -2px 12px 10px 48px; color: #9a5b00; font: 600 12px var(--font); }
+/* training region: the airports it holds (step 1) */
+.fs-train-ap { margin-top: 18px; }
+.fs-train-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin: 8px 0 10px; }
+.fs-train-list span { display: grid; grid-template-columns: auto 1fr; column-gap: 10px; align-items: baseline; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm, 8px); background: var(--surface); }
+.fs-train-list b { font: 700 13.5px var(--font); letter-spacing: 0.3px; }
+.fs-train-list em { font-style: normal; font-size: 13px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-train-list small { grid-column: 2; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.fs-train-ap > p { margin: 0; font-size: 13px; }
+/* approach leg: the approach on its own row, transition and outcome share the next one */
+.modal.cbx .cbx-leg.approach .cbx-leg-b .cb-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.modal.cbx .cbx-leg-b .cb-row select, .modal.cbx .cbx-set .cb-row select { width: 100%; min-width: 0; }
+/* options: selects keep their full label */
+.modal.cbx .cbx-set .cb-row.cbx-opts { grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); }
+/* a step that cannot be filled yet */
+.fs-empty { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border: 1px dashed var(--line-strong, #c8d0d9); border-radius: var(--radius, 10px); background: var(--surface-2); color: var(--muted); }
+.fs-empty > svg { flex: none; color: var(--accent); }
+.fs-empty > div { flex: 1; min-width: 0; }
+.fs-empty b { display: block; color: var(--text); font: 600 14px var(--font); }
+.fs-empty p { margin: 2px 0 0; font-size: 13px; }
+.fs-empty .btn { flex: none; }
+.cbx-term-seq { display: flex; flex-direction: column; gap: 2px; }
+.cbx-term-seq small { font: 700 10.5px var(--font); letter-spacing: 0.5px; text-transform: uppercase; color: var(--muted); }

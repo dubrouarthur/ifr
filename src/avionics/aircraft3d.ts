@@ -761,8 +761,8 @@ void main() {
   else { a = uLand; minPx = 3.0; }
   vAlpha = a * vis * mix(1.0, 0.55, uDay);
   vColor = color;
-  // by day a lamp is a small bright point (strobes stay punchy); at night the glow blooms
-  float daySize = kind > 0.5 && kind < 1.5 ? mix(1.0, 0.8, uDay) : mix(1.0, 0.4, uDay);
+  // by day a lamp is a small bright point (strobes a crisp flash, not a soft ball); at night the glow blooms
+  float daySize = kind > 0.5 && kind < 1.5 ? mix(1.0, 0.5, uDay) : mix(1.0, 0.4, uDay);
   gl_PointSize = clamp(size * daySize * uFocal / dist, minPx, 90.0);
   gl_Position = projectionMatrix * mv;
   if (vAlpha < 0.004) gl_PointSize = 0.0;
@@ -862,6 +862,7 @@ export class Aircraft3D {
     });
     const propMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
+      transparent: true,
       roughness: 0.42,
       metalness: 0.45,
     });
@@ -2040,7 +2041,7 @@ export class Aircraft3D {
     // above the blur threshold the blades are drawn at a slow stroboscopic rate so they still read as turning
     p.prop.rotation.z = blur > 0.98 ? -a.t * 2.1 : this.propAngle;
     const pm = p.prop.material as THREE.MeshStandardMaterial;
-    pm.transparent = blur > 0.02;
+    // (always flagged transparent: toggling the flag would switch shader variants and hitch at engine start)
     pm.opacity = 1 - blur * 0.88;
     pm.depthWrite = blur < 0.5;
     const dm = p.disc.material as THREE.MeshBasicMaterial;
@@ -2130,6 +2131,29 @@ export class Aircraft3D {
     );
     this.pool.rotation.set(0, -hdg, 0);
     this.pool.scale.set(8 + dist * 0.22, 1, Math.max(12, dist * 1.1));
+  }
+
+  /** upload every texture the model uses (livery atlas, roughness, glow sprites, shadow, light pool) now, so
+   * the first exterior frame does not stall on a 2048 px texture upload */
+  warmUp(renderer: THREE.WebGLRenderer) {
+    const seen = new Set<THREE.Texture>();
+    const visit = (o: THREE.Object3D) => {
+      const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+      if (!m) return;
+      for (const mat of Array.isArray(m) ? m : [m]) {
+        const rec = mat as unknown as Record<string, unknown>;
+        const uniforms = (mat as THREE.ShaderMaterial).uniforms ?? {};
+        const cands = [rec.map, rec.roughnessMap, ...Object.values(uniforms).map((u) => u.value)];
+        for (const t of cands)
+          if (t instanceof THREE.Texture && !seen.has(t)) {
+            seen.add(t);
+            renderer.initTexture(t);
+          }
+      }
+    };
+    this.group.traverse(visit);
+    visit(this.shadow);
+    visit(this.pool);
   }
 
   /** world-space bounding box of the airframe (no lights / shadow) */

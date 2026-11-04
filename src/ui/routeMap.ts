@@ -204,7 +204,22 @@ function approachGeometry(
   g.bounds.push(...app);
   // the start of the other transitions when they are close: the pilot sees the options
   const end = app[app.length - 1];
-  if (end) for (const t of ap.transitions) { const f = t.legs[0]?.fix; if (f && distanceNm(f, end) < 25) g.bounds.push(f); }
+  // (only those near compared with the size of the plan, so a long circuit is not zoomed out for them)
+  if (end) {
+    const lats = g.bounds.map((p) => p.lat),
+      lons = g.bounds.map((p) => p.lon);
+    const diag = g.bounds.length
+      ? distanceNm(
+          { lat: Math.min(...lats), lon: Math.min(...lons) },
+          { lat: Math.max(...lats), lon: Math.max(...lons) },
+        )
+      : 0;
+    const near = Math.min(25, Math.max(6, diag * 0.45));
+    for (const t of ap.transitions) {
+      const f = t.legs[0]?.fix;
+      if (f && distanceNm(f, end) < near) g.bounds.push(f);
+    }
+  }
 }
 
 export function planGeometry(c: Circuit): PlanGeometry {
@@ -688,8 +703,11 @@ export class RouteMap {
       ),
       o.compact ? this.attr : null,
     );
-    const sw = (cls: string, label: string) =>
-      h("span", { class: "rm-chip" }, h("i", { class: cls }), label);
+    const sw = (cls: string, label: string) => {
+      const c = h("span", { class: "rm-chip" }, h("i", { class: cls }), label);
+      this.chips.push([cls, c]);
+      return c;
+    };
     this.el = h(
       "div",
       {
@@ -714,6 +732,7 @@ export class RouteMap {
             this.attr,
           ),
     );
+    this.syncLegend();
     this.interact();
     this.ro = new ResizeObserver(() => this.layout());
     this.ro.observe(this.view);
@@ -738,9 +757,24 @@ export class RouteMap {
     return g;
   }
 
+  /** the legend lists only what the map draws */
+  private chips: [string, HTMLElement][] = [];
+  private syncLegend() {
+    const kinds = new Set(this.g.lines.map((l) => l.kind));
+    const has: Record<string, boolean> = {
+      "l-route": kinds.has("route"),
+      "l-app": kinds.has("approach"),
+      "l-mis": kinds.has("missed"),
+      "l-hold": kinds.has("hold"),
+      "l-tr": kinds.has("transition"),
+    };
+    for (const [cls, c] of this.chips) c.hidden = !has[cls];
+  }
+
   /** replace the plan drawn (keeps the view unless `refit`) */
   setPlan(c: Circuit | null, refit = false) {
     this.g = this.geometry(c);
+    this.syncLegend();
     if (refit) this.fitted = false;
     if (refit && this.W) this.fit();
     this.draw();
@@ -769,7 +803,8 @@ export class RouteMap {
       Math.round(r.width) !== this.W || Math.round(r.height) !== this.H;
     this.W = Math.round(r.width);
     this.H = Math.round(r.height);
-    if (!this.fitted) this.fit();
+    // a resized map refits until the user pans or zooms it themselves
+    if (!this.fitted || (changed && !this.userView)) this.fit();
     if (changed || !this.fitted) this.draw();
   }
 
@@ -785,20 +820,27 @@ export class RouteMap {
       dy = Math.max(...ys) - Math.min(...ys);
     const padX = Math.max(30, this.W * 0.1),
       padY = Math.max(30, this.H * 0.1);
-    const zx = dx > 1e-9 ? Math.log2((this.W - 2 * padX - 30) / dx) : 13;
+    // the zoom / fit buttons take a 44 px column on the right: the plan is framed beside it
+    const ctl = 44;
+    const zx = dx > 1e-9 ? Math.log2((this.W - 2 * padX - 30 - ctl) / dx) : 13;
     const zy = dy > 1e-9 ? Math.log2((this.H - 2 * padY - 20) / dy) : 13; // 20 px: scale bar
-    // never closer than ~10 NM across the view (a lone runway would fill the map)
+    // never closer than ~10 NM across the view; a plan with no track at all (free flight from a
+    // runway) shows ~30 NM around it, so the nearby airports and navaids give the picture
     const midLat = (Math.max(...pts.map((p) => p.lat)) + Math.min(...pts.map((p) => p.lat))) / 2;
-    const zMax = Math.log2((this.W * 156543.03392 * Math.cos((midLat * Math.PI) / 180)) / 18520);
+    const spanM = (this.g.lines.length ? 10 : 30) * 1852;
+    const zMax = Math.log2((this.W * 156543.03392 * Math.cos((midLat * Math.PI) / 180)) / spanM);
     this.z = Math.max(3, Math.min(14.5, zMax, Math.min(zx, zy)));
-    this.cx = ((Math.max(...xs) + Math.min(...xs)) / 2) * 2 ** this.z;
+    this.cx = ((Math.max(...xs) + Math.min(...xs)) / 2) * 2 ** this.z + ctl / 2;
     this.cy = ((Math.max(...ys) + Math.min(...ys)) / 2) * 2 ** this.z + 8; // keep the plan clear of the scale bar
     this.fitted = true;
+    this.userView = false;
   }
+  private userView = false;
 
   private zoomAt(d: number, sx: number, sy: number) {
     const nz = Math.max(3, Math.min(16, this.z + d));
     if (nz === this.z) return;
+    this.userView = true;
     const k = 2 ** (nz - this.z);
     // keep the point under the cursor fixed
     const wx = this.cx + (sx - this.W / 2),
@@ -833,6 +875,7 @@ export class RouteMap {
       if (!drag) return;
       if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 3) {
         drag.moved = true;
+        this.userView = true;
         this.el.classList.add("drag");
       }
       this.cx = drag.cx - (e.clientX - drag.x);
@@ -978,7 +1021,12 @@ export class RouteMap {
     const hl = this.o.highlight ?? null;
     const dim = (leg: number | undefined) => hl !== null && leg !== hl;
     // label placement: every drawn label / symbol / control reserves a box
-    const boxes: Box[] = [[W - 44, 0, W, 190]]; // map controls
+    const boxes: Box[] = [
+      [W - 44, 0, W, 190], // map controls
+      [0, H - (compact ? 28 : 32), compact ? 120 : 150, H], // scale bar
+      [0, 0, 32, 44], // north arrow
+    ];
+    if (compact) boxes.push([W - Math.min(W * 0.6, 240), H - 17, W, H]); // attribution
     const free = (b: Box) =>
       b[0] >= 2 &&
       b[1] >= 2 &&
@@ -989,6 +1037,22 @@ export class RouteMap {
       );
     const inView = (x: number, y: number, m = 60) =>
       x > -m && y > -m && x < W + m && y < H + m;
+    // the drawn tracks, in pixels: labels prefer a place that does not sit on a line
+    const segs: [number, number, number, number][] = [];
+    const segHit = (b: Box, [x1, y1, x2, y2]: [number, number, number, number]) => {
+      if (Math.max(x1, x2) < b[0] || Math.min(x1, x2) > b[2] || Math.max(y1, y2) < b[1] || Math.min(y1, y2) > b[3]) return false;
+      const inside = (x: number, y: number) => x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3];
+      if (inside(x1, y1) || inside(x2, y2)) return true;
+      // which side of the segment each corner lies on: a sign change means the line crosses the box
+      const side = (x: number, y: number) => Math.sign((x2 - x1) * (y - y1) - (y2 - y1) * (x - x1));
+      const s0 = side(b[0], b[1]);
+      return [side(b[2], b[1]), side(b[0], b[3]), side(b[2], b[3])].some((q) => q !== s0);
+    };
+    const onLine = (b: Box) => segs.some((sg) => segHit(b, sg));
+    /** the first candidate box that is free and off the lines, else the first free one */
+    const pick = (cands: [number, number][], w: number, hh: number) =>
+      cands.find(([lx, ly]) => free([lx, ly, lx + w, ly + hh]) && !onLine([lx, ly, lx + w, ly + hh])) ??
+      cands.find(([lx, ly]) => free([lx, ly, lx + w, ly + hh]));
 
     // airports: runways (thin, chart grey)
     const rwW = Math.max(1.6, Math.min(6, 2 ** (this.z - 10) * 2));
@@ -1051,6 +1115,18 @@ export class RouteMap {
     for (const kind of order)
       for (const l of this.g.lines.filter((x) => x.kind === kind)) {
         const op = (kind === "transition" ? 0.75 : 1) * (dim(l.leg) ? 0.38 : 1);
+        if (kind === "hold" && l.pts.length) {
+          const hp = l.pts.map(P);
+          const xs = hp.map((q) => q[0]),
+            ys = hp.map((q) => q[1]);
+          boxes.push([Math.min(...xs) + 2, Math.min(...ys) + 2, Math.max(...xs) - 2, Math.max(...ys) - 2]);
+        }
+        if (kind !== "transition")
+          for (let i = 1; i < l.pts.length; i++) {
+            const [ax, ay] = P(l.pts[i - 1]),
+              [bx, by] = P(l.pts[i]);
+            if (inView(ax, ay, 0) || inView(bx, by, 0)) segs.push([ax, ay, bx, by]);
+          }
         out.push(
           `<polyline points="${poly(l.pts)}" fill="none" stroke="#fff" stroke-width="${width[kind] + 2.5}" stroke-linejoin="round" opacity="${f1(0.8 * op)}"/>`,
         );
@@ -1123,6 +1199,18 @@ export class RouteMap {
       boxes.push([x - 7, y - 7, x + 7, y + 7]);
       drawn.push({ p, x, y });
     }
+    // no track to show (free flight): the navaids around give the picture, drawn faint
+    if (!this.g.lines.length && !this.o.track?.length)
+      for (const n of NAVAIDS) {
+        if (seen.has(n.ident) || (n.type !== "VOR" && n.type !== "VORDME" && n.type !== "NDB")) continue;
+        const [x, y] = P(n);
+        if (!inView(x, y, -12)) continue;
+        seen.add(n.ident);
+        const kind = n.type === "NDB" ? "ndb" : "vor";
+        out.push(`<g opacity="0.7">${symbol(kind, x, y, n.type === "VORDME")}</g>`);
+        boxes.push([x - 7, y - 7, x + 7, y + 7]);
+        drawn.push({ p: { ident: n.ident, kind, p: n, leg: -2 }, x, y });
+      }
     for (const m of this.o.marks ?? []) {
       const [x, y] = P(m.p);
       out.push(
@@ -1149,19 +1237,29 @@ export class RouteMap {
         )
           continue; // approach: badge on its own track
         done.add(l.leg);
-        const a =
-          l.kind === "hold"
-            ? l.pts[Math.floor(l.pts.length * 0.62)]
-            : l.pts[Math.floor((l.pts.length - 1) / 2)];
-        const b =
-          l.kind === "hold"
-            ? a
-            : (l.pts[Math.floor((l.pts.length - 1) / 2) + 1] ?? a);
-        const [ax, ay] = P(a),
-          [bx, by] = P(b);
-        const x = (ax + bx) / 2,
-          y = (ay + by) / 2;
-        if (!inView(x, y, 0)) continue;
+        // the badge sits on its own track: the middle first, then other places along it when
+        // another badge or a symbol is already there (two approaches share the same final)
+        const at = (t: number): [number, number] => {
+          if (l.kind === "hold") return P(l.pts[Math.floor(l.pts.length * t) % l.pts.length]);
+          const ps = l.pts.map(P);
+          const len = ps.slice(1).reduce((acc, q, k) => acc + Math.hypot(q[0] - ps[k][0], q[1] - ps[k][1]), 0);
+          let rest = len * t;
+          for (let k = 1; k < ps.length; k++) {
+            const sl = Math.hypot(ps[k][0] - ps[k - 1][0], ps[k][1] - ps[k - 1][1]);
+            if (rest <= sl && sl > 0) {
+              const u = rest / sl;
+              return [ps[k - 1][0] + (ps[k][0] - ps[k - 1][0]) * u, ps[k - 1][1] + (ps[k][1] - ps[k - 1][1]) * u];
+            }
+            rest -= sl;
+          }
+          return ps[ps.length - 1];
+        };
+        const tries = l.kind === "hold" ? [0.62, 0.3, 0.85, 0.12] : [0.5, 0.35, 0.65, 0.22, 0.78, 0.12, 0.88];
+        const spots = tries.map(at).filter(([x, y]) => inView(x, y, 0));
+        const spot =
+          spots.find(([x, y]) => free([x - 10, y - 10, x + 10, y + 10])) ?? spots[0];
+        if (!spot) continue;
+        const [x, y] = spot;
         const on = hl === l.leg;
         this.badges.push({ leg: l.leg, x, y });
         out.push(
@@ -1191,8 +1289,14 @@ export class RouteMap {
         [x - w - 9, y + 3],
         [x - w / 2, y - hh - 10],
         [x - w / 2, y + 10],
+        [x + 10, y - hh / 2],
+        [x - w - 10, y - hh / 2],
+        [x + 16, y - hh - 12],
+        [x - w - 16, y - hh - 12],
+        [x + 16, y + 12],
+        [x - w - 16, y + 12],
       ];
-      const at = cands.find(([lx, ly]) => free([lx, ly, lx + w, ly + hh]));
+      const at = pick(cands, w, hh);
       if (!at) continue;
       boxes.push([at[0], at[1], at[0] + w, at[1] + hh]);
       const op = dim(p.leg) && p.kind !== "start" ? 0.6 : 1;
@@ -1220,7 +1324,7 @@ export class RouteMap {
         [a.x - w - 8, a.y - 18],
         [a.x - w - 8, a.y + 6],
       ];
-      const at = cands.find(([lx, ly]) => free([lx, ly, lx + w, ly + 13]));
+      const at = pick(cands, w, 13);
       if (!at) continue;
       boxes.push([at[0], at[1], at[0] + w, at[1] + 13]);
       out.push(
@@ -1232,8 +1336,8 @@ export class RouteMap {
       const w = lb.text.length * 6.1;
       const up = lb.ang > 90 || lb.ang < -90 ? lb.ang + 180 : lb.ang;
       const r = (up * Math.PI) / 180;
-      const nx = -Math.sin(r) * 9,
-        ny = Math.cos(r) * -9; // offset to the "upper" side of the line
+      const nx = Math.sin(r) * 9,
+        ny = -Math.cos(r) * 9; // perpendicular offset to the "upper" side of the line
       const x = lb.x + nx,
         y = lb.y + ny;
       const ex = (Math.abs(Math.cos(r)) * w) / 2 + Math.abs(Math.sin(r)) * 6,
@@ -1432,7 +1536,12 @@ export function profileSvg(
   // minimums
   if (pr.mins)
     o.push(
-      `<line class="rp-mins" x1="${f1(X(pr.mins.d0))}" x2="${f1(X(pr.mins.d1))}" y1="${f1(Y(pr.mins.alt))}" y2="${f1(Y(pr.mins.alt))}"/><text class="rp-mins-t" x="${f1(X(pr.mins.d1) - 4)}" y="${f1(Y(pr.mins.alt) - 4)}">${pr.mins.label}</text>`,
+      `<line class="rp-mins" x1="${f1(X(pr.mins.d0))}" x2="${f1(X(pr.mins.d1))}" y1="${f1(Y(pr.mins.alt))}" y2="${f1(Y(pr.mins.alt))}"/>${
+        // a short final (long circuit): the label goes left of the final approach fix
+        X(pr.mins.d1) - X(pr.mins.d0) < 64
+          ? `<text class="rp-mins-t" style="text-anchor:end" x="${f1(X(pr.mins.d0) - 4)}" y="${f1(Math.min(H - B - 3, Y(pr.mins.alt) + 3))}">${pr.mins.label}</text>`
+          : `<text class="rp-mins-t" x="${f1(X(pr.mins.d0) + 3)}" y="${f1(Y(pr.mins.alt) + 11 <= H - B - 2 ? Y(pr.mins.alt) + 11 : Y(pr.mins.alt) - 4)}">${pr.mins.label}</text>`
+      }`,
     );
   // the path, by segment kind
   const col = (s: ProfilePt["seg"]) =>
@@ -1454,12 +1563,15 @@ export function profileSvg(
       `<line x1="${f1(X(a.d))}" y1="${f1(Y(a.alt))}" x2="${f1(X(b.d))}" y2="${f1(Y(b.alt))}" stroke="${col(b.seg)}" stroke-width="${b.seg === "missed" ? 1.8 : 2.4}"${b.seg === "missed" ? ' stroke-dasharray="6 4"' : ""} stroke-linecap="round" opacity="${dimmed ? 0.45 : 1}"/>`,
     );
   }
-  if (pr.gp) {
+  if (pr.gp && X(pr.gp.d1) - X(pr.gp.d0) > 70) {
     const x = (X(pr.gp.d0) + X(pr.gp.d1)) / 2;
     const a0 = pr.pts.find((p) => Math.abs(p.d - pr.gp!.d0) < 1e-6)?.alt ?? 0;
     const a1 = pr.pts.find((p) => Math.abs(p.d - pr.gp!.d1) < 1e-6)?.alt ?? 0;
     o.push(
-      `<text class="rp-gp" x="${f1(x)}" y="${f1(Y((a0 + a1) / 2) - 7)}">GP ${pr.gp.angle.toFixed(2)}°</text>`,
+      // right of the middle of the glidepath, or left of it when it would leave the plot
+      x + 58 < W - R
+        ? `<text class="rp-gp" x="${f1(x + 6)}" y="${f1(Y((a0 + a1) / 2) - 5)}">GP ${pr.gp.angle.toFixed(2)}°</text>`
+        : `<text class="rp-gp" text-anchor="end" style="text-anchor:end" x="${f1(x - 6)}" y="${f1(Y((a0 + a1) / 2) + 12)}">GP ${pr.gp.angle.toFixed(2)}°</text>`,
     );
   }
   // fixes: tick + ident on the distance axis, altitude above the point (min underlined, max overlined)
@@ -1467,8 +1579,9 @@ export function profileSvg(
   const idl: { x: number; text: string; dim: boolean; pri: number }[] = [];
   for (const p of pr.pts) {
     if (!p.ident) continue;
-    const x = X(p.d),
+    const px = X(p.d),
       y = Y(p.alt);
+    const x = px;
     const dimmed = hl !== null && p.leg !== hl;
     o.push(
       `<line class="rp-tick" x1="${f1(x)}" x2="${f1(x)}" y1="${f1(y)}" y2="${H - B + 4}"/>`,
@@ -1495,6 +1608,15 @@ export function profileSvg(
     ) {
       const ty = Math.max(10, y - (p.role === "FAF" ? 22 : p.hold ? 16 : 7));
       const tw = String(at).length * 5.8;
+      // kept inside the plot: clear of the altitude scale on the left and of the right edge
+      // a climb or descent at the fix itself (vertical segment): the label moves off the line
+      const vert = pr.pts.some(
+        (q) => Math.abs(X(q.d) - px) < 3 && Math.abs(q.alt - p.alt) > 150,
+      );
+      const x = Math.max(
+        L + tw / 2 + 3,
+        Math.min(W - R - tw / 2, vert ? px - tw / 2 - 4 : px),
+      );
       o.push(
         `<text class="rp-alt${dimmed ? " dim" : ""}" x="${f1(x)}" y="${f1(ty)}">${at}</text>`,
       );

@@ -15,6 +15,7 @@ import {
 import type { Approach, Fix, LegRole } from './types';
 import { airport, approach as getApproach, runway, findFix } from './data';
 import { holdEntry, holdFrame, teardropCourse, type HoldEntry } from './holding';
+import { isFlyOver, turnRadiusNm } from './pathgeom';
 
 export interface Waypoint extends LatLon {
   ident: string;
@@ -28,6 +29,8 @@ export interface Waypoint extends LatLon {
   arc?: { center: LatLon & { ident: string }; radius: number; dir: 'L' | 'R' };
   /** generated procedure-turn point */
   ptPoint?: boolean;
+  /** overfly this fix before turning (default: fly-by, except MAP / MAHP / runway / holding fix) */
+  flyOver?: boolean;
 }
 
 export type CdiMode = 'ENR' | 'TERM' | 'APR' | 'MAPR';
@@ -56,6 +59,22 @@ export interface GpsOutput {
   suspended: boolean;
   approachName: string | null;
   msg: string | null;
+  /** the guidance path is curved here (fly-by / fly-over turn, DME arc, holding turn): its radius (NM) and
+   *  direction, so the roll steering can fly the arc with a feed-forward bank instead of chasing it */
+  arcRadiusNm: number | null;
+  arcDir: 'L' | 'R' | null;
+}
+
+/** a turn between two legs that the guidance is flying (same geometry as pathgeom.flyablePath) */
+interface LegTurn {
+  centre: LatLon;
+  radiusNm: number;
+  /** +1 right, -1 left */
+  dir: 1 | -1;
+  /** course of the next leg: the turn ends when the path tangent reaches it (fly-by) */
+  outCourse: number;
+  /** fly-over: the turn ends when the track points at this fix, then the aircraft goes direct to it */
+  directTo: LatLon | null;
 }
 
 const fromFix = (f: Fix, extra: Partial<Waypoint> = {}): Waypoint => ({ ident: f.ident, lat: f.lat, lon: f.lon, ...extra });
@@ -96,7 +115,11 @@ export class FlightPlan {
     suspended: false,
     approachName: null,
     msg: null,
+    arcRadiusNm: null,
+    arcDir: null,
   };
+  /** turn in progress between the previous leg and the active one */
+  private turn: LegTurn | null = null;
 
   get approach(): Approach | null {
     if (!this.approachId) return null;
@@ -110,6 +133,7 @@ export class FlightPlan {
 
   /** Non-published hold (ATC clearance): proceed direct to the fix and hold. */
   setHold(fix: Waypoint, inbound: number, turn: 'R' | 'L', legMin: number, from: LatLon, altFt?: number) {
+    this.turn = null;
     this.wpts = [{ ...fix, hold: { inbound, turn, legMin }, altMin: altFt }];
     this.active = 0;
     this.approachId = null;
@@ -121,6 +145,7 @@ export class FlightPlan {
   }
 
   setEnroute(points: Waypoint[]) {
+    this.turn = null;
     this.wpts = points;
     this.active = Math.min(1, points.length - 1);
     this.directFrom = null;
@@ -129,6 +154,7 @@ export class FlightPlan {
 
   /** Direct-To an arbitrary waypoint. Keeps the plan if the waypoint is in it. */
   directTo(target: Waypoint, from: LatLon) {
+    this.turn = null;
     const idx = this.wpts.findIndex((w) => w.ident === target.ident);
     this.holdActive = false;
     this.holdEntryType = null;
@@ -145,6 +171,7 @@ export class FlightPlan {
 
   /** Load an approach (and optional transition) at the end of the enroute plan. */
   loadApproach(id: string, transition: string | null) {
+    this.turn = null;
     const ap = getApproach(id);
     // strip a previously loaded approach
     const keep = this.wpts.filter((w) => !w.appr);
@@ -206,6 +233,7 @@ export class FlightPlan {
 
   /** Vectors-to-final: activate the leg into the FAF along the final approach course. */
   vectorsToFinal() {
+    this.turn = null;
     const ap = this.approach;
     if (!ap) return;
     this.approachActive = true;
@@ -219,6 +247,7 @@ export class FlightPlan {
   }
 
   activateMissed() {
+    this.turn = null;
     if (!this.approachId) return;
     this.missedActive = true;
     const idx = this.wpts.findIndex((w) => w.appr === 'missed');
@@ -231,6 +260,7 @@ export class FlightPlan {
   }
 
   activateLeg(i: number) {
+    this.turn = null;
     if (i <= 0 || i >= this.wpts.length) return;
     this.active = i;
     this.directFrom = null;
@@ -261,30 +291,43 @@ export class FlightPlan {
     let from = this.legFrom() ?? ac;
 
     // ---------- Sequencing
+    // Leg transitions follow pathgeom.flyablePath (what every map draws): at a fly-by fix the turn starts one
+    // turn-anticipation distance before it, on an arc tangent to both legs; a fly-over fix (MAP, MAHP, runway,
+    // holding fix) is overflown, then the aircraft turns at the standard radius and goes direct to the next fix.
     const isMap = to.role === 'MAP' || (to.role === 'RWY' && to.appr === 'final');
     const nextHold = to.hold;
     const distTo = distanceNm(ac, to);
     const legLen = distanceNm(from, to);
     const along = legLen > 0.01 ? alongTrackNm(from, to, ac) : legLen;
     const next = this.wpts[this.active + 1];
-    let turnAnt = 0.2;
-    if (next) {
-      const c1 = bearingDeg(from, to);
-      const c2 = bearingDeg(to, next);
-      const dTurn = Math.abs(wrap180(c2 - c1));
-      const r = Math.max(0.3, gsKt / (60 * Math.PI)); // standard-rate radius (nm)
-      turnAnt = Math.min(2, Math.max(0.2, r * Math.tan((dTurn * DEG) / 2)));
+    const inCourse = to.arc ? norm360(bearingDeg(to.arc.center, to) + (to.arc.dir === 'R' ? 90 : -90)) : bearingDeg(from, to);
+    const outCourse = next ? (next.arc ? norm360(bearingDeg(next.arc.center, to) + (next.arc.dir === 'R' ? 90 : -90)) : bearingDeg(to, next)) : inCourse;
+    const dTurn = wrap180(outCourse - inCourse);
+    const flyOver = isFlyOver(to) || !!to.hold || Math.abs(dTurn) > 150;
+    const R = turnRadiusNm(gsKt);
+    let turnAnt = 0;
+    let turnR = R;
+    if (next && !flyOver && Math.abs(dTurn) >= 2) {
+      // anticipation limited to half of each adjoining leg (the radius shrinks to fit), as on the map
+      const lim = Math.min(legLen, next.arc ? Infinity : distanceNm(to, next)) / 2;
+      const t = Math.tan((Math.abs(dTurn) / 2) * DEG);
+      turnAnt = R * t;
+      if (turnAnt > lim) {
+        turnAnt = lim;
+        turnR = turnAnt / t;
+      }
     }
-    let passed = along >= legLen - (next ? turnAnt : 0) || distTo < (next ? turnAnt : 0.05);
-    if (to.arc) {
+    let passed: boolean;
+    if (to.arc && !this.directFrom) {
       const th = bearingDeg(to.arc.center, ac);
       const thT = bearingDeg(to.arc.center, to);
       const remaining = wrap180(thT - th) * (to.arc.dir === 'R' ? 1 : -1);
-      const leadDeg = ((turnAnt * 0.6) / to.arc.radius) * (180 / Math.PI);
-      passed = remaining < leadDeg && distanceNm(ac, to) < 3;
-    }
+      const leadDeg = (turnAnt / to.arc.radius) * (180 / Math.PI);
+      passed = remaining < leadDeg && distTo < 3;
+    } else if (next && turnAnt > 0) passed = along >= legLen - turnAnt || distTo < turnAnt * 0.8;
+    else passed = along >= legLen - 0.05 || distTo < 0.1; // overhead (fly-over, or no turn)
     o.suspended = false;
-    if (!this.holdActive && passed) {
+    if (!this.holdActive && passed && !this.turn) {
       if (nextHold && (to.appr === 'missed' || !to.appr || to.hilpt)) {
         this.hilptArmed = false;
         this.holdActive = true;
@@ -294,6 +337,17 @@ export class FlightPlan {
       } else if (isMap && !this.missedActive) {
         o.suspended = true; // SUSP at the MAP until missed approach is activated
       } else if (next) {
+        const dir: 1 | -1 = dTurn >= 0 ? 1 : -1;
+        if (turnAnt > 0) {
+          // fly-by: the arc of radius turnR tangent to both legs
+          const t1 = destination(to, inCourse + 180, turnAnt);
+          this.turn = { centre: destination(t1, inCourse + 90 * dir, turnR), radiusNm: turnR, dir, outCourse, directTo: null };
+        } else if (flyOver && Math.abs(wrap180(bearingDeg(ac, next) - trackTrue)) > 4 && !next.arc) {
+          // fly-over: turn at the standard radius from overhead the fix until the track points at the next fix
+          const d2 = wrap180(bearingDeg(to, next) - trackTrue);
+          const dir2: 1 | -1 = d2 >= 0 ? 1 : -1;
+          this.turn = { centre: destination(ac, trackTrue + 90 * dir2, R), radiusNm: R, dir: dir2, outCourse, directTo: next };
+        }
         this.directFrom = null;
         this.active++;
         to = this.wpts[this.active];
@@ -304,9 +358,11 @@ export class FlightPlan {
     if (isMap && passed && !this.missedActive) o.suspended = true;
 
     // ---------- Steering
-    let dtkTrue: number;
-    let xtk: number;
+    let dtkTrue = 0;
+    let xtk = 0;
     o.turnDir = null;
+    o.arcRadiusNm = null;
+    o.arcDir = null;
     if (this.holdActive && to.hold) {
       const inb = to.hold.inbound + magVar;
       const hd = { fix: { ...to }, inbound: inb, turn: to.hold.turn, legMin: to.hold.legMin, altFt: 0 };
@@ -335,6 +391,10 @@ export class FlightPlan {
         dtkTrue = h.dtk;
         xtk = h.xtk;
         o.turnDir = to.hold.turn;
+        if (h.phase === 'turn') {
+          o.arcRadiusNm = h.radiusNm;
+          o.arcDir = to.hold.turn;
+        }
         // hold-in-lieu of PT: after one circuit, continue inbound when crossing the fix
         if (to.hilpt) {
           if (fr.x < -0.8) this.hilptArmed = true;
@@ -348,6 +408,26 @@ export class FlightPlan {
         }
       }
       o.holding = true;
+    } else if (this.turn) {
+      // flying the turn between two legs: path = the arc, deviation = radial distance from it
+      const tr = this.turn;
+      o.holding = false;
+      const th = bearingDeg(tr.centre, ac);
+      const r = distanceNm(tr.centre, ac);
+      dtkTrue = norm360(th + 90 * tr.dir);
+      xtk = tr.dir > 0 ? tr.radiusNm - r : r - tr.radiusNm;
+      o.arcRadiusNm = tr.radiusNm;
+      o.arcDir = tr.dir > 0 ? 'R' : 'L';
+      const done = tr.directTo
+        ? wrap180(bearingDeg(ac, tr.directTo) - dtkTrue) * tr.dir < 3
+        : wrap180(dtkTrue - tr.outCourse) * tr.dir >= -8; // roll-out lead: the bank comes off over the last 8°
+      if (done || r > tr.radiusNm * 3) {
+        // turn complete (or abandoned far off the arc): back to straight-leg guidance
+        if (tr.directTo) this.directFrom = { lat: ac.lat, lon: ac.lon };
+        this.turn = null;
+        o.arcRadiusNm = null;
+        o.arcDir = null;
+      }
     } else {
       o.holding = false;
       if (to.arc && !this.directFrom) {
@@ -355,6 +435,8 @@ export class FlightPlan {
         const r = distanceNm(to.arc.center, ac);
         dtkTrue = norm360(th + (to.arc.dir === 'R' ? 90 : -90));
         xtk = to.arc.dir === 'R' ? -(r - to.arc.radius) : r - to.arc.radius;
+        o.arcRadiusNm = to.arc.radius;
+        o.arcDir = to.arc.dir;
       } else if (distanceNm(from, to) < 0.01) {
         dtkTrue = bearingDeg(ac, to);
         xtk = 0;
@@ -442,7 +524,7 @@ export function holdSteer(
   gsKt: number,
   legMin: number,
   ac: LatLon,
-): { dtk: number; xtk: number; phase: 'inbound' | 'outbound' | 'turn' } {
+): { dtk: number; xtk: number; phase: 'inbound' | 'outbound' | 'turn'; radiusNm: number } {
   const R = Math.max(0.4, gsKt / (60 * Math.PI));
   const L = Math.max(1, (gsKt * legMin) / 60);
   const p = toLocal(fix, ac);
@@ -484,5 +566,5 @@ export function holdSteer(
   }
   // Convert local direction to true bearing. In (x along course, y right), bearing = course + angle(y,x)
   const dirDeg = norm360(inboundTrue + (Math.atan2(Math.sin(dirLocal), Math.cos(dirLocal)) / DEG));
-  return { dtk: dirDeg, xtk: signedDist, phase };
+  return { dtk: dirDeg, xtk: signedDist, phase, radiusNm: R };
 }

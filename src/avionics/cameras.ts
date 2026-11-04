@@ -115,7 +115,7 @@ export class CameraRig {
       this.orbit.dist = clamp(this.orbit.dist / f, 9, 600);
     else if (this.mode === "chase")
       this.chase.dist = clamp(this.chase.dist / f, 11, 80);
-    else this.zoom = clamp(this.zoom * f, 0.35, 12);
+    else this.zoom = clamp(this.zoom * f, 0.03, 12);
   }
 
   reset() {
@@ -171,8 +171,10 @@ export class CameraRig {
       this.chase.pitchOfs -= this.chase.pitchOfs * k;
     }
     const yaw = -this.chaseYaw + this.chase.yawOfs;
+    // the camera sinks toward the flight path in a climb (and rises in a descent), like a chase aircraft
+    // flying in trail, so the pitch attitude reads against the horizon instead of being flattened
     const pitch = clamp(
-      0.12 + this.chasePitch * 0.6 + this.chase.pitchOfs,
+      0.13 - this.chasePitch * 0.6 + this.chase.pitchOfs,
       -0.2,
       1.4,
     );
@@ -241,11 +243,11 @@ export class CameraRig {
     } else this.shot.pos.copy(this.tower);
     this.shot.target.copy(c);
     const dist = Math.max(1, this.shot.pos.distanceTo(c));
-    // frame ~26 m of sky around the aircraft, zoomable
+    // frame ~24 m around the aircraft by default; zoom out (wheel / pinch) down to a ~60° wide view of the field
     this.shot.fov = clamp(
-      (2 * Math.atan(9 / (dist * this.zoom))) / DEG,
+      (2 * Math.atan(12 / (dist * this.zoom))) / DEG,
       0.8,
-      55,
+      60,
     );
   }
 

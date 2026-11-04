@@ -83,3 +83,26 @@ describe('planner weather line', () => {
     expect(metarLine({ windDir: 180, windKt: 18, gustKt: 28, visibilitySm: 1.5, ceilingFt: 1100 })).toBe('18018G28KT 1 1/2SM OVC011 A2992');
   });
 });
+
+describe('planner map and profile layout', () => {
+  it('a long circuit is not zoomed out for the far transitions of its approach', async () => {
+    const { planGeometry } = await import('../src/ui/routeMap');
+    const { findFix } = await import('../src/nav/data');
+    const g = planGeometry(PRESET_CIRCUITS[0]);
+    for (const id of ['TOBEY', 'SANDR']) {
+      const f = findFix(id);
+      if (f) expect(g.bounds.some((b) => b.lat === f.lat && b.lon === f.lon), id).toBe(false);
+    }
+  });
+  it('profile labels stay inside the plot and a short final puts the minimums left of the FAF', async () => {
+    const { planProfile, profileSvg } = await import('../src/ui/routeMap');
+    const p = planProfile(PRESET_CIRCUITS[0], false);
+    const svg = profileSvg(p, 300, 150);
+    for (const m of svg.matchAll(/class="rp-alt[^"]*" x="([\d.-]+)"/g)) {
+      expect(Number(m[1])).toBeGreaterThanOrEqual(44);
+      expect(Number(m[1])).toBeLessThanOrEqual(300 - 14);
+    }
+    expect(svg).toMatch(/rp-mins-t" style="text-anchor:end"/);
+    expect(profileSvg(p, 1400, 150)).not.toMatch(/rp-mins-t" style="text-anchor:end"/);
+  });
+});

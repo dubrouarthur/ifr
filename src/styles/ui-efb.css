@@ -622,7 +622,10 @@
 .drawer.efb.night > .chart-scrim {
   background: rgba(0, 0, 0, 0.45);
 }
-.drawer.efb.night .efb-ap.t-ils {
+.drawer.efb.night .efb-ap.t-ils,
+.drawer.efb.night .efb-ap.t-loc,
+.drawer.efb.night .efb-ap.t-locbc,
+.drawer.efb.night .efb-ap.t-lda {
   background: #10243d;
   border-color: #24446b;
   color: #9cc6ff;
@@ -631,6 +634,12 @@
   background: #221a3a;
   border-color: #3d2f66;
   color: #c9b5ff;
+}
+.drawer.efb.night .efb-ap.t-vor,
+.drawer.efb.night .efb-ap.t-ndb {
+  background: #0f2a1d;
+  border-color: #1f4a33;
+  color: #8fdcb2;
 }
 
 /* ---------------------------------------------------------------- pages */
@@ -682,8 +691,22 @@ button.efb-ap {
   font: 600 12.5px var(--font);
   padding: 6px 10px;
 }
+/* approach chips use the same type colours as the chart list tags: precision blue, RNAV violet, VOR/NDB green */
+.efb-ap.t-loc,
+.efb-ap.t-locbc,
+.efb-ap.t-lda {
+  border-color: #b9d4f5;
+  background: #eef5ff;
+  color: #0b4ea2;
+}
+.efb-ap.t-vor,
+.efb-ap.t-ndb {
+  border-color: #cdebd9;
+  background: #e9f7ef;
+  color: #13804b;
+}
 button.efb-ap:hover {
-  border-color: var(--accent);
+  border-color: currentColor;
 }
 button.efb-ap:focus-visible {
   outline: none;

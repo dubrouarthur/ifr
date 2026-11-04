@@ -751,7 +751,7 @@ function drawFpl(ctx: CanvasRenderingContext2D, sim: Sim, r: { x: number; y: num
   const dest = fp.approach?.airport ?? fp.wpts[fp.wpts.length - 1]?.ident ?? '';
   text(ctx, `${first} / ${dest}`, r.x + r.w / 2, r.y + TITLE_H + 14, C.cyan, fs(15), 'center', 700);
   // column header
-  const cols = { id: r.x + 22, hold: r.x + 128, dtk: r.x + 170, dis: r.x + 232, alt: r.x + 296 };
+  const cols = { id: r.x + 22, dtk: r.x + 170, dis: r.x + 232, alt: r.x + 296 };
   let y = r.y + TITLE_H + 38;
   const ch = fs(12);
   text(ctx, 'WPT', cols.id, y, C.gray, ch);
@@ -780,6 +780,8 @@ function drawFpl(ctx: CanvasRenderingContext2D, sim: Sim, r: { x: number; y: num
   if (rows.length > maxRows && activeRow >= 0) start = Math.max(0, Math.min(rows.length - maxRows, activeRow - 2));
   const ids = fs(16);
   const nums = fs(15);
+  // hold glyph column: just left of the widest DTK value, so it never touches it at any text scale
+  const holdX = cols.dtk - tw(ctx, '000°', nums, 600) - 12;
   for (let k = start; k < Math.min(rows.length, start + maxRows); k++) {
     const row = rows[k];
     const ry = y + (k - start) * rowH;
@@ -803,13 +805,13 @@ function drawFpl(ctx: CanvasRenderingContext2D, sim: Sim, r: { x: number; y: num
     // ident cell (clipped) + role suffix in grey
     ctx.save();
     ctx.beginPath();
-    ctx.rect(cols.id - 2, ry - rowH / 2, cols.hold - 10 - cols.id, rowH);
+    ctx.rect(cols.id - 2, ry - rowH / 2, holdX - 9 - cols.id, rowH);
     ctx.clip();
     text(ctx, w.ident, cols.id, ry, col, ids, 'left', 700);
     const suf = w.role ? ROLE_SUFFIX[w.role] : undefined;
     if (suf) text(ctx, suf, cols.id + tw(ctx, w.ident, ids, 700) + 4, ry + 1, '#8a9097', fs(12));
     ctx.restore();
-    if (w.hold) holdGlyph(ctx, cols.hold, ry, col);
+    if (w.hold) holdGlyph(ctx, holdX, ry, col);
     if (dtk !== null) text(ctx, `${pad3(dtk)}°`, cols.dtk, ry, col, nums, 'right');
     if (dis !== null) text(ctx, dis.toFixed(1), cols.dis, ry, col, nums, 'right');
     if (w.altMin) {

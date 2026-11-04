@@ -1,8 +1,7 @@
 // Point-mass + attitude flight model tuned to feel like a C172-class trainer.
-import { simRandom } from './rng';
 import { destination, DEG, norm360, type LatLon } from '../nav/geo';
 import { density, FT, G, KT, oatC, pressureAltitude, type Weather } from './environment';
-import { WindModel, components, type WindSample } from './wind';
+import { WindModel, components, markov, type WindSample } from './wind';
 
 export interface Controls {
   elevator: number; // -1 (nose down) .. 1 (nose up)
@@ -24,17 +23,30 @@ export const neutralControls = (): Controls => ({
   brake: 0,
 });
 
+/**
+ * Cessna 172S-like airframe at max gross weight (2550 lb).
+ * True aerodynamics (CLmax 1.48 clean / 1.73 flaps 30, i.e. 54 / 50 KCAS at 2550 lb); the airspeed indicator
+ * has the POH pitot-static position error (reads low at high AoA), so the stall reads 48 / 40 KIAS.
+ */
 export const AIRFRAME = {
-  massKg: 1043,
-  wingArea: 16.2,
-  cl0: 0.3,
-  cla: 5.0, // per rad
-  alphaStall: 15 * DEG,
-  cd0: 0.032,
-  k: 0.054,
-  powerW: 119000,
-  propEff: 0.78,
-  staticThrustN: 2700,
+  massKg: 1157, // 2550 lb
+  wingArea: 16.2, // m^2
+  span: 11.0, // m
+  cl0: 0.31, // CL at zero fuselage AoA (wing incidence + camber)
+  cla: 4.47, // lift slope per rad (AR 7.5)
+  alphaStall: 15 * DEG, // critical AoA, flaps up
+  /** flaps 30: lift increment at constant AoA and reduction of the critical AoA */
+  flapCl: 0.562,
+  flapAlphaStall: 4 * DEG,
+  cd0: 0.0355, // parasite drag incl. gear, struts, cooling
+  k: 0.0697, // induced drag factor 1/(pi e AR), AR 7.5, e 0.61 (incl. fuselage/strut interference)
+  flapCd: 0.0311, // parasite drag of the flaps at 30 deg (minimum-drag speed with flaps 30 ~66 KCAS)
+  betaCd: 0.9, // fuselage side drag per rad^2 of sideslip (forward slip)
+  // ---- Lycoming IO-360-L2A, 180 hp at 2700 RPM, fixed-pitch climb/cruise propeller
+  powerW: 134200,
+  propDiam: 1.905, // m (75 in)
+  /** engine + propeller polar moment of inertia (kg m^2) */
+  inertia: 2.4,
   vso: 40,
   vs1: 48,
   vfe: 85,
@@ -47,7 +59,61 @@ export const AIRFRAME = {
 };
 
 const RHO0 = 1.225;
+/** indicated torque at full manifold pressure (N m): 180 hp at 2700 RPM plus friction */
+const Q_IND_MAX = AIRFRAME.powerW / ((2700 / 60) * 2 * Math.PI) + 60;
+/** throttle-plate open area (as a fraction of the airflow of a 2700 RPM engine at ambient MAP) at the idle stop */
+const THROTTLE_IDLE_AREA = 0.0886;
+
+/** Engine friction + pumping torque (N m): FMEP grows with the square of the RPM. */
+export function engineFriction(rpm: number): number {
+  const n = rpm / 2700;
+  return 20 + 40 * n * n;
+}
+
+/**
+ * Engine brake torque (N m). Manifold pressure follows from the airflow the throttle plate passes versus the
+ * airflow the cylinders pump (∝ RPM): at the idle stop a windmilling engine sees almost no MAP and absorbs
+ * power. Indicated torque ∝ MAP above the pumping-loss offset; altitude by Gagg–Ferrar.
+ */
+export function engineTorque(rpm: number, throttle: number, sigma: number, running = true): number {
+  if (!running) return -engineFriction(rpm) - 25 * Math.min(1, rpm / 300); // dead engine: friction + compression
+  const n = Math.max(0.05, rpm / 2700);
+  const area = THROTTLE_IDLE_AREA + (1.15 - THROTTLE_IDLE_AREA) * throttle; // throttle-plate open area
+  const map = Math.min(1, area / n); // fraction of ambient pressure
+  // Gagg–Ferrar is a *brake* power law: scale the indicated torque so that the full-throttle brake torque follows it
+  const gagg = Math.max(0, sigma - (1 - sigma) / 7.55);
+  const indFactor = gagg + ((1 - gagg) * 60) / Q_IND_MAX;
+  const qInd = Q_IND_MAX * indFactor * Math.max(0, (map - 0.25) / 0.75);
+  return qInd - engineFriction(rpm);
+}
+
+/** Fixed-pitch propeller: thrust and power coefficients vs advance ratio J = V / (n D).
+ *  Near static the blades are stalled: CT and CP plateau. Beyond, CT falls linearly with J (zero thrust near
+ *  J 1.15: beyond it the windmilling propeller is a drag brake) and CP falls from J 0.45 (zero near J 1.1).
+ *  Calibrated to the POH: static 2360 RPM, Vy 74 / 730 fpm, 2400 RPM cruise 112 KTAS, 9:1 idle glide. */
+export function propCoefficients(J: number): { ct: number; cp: number } {
+  const lin = 0.1725 - 0.1537 * J;
+  const ct = -0.008 * Math.log(Math.exp(-lin / 0.008) + Math.exp(-0.1099 / 0.008)); // smooth min(lin, 0.1099)
+  const x = Math.max(0, J - 0.5);
+  return { ct, cp: 0.0639 - 0.2045 * x * x };
+}
+
 const QBAR_REF = 0.5 * RHO0 * (100 * KT) ** 2;
+
+/** C172S airspeed calibration (POH 5-1, normal static source) as IAS − CAS (kt) vs the wing CL: the indication
+ *  reads ~3 kt high in cruise and increasingly low at high AoA (−6 at 56 KCAS, −10 at the flaps-30 stall). */
+const ASI_ERR: [number, number][] = [[0.57, 3], [0.71, 2], [0.88, 0], [1.12, -2], [1.38, -6], [1.73, -10], [2.2, -12]];
+export function asiPositionError(cl: number): number {
+  if (cl <= ASI_ERR[0][0]) return ASI_ERR[0][1];
+  for (let i = 1; i < ASI_ERR.length; i++) {
+    const [c1, e1] = ASI_ERR[i];
+    if (cl <= c1) {
+      const [c0, e0] = ASI_ERR[i - 1];
+      return e0 + ((e1 - e0) * (cl - c0)) / (c1 - c0);
+    }
+  }
+  return ASI_ERR[ASI_ERR.length - 1][1];
+}
 
 export interface AircraftState extends LatLon {
   altFt: number; // true altitude MSL
@@ -118,12 +184,27 @@ export class Aircraft {
   private gvE = NaN;
   private gvN = NaN;
   private gFilt = 1;
+  /** normal load factor of the last substep (lift + thrust component over weight): what the g-meter feels */
+  private nz = 1;
+  /** throttle as seen by the engine (linkage + manifold filling lag) */
+  private thrEff = -1;
+  /** CL / CLmax of the last substep (stall-warning vane) */
+  private clRatio = 0;
+  private clLast = 0.5;
+  private clFilt = 0.5;
+  private brakeHp = 0;
+  /** propeller thrust (N), last substep */
+  thrust = 0;
   /** last wheel contact (for landing feedback and grading) */
   touchdown: { vsFpm: number; pitchDeg: number; bankDeg: number; ias: number; g: number; lat: number; lon: number; kind: 'smooth' | 'normal' | 'firm' | 'hard'; bounced: boolean; t: number } | null = null;
   /** true while the wing is past the critical angle of attack */
   stalled = false;
   /** stall buffet intensity 0..1 (for audio / shake) */
   buffet = 0;
+  private bufQ = 0;
+  private bufP = 0;
+  /** flow separated (stalled wing), with reattachment hysteresis */
+  private sep = false;
 
   constructor(
     init: Partial<AircraftState> & LatLon,
@@ -158,8 +239,10 @@ export class Aircraft {
     return { e: l.e, n: l.n, speedKt: l.kt, dirFrom: l.dir };
   }
 
-  private sampleWind(dt: number, w: Weather): WindSample {
-    const agl = Math.max(0, this.s.altFt - this.groundElev(this.s));
+  private sampleWind(dt: number, w: Weather, groundFt = this.groundElev(this.s)): WindSample {
+    // the wing (where the aircraft "feels" the air) sits ~6 ft above the wheels: on the runway it is not in
+    // the dead air at grass height of the logarithmic boundary-layer profile
+    const agl = Math.max(0, this.s.altFt - groundFt) + 6;
     const pAlt = this.s.altFt;
     const ws = this.windModel.sample(dt, w, pAlt, agl, this.s.tas, this.s.onGround);
     this.lastWind = ws;
@@ -171,7 +254,7 @@ export class Aircraft {
     const n = Math.max(1, Math.ceil(dtTotal / (1 / 120)));
     const dt = dtTotal / n;
     for (let i = 0; i < n; i++) this.substep(dt, c, w);
-    this.computeData(dtTotal, c, w);
+    this.computeData(dtTotal, w);
   }
 
   private substep(dt: number, c: Controls, w: Weather): void {
@@ -182,19 +265,29 @@ export class Aircraft {
     const rho = density(pAlt, w.oatSeaLevelC);
     const sigma = rho / RHO0;
     const prevWind = this.lastWind;
-    const wind = this.sampleWind(dt, w);
+    const wind = this.sampleWind(dt, w, ground);
     const m = A.massKg;
-    // a change of the air-mass velocity changes the airspeed (inertia): headwind gust => more IAS
+    const W = m * G;
+    // Inertia: the state (tas, gamma) is the velocity relative to the air mass. A change of the air-mass
+    // velocity leaves the inertial velocity unchanged, so it changes the air-relative one: a headwind gust
+    // raises the airspeed, an updraft steepens the air-relative path (raises the AoA) — the aircraft is then
+    // accelerated by the aerodynamic forces, never moved instantly with the air.
     if (prevWind && !s.onGround) {
       const dE = wind.e - prevWind.e;
       const dN = wind.n - prevWind.n;
-      s.tas = Math.max(1, s.tas - (dE * Math.sin(s.psi) + dN * Math.cos(s.psi)) * Math.cos(s.gamma));
+      const dU = wind.up - prevWind.up;
+      const dAlong = (dE * Math.sin(s.psi) + dN * Math.cos(s.psi)) * Math.cos(s.gamma) + dU * Math.sin(s.gamma);
+      s.tas = Math.max(1, s.tas - dAlong);
+      s.gamma -= ((dU * Math.cos(s.gamma) - (dE * Math.sin(s.psi) + dN * Math.cos(s.psi)) * Math.sin(s.gamma)) / Math.max(15, s.tas));
     }
 
     // Flaps travel ~ 3 s per 10 deg
     const flapTarget = Math.max(0, Math.min(3, Math.round(c.flaps))) / 3;
     s.flapPos += Math.sign(flapTarget - s.flapPos) * Math.min(Math.abs(flapTarget - s.flapPos), dt / 9);
     const f = s.flapPos;
+    // the first notch gives mostly lift (Fowler motion), drag grows with the deflection
+    const fLift = f * (2 - f);
+    const fDrag = f;
 
     // Airspeed: on the ground the state holds ground speed
     const headwind = wind.e * -Math.sin(s.psi) + wind.n * -Math.cos(s.psi);
@@ -202,75 +295,120 @@ export class Aircraft {
     const qbar = 0.5 * rho * V * V;
     const qf = qbar / QBAR_REF;
 
-    // vertical gusts change the angle of attack
-    const alpha = s.theta - s.gamma + (s.onGround ? 0 : wind.up / Math.max(15, V));
-    const alphaStall = A.alphaStall - 2 * DEG * f;
+    // ---- Wing. Angle of attack from the air-relative flight path (vertical gusts enter through gamma above)
+    const alpha = s.theta - s.gamma;
+    const alphaStall = A.alphaStall - A.flapAlphaStall * f;
     // ground effect (wingspan 11 m): more lift slope, much less induced drag close to the runway
     const aglM = Math.max(0, (s.altFt - ground) * FT) + 1.2;
-    const ge = (16 * aglM / 11) ** 2 / (1 + (16 * aglM / 11) ** 2); // 0 on the ground .. 1 high up
+    const ge = (16 * aglM / A.span) ** 2 / (1 + (16 * aglM / A.span) ** 2); // 0 on the ground .. 1 high up
     const claEff = A.cla * (1 + 0.09 * (1 - ge));
-    const clMax = A.cl0 + 0.55 * f + claEff * alphaStall;
-    let cl = A.cl0 + 0.55 * f + claEff * alpha;
+    const clF = A.cl0 + A.flapCl * fLift;
+    const clMax = clF + claEff * alphaStall;
+    const clAtt = clF + claEff * alpha; // attached flow
+    let cl = clAtt;
     const over = alpha - alphaStall;
-    if (over > 0) cl = Math.max(clMax * 0.72, clMax - over * 2.2); // the wing quits progressively, then plateaus
+    // Flow separation with hysteresis: the wing separates past the critical AoA (lift drops ~20 %, drag jumps)
+    // and the flow only reattaches ~3 deg below it — the stall "breaks" instead of hovering at CLmax.
+    if (s.onGround) this.sep = false;
+    else if (over > 0) this.sep = true;
+    else if (over < -3 * DEG) this.sep = false;
+    const sep = this.sep;
+    const overP = Math.max(0, over);
+    if (sep) cl = Math.min(cl, Math.max(clMax * 0.72, clMax * 0.82 - overP * 1.5));
     cl = Math.max(-1.2, cl);
-    const cd = A.cd0 + 0.045 * f + A.k * cl * cl * (0.45 + 0.55 * ge) + (over > 0 ? 0.12 + over * 0.9 : 0);
+    // stall-warning vane: driven by the AoA (stagnation point), i.e. by the attached-flow lift coefficient
+    this.clRatio = clAtt / clMax;
+    this.clLast = cl;
+    // sideslip: the fuselage side area meets the air (forward slip = drag brake)
+    const cd = A.cd0 + A.flapCd * fDrag + A.k * cl * cl * (0.45 + 0.55 * ge) + A.betaCd * s.beta * s.beta + (sep ? 0.08 + overP * 0.9 : 0);
     const L = qbar * A.wingArea * cl;
     const D = qbar * A.wingArea * cd;
-    this.stalled = over > 0 && !s.onGround;
+    this.stalled = sep && !s.onGround;
 
-    // Engine
+    // ---- Engine + fixed-pitch propeller. The RPM is a state: engine torque against propeller torque.
     const thr = Math.max(0, Math.min(1, c.throttle));
-    const power = A.powerW * (0.05 + 0.95 * thr) * Math.pow(sigma, 1.1);
-    const T = Math.min(A.staticThrustN * (0.05 + 0.95 * thr) * sigma, (A.propEff * power) / Math.max(V, 15)) - (thr < 0.05 ? 150 : 0);
-    const targetRpm = Math.min(2700, 600 + thr * 1750 + V * 6);
-    s.rpm += (targetRpm - s.rpm) * Math.min(1, dt * 2);
-    s.fuelGal = Math.max(0, s.fuelGal - ((1.5 + thr * 9) / 3600) * dt);
+    if (this.thrEff < 0) this.thrEff = thr;
+    this.thrEff += (thr - this.thrEff) * Math.min(1, dt / 0.25); // throttle linkage / manifold filling
+    const nRps = Math.max(1, s.rpm / 60);
+    const J = V / (nRps * A.propDiam);
+    const pc = propCoefficients(J);
+    const T = pc.ct * rho * nRps * nRps * A.propDiam ** 4;
+    const qProp = (pc.cp * rho * nRps * nRps * A.propDiam ** 5) / (2 * Math.PI);
+    // fuel exhausted: no combustion, the windmilling propeller drives a dead engine
+    const qEng = engineTorque(s.rpm, this.thrEff, sigma, s.fuelGal > 0);
+    s.rpm = Math.max(0, s.rpm + ((qEng - qProp) / A.inertia) * (60 / (2 * Math.PI)) * dt);
+    this.brakeHp = Math.max(0, (qEng * s.rpm * 2 * Math.PI) / 60 / 745.7);
+    this.thrust = T;
+    s.fuelGal = Math.max(0, s.fuelGal - (this.fuelFlow() / 3600) * dt);
+    // thrust coefficient: slipstream/P-factor effects are strongest at high power and low speed
+    const Tc = Math.max(0, Math.min(0.6, T / (Math.max(qbar, 150) * A.wingArea)));
 
     const tb = { roll: s.onGround ? 0 : wind.p, pitch: s.onGround ? 0 : wind.q };
 
     // ---- Pitch: elevator commands an equilibrium angle of attack (static stability), limited past the stall
     const u = Math.max(-1.3, Math.min(1.3, c.elevator + c.trim));
-    let alphaCmd = (4 - 2.2 * f) * DEG + 13 * DEG * u + (thr - 0.6) * 1.2 * DEG;
+    // flaps: nose-down trim change in AoA terms, but the lift increment wins: the trimmed speed falls (pitch-up)
+    // (elevator: 11.5 deg AoA per unit; power: thrust line + slipstream on the tail pitch the nose up)
+    let alphaCmd = 5.3 * DEG - 3 * DEG * fLift + 11.5 * DEG * u + (T / W - 0.1) * 8 * DEG;
     // the elevator runs out of authority a few degrees past the critical angle of attack
     alphaCmd = Math.min(alphaCmd, alphaStall + 4 * DEG);
-    // stall break: nose-down pitching moment once the wing has stalled
-    if (over > 0 && !s.onGround) alphaCmd -= over * 2.6 + 2 * DEG;
+    // stall break: once the wing has stalled the downwash at the tail collapses and the centre of pressure
+    // moves aft: a nose-down pitching moment the elevator cannot hold (full aft yoke: the nose bobs)
+    if (sep) alphaCmd -= overP * 3 + 5 * DEG;
     const wn = 3.2 * Math.sqrt(Math.max(0.02, qf));
     if (s.onGround) {
       // nose-wheel on the runway: the elevator must overcome the nose-wheel load, which only happens
       // with enough dynamic pressure (rotation near Vr; nose lowers by itself as the speed decays)
       const auth = Math.max(0, Math.min(1, (qf - 0.12) / 0.15));
-      // ~9 deg rotation attitude for 0.35 back pressure near Vr; hands-off the nose stays on the runway
-      const thetaTgt = Math.max(0, Math.min(12 * DEG, u * 26 * DEG * auth));
+      // ~11 deg rotation attitude for 0.3 back pressure near Vr; hands-off the nose stays on the runway
+      const thetaTgt = Math.max(0, Math.min(12.5 * DEG, u * 36 * DEG * auth));
       const rate = thetaTgt > s.theta ? 4 * DEG : 3.5 * DEG;
       const dth = Math.max(-rate * dt, Math.min(rate * dt, (thetaTgt - s.theta) * Math.min(1, dt * 3)));
       s.q = dth / Math.max(dt, 1e-4);
-    } else s.q += (wn * wn * (alphaCmd - alpha) - 2 * 0.75 * wn * s.q) * dt + tb.pitch * dt * 4.5;
-    // stall buffet in the last ~2 degrees before the critical angle
-    if (!s.onGround && alpha > alphaStall - 2.5 * DEG) {
-      const k = Math.min(1, (alpha - alphaStall + 2.5 * DEG) / (2.5 * DEG));
+    } else s.q += (wn * wn * (alphaCmd - alpha) - 2 * 0.75 * wn * (s.q - tb.pitch)) * dt; // pitch damping acts on the rate relative to the air (q - q_g)
+    // stall buffet in the last ~2.5 degrees before the critical angle: the separated wake shakes the tail
+    // (band-limited ~3 Hz process, step-size independent: a nod of the nose and a gentle wing rock,
+    // no wing drop without sideslip)
+    if (!s.onGround && (sep || alpha > alphaStall - 2.5 * DEG)) {
+      const k = sep ? 1 : Math.min(1, (alpha - alphaStall + 2.5 * DEG) / (2.5 * DEG));
       this.buffet = k;
-      s.q += (simRandom() - 0.5) * 0.9 * k * dt * 10;
-      s.p += (simRandom() - 0.5) * 0.7 * k * dt * 10;
+      this.bufQ = markov(this.bufQ, dt, 0.05);
+      this.bufP = markov(this.bufP, dt, 0.05);
+      s.q += 0.35 * k * this.bufQ * dt;
+      s.p += 0.15 * k * this.bufP * dt;
     } else this.buffet = 0;
     s.theta += s.q * dt;
 
-    // ---- Roll
-    // a stalled wing drops toward the slip (or the side of the last roll), ailerons lose authority
-    const drop = over > 0 && !s.onGround ? -Math.sign(s.beta || s.p || 0.01) * Math.min(1.6, over / DEG * 0.35) : 0;
-    const ailEff = over > 0 ? 0.45 : 1;
-    const pDot = 4.4 * c.aileron * qf * ailEff - 4.0 * Math.sqrt(Math.max(0.05, qf)) * s.p - 1.2 * s.beta * qf + tb.roll * 2.4 + drop;
+    // ---- Roll. Aileron moment ∝ q, roll damping ∝ q·(p b / 2V) ∝ rho V: the steady roll rate grows with TAS
+    // (~40 deg/s full aileron at 100 kt). A stalled wing drops toward the sideslip, ailerons lose authority.
+    const drop = sep ? -Math.max(-1, Math.min(1, s.beta / (4 * DEG))) * Math.min(1.0, 0.35 + (overP / DEG) * 0.25) : 0;
+    const ailEff = sep ? 0.45 : 1;
+    const vRatio = Math.max(0.15, V / (100 * KT));
+    // yaw rate in a turn: the outer wing is faster (rolling moment due to yaw rate) -> slight spiral divergence
+    const r = s.onGround ? 0 : (G * Math.tan(Math.max(-1.2, Math.min(1.2, s.phi)))) / Math.max(20, V);
+    // roll damping acts on the roll rate relative to the air mass: a Dryden roll gust p_g drags the wing along.
+    // Past the critical AoA the down-going wing stalls deeper and loses lift: the damping collapses (autorotation)
+    const lp = (3.0 / vRatio) * (sep ? 0.3 : 1);
+    const pDot = qf * (2.1 * c.aileron * ailEff - lp * (s.p - tb.roll) - 1.2 * s.beta + 0.8 * ((r * A.span) / (2 * Math.max(20, V)))) + drop;
     s.p += pDot * dt;
     s.phi += s.p * dt;
     if (s.phi > Math.PI) s.phi -= 2 * Math.PI;
     if (s.phi < -Math.PI) s.phi += 2 * Math.PI;
 
-    // ---- Sideslip (ball): rudder vs. adverse yaw from roll rate
-    const pFactor = s.onGround ? 0 : 0.035 * thr * Math.max(0, Math.min(1, (95 - V / KT) / 45));
-    const betaTarget = (-0.18 * c.rudder + 0.03 * s.p) * Math.min(1, qf * 1.5) + pFactor;
-    s.beta += (betaTarget - s.beta) * Math.min(1, dt * 3);
+    // ---- Sideslip (ball): rudder vs. adverse yaw from roll rate, P-factor / slipstream at high power.
+    // Steady sideslip per rudder deflection does not depend on the speed (both moments ∝ q); the rudder only
+    // fades at taxi speeds. The vertical fin is rigged for cruise: idle needs a touch of left rudder.
+    const rudAuth = Math.max(0, Math.min(1, qf * 4));
+    // P-factor (asymmetric blade loading) grows with AoA x thrust, slipstream swirl with thrust: ~1 deg of
+    // sideslip at Vy full power, ~0.25 deg on a power-on approach, none in cruise (fin offset), a little
+    // the other way at idle.
+    const pFactor = s.onGround ? 0 : 1.0 * (Tc * (alpha + 2 * DEG) - 0.12 * DEG);
+    // on the wheels the tyres hold the nose on the direction of travel: no sideslip state (the rudder
+    // steers through the nose wheel instead)
+    const betaTarget = s.onGround ? 0 : (-0.2 * c.rudder + 0.03 * s.p) * rudAuth + pFactor;
+    s.beta += (betaTarget - s.beta) * Math.min(1, dt * (s.onGround ? 10 : 3));
 
+    this.nz = s.onGround ? 1 : (L + T * Math.sin(alpha)) / W;
     if (!s.onGround) {
       const Ltot = L + T * Math.sin(alpha);
       s.tas += ((T * Math.cos(alpha) - D) / m - G * Math.sin(s.gamma)) * dt;
@@ -288,7 +426,7 @@ export class Aircraft {
       s.altFt += ((s.tas * Math.sin(s.gamma) + wind.up) * dt) / FT;
 
       if (s.altFt <= ground) {
-        const vs = (s.tas * Math.sin(s.gamma)) / FT * 60;
+        const vs = ((s.tas * Math.sin(s.gamma) + wind.up) / FT) * 60; // inertial sink rate
         const bank = Math.abs(s.phi) / DEG;
         const pitch = s.theta / DEG;
         const onRunway = this.onRunwayCheck ? this.onRunwayCheck(s) : true;
@@ -298,10 +436,13 @@ export class Aircraft {
         } else if (!onRunway && s.tas > 30) {
           s.crashed = 'Touched down off-airport';
         }
-        this.touchdown = { vsFpm: vs, pitchDeg: pitch, bankDeg: s.phi / DEG, ias: V / KT, g, lat: s.lat, lon: s.lon, kind: vs < -600 ? 'hard' : vs < -360 ? 'firm' : vs < -120 ? 'normal' : 'smooth', bounced: false, t: s.hobbs };
+        const prev = this.touchdown;
+        // the contact after a bounce belongs to the same landing: the first (firm) contact is the one graded
+        if (prev && prev.bounced && s.hobbs - prev.t < 8) prev.t = s.hobbs;
+        else this.touchdown = { vsFpm: vs, pitchDeg: pitch, bankDeg: s.phi / DEG, ias: V * Math.sqrt(sigma) / KT + asiPositionError(cl), g, lat: s.lat, lon: s.lon, kind: vs < -600 ? 'hard' : vs < -360 ? 'firm' : vs < -120 ? 'normal' : 'smooth', bounced: false, t: s.hobbs };
         // bounce: a firm/hard arrival with lift still available rebounds off the oleo/spring gear
-        if (!s.crashed && vs < -420 && L > m * G * 0.55) {
-          this.touchdown.bounced = true;
+        if (!s.crashed && vs < -420 && L > W * 0.55) {
+          this.touchdown!.bounced = true;
           s.altFt = ground + 0.3;
           s.gamma = Math.min(4 * DEG, (-s.gamma) * 0.35);
           s.theta += 2 * DEG;
@@ -310,27 +451,35 @@ export class Aircraft {
         s.altFt = ground;
         s.onGround = true;
         s.gamma = 0;
-        s.phi = 0;
         s.p = 0;
-        // convert to ground speed along heading
+        // the wheels roll where the nose points (heading = path − sideslip): a wing-low touchdown keeps its
+        // heading, the tyres absorb any sideways drift; the ground speed is the inertial velocity along the nose
+        // (the bank settles on the gear over the next fraction of a second)
+        s.psi -= s.beta;
+        s.beta = 0;
         const gs = ve * Math.sin(s.psi) + vnn * Math.cos(s.psi);
         s.tas = Math.max(0, gs);
       }
     } else {
       // Ground roll. s.tas = ground speed along heading
-      const weightOnWheels = Math.max(0, m * G - L);
-      const brake = c.brake * 0.45;
-      const fric = (0.025 + brake) * weightOnWheels * (s.tas > 0.1 ? 1 : 0);
-      s.tas = Math.max(0, s.tas + ((T - D - fric) / m) * dt);
+      const N = Math.max(0, W - L); // weight on the wheels
+      // rolling resistance (paved) + main-wheel brakes; static friction holds the aircraft at rest
+      const muRoll = 0.022;
+      const muBrake = 0.25 * Math.max(0, Math.min(1, c.brake));
+      const drive = T - D;
+      if (s.tas <= 0.02 && Math.abs(drive) <= (muRoll + muBrake) * N + 50) s.tas = 0;
+      else s.tas = Math.max(0, s.tas + ((drive - (muRoll + muBrake) * N) / m) * dt);
       s.gamma = 0;
-      s.phi *= 0.9;
+      s.phi *= Math.exp(-dt / 0.15);
       s.p = 0;
       // nosewheel steering
       const steer = c.rudder * 0.35 * Math.min(1, s.tas / 4) * (1 - Math.min(0.7, qf * 0.5));
       // weathervaning: the tail is pushed downwind, the nose swings into a crosswind
       const xw = components(wind.dir, wind.kt, s.psi / DEG).cross;
       const vane = xw * 0.004 * Math.min(1, s.tas / 8) * (1 - Math.min(0.8, qf));
-      s.psi += (steer + vane * (s.tas > 0.5 ? 1 : 0)) * dt;
+      // left-turning tendency at high power and low speed (slipstream on the fin, P-factor, torque)
+      const leftTurn = -0.005 * Math.min(1, T / 2300) * Math.max(0, 1 - V / (60 * KT)) * Math.min(1, s.tas / 2);
+      s.psi += (steer + vane * (s.tas > 0.5 ? 1 : 0) + leftTurn) * dt;
       if (s.theta < 0) {
         s.theta = 0;
         s.q = Math.max(0, s.q);
@@ -341,15 +490,27 @@ export class Aircraft {
       }
       this.move(s.tas * Math.sin(s.psi), s.tas * Math.cos(s.psi), dt);
       s.altFt = ground;
-      if (L > m * G * 1.02 && V > 20) {
+      if (L > W * 1.02 && V > 20) {
         s.onGround = false;
-        // switch state to true airspeed
-        s.tas = V;
+        // switch the state to the air-relative velocity (inertial velocity − wind): in a crosswind the path
+        // through the air is angled into the wind while the nose still points down the runway — a sideslip the
+        // fin then weathervanes into a crab, instead of the aircraft being kicked sideways by the wind
+        const ae = s.tas * Math.sin(s.psi) - wind.e;
+        const an = s.tas * Math.cos(s.psi) - wind.n;
+        const nose = s.psi;
+        s.tas = Math.max(1, Math.hypot(ae, an));
+        s.psi = Math.atan2(ae, an);
+        s.beta = Math.atan2(Math.sin(s.psi - nose), Math.cos(s.psi - nose));
         s.gamma = 0.5 * DEG;
       }
     }
     s.psi = ((s.psi % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
     s.hobbs += dt;
+  }
+
+  /** fuel flow (gph) from brake power: BSFC ~0.45 lb/hp/h, avgas 6 lb/gal */
+  private fuelFlow(): number {
+    return Math.max(1.2, (this.brakeHp * 0.45) / 6);
   }
 
   onRunwayCheck?: (p: LatLon) => boolean;
@@ -380,7 +541,7 @@ export class Aircraft {
     s.lon = p.lon;
   }
 
-  private computeData(dt: number, c: Controls, w: Weather): void {
+  private computeData(dt: number, w: Weather): void {
     const s = this.s;
     const wind = this.wind(w);
     const pAlt = pressureAltitude(s.altFt, w.qnh);
@@ -398,7 +559,9 @@ export class Aircraft {
       ve = vh * Math.sin(s.psi) + wind.e;
       vn = vh * Math.cos(s.psi) + wind.n;
     }
-    const iasRaw = tas * Math.sqrt(rho / RHO0);
+    // calibrated airspeed + the pitot-static position error of the C172 ASI (driven by the wing's CL, i.e. AoA)
+    this.clFilt += (this.clLast - this.clFilt) * Math.min(1, dt / 0.5);
+    const iasRaw = Math.max(0, tas * Math.sqrt(rho / RHO0) + (tas > 10 * KT ? asiPositionError(this.clFilt) * KT : 0));
     // pitot-static / air-data computer lag: the indication smooths turbulence like a real ASI (tau ~0.4 s)
     if (this.iasFilt < 0) this.iasFilt = iasRaw;
     this.iasFilt += (iasRaw - this.iasFilt) * Math.min(1, dt / 0.4);
@@ -416,10 +579,9 @@ export class Aircraft {
     const turnRate = dt > 0 ? dpsi / dt / DEG : 0;
     this.lastPsi = s.psi;
     this.lastAlt = s.altFt;
-    const gl = s.onGround ? 1 : Math.cos(s.gamma) / Math.max(0.2, Math.cos(s.phi));
-    this.gFilt += (gl - this.gFilt) * Math.min(1, dt * 3);
+    // accelerometer: the true normal load factor (a pull-up or a push-over shows, not only the bank)
+    this.gFilt += (this.nz - this.gFilt) * Math.min(1, dt * 3);
     const alpha = s.theta - s.gamma;
-    const stallMargin = AIRFRAME.alphaStall - 2 * DEG * s.flapPos - alpha;
     this.data = {
       iasKt: ias / KT,
       tasKt: tas / KT,
@@ -440,7 +602,9 @@ export class Aircraft {
       slip: Math.max(-1, Math.min(1, s.beta / (6 * DEG))),
       aoaDeg: alpha / DEG,
       gLoad: this.gFilt,
-      stallWarn: !s.onGround && stallMargin < 3 * DEG,
+      // stall-warning reed: the stagnation point reaches the leading-edge vane at ~85% of CLmax,
+      // i.e. 5-8 KIAS above the 1 g stall speed (and earlier when pulling g)
+      stallWarn: !s.onGround && this.clRatio > 0.85,
       oatC: oatC(s.altFt, w.oatSeaLevelC),
       windDir: wind.dirFrom,
       windKt: wind.speedKt,
@@ -449,7 +613,7 @@ export class Aircraft {
       crosswindKt: components(wind.dirFrom, wind.speedKt, norm360(s.psi / DEG)).cross,
       driftDeg: Math.hypot(ve, vn) > 5 ? ((((Math.atan2(ve, vn) / DEG - s.psi / DEG) % 360) + 540) % 360) - 180 : 0,
       updraftFpm: ((this.lastWind?.up ?? 0) / FT) * 60,
-      fuelFlowGph: 1.5 + Math.max(0, Math.min(1, c.throttle)) * 9,
+      fuelFlowGph: this.fuelFlow(),
       rpm: s.rpm,
       flapsDeg: s.flapPos * 30,
     };

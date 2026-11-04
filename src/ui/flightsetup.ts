@@ -67,7 +67,7 @@ import {
   FLAG_ILS,
   type IndexRow,
 } from "../nav/world";
-import { bearingDeg } from "../nav/geo";
+import { bearingDeg, distanceNm } from "../nav/geo";
 
 const STEPS = [
   "Airports",
@@ -735,6 +735,10 @@ export class FlightSetup extends Modal {
         outcome: st.arrival.outcome,
       };
       st.final.approachId = ap.id;
+      // a new default approach: cruise at least at its IAF minimum, so the plan starts valid
+      const iafMin = ap.transitions[0]?.legs[0]?.altMin;
+      if (st.type === "route" && iafMin && st.cruise < iafMin)
+        st.cruise = Math.min(12000, Math.ceil(iafMin / 500) * 500);
       if (st.route.length === 1 && st.route[0] === prevIaf) this.suggestRoute();
       if (prevMahp && st.hold.fix === prevMahp)
         st.hold.fix = ap.missed[ap.missed.length - 1]?.fix.ident ?? st.hold.fix;
@@ -1019,7 +1023,9 @@ export class FlightSetup extends Modal {
     this.main.append(
       this.h2(
         "Where do you fly?",
-        "Pick the departure, then the destination. Any real airport — official FAA procedures in the US, generated RNAV (GPS) approaches everywhere else.",
+        st.world === "real"
+          ? "Pick the departure, then the destination. Any real airport — official FAA procedures in the US, generated RNAV (GPS) approaches everywhere else."
+          : "Fly anywhere in the real world, or in the compact training region used by the syllabus.",
       ),
     );
     this.main.append(
@@ -1046,7 +1052,39 @@ export class FlightSetup extends Modal {
         "two",
       ),
     );
-    if (st.world !== "real") return;
+    if (st.world !== "real") {
+      if (currentRegion()) return; // still the real world: the training region loads first
+      this.main.append(
+        h(
+          "div",
+          { class: "fs-train-ap" },
+          h("div", { class: "section-t" }, "Training airports"),
+          h(
+            "div",
+            { class: "fs-train-list" },
+            ...AIRPORTS.map((a) =>
+              h(
+                "span",
+                {},
+                h("b", {}, a.icao),
+                h(
+                  "em",
+                  {},
+                  a.name.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase()),
+                ),
+                h("small", {}, `RWY ${a.runways.map((r) => r.id).join(" · ")}`),
+              ),
+            ),
+          ),
+          h(
+            "p",
+            { class: "muted" },
+            "The departure runway is chosen in Departure, the destination approach in the next steps.",
+          ),
+        ),
+      );
+      return;
+    }
     for (const k of ["dep", "arr"] as const)
       if (st[k] && !this.rows[st[k]])
         void airportRow(st[k]).then((r) => {
@@ -1168,7 +1206,7 @@ export class FlightSetup extends Modal {
           h(
             "div",
             {},
-            h("small", {}, "Distance"),
+            h("small", {}, "Direct distance"),
             h("b", {}, st.dep === st.arr ? "Local" : `${Math.round(d)} NM`),
           ),
           h(
@@ -1180,7 +1218,7 @@ export class FlightSetup extends Modal {
           h(
             "div",
             {},
-            h("small", {}, "Approx. time"),
+            h("small", {}, "Time, direct"),
             h(
               "b",
               {},
@@ -1355,11 +1393,33 @@ export class FlightSetup extends Modal {
             ),
           ),
         );
+      else if (!st.dep || !st.arr)
+        // nothing is loading yet: an empty state that leads back to the airports, no spinner
+        this.main.append(
+          h(
+            "div",
+            { class: "fs-empty" },
+            svgIcon(I.pin, 20),
+            h(
+              "div",
+              {},
+              h("b", {}, "Choose the airports first"),
+              h(
+                "p",
+                {},
+                "This step uses the runways and procedures of your departure and destination.",
+              ),
+            ),
+            h(
+              "button",
+              { class: "btn", onclick: () => this.go(S_AIRPORTS) },
+              "Choose airports",
+            ),
+          ),
+        );
       else
         this.main.append(
-          this.progressRow(
-            st.dep && st.arr ? this.loadLabel() : "Choose the airports first.",
-          ),
+          this.progressRow(this.loadLabel()),
           h(
             "p",
             { class: "muted fs-wait" },
@@ -1762,7 +1822,18 @@ export class FlightSetup extends Modal {
   private renderStar() {
     const st = this.st;
     if (!TERMINAL.length) return;
-    const stars = starsFor(st.arr);
+    // the arrivals that start on the side the flight comes from are listed first
+    const from = AIRPORTS.find((a) => a.icao === st.dep);
+    const entry = (p: TerminalProc) =>
+      from
+        ? Math.min(
+            ...[p.common[0]?.fix, ...p.enr.map((e) => e.legs[0]?.fix)]
+              .filter((f): f is NonNullable<typeof f> => !!f)
+              .map((f) => distanceNm(from, f)),
+            9999,
+          )
+        : 0;
+    const stars = [...starsFor(st.arr)].sort((a, b) => entry(a) - entry(b));
     if (st.star && !stars.some((p) => p.id === st.star!.id)) st.star = null;
     this.main.append(h("div", { class: "section-t" }, "Arrival (STAR)"));
     if (!stars.length) {
@@ -2511,7 +2582,7 @@ export class FlightSetup extends Modal {
           },
         ),
         slider(
-          "Altimeter (QNH)",
+          "Altimeter",
           () => w.qnh ?? 29.92,
           (v) => (w.qnh = v),
           {

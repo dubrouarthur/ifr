@@ -307,4 +307,31 @@ describe("exterior cameras", () => {
     expect(s.pos.x).toBeLessThan(-8); // behind = west
     expect(s.pos.y).toBeGreaterThan(2);
   });
+
+  it("chase drops toward the flight path in a climb so the nose-up attitude shows", () => {
+    const settle = (pitch: number) => {
+      const rig = new CameraRig();
+      rig.setMode("chase");
+      const f: AircraftFrame = { ...frames[0][1], pos: new THREE.Vector3(0, 500, 0), pitch, onGround: false };
+      let s = rig.update(0, f, env);
+      for (let i = 0; i < 300; i++) s = rig.update(1 / 60, f, env);
+      return s.pos.y - rig.centre(f).y;
+    };
+    const level = settle(0),
+      climb = settle(10 * (Math.PI / 180));
+    expect(level).toBeGreaterThan(1.5); // a little above in level flight
+    expect(climb).toBeLessThan(level - 0.5);
+    expect(climb).toBeGreaterThan(0); // still above the aircraft, never looking up at its belly
+  });
+
+  it("tower view frames the aircraft and zooms out to a wide view of the field", () => {
+    const rig = new CameraRig();
+    rig.setMode("tower");
+    const f = frames[0][1];
+    const tight = rig.update(0, f, env).fov!;
+    expect(tight).toBeGreaterThan(1);
+    expect(tight).toBeLessThan(8);
+    for (let i = 0; i < 40; i++) rig.zoomBy(0.8);
+    expect(rig.update(0, f, env).fov!).toBeGreaterThan(45);
+  });
 });

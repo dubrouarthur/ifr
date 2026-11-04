@@ -2,7 +2,7 @@
 // Layout: library (search + list) | the circuit: start + ordered leg cards (drag to reorder, inline editing,
 // validation per leg) and a compact settings tab | a large live map of the circuit with the selected leg
 // highlighted, and the vertical profile below it.
-import { h, clear } from "./dom";
+import { h, clear, store } from "./dom";
 import { Modal, WX_PRESETS } from "./modals";
 import { svgIcon, I } from "./icons";
 import {
@@ -35,7 +35,8 @@ import { currentRegion } from "../nav/world";
 import { FAILURE_LABELS, type Failures } from "../sim/sim";
 import type { Approach } from "../nav/types";
 import { RouteMap, RouteProfile, planProfile } from "./routeMap";
-import { APPROACH_RANK } from "./atis";
+import { APPROACH_RANK, runwayInUse } from "./atis";
+import type { Weather } from "../sim/environment";
 
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
 const pad3 = (n: number) =>
@@ -116,12 +117,33 @@ export class CircuitBuilder extends Modal {
 
   edit(c?: Circuit) {
     if (c) this.c = clone(c);
+    // reopened in another region (e.g. a training preset while a real-world region is loaded):
+    // start from a fresh circuit at an airport of the loaded region instead of a page of errors
+    else if (!this.fitsRegion(this.c)) this.c = this.freshCircuit();
     this.sourceId = null;
     if (this.c.preset) this.copyFrom(this.c);
     else this.dirty = !circuitStore.list().some((x) => x.id === this.c.id);
     this.selLeg = null;
     this.open();
     this.render();
+  }
+
+  /** every fix, airport and approach of the circuit exists in the loaded region */
+  private fitsRegion(c: Circuit) {
+    const st = c.start;
+    if (st.type === "runway" ? !AIRPORTS.some((a) => a.icao === st.airport) : !findFix(st.fix))
+      return false;
+    return c.legs.every((l) => {
+      if (l.type === "fix" || l.type === "hold") return !!findFix(l.ident);
+      if (l.type === "approach")
+        try {
+          getApproach(l.approachId);
+          return true;
+        } catch {
+          return false;
+        }
+      return true;
+    });
   }
 
   /** start editing a copy of a preset: unsaved (the button reads Save) and the preset stays highlighted */
@@ -362,11 +384,17 @@ export class CircuitBuilder extends Modal {
   /** a new circuit in the region that is loaded (training region or real world) */
   private freshCircuit(): Circuit {
     const c = newCircuit();
+    // the departure planned in "Plan a flight" first (real world), then any airport with approaches
+    const planned = store.get<{ dep?: string } | null>("ifr.setup.v1", null)?.dep;
     const a =
+      AIRPORTS.find((x) => x.icao === planned && APPROACHES.some((p) => p.airport === x.icao)) ??
       AIRPORTS.find((x) => APPROACHES.some((p) => p.airport === x.icao)) ??
       AIRPORTS[0];
     if (a && c.start.type === "runway" && !AIRPORTS.some((x) => c.start.type === "runway" && x.icao === c.start.airport)) {
-      const rw = [...a.runways].sort((p, q) => q.lengthFt - p.lengthFt)[0];
+      // the runway in use for the circuit's wind (the longest one in calm wind), like the ATIS
+      const rw = a.runways.length
+        ? runwayInUse(a.icao, { windDir: 0, windKt: 0, ...c.weather } as Weather)
+        : undefined;
       c.start = {
         type: "runway",
         airport: a.icao,
@@ -914,7 +942,15 @@ export class CircuitBuilder extends Modal {
         ? h(
             "div",
             { class: "cbx-term-seq" },
-            terminalSummary(p, rw, tp.tr || null),
+            h("small", {}, "Fixes flown"),
+            h(
+              "span",
+              {},
+              terminalSummary(p, rw, tp.tr || null)
+                .replace(/^[^:]*:\s*/, "")
+                .split(" ")
+                .join(" → "),
+            ),
           )
         : null,
       h(
@@ -1760,7 +1796,7 @@ export class CircuitBuilder extends Modal {
         h("div", { class: "cbx-set-t" }, "Options"),
         h(
           "div",
-          { class: "cb-row" },
+          { class: "cb-row cbx-opts" },
           this.field(
             "Autopilot",
             this.sel(

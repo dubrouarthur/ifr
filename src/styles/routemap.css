@@ -95,13 +95,18 @@
   font-size: 9.5px;
 }
 .rm-apt {
-  font: 700 10.5px var(--font);
-  fill: #3b4652;
+  font: 600 9.5px var(--font);
+  fill: #66727f;
   letter-spacing: 0.4px;
+  paint-order: stroke;
+  stroke: rgb(255 255 255 / 0.85);
+  stroke-width: 3px;
+  stroke-linejoin: round;
 }
 .rm-apt.own {
   fill: #1d2833;
   font-size: 11.5px;
+  font-weight: 700;
 }
 .rm-leg {
   font: 600 10px var(--font);
@@ -313,11 +318,7 @@
 .fs-side .rm {
   margin-top: 4px;
 }
-@media (max-width: 1500px) {
-  .rm-chip:last-child {
-    display: none;
-  }
-}
+/* the legend lists only what the map draws (RouteMap.syncLegend), so every chip stays visible */
 
 /* Vertical profile (RouteProfile) */
 .rp {
@@ -354,12 +355,26 @@
 .rp-mins-t {
   font: 700 9.5px var(--font);
   fill: #b42318;
-  text-anchor: end;
+  text-anchor: start;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3px;
+  stroke-linejoin: round;
 }
 .rp-gp {
   font: 700 9.5px var(--font);
   fill: #8f1f7a;
-  text-anchor: middle;
+  text-anchor: start;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.rp-alt {
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3px;
+  stroke-linejoin: round;
 }
 .rp-tick {
   stroke: #98a2b3;
@@ -404,3 +419,4 @@
   fill: var(--muted);
   text-anchor: middle;
 }
+.rm-chip[hidden] { display: none; }

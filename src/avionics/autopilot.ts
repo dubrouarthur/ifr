@@ -4,6 +4,9 @@ import type { Controls, FlightData } from '../sim/aircraft';
 import type { NavOutput } from '../nav/radios';
 import type { GpsOutput } from '../nav/flightplan';
 
+/** flight-path angle (deg) equivalent to an airspeed rate of 1 kt/s: (0.5144 / 9.81) rad */
+const DEG_PER_KTS = 0.514444 / 9.80665 / DEG;
+
 export type LatMode = 'ROL' | 'HDG' | 'GPS' | 'VOR' | 'LOC' | 'BC';
 export type VertMode = 'PIT' | 'ALT' | 'VS' | 'FLC' | 'GS' | 'GP';
 export type CdiSource = 'GPS' | 'NAV1' | 'NAV2';
@@ -35,8 +38,21 @@ export class Autopilot {
   pitchCmd = 0;
   /** last annunciation e.g. "AP OFF" flash */
   annunciation: { text: string; until: number } | null = null;
+  /** speed envelope (KIAS): MINSPD clean / flaps >= 15 deg, MAXSPD (C172: 1.2 VS1, 1.2 VS0, ~VNE) */
+  minSpd = 58;
+  minSpdFlaps = 50;
+  maxSpd = 160;
+  /** MINSPD / MAXSPD protection active (annunciated in yellow on the PFD) */
+  underspeed = false;
+  overspeed = false;
   private pitchInt = 0;
   private time = 0;
+  private lastIas: number | null = null;
+  private iasRate = 0;
+  private gammaPot = 0;
+  private gammaPotInit = false;
+  private vsCmd: number | null = null;
+  private holdLoop = false;
 
   get engaged() {
     return this.ap || this.fd;
@@ -55,6 +71,10 @@ export class Autopilot {
   }
 
   private setDefaultModes(d: FlightData) {
+    // bumpless engagement: the commands start from the current attitude
+    this.pitchCmd = d.pitchDeg;
+    this.bankCmd = d.rollDeg;
+    this.vsCmd = null;
     this.lat = 'ROL';
     this.rollRef = Math.abs(d.rollDeg) < 6 ? 0 : Math.max(-22, Math.min(22, d.rollDeg));
     this.vert = 'PIT';
@@ -200,13 +220,18 @@ export class Autopilot {
     let bank = 0;
     const track = d.trackTrue; // magVar = 0 in this region
     const trackErr = (desired: number) => wrap180(desired - track);
+    // bank limits: HDG turns at standard rate (3 deg/s) up to 25 deg (GFC 700 / KAP 140); NAV modes may use 5 deg
+    // more to hold a curved path with a tailwind, never more than 25 deg
+    const tasMs = Math.max(40, d.tasKt) * 0.514444;
+    const stdBank = Math.atan((tasMs * 3 * DEG) / 9.80665) / DEG;
+    const hdgLim = Math.min(25, stdBank);
+    const navLim = Math.min(25, stdBank + 5);
     switch (this.lat) {
       case 'ROL':
         bank = this.rollRef;
         break;
       case 'HDG':
-        bank = wrap180(this.hdgBug - d.hdgTrue) * 1.1;
-        bank = clamp(bank, -22, 22);
+        bank = clamp(wrap180(this.hdgBug - d.hdgTrue) * 1.1, -hdgLim, hdgLim);
         break;
       case 'GPS': {
         const g = n.gps;
@@ -214,10 +239,17 @@ export class Autopilot {
           bank = 0;
           break;
         }
+        // roll steering: feed-forward bank for the curved parts of the path (fly-by turns, DME arcs, holds) so
+        // the aircraft flies the same arc the map draws, plus a track-error correction with an intercept angle
+        let ff = 0;
+        if (g.arcRadiusNm && g.arcDir) {
+          const v = Math.max(30, d.gsKt) * 0.514444;
+          ff = (Math.atan((v * v) / (9.80665 * g.arcRadiusNm * 1852)) / DEG) * (g.arcDir === 'R' ? 1 : -1);
+        }
         const intercept = clamp(-g.xtkNm * (g.holding ? 70 : 45), -45, 45);
         const err = trackErr(g.dtk + intercept);
-        if (g.turnDir && Math.abs(err) > 100) bank = g.turnDir === 'R' ? 22 : -22;
-        else bank = clamp(err * 1.3, -22, 22);
+        if (g.turnDir && Math.abs(err) > 100) bank = g.turnDir === 'R' ? navLim : -navLim;
+        else bank = clamp(err * 1.3 + ff, -navLim, navLim);
         break;
       }
       case 'VOR':
@@ -232,13 +264,13 @@ export class Autopilot {
         const fsDeg = loc ? 2.5 : 10;
         const distNm = Math.max(0.3, v.distNm);
         const offNm = distNm * Math.tan(v.dev * fsDeg * DEG); // + => course is to the right (pointer frame)
-        const gain = loc ? 60 : 35;
+        const gain = 60; // deg of intercept per NM off course (45° cap for VOR, 30° for LOC)
         const lim = loc ? 30 : 45;
         if (this.lat === 'BC') {
           // flying opposite to the front course: left/right are reversed
-          bank = clamp(trackErr(v.course + 180 + clamp(-offNm * gain, -lim, lim)) * 1.3, -22, 22);
+          bank = clamp(trackErr(v.course + 180 + clamp(-offNm * gain, -lim, lim)) * 1.3, -navLim, navLim);
         } else {
-          bank = clamp(trackErr(v.course + clamp(offNm * gain, -lim, lim)) * 1.3, -22, 22);
+          bank = clamp(trackErr(v.course + clamp(offNm * gain, -lim, lim)) * 1.3, -navLim, navLim);
         }
         break;
       }
@@ -272,6 +304,23 @@ export class Autopilot {
     const tasFpm = Math.max(40, d.tasKt) * 101.27;
     const gsFpm = Math.max(40, d.gsKt) * 101.27;
     const fpaFor = (vs: number) => Math.asin(clamp(vs / tasFpm, -0.5, 0.5)) / DEG;
+    // energy state: the flight-path angle this thrust would sustain at a constant speed ("potential" path,
+    // gamma + dV/dt / g). Pitch-for-speed laws (FLC, MINSPD/MAXSPD) command a path relative to it, which
+    // removes the phugoid coupling of a plain speed-error loop.
+    if (dt > 0) {
+      const rawRate = this.lastIas === null ? 0 : (d.iasKt - this.lastIas) / dt;
+      this.iasRate += (clamp(rawRate, -8, 8) - this.iasRate) * Math.min(1, dt / 0.8);
+    }
+    this.lastIas = d.iasKt;
+    const gammaDeg = fpaFor(d.vsFpm);
+    const gPot = gammaDeg + this.iasRate * DEG_PER_KTS;
+    this.gammaPot = this.gammaPotInit ? this.gammaPot + (gPot - this.gammaPot) * Math.min(1, dt / 3) : gPot;
+    this.gammaPotInit = true;
+    /** vertical speed that brings the indicated airspeed to `kt` (first order, tau 12 s, |dV/dt| <= 0.7 kt/s) */
+    const vsForSpeed = (kt: number) => {
+      const aDes = clamp((kt - d.iasKt) / 12, -0.7, 0.7);
+      return tasFpm * Math.sin((this.gammaPot - aDes * DEG_PER_KTS) * DEG);
+    };
     let pitch = d.pitchDeg;
     let vsTarget: number | null = null;
     switch (this.vert) {
@@ -285,12 +334,12 @@ export class Autopilot {
         vsTarget = this.vsSel;
         break;
       case 'FLC': {
-        // pitch for airspeed; never climb/descend away from the selected altitude
-        const spdErr = d.iasKt - this.iasSel;
-        vsTarget = d.vsFpm + clamp(spdErr * 40, -400, 400);
-        if (altErr > 0) vsTarget = Math.max(0, vsTarget);
-        else vsTarget = Math.min(0, vsTarget);
-        vsTarget = clamp(vsTarget, -1500, 1200);
+        // pitch for airspeed, towards the selected altitude only (G1000: FLC never climbs or descends away
+        // from the selected altitude, it trades speed instead)
+        let vs = vsForSpeed(this.iasSel);
+        if (altErr > 0) vs = Math.max(0, vs);
+        else vs = Math.min(0, vs);
+        vsTarget = clamp(vs, -1500, 1500);
         break;
       }
       case 'GS':
@@ -307,16 +356,70 @@ export class Autopilot {
         break;
       }
     }
+    // ------------- Speed envelope protection (GFC 700 ESP-style MINSPD / MAXSPD): the AP never flies the
+    // aircraft into a stall or past VNE in ALT / VS / PIT / FLC; there is no autothrottle, so it trades altitude
+    // and annunciates. Coupled to a glidepath it only annunciates (it will not leave the path).
+    const coupledPath = this.vert === 'GS' || this.vert === 'GP';
+    const vMin = d.flapsDeg >= 15 ? this.minSpdFlaps : this.minSpd;
+    if (!coupledPath && this.ap) {
+      const modeVs = vsTarget ?? d.vsFpm;
+      const vsMin = vsForSpeed(vMin + 3);
+      const vsMax = vsForSpeed(this.maxSpd - 3);
+      // engage below VMIN / above VMAX; release only once the selected mode no longer asks for more than the
+      // protection allows (a gust above VMIN must not hand a slow aircraft back to a mode that would stall it)
+      // (with a 3 s lead on the deceleration, so the nose comes down progressively instead of at the last moment)
+      if (d.iasKt + Math.min(0, this.iasRate) * 3 < vMin) this.underspeed = true;
+      else if (this.underspeed && d.iasKt > vMin + 3 && modeVs <= vsMin) this.underspeed = false;
+      if (d.iasKt > this.maxSpd) this.overspeed = true;
+      else if (this.overspeed && d.iasKt < this.maxSpd - 3 && modeVs >= vsMax) this.overspeed = false;
+      if (this.underspeed) vsTarget = Math.min(modeVs, vsMin);
+      else if (this.overspeed) vsTarget = Math.max(modeVs, vsMax);
+    } else {
+      this.underspeed = this.ap && d.iasKt < vMin;
+      this.overspeed = this.ap && d.iasKt > this.maxSpd;
+    }
     if (vsTarget !== null) {
-      this.pitchInt += (vsTarget - d.vsFpm) * 0.0012 * dt;
-      this.pitchInt = clamp(this.pitchInt, -5, 5);
-      pitch = fpaFor(vsTarget) + d.aoaDeg + this.pitchInt + (vsTarget - d.vsFpm) * 0.002;
+      // Two inner loops, both "pitch = path angle + AoA + integral + proportional":
+      //  - ALT / GS / GP (hold a reference): the VS-referenced loop flown by the landing campaign;
+      //  - VS / FLC / speed protection (change altitude): the commanded VS is slewed (600 fpm/s) so a new target
+      //    or mode never steps the pitch, and the loop works on the flight-path-angle error, so it has the same
+      //    authority at 60 KIAS with flaps as at 120 KIAS.
+      this.holdLoop = this.vert === 'ALT' || this.vert === 'GS' || this.vert === 'GP';
+      if (this.vsCmd === null) this.vsCmd = clamp(d.vsFpm, -2000, 2000); // a reposition can make the raw VS read garbage
+      if (this.holdLoop) this.vsCmd = vsTarget;
+      else {
+        const maxStep = 600 * dt;
+        this.vsCmd = clamp(this.vsCmd + clamp(vsTarget - this.vsCmd, -maxStep, maxStep), -2500, 2500);
+      }
+      const vsC = this.vsCmd;
+      const gC = fpaFor(vsC);
+      if (this.holdLoop) {
+        this.pitchInt = clamp(this.pitchInt + (vsC - d.vsFpm) * 0.0012 * dt, -5, 5);
+        pitch = gC + d.aoaDeg + this.pitchInt + (vsC - d.vsFpm) * 0.002;
+      } else {
+        const gErr = gC - gammaDeg;
+        this.pitchInt = clamp(this.pitchInt + gErr * 0.3 * dt, -5, 5);
+        pitch = gC + d.aoaDeg + this.pitchInt + gErr * 1.5;
+      }
+    } else {
+      this.vsCmd = null;
+      this.holdLoop = false;
     }
     pitch = clamp(pitch, -10, 15);
-    this.pitchCmd += (pitch - this.pitchCmd) * Math.min(1, dt * 2);
+    // pitch command smoothing; climbs and descents are also rate limited to 3 deg/s (GA servo authority)
+    const rl = this.holdLoop ? Infinity : 3 * dt;
+    this.pitchCmd += clamp((pitch - this.pitchCmd) * Math.min(1, dt * 2), -rl, rl);
 
-    // ------------- Servos
-    if (this.ap) {
+    // ------------- Upset / envelope disconnect: beyond 45° of bank or +25 / −20° of pitch the GFC 700 gives up
+    // (AP disengages, flashing AP) instead of fighting an unusual attitude
+    if (this.ap && (Math.abs(d.rollDeg) > 50 || d.pitchDeg > 25 || d.pitchDeg < -20)) this.disconnect();
+    // ------------- Servos (not on the ground: no control movement on the take-off or landing roll)
+    const onGround = d.aglFt < 3 && d.vsFpm === 0;
+    if (onGround) {
+      this.pitchInt = 0;
+      this.vsCmd = null;
+    }
+    if (this.ap && !onGround) {
       const pe = this.pitchCmd - d.pitchDeg;
       c.elevator = clamp(pe * 0.07 - pitchRateDps * 0.025, -0.35, 0.35);
       c.trim = clamp(c.trim + pe * 0.012 * dt, -1, 1); // autotrim

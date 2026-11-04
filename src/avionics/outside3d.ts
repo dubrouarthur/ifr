@@ -214,6 +214,31 @@ export class Outside3D {
     };
     this.attachPointer(canvas);
     this.setTime(time);
+    this.warmUpExterior();
+  }
+
+  /**
+   * Upload the hidden exterior model (geometry, livery textures) and build its shaders now, with one 1-pixel
+   * render, so the first switch to an exterior view does not stall for a moment. Runs before the first frame,
+   * so nothing of it is ever seen.
+   */
+  private warmUpExterior() {
+    const r = this.renderer;
+    const a = this.aircraft;
+    try {
+      a.warmUp(r);
+      const vp = r.getViewport(new THREE.Vector4());
+      const cam = new THREE.PerspectiveCamera(50, 1, 0.5, 300);
+      cam.position.set(8, 3, 14);
+      cam.lookAt(0, 1.2, 0);
+      a.group.visible = a.shadow.visible = a.pool.visible = true;
+      r.setViewport(0, 0, 1, 1);
+      r.render(this.scene, cam);
+      r.setViewport(vp);
+    } catch (e) {
+      console.warn('exterior warm-up skipped', e);
+    }
+    a.group.visible = a.shadow.visible = a.pool.visible = false;
   }
 
   // ---------------------------------------------------------------- views
@@ -297,7 +322,9 @@ export class Outside3D {
       if (!r) continue;
       const L = r.lengthFt;
       const along = Math.min(L * 0.56 + 1500, L - 1100) + 160;
-      const ll = destination(destination(r.threshold, r.heading, along / FT_PER_NM), r.heading + 90, 520 / FT_PER_NM);
+      // lateral: the parallel taxiway offset (400 ft for wide runways, 300 ft otherwise) + 520 ft to the tower
+      const lat = (r.widthFt >= 150 ? 400 : 300) + 520;
+      const ll = destination(destination(r.threshold, r.heading, along / FT_PER_NM), r.heading + 90, lat / FT_PER_NM);
       this.towers.push(w(ll, groundElevation(ll) + 100));
     }
   }
