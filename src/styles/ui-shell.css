@@ -1251,7 +1251,7 @@ body.chrome-auto .cockpit.no-otw {
   color: rgba(255, 255, 255, 0.84);
 }
 .intro .intro-main > .intro-facts {
-  max-width: 820px;
+  max-width: none;
 }
 .intro-facts li {
   display: inline-flex;

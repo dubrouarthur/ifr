@@ -205,6 +205,39 @@ describe("charts engine — real world (KSFO / KSJC: FAA CIFP approaches, SIDs, 
     expect(svg).toContain("NOT TO SCALE");
     expect(svg).toContain("KAYEX TRANSITION");
   });
+  it("vector SID: radar vectors to the transition fixes, no invented tracks between them", () => {
+    const c = chartIndex().find((x) => x.id === "KSFO-SID-GAPP7")!;
+    const svg = c.render();
+    const rep = lastLayout();
+    expect(svg).toContain("RADAR VECTORS");
+    expect(svg.replace(/<[^>]+>/g, "")).toContain("Expect radar vectors to ALCOA.");
+    // the runway transitions end at SFO / OSI / NORMM: nothing is drawn from there to ALCOA, BEBOP, ENI…
+    expect(
+      rep.legs.filter((l) =>
+        /(SFO|OSI|NORMM)>(ALCOA|BEBOP|ENI|SGD|SAU|OAK)$/.test(l.id),
+      ),
+    ).toEqual([]);
+  });
+  it("airport diagrams: every runway number (displaced thresholds included), 3-digit bearings", () => {
+    const sjc = chartIndex()
+      .find((x) => x.id === "KSJC-APD")!
+      .render();
+    for (const n of ["12L", "12R", "30L", "30R"])
+      expect(sjc).toContain(`>${n}<`);
+    const sfo = chartIndex()
+      .find((x) => x.id === "KSFO-APD")!
+      .render();
+    for (const n of ["10L", "10R", "28L", "28R", "01L", "01R", "19L", "19R"])
+      expect(sfo).toContain(`>${n}<`);
+    expect(sfo).toContain("013.7°");
+    expect(sfo).not.toMatch(/>13\.7°</);
+    // the plate sketch shows every runway number too
+    const plate = chartIndex()
+      .find((x) => x.id === "KSJC-I12R")!
+      .render();
+    for (const n of ["12L", "12R", "30L", "30R"])
+      expect(plate).toContain(`>${n}<`);
+  });
   it("procedure titles and RNAV classification", async () => {
     const { TERMINAL } = await import("../src/nav/data");
     const p = TERMINAL.find((x) => x.id === "SERFR4")!;

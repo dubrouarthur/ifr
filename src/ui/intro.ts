@@ -130,7 +130,7 @@ export class Intro {
         h(
           "p",
           { class: "intro-lead" },
-          "Real procedures, real weather and a coach in the right seat — from your first hold to the checkride.",
+          "Real procedures, real weather and a coach in the right seat\u00a0— from your first hold to the checkride.",
         ),
         h(
           "div",
