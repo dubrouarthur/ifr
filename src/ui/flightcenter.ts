@@ -9,7 +9,7 @@ import { PATHS, type Path } from "../train/curriculum";
 import { progress } from "./learn";
 import { history } from "./history";
 import { approachPlate } from "../plates/plates";
-import { approach, TRAINING_REGION } from "../nav/data";
+import { findApproach, TRAINING_REGION } from "../nav/data";
 import { I, svgIcon } from "./icons";
 import type { AssessSettings, Scenario } from "../sim/sim";
 import type { Exercise } from "../train/engine";
@@ -1656,8 +1656,9 @@ export class FlightCenter extends Modal {
         h("ul", { class: "tips" }, ...i.sc.briefing.map((o) => h("li", {}, o))),
       );
     }
-    if (i.plate) {
-      const ap = approach(i.plate);
+    const plateAp = i.plate ? findApproach(i.plate) : undefined;
+    if (i.plate && plateAp) {
+      const ap = plateAp;
       const svg = approachPlate(ap);
       body.append(
         h("div", { class: "section-t" }, `Plate · ${ap.airport} ${ap.name}`),
@@ -1844,7 +1845,8 @@ export class FlightCenter extends Modal {
   // ------------------------------------------------------------------ plate viewer (inside the Flight Center)
   private openPlate(id: string, svg: string) {
     this.closePlate();
-    const ap = approach(id);
+    const ap = findApproach(id);
+    if (!ap) return;
     this.plateView = h(
       "div",
       {

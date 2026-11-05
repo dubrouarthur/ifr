@@ -47,9 +47,19 @@ export interface Item {
 const TYPE_TAG: Record<string, string> = { ILS: 'ILS', LOC: 'LOC', LDA: 'LDA', LOCBC: 'LOC BC', VOR: 'VOR', NDB: 'NDB', RNAV: 'RNAV' };
 
 /** procedure tag of an approach (VOR/DME when the VOR approach uses DME) */
+/** a real-world plate is only resolvable once its region is loaded: never let a lookup throw here */
+const safeApproach = (id: string) => {
+  try {
+    return approach(id);
+  } catch {
+    return null;
+  }
+};
+
 function plateTag(id: string | undefined): string {
   if (!id) return '';
-  const a = approach(id);
+  const a = safeApproach(id);
+  if (!a) return 'APPROACH';
   if (a.type === 'VOR' && /DME/.test(a.name)) return 'VOR/DME';
   if (a.type === 'LDA' && /DME/.test(a.name)) return 'LDA/DME';
   return TYPE_TAG[a.type] ?? a.type;
@@ -73,7 +83,7 @@ function exTag(e: Exercise, cat: CatId, sub: string): string {
 
 function approachSub(id: string | undefined): string {
   if (!id) return 'ILS & precision';
-  const t = approach(id).type;
+  const t = safeApproach(id)?.type ?? 'ILS';
   if (t === 'ILS') return 'ILS & precision';
   if (t === 'LOC' || t === 'LDA' || t === 'LOCBC') return 'LOC / LDA / BC';
   if (t === 'VOR' || t === 'NDB') return 'VOR & NDB';
@@ -152,13 +162,21 @@ function scItem(s: Scenario): Item {
 
 function circuitItem(c: Circuit, preset: boolean): Item {
   const ex = circuitToExercise(c);
-  const apt = ex.plate ? approach(ex.plate).airport : c.start.type === 'runway' ? c.start.airport : 'PARD';
+  const apt = (ex.plate ? safeApproach(ex.plate)?.airport : undefined) ?? c.dest ?? (c.start.type === 'runway' ? c.start.airport : c.dep) ?? 'PARD';
   const diff: 1 | 2 | 3 = c.failures.length || !c.allowAp ? 3 : c.legs.length > 3 ? 2 : 1;
   return { id: ex.id, kind: 'exercise', cat: 'circuits', sub: preset ? 'School presets' : MINE_SUB, title: c.name, summary: ex.summary, difficulty: diff, airport: apt, minutes: circuitStats(c).minutes, ap: c.allowAp, plate: ex.plate, graded: true, ex, circuit: c, tag: `CIRCUIT${ex.plate ? ' · ' + plateTag(ex.plate) : ''}`, tags: ['circuit', c.description] };
 }
 
 export function catalog(): Item[] {
-  return [...EXERCISES.map(exItem), ...SCENARIOS.map(scItem), ...PRESET_CIRCUITS.map((c) => circuitItem(c, true)), ...circuitStore.list().map((c) => circuitItem(c, false))];
+  return [...EXERCISES.map(exItem), ...SCENARIOS.map(scItem), ...PRESET_CIRCUITS.map((c) => circuitItem(c, true)), ...circuitStore.list().flatMap((c) => {
+    // one bad stored flight must never stop the app from starting
+    try {
+      return [circuitItem(c, false)];
+    } catch (err) {
+      console.warn('Skipping a saved flight that cannot be listed', c?.id, err);
+      return [];
+    }
+  })];
 }
 
 export function pathItems(p: Path): Item[] {

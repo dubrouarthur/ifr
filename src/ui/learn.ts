@@ -6,7 +6,7 @@ import { LessonRun, type Exercise, type LessonResult } from '../train/engine';
 import { holdDiagramSvg } from '../train/diagram';
 import { holdEntry, clearanceText, type Turn } from '../nav/holding';
 import { approachPlate } from '../plates/plates';
-import { approach } from '../nav/data';
+import { findApproach } from '../nav/data';
 import { svgIcon, I } from './icons';
 import type { Sim } from '../sim/sim';
 
@@ -163,8 +163,8 @@ export class BriefingModal extends Modal {
       ),
       h('section', { class: 'brief-steps' }, h('div', { class: 'section-t' }, `Steps · ${run.rt.steps.length}`), h('ol', {}, ...run.rt.steps.map((s) => h('li', {}, s.text)))),
     );
-    if (ex.plate) {
-      const ap = approach(ex.plate);
+    const ap = ex.plate ? findApproach(ex.plate) : undefined;
+    if (ex.plate && ap) {
       this.body.append(
         h('div', { class: 'section-t' }, `Approach plate — ${ap.airport} ${ap.name}`),
         h('div', { class: 'plate-row' }, h('div', { class: 'plate-mini', html: approachPlate(ap) }), h('div', {}, h('p', { class: 'muted' }, 'Brief it like a pro: ATIS/frequencies · final course · FAF altitude · minimums · MAP · missed approach (climb, turn, altitude, hold).'), h('button', { class: 'btn', onclick: () => this.onPlate(ex.plate!) }, 'Open in chart viewer'))),

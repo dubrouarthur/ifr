@@ -467,6 +467,11 @@ export const APPROACHES: Approach[] = [
   },
 ];
 
+/** the approach, or undefined when it is not resolvable (a real-world plate whose region is not loaded) */
+export function findApproach(id: string): Approach | undefined {
+  return APPROACHES.find((x) => x.id === id) ?? TRAIN?.approaches.find((x) => x.id === id);
+}
+
 export function approach(id: string): Approach {
   // the training-region catalogue stays resolvable while a real-world region is loaded
   const a = APPROACHES.find((x) => x.id === id) ?? TRAIN?.approaches.find((x) => x.id === id);
