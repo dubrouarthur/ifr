@@ -1086,3 +1086,124 @@ body .modal.fs .fs-tog.on { border-color: rgb(var(--accent-rgb) / 0.4); backgrou
 @media (hover: none) {
   .modal.cbx .cbx-leg:not(.on) .cbx-acts { opacity: 0; pointer-events: none; }
 }
+
+/* ------------------------------------------------------------------ failure drills (procedures mode) */
+/* the quick form: three numbered steps */
+.fbd-step { display: flex; align-items: flex-start; gap: 10px; margin: 14px 2px 6px; }
+.fbd-step:first-child { margin-top: 2px; }
+.fbd-sn { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--text); color: var(--surface); font: 700 12px var(--font); font-variant-numeric: tabular-nums; }
+.fbd-step > div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.fbd-step b { font: 700 13.5px var(--font); color: var(--text); }
+.fbd-step small { font-size: 12px; color: var(--muted); line-height: 1.35; }
+.fbd-card { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow-sm); }
+.fbd-apt { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.fbd-apt > b { flex: none; font: 700 16px var(--font); letter-spacing: 0.4px; }
+.fbd-apt > span { flex: 1; min-width: 0; color: var(--text-2); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fbd-apt select { flex: none; width: 104px; }
+.fbd-apt .btn { flex: none; }
+/* phase: five equal buttons (two rows on a narrow column) */
+.fbd-phases { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; padding: 3px; border-radius: 9px; background: var(--surface-3); }
+.fbd-phases button { min-height: 34px; padding: 4px 6px; border: 0; border-radius: 7px; background: none; color: var(--text-2); font: 600 12px/1.2 var(--font); cursor: pointer; text-align: center; }
+.fbd-phases button:hover:not(:disabled):not(.on) { color: var(--text); background: rgb(255 255 255 / 0.6); }
+.fbd-phases button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgb(16 24 40 / 0.12), 0 0 0 1px var(--line); }
+.fbd-phases button:disabled { opacity: 0.5; cursor: default; }
+.fbd-phases button:focus-visible { outline: none; box-shadow: var(--ring); }
+.fbd-note { margin: 0; font-size: 12px; line-height: 1.45; color: var(--muted); }
+.fbd-note.warn { color: #8a5200; }
+.fbd-note.metar { font-variant-numeric: tabular-nums; }
+/* a failure: number (its marker on the map), what, when, the procedure */
+.fbd-n { flex: none; display: grid; place-items: center; min-width: 20px; height: 18px; padding: 0 4px; border-radius: 5px; background: #b42318; color: #fff; font: 700 11px var(--font); font-variant-numeric: tabular-nums; }
+.modal.fb .fbd-fail { gap: 8px; }
+.fbd-fail .fb-ev-h b { font-weight: 650; line-height: 1.35; }
+.fbd-row { display: grid; gap: 8px 10px; align-items: end; }
+.fbd-row.one { grid-template-columns: minmax(0, 1fr) auto; }
+.fbd-row.one > .cb-f:only-child { grid-column: 1 / -1; }
+.fbd-row.two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+/* "When" keeps room for its longest choice (FR "À un moment aléatoire"); its values share the rest */
+.modal.fb .fbd-fail { container-type: inline-size; }
+.fbd-row.trig { grid-template-columns: minmax(196px, 1.3fr) minmax(0, 1fr) minmax(0, 1fr); }
+.fbd-row.trig > .fbd-note { grid-column: 2 / -1; align-self: center; margin-bottom: 6px; }
+.fbd-row.trig.fix > .cb-f:nth-child(2) { grid-column: 2 / -1; }
+.fbd-row.trig.leg > .cb-f:nth-child(2) { grid-column: 2 / -1; }
+.fbd-row .cb-f > span:empty { visibility: hidden; }
+.fbd-row .cb-f > span:empty::before { content: "\00a0"; }
+.fbd-row .seg { display: flex; width: 100%; }
+.fbd-row .seg button { flex: 1; min-width: 0; padding: 0 6px; }
+.fbd-edit { align-self: center; margin-bottom: 7px; white-space: nowrap; font-size: 12.5px; }
+/* "Add a failure" is an action, not an alarm: accent, with a plus */
+.fbd-add .fbd-plus { display: inline-grid; place-items: center; flex: none; width: 20px; height: 20px; border: 1.5px solid currentColor; border-radius: 50%; font: 700 15px/1 var(--font); }
+.fbd-mode { display: flex; width: 100%; }
+.fbd-mode button { flex: 1; height: 34px; font-size: 13px; }
+.fbd-ready { display: flex; align-items: center; gap: 6px; margin-top: 4px; color: var(--good); font-weight: 600; }
+/* library: drills carry a red rule (they are emergencies, not routes) */
+.cbx-item.drill { position: relative; }
+.cbx-item.drill::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 2px; border-radius: 2px; background: #b42318; opacity: 0.6; }
+/* map: failure pins and random windows; legend chip */
+.rm-fail line { stroke: #b42318; stroke-width: 1.5; }
+.rm-fail circle { fill: #b42318; stroke: #fff; stroke-width: 1.6; }
+.rm-fail rect { fill: #b42318; stroke: #fff; stroke-width: 1.5; }
+.rm-svg .rm-fail text { font: 700 10.5px var(--font); fill: #fff; text-anchor: middle; stroke: none; font-variant-numeric: tabular-nums; }
+.rm-svg .rm-fail-t { font: 700 10.5px var(--font); fill: #9b1c13; }
+.rm-fwin { stroke: rgb(180 35 24 / 0.22); }
+.rm-chip i.l-fail { width: 10px; height: 10px; border: 0; border-radius: 3px; background: #b42318; }
+/* profile: failure lines, windows and badges */
+.rp-fail { stroke: #b42318; stroke-width: 1.2; stroke-dasharray: 4 3; }
+.rp-fwin { fill: rgb(180 35 24 / 0.08); stroke: rgb(180 35 24 / 0.35); stroke-width: 1; stroke-dasharray: 3 3; }
+.rp-fb rect { fill: #b42318; }
+.rp-fb text { font: 700 10px var(--font); fill: #fff; text-anchor: middle; font-variant-numeric: tabular-nums; }
+/* narrow editor column (iPad portrait): the phase buttons wrap on two rows */
+@media (max-width: 1100px) {
+  .fbd-phases { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+/* touch: 44 px targets */
+@media (pointer: coarse) {
+  .fbd-phases button, .fbd-mode button { min-height: 44px; }
+  .fbd-row .seg button { min-height: 44px; }
+  .fbd-edit { min-height: 44px; display: inline-flex; align-items: center; margin-bottom: 0; }
+  .modal.fb .fbd-fail select, .modal.fb .fbd-fail input, .fbd-card input, .fbd-card select { min-height: 44px; }
+  .modal.fb .fbd-add { min-height: 48px; }
+  .fbd-fail .cbx-ib.del { width: 44px; height: 44px; }
+}
+/* at a height: when + height, then climbing / descending on its own row (two full-size touch targets) */
+.fbd-row.trig.altAgl { grid-template-columns: minmax(196px, 1.3fr) minmax(0, 1fr); }
+.fbd-row.trig.altAgl > .cb-f:nth-child(3) { grid-column: 1 / -1; }
+.fbd-row.trig.altAgl > .cb-f:nth-child(3) > span:empty { display: none; }
+.fbd-dir button { font-size: 12.5px; padding: 0 6px; }
+@media (max-width: 1100px) { .fbd-row.two { grid-template-columns: minmax(0, 1fr); } }
+/* a narrow failure card (iPad portrait): "When" on its own row, its values below */
+@container (max-width: 440px) {
+  .fbd-row.trig, .fbd-row.trig.altAgl { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .fbd-row.trig > .cb-f:first-child { grid-column: 1 / -1; }
+  .fbd-row.trig > .fbd-note { grid-column: 1 / -1; margin-bottom: 0; }
+  .fbd-row.trig.fix > .cb-f:nth-child(2), .fbd-row.trig.leg > .cb-f:nth-child(2) { grid-column: 1 / -1; }
+  .fbd-row.trig.altAgl > .cb-f:nth-child(3) { grid-column: auto; }
+  .fbd-row.trig.altAgl > .cb-f:nth-child(3) > span:empty { display: block; }
+}
+
+/* the map hint never runs under the zoom controls (FR is longer: it wraps instead) */
+.modal.fb .fb-maphint { max-width: calc(100% - 96px); }
+/* long titles and stat labels end with an ellipsis instead of being cut or running into the next cell */
+.modal.cbx .cbx-name:not(:focus) { text-overflow: ellipsis; }
+.modal.fb .cbx-stats small, .modal.fb .cbx-stats b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* failure drill: route · phase · failures · time · distance (5 columns; tablet portrait drops the route) */
+.modal.fb .cbx-stats.drill { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.2fr) repeat(3, minmax(0, 1fr)); }
+/* plain flights on a tablet landscape / small laptop (6 columns): the route gives room to the labels. Tablet
+ *  portrait keeps its 4-column rule (max-width: 1100px) */
+@media (min-width: 1101px) and (max-width: 1360px) {
+  .modal.fb .cbx-stats:not(.drill) { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+@media (max-width: 1360px) {
+  .modal.fb .cbx-stats > div { padding-left: 7px; padding-right: 7px; }
+  .modal.fb .cbx-stats small { letter-spacing: 0; }
+}
+/* the weather line sits under the weather choice */
+.cb-f > small.fbd-note.metar { font-weight: 500; margin-top: 2px; }
+.fbd-row.two { align-items: start; }
+/* drill templates in the library: the phase · mode · weather line may take two lines rather than lose the weather */
+.cbx-item.tpl.drill small { white-space: normal; overflow: visible; }
+@media (max-width: 1100px) {
+  /* tablet portrait: a drill's route is its airport, already on the map — phase, failures, time, distance */
+  .modal.fb .cbx-stats.drill { grid-template-columns: minmax(0, 1.5fr) repeat(3, minmax(0, 1fr)); }
+  .modal.fb .cbx-stats.drill > div:first-child { display: none; }
+  .modal.fb .cbx-stats.drill > div:nth-child(5) { display: flex; }
+}

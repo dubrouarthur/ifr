@@ -21,7 +21,11 @@ import {
 import { currentRegion, toReal, toSim } from "../nav/world";
 import { racetrack } from "../nav/holding";
 import { bearingDeg, destination, distanceNm, type LatLon } from "../nav/geo";
-import { expandLegs, type Circuit } from "../train/circuits";
+import { expandLegs, triggerText, type Circuit } from "../train/circuits";
+import { FAILURE_LABELS_EN, FAILURE_LABELS_FR, type FailureKey } from "../sim/systemsTypes";
+import { lang as uiLang } from "./i18n";
+/** the label of an airborne start point (its data ident stays "START") */
+const startLabel = () => (uiLang() === "fr" ? "DÉPART" : "START");
 import type { Approach, ProcLeg } from "../nav/types";
 
 // ------------------------------------------------------------------ geometry of the plan (pure)
@@ -51,6 +55,8 @@ export interface PlanGeometry {
   holds?: { leg: number; p: LatLon; ident: string }[];
   /** every point that must be in view when fitting */
   bounds: LatLon[];
+  /** scheduled failures placed along the track (builder only: RouteMapOpts.failures) */
+  fails?: FailMark[];
 }
 
 const fixKind = (ident: string): MapPoint["kind"] => {
@@ -328,6 +334,8 @@ export interface PlanProfile {
   mea?: { d0: number; d1: number; alt: number; via: string }[];
   ground: { d: number; elev: number }[];
   total: number;
+  /** the planned track: positions with their along-track distance (NM) */
+  track?: { d: number; p: LatLon }[];
 }
 
 const CLIMB_FT_NM = 500;
@@ -336,6 +344,7 @@ const DESC_FT_NM = 300;
 export function planProfile(c: Circuit, sampleGround = true): PlanProfile {
   const pts: ProfilePt[] = [];
   const track: LatLon[] = [];
+  const trackD: number[] = [];
   const out: PlanProfile = { pts, ground: [], total: 0 };
   let pos: LatLon | null = null;
   let d = 0;
@@ -345,6 +354,7 @@ export function planProfile(c: Circuit, sampleGround = true): PlanProfile {
     if (pos) d += distanceNm(pos, p);
     pos = p;
     track.push(p);
+    trackD.push(d);
   };
   /** fly to `p`, changing altitude toward `target` at climb/descent gradients, then level */
   const goTo = (
@@ -379,6 +389,7 @@ export function planProfile(c: Circuit, sampleGround = true): PlanProfile {
       const rw = getRunway(c.start.airport, c.start.runway);
       pos = rw.threshold;
       track.push(rw.threshold);
+      trackD.push(0);
       alt = rw.elevFt;
       assigned = c.start.initialAlt;
       pts.push({ d: 0, alt, ident: `RWY ${rw.id}`, leg: -1, seg: "climb" });
@@ -387,6 +398,7 @@ export function planProfile(c: Circuit, sampleGround = true): PlanProfile {
       if (!f) return out;
       pos = destination(f, c.start.bearing, c.start.distNm);
       track.push(pos);
+      trackD.push(0);
       alt = c.start.altFt;
       assigned = c.start.altFt;
       pts.push({ d: 0, alt, ident: "START", leg: -1, seg: "route" });
@@ -564,6 +576,7 @@ export function planProfile(c: Circuit, sampleGround = true): PlanProfile {
     /* unresolved data: profile of what resolved */
   }
   out.total = d;
+  out.track = track.map((p, k) => ({ p, d: trackD[k] ?? 0 }));
   if (sampleGround && track.length > 1 && d > 0) {
     const n = Math.min(240, Math.max(30, Math.round(d * 2)));
     // walk the track and sample the ground at regular along-track distances
@@ -594,6 +607,167 @@ export function planProfile(c: Circuit, sampleGround = true): PlanProfile {
     }
   }
   return out;
+}
+
+// ------------------------------------------------------------------ scheduled failures along the plan (pure)
+export interface FailMark {
+  /** index in circuit.failures (the number shown is index + 1) */
+  index: number;
+  /** null: drawn at random from a group */
+  key: FailureKey | null;
+  trigger: Circuit["failures"][number]["trigger"];
+  /** short failure name and when it happens, in the UI language */
+  name: string;
+  when: string;
+  /** along-track distance (NM) where it happens (NaN: no place on the track — instructor) */
+  d0: number;
+  /** end of a random window */
+  d1?: number;
+  p?: LatLon;
+  /** the window along the track */
+  path?: LatLon[];
+  hidden?: boolean;
+}
+
+/** position at an along-track distance */
+function trackAt(tr: { d: number; p: LatLon }[], d: number): LatLon | undefined {
+  if (!tr.length) return undefined;
+  if (d <= tr[0].d) return tr[0].p;
+  for (let k = 1; k < tr.length; k++) {
+    if (d <= tr[k].d) {
+      const a = tr[k - 1],
+        b = tr[k];
+      const u = b.d > a.d ? (d - a.d) / (b.d - a.d) : 0;
+      return { lat: a.p.lat + (b.p.lat - a.p.lat) * u, lon: a.p.lon + (b.p.lon - a.p.lon) * u };
+    }
+  }
+  return tr[tr.length - 1].p;
+}
+/** planned altitude at an along-track distance (profile points are in order) */
+function altAt(pr: PlanProfile, d: number): number {
+  const p = pr.pts;
+  if (!p.length) return 0;
+  if (d <= p[0].d) return p[0].alt;
+  for (let k = 1; k < p.length; k++)
+    if (d <= p[k].d) {
+      const u = p[k].d > p[k - 1].d ? (d - p[k - 1].d) / (p[k].d - p[k - 1].d) : 1;
+      return p[k - 1].alt + (p[k].alt - p[k - 1].alt) * u;
+    }
+  return p[p.length - 1].alt;
+}
+function groundAt(pr: PlanProfile, d: number, fallback: number): number {
+  const g = pr.ground;
+  if (!g.length) return fallback;
+  let best = g[0];
+  for (const x of g) if (Math.abs(x.d - d) < Math.abs(best.d - d)) best = x;
+  return best.elev;
+}
+
+/** Where each scheduled failure of a flight happens along the planned track: after a time (at the planned
+ *  speed), at a leg, at a fix, climbing / descending through a height above the ground, or over a random window.
+ *  Instructor-triggered failures have no place (d0 NaN). */
+export function failureMarks(c: Circuit, pr: PlanProfile = planProfile(c, true), lang: "fr" | "en" = uiLang()): FailMark[] {
+  const tr = pr.track ?? [];
+  const st = c.start;
+  const kt = st.type === "air" ? st.iasKt : st.airborne ? 74 : 90;
+  // a runway start spends about a minute on the take-off before the planned track starts to count; a climb-out
+  // start is already ≈ 1 NM down the runway track
+  const t0 = st.type === "runway" && !st.airborne ? 1 : 0;
+  const d0 = st.type === "runway" && st.airborne ? 0.25 + st.airborne / 570 : 0;
+  const dOfMin = (m: number) => Math.min(pr.total, d0 + Math.max(0, m - t0) * (kt / 60));
+  const elev0 = pr.pts[0]?.alt ?? 0;
+  const labels = lang === "fr" ? FAILURE_LABELS_FR : FAILURE_LABELS_EN;
+  // without a SID the take-off climbs on the runway heading to the initial altitude (≈ 570 ft/NM at Vy) before it
+  // turns to the first fix: a failure during that climb (an EFATO) is drawn ahead of the runway, not on the line
+  // the plan draws to the first fix
+  let climb: { thr: LatLon; hdg: number; nm: number } | null = null;
+  if (st.type === "runway" && !c.legs.some((l) => l.type === "sid"))
+    try {
+      const rw = getRunway(st.airport, st.runway);
+      climb = { thr: rw.threshold, hdg: rw.heading, nm: 0.25 + Math.max(0, st.initialAlt - rw.elevFt) / 570 };
+    } catch {
+      climb = null;
+    }
+  const climbAt = (nm: number): LatLon | undefined => (climb && nm >= 0 && nm <= climb.nm ? destination(climb.thr, climb.hdg, nm) : undefined);
+  const climbNm = (f: Circuit["failures"][number]): number => {
+    if (st.type !== "runway") return NaN;
+    if (f.trigger === "altAgl" && f.dir !== "descent") return 0.25 + f.at / 570;
+    if (f.trigger === "time") return st.airborne ? d0 + f.at * (74 / 60) : f.at <= 0.5 ? 0 : 0.15 + (f.at - 0.5) * (74 / 60);
+    return NaN;
+  };
+  return c.failures.map((f, index) => {
+    const m: FailMark = {
+      index,
+      key: f.pool?.length ? null : f.key,
+      trigger: f.trigger,
+      name: f.pool?.length ? (lang === "fr" ? "Panne aléatoire" : "Random failure") : labels[f.key],
+      when: triggerText(f, lang),
+      d0: NaN,
+      hidden: f.hidden,
+    };
+    switch (f.trigger) {
+      case "time":
+        m.d0 = dOfMin(f.at);
+        break;
+      case "random": {
+        m.d0 = dOfMin(f.at);
+        m.d1 = dOfMin(f.at + Math.max(0, f.window ?? 5));
+        const path: LatLon[] = [];
+        const n = 24;
+        for (let k = 0; k <= n; k++) {
+          const q = trackAt(tr, m.d0 + ((m.d1 - m.d0) * k) / n);
+          if (q) path.push(q);
+        }
+        m.path = path;
+        break;
+      }
+      case "leg": {
+        const j = pr.pts.findIndex((p) => p.leg >= f.at - 1);
+        m.d0 = j > 0 ? pr.pts[j - 1].d : 0;
+        break;
+      }
+      case "fix": {
+        const fx = f.fix ? findFix(f.fix) : undefined;
+        if (!fx) break;
+        m.p = fx;
+        let best = Infinity;
+        for (let k = 0; k <= 200 && pr.total > 0; k++) {
+          const d = (pr.total * k) / 200;
+          const q = trackAt(tr, d);
+          const e = q ? distanceNm(q, fx) : Infinity;
+          if (e < best) {
+            best = e;
+            m.d0 = d;
+          }
+        }
+        if (best > 3) m.d0 = NaN; // off the planned track
+        break;
+      }
+      case "altAgl": {
+        const n = 400;
+        let above = false;
+        for (let k = 0; k <= n && pr.total > 0; k++) {
+          const d = (pr.total * k) / n;
+          const agl = altAt(pr, d) - groundAt(pr, d, elev0);
+          if (f.dir === "descent") {
+            if (agl > f.at + 20) above = true;
+            else if (above && agl <= f.at) {
+              m.d0 = d;
+              break;
+            }
+          } else if (agl >= f.at) {
+            m.d0 = d;
+            break;
+          }
+        }
+        break;
+      }
+      case "instructor":
+        break;
+    }
+    if (!m.p && Number.isFinite(m.d0)) m.p = climbAt(climbNm(f)) ?? trackAt(tr, m.d1 !== undefined ? (m.d0 + m.d1) / 2 : m.d0);
+    return m;
+  });
 }
 
 // ------------------------------------------------------------------ web-mercator helpers
@@ -677,6 +851,11 @@ export interface RouteMapOpts {
   onMapClick?: (p: LatLon, fix: string | null, at: { x: number; y: number }) => void;
   /** a hold fix dragged onto another fix */
   onMoveHold?: (leg: number, fix: string) => void;
+  /** draw the scheduled failures (numbered markers, random windows) — the builder only: a student's map never
+   *  shows where a failure is planned */
+  failures?: boolean;
+  /** extra boxes (px, in the map's frame) that labels must keep clear of, e.g. an overlay hint */
+  reserve?: () => [number, number, number, number][];
 }
 
 type Box = [number, number, number, number];
@@ -726,7 +905,7 @@ export class RouteMap {
       { class: "rm-attr" },
       this.real
         ? BASEMAPS[this.style].attr
-        : "Ardent Islands · training region",
+        : uiLang() === "fr" ? "Ardent Islands · région d’entraînement" : "Ardent Islands · training region",
     );
     this.view = h(
       "div",
@@ -778,10 +957,11 @@ export class RouteMap {
               "div",
               { class: "rm-legend" },
               sw("l-route", "Route"),
-              sw("l-app", "Approach"),
-              sw("l-mis", "Missed approach"),
-              sw("l-hold", "Hold"),
-              sw("l-tr", "Other transitions"),
+              sw("l-app", uiLang() === "fr" ? "Approche" : "Approach"),
+              sw("l-mis", uiLang() === "fr" ? "Approche interrompue" : "Missed approach"),
+              sw("l-hold", uiLang() === "fr" ? "Attente" : "Hold"),
+              sw("l-tr", uiLang() === "fr" ? "Autres transitions" : "Other transitions"),
+              sw("l-fail", uiLang() === "fr" ? "Panne prévue" : "Failure"),
             ),
             this.attr,
           ),
@@ -793,7 +973,13 @@ export class RouteMap {
   }
 
   private geometry(c: Circuit | null): PlanGeometry {
-    const g = c ? planGeometry(c) : { lines: [], points: [], bounds: [] };
+    const g: PlanGeometry = c ? planGeometry(c) : { lines: [], points: [], bounds: [] };
+    if (c && this.o.failures && c.failures.length)
+      try {
+        g.fails = failureMarks(c);
+      } catch {
+        /* a plan referring to data that is not loaded */
+      }
     if (this.o.track?.length) g.bounds.push(...this.o.track);
     for (const m of this.o.marks ?? []) g.bounds.push(m.p);
     // the airports the plan uses are labelled first
@@ -823,6 +1009,7 @@ export class RouteMap {
       "l-mis": kinds.has("missed"),
       "l-hold": kinds.has("hold"),
       "l-tr": kinds.has("transition"),
+      "l-fail": !!this.g.fails?.some((m) => m.p),
     };
     for (const [cls, c] of this.chips) c.hidden = !has[cls];
   }
@@ -874,12 +1061,14 @@ export class RouteMap {
       ys = pts.map((p) => my(p.lat, 0));
     const dx = Math.max(...xs) - Math.min(...xs),
       dy = Math.max(...ys) - Math.min(...ys);
-    const padX = Math.max(30, this.W * 0.1),
-      padY = Math.max(30, this.H * 0.1);
+    const padX = Math.max(30, this.W * 0.1);
+    // top: room for the hint line and the failure pins drawn above their point; bottom: the scale bar
+    const padT = Math.max(52, this.H * 0.1),
+      padB = Math.max(30, this.H * 0.1) + 20;
     // the zoom / fit buttons take a 44 px column on the right: the plan is framed beside it
     const ctl = 44;
     const zx = dx > 1e-9 ? Math.log2((this.W - 2 * padX - 30 - ctl) / dx) : 13;
-    const zy = dy > 1e-9 ? Math.log2((this.H - 2 * padY - 20) / dy) : 13; // 20 px: scale bar
+    const zy = dy > 1e-9 ? Math.log2((this.H - padT - padB) / dy) : 13;
     // never closer than ~10 NM across the view; a plan with no track at all (free flight from a
     // runway) shows ~30 NM around it, so the nearby airports and navaids give the picture
     const midLat = (Math.max(...pts.map((p) => p.lat)) + Math.min(...pts.map((p) => p.lat))) / 2;
@@ -887,7 +1076,8 @@ export class RouteMap {
     const zMax = Math.log2((this.W * 156543.03392 * Math.cos((midLat * Math.PI) / 180)) / spanM);
     this.z = Math.max(3, Math.min(14.5, zMax, Math.min(zx, zy)));
     this.cx = ((Math.max(...xs) + Math.min(...xs)) / 2) * 2 ** this.z + ctl / 2;
-    this.cy = ((Math.max(...ys) + Math.min(...ys)) / 2) * 2 ** this.z + 8; // keep the plan clear of the scale bar
+    // the plan centred between the top and bottom margins
+    this.cy = ((Math.max(...ys) + Math.min(...ys)) / 2) * 2 ** this.z - (padT - padB) / 2;
     this.fitted = true;
     this.userView = false;
   }
@@ -1149,6 +1339,11 @@ export class RouteMap {
       [0, 0, 32, 44], // north arrow
     ];
     if (compact) boxes.push([W - Math.min(W * 0.6, 240), H - 17, W, H]); // attribution
+    try {
+      boxes.push(...(this.o.reserve?.() ?? []));
+    } catch {
+      /* an overlay that is gone */
+    }
     const free = (b: Box) =>
       b[0] >= 2 &&
       b[1] >= 2 &&
@@ -1294,6 +1489,13 @@ export class RouteMap {
         }
       }
 
+    // random failure windows: a band along the track
+    for (const m of this.g.fails ?? [])
+      if (m.path && m.path.length > 1)
+        out.push(
+          `<polyline class="rm-fwin" points="${poly(m.path)}" fill="none" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>`,
+        );
+
     // flown track + marks (debrief)
     const t = this.o.track;
     if (t && t.length > 1) {
@@ -1391,11 +1593,47 @@ export class RouteMap {
       }
     }
 
+    // scheduled failures: a pin on the track (numbered like the builder's failure cards) and what / when
+    const failLabels: { x: number; y: number; text: string }[] = [];
+    const pins: [number, number][] = [];
+    for (const m of this.g.fails ?? []) {
+      if (!m.p) continue;
+      const [x0, y] = P(m.p);
+      if (!inView(x0, y, 0)) continue;
+      // failures close together: the badges side by side, never on top of each other
+      let x = x0;
+      while (pins.some(([px, py]) => Math.abs(px - x) < 20 && Math.abs(py - y) < 18)) x += 20;
+      pins.push([x, y]);
+      out.push(
+        `<g class="rm-fail${m.hidden ? " hid" : ""}"><line x1="${f1(x0)}" y1="${f1(y)}" x2="${f1(x)}" y2="${f1(y - 15)}"/><circle cx="${f1(x0)}" cy="${f1(y)}" r="3.2"/><rect x="${f1(x - 9)}" y="${f1(y - 31)}" width="18" height="16" rx="4"/><text x="${f1(x)}" y="${f1(y - 19.5)}">${m.index + 1}</text></g>`,
+      );
+      boxes.push([x - 10, y - 32, x + 10, y - 14], [x0 - 4, y - 4, x0 + 4, y + 4]);
+      failLabels.push({ x, y: y - 23, text: `${m.name} · ${m.when}` });
+    }
+    for (const fl of failLabels) {
+      // 10.5 px bold: ≈ 5.6 px a character (a little generous, for the collision boxes); the text itself is
+      // anchored on the pin side so it always sits next to its badge whatever its real width
+      const w = Math.round(fl.text.length * 5.6) + 4;
+      const cands: [number, number][] = [
+        [fl.x + 13, fl.y - 6],
+        [fl.x - w - 13, fl.y - 6],
+        [fl.x - w / 2, fl.y - 24],
+      ];
+      const at = pick(cands, w, 13);
+      if (!at) continue;
+      const k = cands.indexOf(at);
+      boxes.push([at[0], at[1], at[0] + w, at[1] + 13]);
+      const [tx, anchor] = k === 1 ? [fl.x - 13, "end"] : k === 2 ? [fl.x, "middle"] : [at[0], "start"];
+      out.push(
+        `<text class="rm-fail-t" text-anchor="${anchor}" style="text-anchor:${anchor}" x="${f1(tx)}" y="${f1(at[1] + 10)}">${esc(fl.text)}</text>`,
+      );
+    }
+
     // fix labels: ident (+ role tag) and the altitude, Jeppesen style (min underlined, max overlined)
     const CH = compact ? 6.1 : 6.7;
     for (const { p, x, y } of drawn) {
       const tag = !compact && p.role ? p.role : "";
-      const id = p.ident;
+      const id = p.kind === "start" && p.ident === "START" ? startLabel() : p.ident;
       const altTxt = compact
         ? ""
         : p.amin !== undefined || p.amax !== undefined
@@ -1583,12 +1821,15 @@ function symbol(
 export interface ProfileOpts {
   height: number;
   highlight?: number | null;
+  /** draw the scheduled failures (builder only) */
+  failures?: boolean;
 }
 
 /** Vertical profile of the plan: altitudes along the track, glidepath and DA/MDA, terrain below. */
 export class RouteProfile {
   el: HTMLElement;
   private prof: PlanProfile;
+  private fails: FailMark[] = [];
   private ro: ResizeObserver;
   private W = 0;
   constructor(
@@ -1596,6 +1837,7 @@ export class RouteProfile {
     private o: ProfileOpts,
   ) {
     this.prof = c ? planProfile(c) : { pts: [], ground: [], total: 0 };
+    this.fails = this.marks(c);
     this.el = h("div", { class: "rp", style: `height:${o.height}px` });
     this.ro = new ResizeObserver(() => {
       const w = Math.round(this.el.getBoundingClientRect().width);
@@ -1608,7 +1850,16 @@ export class RouteProfile {
   }
   setPlan(c: Circuit | null) {
     this.prof = c ? planProfile(c) : { pts: [], ground: [], total: 0 };
+    this.fails = this.marks(c);
     this.draw();
+  }
+  private marks(c: Circuit | null): FailMark[] {
+    if (!c || !this.o.failures || !c.failures.length) return [];
+    try {
+      return failureMarks(c, this.prof);
+    } catch {
+      return [];
+    }
   }
   setHighlight(leg: number | null) {
     this.o.highlight = leg;
@@ -1624,6 +1875,7 @@ export class RouteProfile {
       this.W,
       this.o.height,
       this.o.highlight ?? null,
+      this.fails,
     );
   }
 }
@@ -1634,6 +1886,7 @@ export function profileSvg(
   W: number,
   H: number,
   hl: number | null = null,
+  fails: FailMark[] = [],
 ): string {
   if (pr.pts.length < 2 || pr.total <= 0)
     return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><text class="rp-empty" x="${W / 2}" y="${H / 2}">Add a fix or an approach to see the vertical profile</text></svg>`;
@@ -1692,6 +1945,22 @@ export function profileSvg(
           : `<text class="rp-mins-t" x="${f1(mx)}" y="${f1(my)}">${pr.mins.label}</text>`
       }`,
     );
+  }
+  // scheduled failures: where along the track (a random window as a band), numbered like the failure cards
+  const fbadge: number[] = [];
+  for (const m of fails) {
+    if (!Number.isFinite(m.d0)) continue;
+    let x = X(m.d0);
+    if (m.d1 !== undefined) {
+      const x1 = X(m.d1);
+      o.push(`<rect class="rp-fwin" x="${f1(x)}" y="${T}" width="${f1(Math.max(2, x1 - x))}" height="${H - T - B}"/>`);
+      x = (x + x1) / 2;
+    } else o.push(`<line class="rp-fail" x1="${f1(x)}" x2="${f1(x)}" y1="${T - 2}" y2="${H - B}"/>`);
+    // badges never overlap: the next one moves right
+    while (fbadge.some((b) => Math.abs(b - x) < 19)) x += 19;
+    fbadge.push(x);
+    const bx = Math.max(L + 9, Math.min(W - R - 9, x));
+    o.push(`<g class="rp-fb"><rect x="${f1(bx - 9)}" y="${T - 22}" width="18" height="15" rx="4"/><text x="${f1(bx)}" y="${T - 11}">${m.index + 1}</text></g>`);
   }
   // the path, by segment kind
   const col = (s: ProfilePt["seg"]) =>
@@ -1762,7 +2031,7 @@ export function profileSvg(
         `<rect class="rp-hold" x="${f1(Math.max(L, Math.min(W - R - 14, x - 7)))}" y="${f1(y - 12)}" width="14" height="7" rx="3.5"/>`,
       );
     else o.push(`<circle class="rp-pt" cx="${f1(x)}" cy="${f1(y)}" r="2.6"/>`);
-    idl.push({ x, text: p.ident, dim: dimmed, pri: p.role === "FAF" || p.role === "IAF" || p.hold || p.role === "MAHP" ? 0 : p.leg < 0 ? 3 : p.ident.startsWith("RW") ? 1 : 2 });
+    idl.push({ x, text: p.ident === "START" && p.leg < 0 ? startLabel() : p.ident, dim: dimmed, pri: p.role === "FAF" || p.role === "IAF" || p.hold || p.role === "MAHP" ? 0 : p.leg < 0 ? 3 : p.ident.startsWith("RW") ? 1 : 2 });
     const at =
       p.amin ??
       p.amax ??

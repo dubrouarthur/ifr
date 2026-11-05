@@ -1,0 +1,1039 @@
+/* =================================================================== procedures mode in flight (src/ui/procedurePanel.ts)
+   The emergency card reuses the editor preview's look (.pv-* in procedures.css, "exactly as the student sees it")
+   and adds the live states: ticks, late, countdown bars, the item to do next, Done buttons. It is anchored inside the
+   right-hand display (--procp-* set by main.ts fitSides): it never covers the attitude indicator. Rules are scoped
+   under .procp so they win over procedures.css (which loads after this file). */
+
+.procp {
+  position: fixed;
+  right: var(--procp-r, 12px);
+  bottom: var(--procp-b, 96px);
+  width: var(--procp-w, 360px);
+  max-width: calc(100vw - 24px);
+  max-height: var(--procp-mh, 70vh);
+  z-index: 26;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+.procp[hidden] {
+  display: none;
+}
+/* the instructor drawer is open on the same screen: the card sits beside it, never under it */
+body.ios-open .procp {
+  right: calc(var(--ios-w, 400px) + 12px);
+  max-width: calc(100vw - var(--ios-w, 400px) - 24px);
+}
+.procp .procp-card {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 100%;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+  border-color: #4a1c22;
+  background: rgba(14, 18, 23, 0.97);
+}
+.procp .procp-body {
+  overflow-y: auto;
+  min-height: 0;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.procp .pv-top {
+  flex: none;
+  padding: 8px 8px 8px 12px;
+}
+.procp .pv-fail {
+  white-space: normal;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.procp .pv-top.ok {
+  background: #0f2a1e;
+  border-bottom-color: #1d4a35;
+}
+.procp .pv-top.ok .pv-tag {
+  background: var(--ck-good);
+  color: #04140c;
+}
+.procp .pv-top.ok .pv-fail {
+  color: #d5f5e3;
+}
+.procp .pv-top.stop {
+  background: #1d2228;
+  border-bottom-color: var(--ck-line);
+}
+.procp .pv-top.stop .pv-tag {
+  background: var(--ck-line-hi);
+}
+.procp .pv-top.stop .pv-fail {
+  color: var(--ck-text);
+}
+.procp .procp-fold {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #f3c9cc;
+  cursor: pointer;
+}
+.procp .procp-fold:hover,
+.procp .procp-fold:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+}
+.procp .procp-count {
+  font: 700 13px var(--font-cond);
+  color: #f3c9cc;
+  font-variant-numeric: tabular-nums;
+}
+.procp.folded .procp-card {
+  border-radius: 10px;
+}
+.procp.folded .pv-top {
+  border-bottom: 0;
+}
+.procp .pv-title {
+  padding-top: 10px;
+}
+.procp .procp-fin {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 14px 0;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--ck-line);
+  background: var(--ck-bg3);
+}
+.procp .procp-fin.ok svg {
+  color: var(--ck-good);
+}
+.procp .procp-fin.stop svg {
+  color: var(--ck-muted);
+}
+.procp .procp-fin div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.procp .procp-fin small {
+  color: var(--ck-muted);
+  font-size: 12px;
+}
+.procp .procp-others {
+  margin: 8px 14px 0;
+  color: var(--ck-warn);
+  font: 600 12px var(--font);
+}
+
+/* items: live states */
+.procp .pv-it {
+  align-items: center;
+  min-height: 40px;
+  padding: 7px 6px;
+}
+.procp .pv-it .pv-box {
+  margin-top: 0;
+}
+.procp .pv-it.next {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border-top-color: transparent;
+}
+.procp .pv-it.next + .pv-it {
+  border-top-color: transparent;
+}
+.procp .pv-it.next .pv-t {
+  color: #fff;
+}
+.procp .pv-it.done .pv-box {
+  border-color: var(--ck-good);
+  background: var(--ck-good);
+  color: #04140c;
+}
+.procp .pv-it.done .pv-t {
+  color: var(--ck-muted);
+  font-weight: 500;
+}
+.procp .pv-it.done.late .pv-box {
+  border-color: var(--ck-warn);
+  background: var(--ck-warn);
+}
+.procp .pv-it.late:not(.done) .pv-box {
+  border-color: var(--ck-warn);
+}
+.procp .pv-it.ready .pv-box {
+  border-style: dashed;
+  border-color: var(--ck-accent);
+}
+.procp .pv-it.missed .pv-box {
+  border-color: var(--ck-bad);
+}
+.procp .pv-it.missed .pv-t {
+  color: #ffb4b4;
+}
+.procp .pv-due {
+  min-width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.procp .pv-due.over {
+  color: var(--ck-bad);
+}
+.procp .pv-bar i {
+  transition: width 0.1s linear;
+}
+.procp .pv-it.late .pv-bar i {
+  background: var(--ck-bad);
+}
+.procp .procp-at {
+  flex: none;
+  color: var(--ck-muted);
+  font: 600 12px var(--font-cond);
+  font-variant-numeric: tabular-nums;
+}
+.procp .pv-done {
+  min-height: 34px;
+  min-width: 64px;
+  padding: 0 12px;
+  background: var(--ck-bg3);
+  color: var(--ck-text);
+  cursor: pointer;
+  font: 600 13px var(--font);
+}
+.procp .pv-done:hover,
+.procp .pv-done:focus-visible {
+  border-color: var(--ck-accent);
+}
+.procp .pv-done:active {
+  background: #24303b;
+}
+.procp .pv-done.ready {
+  color: var(--ck-accent);
+  border-color: rgba(0, 228, 255, 0.35);
+}
+.procp .pv-done.on,
+.procp .pv-done:disabled {
+  color: var(--ck-good);
+  border-color: rgba(43, 213, 118, 0.4);
+  cursor: default;
+}
+.procp .procp-ready {
+  flex: none;
+  color: var(--ck-accent);
+  font: 600 11.5px var(--font);
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+.procp .procp-callout {
+  color: var(--ck-muted);
+}
+.procp .pv-open {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 44px;
+}
+.procp .pv-open:hover,
+.procp .pv-open:focus-visible {
+  border-color: var(--ck-accent);
+}
+.procp .procp-kbd {
+  font: 600 11px var(--font);
+  color: var(--ck-muted);
+  border: 1px solid var(--ck-line-hi);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.procp .pv-fold {
+  width: 32px;
+  height: 28px;
+}
+.procp .pv-foot {
+  margin-top: 10px;
+}
+
+/* test: a discreet button and the exercise time; the checklist index opens above it */
+.procp.test {
+  width: auto;
+  max-width: min(var(--procp-w, 360px), calc(100vw - 24px));
+  align-items: flex-end;
+}
+.procp.test .procp-card {
+  border-color: var(--ck-line-hi);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  padding: 0;
+  flex-direction: column-reverse;
+}
+.procp.test .pv-test {
+  gap: 12px;
+  padding: 6px 12px 6px 6px;
+}
+.procp.test .pv-cl {
+  height: 40px;
+  cursor: pointer;
+}
+.procp.test .pv-cl.on {
+  border-color: var(--ck-accent);
+}
+.procp.test .pv-time {
+  color: var(--ck-muted);
+  font-size: 14px;
+}
+.procp .procp-qrh {
+  width: min(var(--procp-w, 360px), calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: calc(var(--procp-mh, 70vh) - 60px);
+  border-bottom: 1px solid var(--ck-line);
+}
+.procp .procp-qrh-h {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px 6px;
+}
+.procp .procp-qrh-h b {
+  font-size: 15px;
+}
+.procp .procp-qrh-h small {
+  color: var(--ck-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.procp .procp-qrh-list {
+  overflow-y: auto;
+  min-height: 0;
+  padding-bottom: 8px;
+  scrollbar-width: thin;
+  overscroll-behavior: contain;
+}
+.procp .procp-qrh-it {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: calc(100% - 16px);
+  min-height: 44px;
+  margin: 0 8px;
+  padding: 0 8px;
+  border: 0;
+  border-top: 1px solid var(--ck-line);
+  background: none;
+  color: var(--ck-text);
+  font: 600 13.5px var(--font);
+  text-align: left;
+  cursor: pointer;
+}
+.procp .procp-qrh-it:hover,
+.procp .procp-qrh-it:focus-visible {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+}
+.procp .procp-qrh-it svg {
+  flex: none;
+  color: var(--ck-muted);
+}
+.procp .procp-back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 0 8px 0 4px;
+  margin-left: -4px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--ck-accent);
+  font: 600 12.5px var(--font);
+  cursor: pointer;
+}
+.procp .procp-back svg {
+  transform: rotate(90deg);
+}
+
+/* toasts and the ATC radio move left of the card (landscape: they share the right of the outside view) */
+body.procp-on .cockpit .toasts,
+body.procp-on:not(.portrait) .cockpit .atc-radio {
+  right: calc(var(--procp-r, 12px) + var(--procp-w, 360px) + 12px);
+}
+/* …and never over the lesson panel on its left: the radio narrows to the room between the two */
+body.procp-on:not(.portrait) .cockpit:has(.coach:not(.empty)) .atc-radio {
+  width: min(480px, calc(100% - var(--procp-r, 12px) - var(--procp-w, 360px) - 24px - min(380px, 46% - 20px) - 26px));
+  min-width: 0;
+}
+
+@media (pointer: coarse) {
+  .procp .pv-done,
+  .procp .pv-open,
+  .procp .procp-fold,
+  .procp.test .pv-cl,
+  .procp .procp-back {
+    min-height: 44px;
+  }
+  .procp .procp-fold {
+    width: 44px;
+  }
+  .procp .pv-fold {
+    width: 44px;
+    height: 44px;
+  }
+  .procp .pv-it {
+    min-height: 48px;
+  }
+}
+@media print {
+  .procp {
+    display: none !important;
+  }
+}
+
+/* =================================================================== graded procedures (debrief, lesson result) */
+.prr {
+  margin-top: 16px;
+}
+.prr > h5 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.prr-card {
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface, #fff);
+  overflow: hidden;
+}
+.prr-card + .prr-card {
+  margin-top: 14px;
+}
+.prr-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.prr-verdict {
+  flex: none;
+  padding: 4px 9px;
+  border-radius: 6px;
+  font: 800 12px var(--font);
+  letter-spacing: 0.6px;
+}
+.prr-verdict.pass {
+  background: #e9f7ef;
+  color: #13804b;
+  border: 1px solid #b7e2c8;
+}
+.prr-verdict.fail {
+  background: #fdecee;
+  color: #b42318;
+  border: 1px solid #f5c2c7;
+}
+.prr-t {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.prr-t b {
+  font-size: 15px;
+}
+.prr-t small {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.prr-score {
+  flex: none;
+  text-align: right;
+}
+.prr-score b {
+  font: 700 24px var(--font);
+  font-variant-numeric: tabular-nums;
+}
+.prr-score small {
+  color: var(--muted);
+  margin-left: 2px;
+}
+.prr-score .prr-bd {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.prr-notes {
+  list-style: none;
+  margin: 0;
+  padding: 10px 14px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.prr-notes li {
+  position: relative;
+  padding-left: 14px;
+  line-height: 1.45;
+  font-size: 13.5px;
+  color: var(--text-2, var(--text));
+}
+.prr-notes li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 0.62em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.prr-notes li.first {
+  padding: 8px 10px 8px 12px;
+  border-radius: 8px;
+  background: #fff7e6;
+  border: 1px solid #f3d9a4;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.prr-card.fail .prr-notes li.first {
+  background: #fdf0f1;
+  border-color: #f5c9ce;
+}
+.prr-notes li.first::before {
+  display: none;
+}
+.prr-notes li.first.good {
+  background: #edf7f0;
+  border-color: #b9dfc6;
+}
+.prr-notes li.first small {
+  font: 700 10.5px var(--font);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.prr-notes li.first span {
+  font-weight: 600;
+}
+.prr-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  padding: 10px 14px;
+}
+.prr-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg2, #f4f6f9);
+}
+.prr-stat small {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.prr-stat b {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.prr-stat span {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.prr-stat.bad b {
+  color: #b42318;
+}
+/* timeline: the failure at 0, the reaction, the checklist, each item at its time (missed ones at the end) */
+.prr-tlrow {
+  display: flex;
+  align-items: flex-start;
+  gap: 22px;
+  margin: 18px 16px 6px 22px;
+}
+.prr-tl {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 52px;
+  margin-right: 18px;
+}
+/* items not done: grouped after the end of the axis (they have no time) */
+.prr-miss {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 7px 0 0 14px;
+  border-left: 1px dashed var(--line);
+}
+.prr-miss > div {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  max-width: 140px;
+}
+.prr-miss .prr-dot {
+  position: static;
+  margin: 0;
+}
+.prr-miss small {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.prr-axis {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 18px;
+  height: 2px;
+  background: var(--line);
+  border-radius: 1px;
+}
+.prr-m {
+  position: absolute;
+  top: 6px;
+  width: 2px;
+  height: 26px;
+  margin-left: -1px;
+  background: var(--muted);
+}
+.prr-m.fail {
+  background: #b42318;
+}
+.prr-m.react {
+  background: #0b63ce;
+  height: 18px;
+  top: 10px;
+}
+.prr-m.cl {
+  background: none;
+  border-left: 2px dashed #667085;
+}
+.prr-m.cl small {
+  position: absolute;
+  top: 28px;
+  left: 4px;
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.prr-dot {
+  position: absolute;
+  top: 9px;
+  width: 20px;
+  height: 20px;
+  margin-left: -10px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font: 700 10px var(--font);
+  color: #fff;
+  background: #13804b;
+  border: 2px solid var(--surface, #fff);
+}
+.prr-dot.up {
+  top: -9px;
+}
+.prr-dot.late {
+  background: #b26a00;
+}
+.prr-dot.warn {
+  background: #3f6fb5;
+}
+.prr-dot.missed {
+  background: var(--surface, #fff);
+  color: #b42318;
+  border-color: #b42318;
+}
+.prr-dot.skip {
+  background: var(--surface, #fff);
+  color: var(--muted);
+  border-color: var(--line);
+}
+.prr-tick {
+  position: absolute;
+  top: 34px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.prr-items {
+  margin: 0;
+  width: 100%;
+}
+.prr-items td,
+.prr-items th {
+  padding: 7px 10px;
+  vertical-align: middle;
+}
+.prr-items .prr-n {
+  width: 28px;
+  color: var(--muted);
+}
+.prr-items tr.bad td:nth-child(2) {
+  color: #b42318;
+}
+.prr-items tr.skip td {
+  color: var(--muted);
+}
+.prr-res {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.prr-chip {
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid var(--line);
+}
+.prr-chip.good {
+  color: #13804b;
+  background: #e9f7ef;
+  border-color: #b7e2c8;
+}
+.prr-chip.warn {
+  color: #8a5200;
+  background: #fff4e0;
+  border-color: #f3d9a4;
+}
+.prr-chip.bad {
+  color: #b42318;
+  background: #fdecee;
+  border-color: #f5c2c7;
+}
+.prr-chip.muted {
+  color: var(--muted);
+  background: var(--bg2, #f4f6f9);
+}
+.prr-solo {
+  margin: 8px 14px 12px;
+  font-size: 12px;
+}
+@media (max-width: 640px) {
+  .prr-head {
+    flex-wrap: wrap;
+  }
+  .prr-items td:nth-child(4) {
+    min-width: 120px;
+  }
+}
+
+/* =================================================================== training records: procedure chips */
+.hist .hist-procs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.hist .hist-proc {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  /* a long procedure title wraps inside its chip: the records table never runs off the window */
+  white-space: normal;
+  max-width: 100%;
+}
+.hist .hist-proc.PASS {
+  color: #13804b;
+  background: #e9f7ef;
+  border-color: #b7e2c8;
+}
+.hist .hist-proc.FAIL {
+  color: #b42318;
+  background: #fdecee;
+  border-color: #f5c2c7;
+}
+
+/* =================================================================== instructor drawer: procedures and grouped failures */
+.drawer.ios .ios-sec-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.drawer.ios .ios-restore {
+  height: 28px;
+  font-size: 12px;
+}
+.drawer.ios .ios-hint {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.drawer.ios .ios-drill {
+  color: var(--text-2, var(--text));
+  font-weight: 600;
+}
+.drawer.ios .ios-fgroup {
+  margin-bottom: 10px;
+}
+.drawer.ios .ios-fgroup h6 {
+  margin: 0 0 5px;
+  font: 700 11px var(--font);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.drawer.ios .ios-toggle {
+  min-height: 40px;
+  line-height: 1.25;
+}
+.drawer.ios .ios-toggle.armed {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.drawer.ios .ios-arm {
+  margin-top: 6px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg2, #f4f6f9);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.drawer.ios .ios-arm .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+.drawer.ios .ios-arm select {
+  width: 100%;
+  min-height: 36px;
+}
+.drawer.ios .ios-arm-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.drawer.ios .ios-fire {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.drawer.ios .ios-grade {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 10px;
+  margin-bottom: 6px;
+}
+.drawer.ios .ios-grade .ios-seg {
+  flex: none;
+  margin-left: auto;
+}
+.drawer.ios .ios-switch {
+  text-align: left;
+}
+.drawer.ios .ios-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: 600 13px var(--font);
+  cursor: pointer;
+}
+.drawer.ios .ios-switch i {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--line);
+  transition: background 0.15s;
+  flex: none;
+}
+.drawer.ios .ios-switch i::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: left 0.15s;
+}
+.drawer.ios .ios-switch.on i {
+  background: var(--accent);
+}
+.drawer.ios .ios-switch.on i::after {
+  left: 16px;
+}
+.drawer.ios .ios-seg button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.drawer.ios .ios-pending {
+  margin: 4px 0 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid #f3d9a4;
+  background: #fff7e6;
+}
+.drawer.ios .ios-pending h6 {
+  margin: 0 0 6px;
+  font: 700 11px var(--font);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #8a5200;
+}
+.drawer.ios .ios-pend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.drawer.ios .ios-empty {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.drawer.ios .ios-proc {
+  margin-bottom: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid #f5c2c7;
+  background: var(--surface, #fff);
+}
+.drawer.ios .ios-proc.fin {
+  border-color: var(--line);
+}
+.drawer.ios .ios-proc-h {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.drawer.ios .ios-proc-h > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.drawer.ios .ios-proc-h b {
+  font-size: 13.5px;
+}
+.drawer.ios .ios-proc-h small {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.drawer.ios .ios-pt {
+  font: 700 14px var(--font-cond, var(--font));
+  font-variant-numeric: tabular-nums;
+}
+.drawer.ios .ios-proc-bar {
+  height: 4px;
+  margin: 8px 0 6px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.drawer.ios .ios-proc-bar i {
+  display: block;
+  height: 100%;
+  background: #13804b;
+}
+.drawer.ios .ios-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.drawer.ios .ios-items li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 2px 0;
+  font-size: 12.5px;
+  border-top: 1px solid var(--line);
+}
+.drawer.ios .ios-items li:first-child {
+  border-top: 0;
+}
+.drawer.ios .ios-ib {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  border: 1.5px solid var(--line);
+  color: #fff;
+}
+.drawer.ios .ios-items li.mem .ios-ib {
+  border-color: #c22a3a;
+}
+.drawer.ios .ios-items li.done .ios-ib {
+  background: #13804b;
+  border-color: #13804b;
+}
+.drawer.ios .ios-items li.done.late .ios-ib {
+  background: #b26a00;
+  border-color: #b26a00;
+}
+.drawer.ios .ios-items li.done .ios-it {
+  color: var(--muted);
+}
+.drawer.ios .ios-items li.late:not(.done) .ios-it small {
+  color: #b26a00;
+  font-weight: 700;
+}
+.drawer.ios .ios-it {
+  flex: 1;
+  min-width: 0;
+}
+.drawer.ios .ios-at {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.drawer.ios .ios-heard {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+@media (pointer: coarse) {
+  .drawer.ios .ios-heard,
+  .drawer.ios .ios-switch,
+  .drawer.ios .ios-arm select,
+  .drawer.ios .ios-arm .btn,
+  .drawer.ios .ios-pend .btn,
+  .drawer.ios .ios-toggle {
+    min-height: 44px;
+  }
+}

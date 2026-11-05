@@ -1,7 +1,7 @@
 // Instructor-configurable IFR flights (pro-simulator style): departure (runway + SID), enroute route (fixes,
 // airways), arrival (STAR, approach + transition or vectors, missed or land), ATC amendments in sequence, and
 // triggered events (failures, weather changes) — at a time, at a leg or at a fix.
-import { S, startAt, devCheck, fmtHdg, type Exercise, type Step, type Ctx } from './engine';
+import { S, startAt, setAttitude, devCheck, fmtHdg, type Exercise, type Step, type Ctx, type DrillPlanItem, type DrillRuntime } from './engine';
 import { HoldEvaluator } from './holdEval';
 import { approachSetup } from './setupAssist';
 import { findFix, runway, approach as getApproach, APPROACHES, AIRPORTS, NAVAIDS } from '../nav/data';
@@ -13,11 +13,17 @@ import { parseRoute, airwayFixes, airwayMea } from '../nav/airways';
 import { destination, bearingDeg, distanceNm, type LatLon } from '../nav/geo';
 import type { Waypoint } from '../nav/flightplan';
 import { clearanceText, type HoldDef, type Turn } from '../nav/holding';
-import { FAILURE_LABELS, fullEquipment, type Failures, type Equipment, type Scenario, type Sim } from '../sim/sim';
+import { FAILURE_LABELS, fullEquipment, type Equipment, type Scenario, type Sim } from '../sim/sim';
 import type { Weather } from '../sim/environment';
+import { FAILURE_LABELS_FR, type FailureKey } from '../sim/systemsTypes';
+import type { DrillFailureSpec, DrillMode } from './procedureTypes';
+import { lang as uiLang } from '../ui/i18n';
+import { effectiveProcedures } from './procedureStore';
 
 export type CircuitStart =
-  | { type: 'runway'; airport: string; runway: string; initialAlt: number }
+  /** `airborne`: the flight starts already airborne on the climb-out of that runway, this many ft above the
+   *  ground, climbing at Vy (failure drills: "after take-off at 500 ft") */
+  | { type: 'runway'; airport: string; runway: string; initialAlt: number; airborne?: number }
   | { type: 'air'; fix: string; bearing: number; distNm: number; altFt: number; hdg: number | null; iasKt: number };
 
 export type CircuitLeg =
@@ -36,15 +42,34 @@ export type CircuitLeg =
   | { type: 'star'; airport: string; id: string; transition: string | null };
 
 export type EventTrigger = 'time' | 'leg' | 'fix';
-export interface CircuitFailure {
-  key: keyof Failures;
-  trigger: EventTrigger;
-  /** minutes after start, or leg number (1-based); unused for a fix trigger */
+/** what can make a failure happen: the weather-event triggers plus 'altAgl' (climbing or descending through
+ *  `at` ft above the ground), 'random' (once in [at, at + window] minutes, drawn per attempt) and 'instructor'
+ *  (only when the instructor fires it) */
+export type FailureTrigger = DrillFailureSpec['trigger'];
+/** A scheduled failure — a DrillFailureSpec (key, trigger, at, window, fix, dir, expect) plus builder options. */
+export interface CircuitFailure extends DrillFailureSpec {
+  /** time: minutes after start · leg: leg number (1-based) · altAgl: ft above ground · random: window start
+   *  (minutes); unused for the fix and instructor triggers */
   at: number;
   /** trigger 'fix': fails when the aircraft passes within 1 NM of this fix */
   fix?: string;
   /** instructor: not announced in the student's briefing */
   hidden?: boolean;
+  /** random failure: the key is drawn from this group at each attempt (two random failures never draw the same
+   *  key); `key` is then only a placeholder */
+  pool?: FailureKey[];
+}
+
+/** where a failure drill starts (drills.ts builds the start and the legs for an airport) */
+export type DrillPhase = 'lineup' | 'climbout' | 'cruise' | 'approach' | 'hold';
+/** a flight made as a failure drill: training shows the checklist, test hides it */
+export interface CircuitDrill {
+  mode: DrillMode;
+  phase?: DrillPhase;
+  /** weather preset of the quick form */
+  wx?: 'vmc' | 'imc' | 'low';
+  /** a fixed seed: every attempt draws the same random failures (default: a new draw per attempt) */
+  seed?: number;
 }
 /** a triggered change of the weather (e.g. the ceiling drops below minimums on the approach) */
 export interface CircuitEvent {
@@ -86,6 +111,8 @@ export interface Circuit {
   cruise?: number;
   /** the template it was made from */
   template?: string;
+  /** failure drill (procedures mode): its mode, phase and weather preset */
+  drill?: CircuitDrill;
 }
 
 export const newCircuit = (): Circuit => ({
@@ -302,58 +329,140 @@ export function applyRoute(c: Circuit, text: string): RouteApply {
 }
 
 // ------------------------------------------------------------------ validation
-const TRIGGER_TXT = (t: { trigger: EventTrigger; at: number; fix?: string }) =>
-  t.trigger === 'time' ? `${t.at} min after the start` : t.trigger === 'leg' ? `at leg ${t.at}` : `at ${t.fix || '…'}`;
-export function validate(c: Circuit): string[] {
+type VLang = 'fr' | 'en';
+const failName = (k: FailureKey, l: VLang) => (l === 'fr' ? FAILURE_LABELS_FR[k] : FAILURE_LABELS[k]) ?? k;
+/** when a failure / weather change happens, in plain words */
+export function triggerText(t: { trigger: FailureTrigger; at: number; fix?: string; window?: number; dir?: 'climb' | 'descent' }, l: VLang = 'en'): string {
+  const fr = l === 'fr';
+  switch (t.trigger) {
+    case 'time':
+      return t.at <= 0 ? (fr ? 'dès le départ' : 'at the start') : fr ? `${t.at} min après le départ` : `${t.at} min after the start`;
+    case 'leg':
+      return fr ? `à l’étape ${t.at}` : `at leg ${t.at}`;
+    case 'fix':
+      return fr ? `à ${t.fix || '…'}` : `at ${t.fix || '…'}`;
+    case 'altAgl':
+      return t.dir === 'descent'
+        ? fr ? `en descente à ${t.at} ft sol` : `descending through ${t.at} ft AGL`
+        : fr ? `en montée à ${t.at} ft sol` : `climbing through ${t.at} ft AGL`;
+    case 'random': {
+      const b = t.at + Math.max(0, t.window ?? 5);
+      return fr ? `au hasard entre ${t.at} et ${b} min` : `at a random time between ${t.at} and ${b} min`;
+    }
+    case 'instructor':
+      return fr ? 'quand l’instructeur la déclenche' : 'when the instructor fires it';
+  }
+}
+
+const stripLang = (id: string) => id.replace(/\.(fr|en)$/, '');
+/** a procedure id (full, base id of a library procedure, or a club procedure) the drill session can find */
+function procedureExists(id: string): boolean {
+  const b = stripLang(id);
+  try {
+    return effectiveProcedures().some((p) => p.id === id || stripLang(p.id) === b || (!!p.basedOn && stripLang(p.basedOn) === b));
+  } catch {
+    return true;
+  }
+}
+
+/** Problems that keep the flight from being flown, in plain words (`lang` 'fr' for French). An empty list = valid. */
+export function validate(c: Circuit, lang: VLang = 'en'): string[] {
+  const fr = lang === 'fr';
   const e: string[] = [];
-  if (!c.name.trim()) e.push('Give the circuit a name.');
-  if (!c.legs.length) e.push('Add at least one leg.');
+  const L = (n: number, en: string, frs: string) => e.push(fr ? `Étape ${n} : ${frs}` : `Leg ${n}: ${en}`);
+  if (!c.name.trim()) e.push(fr ? 'Donnez un nom au vol.' : 'Give the circuit a name.');
+  // a failure drill may be only the take-off (lined up / climb-out): no leg needed
+  const takeoffOnly = !!c.drill && c.start.type === 'runway';
+  if (!c.legs.length && !takeoffOnly) e.push(fr ? 'Ajoutez au moins une étape.' : 'Add at least one leg.');
   if (c.start.type === 'runway') {
     try {
       runway(c.start.airport, c.start.runway);
     } catch {
-      e.push(`Unknown runway ${c.start.airport} ${c.start.runway}.`);
+      e.push(fr ? `Piste inconnue ${c.start.airport} ${c.start.runway}.` : `Unknown runway ${c.start.airport} ${c.start.runway}.`);
     }
-  } else if (!findFix(c.start.fix)) e.push(`Unknown start fix ${c.start.fix}.`);
+    if (c.start.airborne !== undefined && (c.start.airborne < 200 || c.start.airborne > 3000))
+      e.push(fr ? 'Départ en montée : entre 200 et 3000 ft sol.' : 'Climb-out start: 200 to 3000 ft above the runway.');
+  } else if (!findFix(c.start.fix)) e.push(fr ? `Point de départ inconnu ${c.start.fix}.` : `Unknown start fix ${c.start.fix}.`);
   c.legs.forEach((l, i) => {
     const n = i + 1;
-    if (l.type === 'fix' && !l.ident) e.push(`Leg ${n}: choose a fix.`);
-    else if ((l.type === 'fix' || (l.type === 'hold' && !l.ppos)) && !findFix(l.ident)) e.push(`Leg ${n}: unknown fix “${l.ident}”.`);
-    if (l.type === 'fix' && l.atc === 'cross' && !l.alt) e.push(`Leg ${n}: give the crossing altitude.`);
+    if (l.type === 'fix' && !l.ident) L(n, 'choose a fix.', 'choisissez un point.');
+    else if ((l.type === 'fix' || (l.type === 'hold' && !l.ppos)) && !findFix(l.ident)) L(n, `unknown fix “${l.ident}”.`, `point inconnu « ${l.ident} ».`);
+    if (l.type === 'fix' && l.atc === 'cross' && !l.alt) L(n, 'give the crossing altitude.', 'indiquez l’altitude de passage.');
     if (l.type === 'fix' && l.via && findFix(l.ident)) {
       const from = prevFixIdent(c, i);
-      if (!from || !airwayFixes(l.via, from, l.ident)) e.push(`Leg ${n}: ${from ?? 'the previous fix'} and ${l.ident} are not both on ${l.via}.`);
+      if (!from || !airwayFixes(l.via, from, l.ident)) L(n, `${from ?? 'the previous fix'} and ${l.ident} are not both on ${l.via}.`, `${from ?? 'le point précédent'} et ${l.ident} ne sont pas tous deux sur ${l.via}.`);
     }
     if (l.type === 'approach') {
-      if (!APPROACHES.some((a) => a.id === l.approachId)) e.push(`Leg ${n}: unknown approach.`);
-      else if (l.transition && !getApproach(l.approachId).transitions.some((t) => t.name === l.transition)) e.push(`Leg ${n}: transition ${l.transition} does not exist on this approach.`);
-      if (l.outcome === 'land' && i !== c.legs.length - 1) e.push(`Leg ${n}: a full-stop landing must be the last leg (use “missed approach” to continue).`);
+      if (!APPROACHES.some((a) => a.id === l.approachId)) L(n, 'unknown approach.', 'approche inconnue.');
+      else if (l.transition && !getApproach(l.approachId).transitions.some((t) => t.name === l.transition)) L(n, `transition ${l.transition} does not exist on this approach.`, `la transition ${l.transition} n’existe pas sur cette approche.`);
+      if (l.outcome === 'land' && i !== c.legs.length - 1) L(n, 'a full-stop landing must be the last leg (use “missed approach” to continue).', 'un atterrissage complet doit être la dernière étape (choisissez « approche interrompue » pour continuer).');
     }
     if (l.type === 'sid') {
-      if (c.start.type !== 'runway') e.push(`Leg ${n}: a SID starts on a runway (start on a runway or remove it).`);
+      if (c.start.type !== 'runway') L(n, 'a SID starts on a runway (start on a runway or remove it).', 'un SID part d’une piste (départ sur piste, ou supprimez-le).');
       else {
         const p = terminalProc(c.start.airport, 'SID', l.id);
-        if (!p) e.push(`Leg ${n}: departure ${l.id} is not published at ${c.start.airport}.`);
-        else if (!sidsFor(c.start.airport, c.start.runway).some((x) => x.id === l.id)) e.push(`Leg ${n}: ${l.id} does not serve RWY ${c.start.runway}.`);
-        else if (l.transition && !p.enr.some((t) => t.name === l.transition)) e.push(`Leg ${n}: ${l.id} has no ${l.transition} transition.`);
-        if (i !== 0) e.push(`Leg ${n}: the SID must be the first leg.`);
+        if (!p) L(n, `departure ${l.id} is not published at ${c.start.airport}.`, `le départ ${l.id} n’est pas publié à ${c.start.airport}.`);
+        else if (!sidsFor(c.start.airport, c.start.runway).some((x) => x.id === l.id)) L(n, `${l.id} does not serve RWY ${c.start.runway}.`, `${l.id} ne dessert pas la piste ${c.start.runway}.`);
+        else if (l.transition && !p.enr.some((t) => t.name === l.transition)) L(n, `${l.id} has no ${l.transition} transition.`, `${l.id} n’a pas de transition ${l.transition}.`);
+        if (i !== 0) L(n, 'the SID must be the first leg.', 'le SID doit être la première étape.');
       }
     }
     if (l.type === 'star') {
       const p = terminalProc(l.airport, 'STAR', l.id);
-      if (!p) e.push(`Leg ${n}: arrival ${l.id} is not published at ${l.airport}.`);
-      else if (l.transition && !p.enr.some((t) => t.name === l.transition)) e.push(`Leg ${n}: ${l.id} has no ${l.transition} transition.`);
+      if (!p) L(n, `arrival ${l.id} is not published at ${l.airport}.`, `l’arrivée ${l.id} n’est pas publiée à ${l.airport}.`);
+      else if (l.transition && !p.enr.some((t) => t.name === l.transition)) L(n, `${l.id} has no ${l.transition} transition.`, `${l.id} n’a pas de transition ${l.transition}.`);
     }
-    if (l.type === 'hold' && (l.laps < 1 || l.laps > 6)) e.push(`Leg ${n}: 1 to 6 hold circuits.`);
-    if ((l.type === 'alt' || l.type === 'hold') && (l.alt < 1000 || l.alt > 18000)) e.push(`Leg ${n}: altitude must be 1000–18000 ft.`);
+    if (l.type === 'hold' && (l.laps < 1 || l.laps > 6)) L(n, '1 to 6 hold circuits.', 'de 1 à 6 tours d’attente.');
+    if ((l.type === 'alt' || l.type === 'hold') && (l.alt < 1000 || l.alt > 18000)) L(n, 'altitude must be 1000–18000 ft.', 'l’altitude doit être comprise entre 1000 et 18000 ft.');
   });
   for (const f of c.failures) {
-    if (f.trigger === 'leg' && (f.at < 1 || f.at > c.legs.length)) e.push(`Failure ${FAILURE_LABELS[f.key]}: leg ${f.at} does not exist.`);
-    if (f.trigger === 'fix' && !findFix(f.fix ?? '')) e.push(`Failure ${FAILURE_LABELS[f.key]}: unknown fix “${f.fix ?? ''}”.`);
+    const F = (en: string, frs: string) => e.push(fr ? `Panne ${failName(f.key, lang)} : ${frs}` : `Failure ${failName(f.key, lang)}: ${en}`);
+    if (!(f.key in FAILURE_LABELS)) {
+      e.push(fr ? `Panne inconnue « ${String(f.key)} ».` : `Failure: unknown failure “${String(f.key)}”.`);
+      continue;
+    }
+    if (f.trigger === 'leg' && (f.at < 1 || f.at > c.legs.length)) F(`leg ${f.at} does not exist.`, `l’étape ${f.at} n’existe pas.`);
+    if (f.trigger === 'fix' && !findFix(f.fix ?? '')) F(`unknown fix “${f.fix ?? ''}”.`, `point inconnu « ${f.fix ?? ''} ».`);
+    if (f.trigger === 'time' && !(f.at >= 0 && f.at <= 240)) F('the time must be 0 to 240 min.', 'le délai doit être compris entre 0 et 240 min.');
+    if (f.trigger === 'altAgl' && !(f.at >= 50 && f.at <= 15000)) F('the height must be 50 to 15000 ft above the ground.', 'la hauteur doit être comprise entre 50 et 15000 ft sol.');
+    if (f.trigger === 'altAgl' && f.dir !== 'descent' && c.start.type === 'runway' && c.start.airborne !== undefined && f.at <= c.start.airborne)
+      F(`the flight starts at ${c.start.airborne} ft: choose a higher height, or “descending”.`, `le vol commence à ${c.start.airborne} ft : choisissez une hauteur plus élevée, ou « en descente ».`);
+    // an airborne start already above the height: it is never climbed through (unless a missed approach climbs
+    // back up)
+    if (f.trigger === 'altAgl' && f.dir !== 'descent' && c.start.type === 'air' && !c.legs.some((l) => l.type === 'approach' && l.outcome === 'missed')) {
+      const elev = AIRPORTS.find((a) => a.icao === (c.dest ?? c.dep))?.elevFt ?? 0;
+      const agl = Math.round((c.start.altFt - elev) / 100) * 100;
+      if (agl - f.at > 300)
+        F(`the flight starts about ${agl} ft above the ground and never climbs through ${f.at} ft: choose “descending”.`, `le vol commence à environ ${agl} ft sol et ne monte jamais à ${f.at} ft : choisissez « en descente ».`);
+    }
+    // a height above the highest planned altitude is never climbed through (a SID / STAR / missed approach may
+    // climb higher: not checked)
+    if (f.trigger === 'altAgl' && f.dir !== 'descent' && !c.legs.some((l) => l.type === 'sid' || l.type === 'star' || (l.type === 'approach' && l.outcome === 'missed'))) {
+      let elev: number | undefined;
+      try {
+        elev = c.start.type === 'runway' ? runway(c.start.airport, c.start.runway).elevFt : AIRPORTS.find((a) => a.icao === (c.dep ?? c.dest))?.elevFt;
+      } catch {
+        elev = undefined;
+      }
+      const top = Math.max(
+        c.start.type === 'runway' ? c.start.initialAlt : c.start.altFt,
+        ...c.legs.map((l) => (l.type === 'fix' ? l.alt ?? 0 : l.type === 'alt' || l.type === 'hold' ? l.alt : 0)),
+      );
+      const maxAgl = elev === undefined ? Infinity : Math.round((top - elev) / 100) * 100;
+      if (f.at > maxAgl + 100)
+        F(
+          `the flight never climbs that high: its highest planned altitude is ${top} ft, about ${maxAgl} ft above the ground.`,
+          `le vol ne monte jamais aussi haut : son altitude prévue la plus haute est ${top} ft, soit environ ${maxAgl} ft sol.`,
+        );
+    }
+    if (f.trigger === 'random' && (!(f.at >= 0) || !((f.window ?? 5) > 0) || f.at + (f.window ?? 5) > 240)) F('the random window must be within 0–240 min and last at least a minute.', 'la fenêtre aléatoire doit rester entre 0 et 240 min et durer au moins une minute.');
+    if (f.pool && !f.pool.some((k) => k in FAILURE_LABELS)) F('the random group is empty.', 'le groupe tiré au sort est vide.');
+    if (f.expect && !procedureExists(f.expect))
+      F('the expected procedure no longer exists: choose another one, or Automatic.', 'la procédure attendue n’existe plus : choisissez-en une autre, ou Automatique.');
   }
   for (const w of c.events ?? []) {
-    if (w.trigger === 'leg' && (w.at < 1 || w.at > c.legs.length)) e.push(`Weather change: leg ${w.at} does not exist.`);
-    if (w.trigger === 'fix' && !findFix(w.fix ?? '')) e.push(`Weather change: unknown fix “${w.fix ?? ''}”.`);
+    if (w.trigger === 'leg' && (w.at < 1 || w.at > c.legs.length)) e.push(fr ? `Météo : l’étape ${w.at} n’existe pas.` : `Weather change: leg ${w.at} does not exist.`);
+    if (w.trigger === 'fix' && !findFix(w.fix ?? '')) e.push(fr ? `Météo : point inconnu « ${w.fix ?? ''} ».` : `Weather change: unknown fix “${w.fix ?? ''}”.`);
   }
   return e;
 }
@@ -422,12 +531,93 @@ export function circuitStats(c: Circuit): { distNm: number; minutes: number } {
   return { distNm: d, minutes: Math.round((d / 95) * 60 + holds + (c.start.type === 'runway' ? 3 : 0)) };
 }
 
-/** what the student is told about the scheduled failures (hidden ones are not announced) */
-export function failureBrief(c: Circuit): string[] {
+/** what the student is told about the scheduled failures (hidden ones are not announced; a test drill announces
+ *  none) */
+export function failureBrief(c: Circuit, l: VLang = 'en'): string[] {
+  const fr = l === 'fr';
+  if (c.drill?.mode === 'test')
+    return c.failures.length
+      ? [fr ? 'Exercice noté : les pannes ne sont pas annoncées, la check-list reste masquée jusqu’à la fin. Appliquez les procédures de mémoire, puis la check-list.' : 'Graded drill: the failures are not announced and the checklist stays hidden until the end. Fly the memory items, then the checklist.']
+      : [];
   const shown = c.failures.filter((f) => !f.hidden);
-  const out = shown.map((f) => `${FAILURE_LABELS[f.key]} fails ${TRIGGER_TXT(f)}.`);
-  if (c.failures.length > shown.length) out.push('Expect the unexpected.');
+  const out = shown.map((f) =>
+    f.pool?.length
+      ? fr ? `Une panne tirée au sort survient ${triggerText(f, l)}.` : `A random failure happens ${triggerText(f, l)}.`
+      : fr ? `${failName(f.key, l)} : ${triggerText(f, l)}.` : `${failName(f.key, l)}: ${triggerText(f, l)}.`,
+  );
+  if (c.failures.length > shown.length) out.push(fr ? 'Attendez-vous à l’imprévu.' : 'Expect the unexpected.');
   return out;
+}
+
+// ------------------------------------------------------------------ failure plan of an attempt
+/** mulberry32 */
+function rng(seed: number) {
+  let a = seed >>> 0 || 1;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+/** a new seed for an attempt */
+export const newSeed = () => (Math.floor(Math.random() * 0x7fffffff) || 1) >>> 0;
+
+/** The failures of one attempt: random times drawn in their window, random keys drawn from their group (never
+ *  twice the same key in a flight). Deterministic for a seed. */
+export function planFailures(c: Circuit, seed: number): DrillPlanItem[] {
+  const rnd = rng(seed);
+  const used = new Set<FailureKey>(c.failures.filter((f) => !f.pool?.length).map((f) => f.key));
+  return c.failures.map((f, index) => {
+    let key = f.key;
+    let drawn = false;
+    if (f.pool?.length) {
+      const ok = f.pool.filter((k) => k in FAILURE_LABELS);
+      const fresh = ok.filter((k) => !used.has(k));
+      const from = fresh.length ? fresh : ok;
+      if (from.length) {
+        key = from[Math.min(from.length - 1, Math.floor(rnd() * from.length))];
+        drawn = true;
+      }
+      used.add(key);
+    }
+    const it: DrillPlanItem = { index, key, trigger: f.trigger, expect: drawn ? undefined : f.expect, hidden: f.hidden, fired: false, firedAtS: null };
+    if (drawn) it.drawn = true;
+    if (f.trigger === 'time') it.atMin = Math.max(0, f.at);
+    if (f.trigger === 'random') {
+      const w = Math.max(0, f.window ?? 5);
+      it.window = [f.at, f.at + w];
+      it.atMin = f.at + rnd() * w;
+    }
+    return it;
+  });
+}
+
+/** is the failure due now (time, random, leg, fix, height above ground)? `prev` keeps the last height per failure */
+function failureDue(it: DrillPlanItem, f: CircuitFailure, cx: Ctx, legStep: number[], prev: Map<number, number>): boolean {
+  switch (it.trigger) {
+    case 'instructor':
+      return false;
+    case 'time':
+    case 'random':
+      return cx.run.totalT >= (it.atMin ?? 0) * 60;
+    case 'leg':
+      return cx.run.idx >= (legStep[f.at - 1] ?? Infinity);
+    case 'fix': {
+      const p = f.fix ? findFix(f.fix) : undefined;
+      return !!p && distanceNm(cx.sim.ac.s, p) < 1;
+    }
+    case 'altAgl': {
+      const agl = cx.sim.ac.s.onGround ? 0 : cx.d.aglFt;
+      const last = prev.get(it.index);
+      prev.set(it.index, agl);
+      if (f.dir === 'descent') return last !== undefined && last > f.at && agl <= f.at && !cx.sim.ac.s.onGround;
+      // climbing through; a flight that starts right at that height (climb-out start) fails at once
+      if (last === undefined) return agl >= f.at && agl < f.at + 150 && cx.d.vsFpm > 100;
+      return last < f.at && agl >= f.at;
+    }
+  }
 }
 
 // ------------------------------------------------------------------ to a graded exercise
@@ -476,8 +666,17 @@ function filedRoute(flat: FlatLeg[]): Waypoint[] {
   return route;
 }
 
-export function circuitToExercise(c: Circuit): Exercise {
+/** `seed`: replay the random failures of a recorded attempt (default: the circuit's fixed seed, else a new draw) */
+export function circuitToExercise(c: Circuit, opts: { seed?: number } = {}): Exercise {
   const st = circuitStats(c);
+  const ul: VLang = uiLang() === 'fr' ? 'fr' : 'en';
+  const drillLines = c.drill
+    ? [
+        c.drill.mode === 'test'
+          ? ul === 'fr' ? 'Exercice de panne — mode test.' : 'Failure drill — test mode.'
+          : ul === 'fr' ? 'Exercice de panne — entraînement : la procédure attendue et la check-list sont affichées.' : 'Failure drill — training: the expected procedure and its checklist are shown.',
+      ]
+    : [];
   const sid = c.legs.find((l) => l.type === 'sid') as Extract<CircuitLeg, { type: 'sid' }> | undefined;
   const firstAp = c.legs.find((l) => l.type === 'approach') as Extract<CircuitLeg, { type: 'approach' }> | undefined;
   const dest = c.dest ?? (firstAp ? safeApproach(firstAp.approachId)?.airport : undefined);
@@ -487,12 +686,30 @@ export function circuitToExercise(c: Circuit): Exercise {
     title: c.name,
     summary: c.description || c.legs.map(legText).join(' · '),
     objectives: c.legs.map(legText),
-    standards: ['Altitude ±100 ft on assigned altitudes', 'SID / STAR altitude constraints', 'Holds: correct entry, 1:00 inbound', 'Approaches to ACS standards', ...(c.failures.length ? ['Handle the scheduled abnormal(s)'] : [])],
+    // only what the flight has (a take-off drill has no hold or SID to grade)
+    standards: (() => {
+      const fr = ul === 'fr';
+      const has = (t: CircuitLeg['type']) => c.legs.some((l) => l.type === t);
+      return [
+        fr ? 'Altitude ±100 ft sur les altitudes assignées' : 'Altitude ±100 ft on assigned altitudes',
+        ...(has('sid') || has('star') ? [fr ? 'Contraintes d’altitude SID / STAR' : 'SID / STAR altitude constraints'] : []),
+        ...(has('hold') ? [fr ? 'Attentes : entrée correcte, 1:00 en rapprochement' : 'Holds: correct entry, 1:00 inbound'] : []),
+        ...(has('approach') ? [fr ? 'Approches aux standards ACS' : 'Approaches to ACS standards'] : []),
+        ...(c.drill
+          ? [fr ? 'Procédures d’urgence : actions de mémoire à temps, check-list complète, trajectoire tenue' : 'Emergency procedures: memory items on time, checklist complete, flight path held']
+          : c.failures.length
+            ? [fr ? 'Gérer la ou les pannes prévues' : 'Handle the scheduled abnormal(s)']
+            : []),
+      ];
+    })(),
     briefing: [
-      c.start.type === 'runway' ? `Departure ${c.start.airport} RWY ${c.start.runway}${sid ? `, ${sid.id} departure` : ''}, climb to ${c.start.initialAlt}.` : `Airborne ${c.start.distNm} NM on the ${fmtHdg(c.start.bearing)}° bearing from ${c.start.fix}, ${c.start.altFt} ft.`,
-      `${c.legs.length} legs · ~${st.distNm.toFixed(0)} NM · ~${st.minutes} min.`,
-      ...(c.mode === 'checkride' ? ['Checkride: no coaching; graded against the ACS.'] : []),
-      ...failureBrief(c),
+      ...drillLines,
+      ...briefStart(c, sid?.id, ul),
+      ul === 'fr'
+        ? `${c.legs.length} étape${c.legs.length > 1 ? 's' : ''} · ~${st.distNm.toFixed(0)} NM · ~${st.minutes} min.`
+        : `${c.legs.length} leg${c.legs.length === 1 ? '' : 's'} · ~${st.distNm.toFixed(0)} NM · ~${st.minutes} min.`,
+      ...(c.mode === 'checkride' ? [ul === 'fr' ? 'Contrôle en vol : aucune aide, noté selon l’ACS.' : 'Checkride: no coaching; graded against the ACS.'] : []),
+      ...failureBrief(c, ul),
     ],
     plate: firstAp?.approachId,
     allowAp: c.allowAp,
@@ -500,7 +717,30 @@ export function circuitToExercise(c: Circuit): Exercise {
     setup: (sim) => {
       const steps: Step[] = [];
       let curAlt = 3000;
-      if (c.start.type === 'runway') {
+      if (c.start.type === 'runway' && c.start.airborne) {
+        // climb-out: on the extended centreline, `airborne` ft above the runway, full power at Vy, flaps up
+        const r = runway(c.start.airport, c.start.runway);
+        const agl = c.start.airborne;
+        curAlt = Math.max(c.start.initialAlt, r.elevFt + agl + 500);
+        // ≈ 0.25 NM of take-off run and initial climb, then ≈ 570 ft/NM at Vy
+        const pos = destination(r.threshold, r.heading, 0.25 + agl / 570);
+        startAt(sim, {
+          pos,
+          altFt: r.elevFt + agl,
+          hdg: r.heading,
+          iasKt: VY_KT,
+          weather: c.weather,
+          setup: (s) => {
+            s.ap.altSel = Math.round(curAlt / 100) * 100;
+            s.ap.hdgBug = Math.round(r.heading) || 360;
+            s.controls.throttle = 1;
+            s.controls.flaps = 0;
+            s.controls.trim = CLIMB_TRIM;
+          },
+        });
+        setAttitude(sim, 8.5, 0, VY_KT);
+        steps.push({ ...S.takeoff(curAlt, r.heading), text: ul === 'fr' ? `Montée dans l’axe ${fmtHdg(r.heading)} à 74 kt (Vy) jusqu’à ${curAlt} ft` : `Climb runway heading ${fmtHdg(r.heading)} at 74 KIAS (Vy) to ${curAlt} ft` });
+      } else if (c.start.type === 'runway') {
         const r = runway(c.start.airport, c.start.runway);
         curAlt = c.start.initialAlt;
         startAt(sim, { pos: destination(r.threshold, r.heading, 0.05), altFt: r.elevFt, hdg: r.heading, iasKt: 0, onGround: true, weather: c.weather, setup: (s) => { s.ap.altSel = curAlt; s.ap.hdgBug = Math.round(r.heading) || 360; } });
@@ -594,6 +834,15 @@ export function circuitToExercise(c: Circuit): Exercise {
         if (firstAp && safeApproach(firstAp.approachId)) sim.loadApproach(firstAp.approachId, firstAp.transition, 'load');
       }
       const fired = new Set<string>();
+      // the failures of this attempt (random draws recorded with their seed)
+      const seed = opts.seed ?? c.drill?.seed ?? newSeed();
+      const drill: DrillRuntime = {
+        mode: c.drill?.mode ?? (c.mode === 'checkride' ? 'test' : 'training'),
+        isDrill: !!c.drill,
+        seed,
+        plan: planFailures(c, seed),
+      };
+      const aglPrev = new Map<number, number>();
       const due = (t: { trigger: EventTrigger; at: number; fix?: string }, cx: Ctx) => {
         if (t.trigger === 'time') return cx.run.totalT >= t.at * 60;
         if (t.trigger === 'leg') return cx.run.idx >= (legStep[t.at - 1] ?? Infinity);
@@ -603,6 +852,7 @@ export function circuitToExercise(c: Circuit): Exercise {
       const asFiled = c.legs.filter((l) => l.type === 'fix' && !l.atc).map((l) => (l as { ident: string }).ident);
       return {
         steps,
+        drill,
         hold: firstHold,
         acs: c.legs.some((l) => l.type === 'approach'),
         allowanceSec: 30 + flat.length * 10,
@@ -613,11 +863,11 @@ export function circuitToExercise(c: Circuit): Exercise {
               : `Cleared as filed: ${asFiled.join(' ') || 'radar vectors'}. Climb and maintain ${c.start.initialAlt}. Squawk 4651.`
             : undefined,
         tick: (cx) => {
-          c.failures.forEach((f, k) => {
-            if (fired.has(`f${k}`) || !due(f, cx)) return;
-            fired.add(`f${k}`);
-            cx.sim.setFailure(f.key, true);
-          });
+          for (const it of drill.plan) {
+            if (it.fired) continue;
+            const f = c.failures[it.index];
+            if (f && failureDue(it, f, cx, legStep, aglPrev)) cx.run.fireDrill(it);
+          }
           (c.events ?? []).forEach((w, k) => {
             if (fired.has(`w${k}`) || !due(w, cx)) return;
             fired.add(`w${k}`);
@@ -629,13 +879,46 @@ export function circuitToExercise(c: Circuit): Exercise {
   };
 }
 
+/** the first briefing line: where the flight starts (FR / EN) */
+function briefStart(c: Circuit, sid: string | undefined, l: VLang): string[] {
+  const fr = l === 'fr';
+  const st = c.start;
+  if (st.type === 'runway' && st.airborne)
+    return [
+      fr
+        ? `En montée après le décollage de ${st.airport} piste ${st.runway}, ${st.airborne} ft sol, à Vy vers ${st.initialAlt} ft.`
+        : `Airborne after take-off from ${st.airport} RWY ${st.runway}, ${st.airborne} ft above the ground, climbing at Vy to ${st.initialAlt}.`,
+    ];
+  if (st.type === 'runway')
+    return [
+      fr
+        ? `Départ ${st.airport} piste ${st.runway}${sid ? `, départ ${sid}` : ''}, montée vers ${st.initialAlt} ft.`
+        : `Departure ${st.airport} RWY ${st.runway}${sid ? `, ${sid} departure` : ''}, climb to ${st.initialAlt}.`,
+    ];
+  return [
+    fr
+      ? `En vol à ${st.distNm} NM au relèvement ${fmtHdg(st.bearing)}° de ${st.fix}, ${st.altFt} ft.`
+      : `Airborne ${st.distNm} NM on the ${fmtHdg(st.bearing)}° bearing from ${st.fix}, ${st.altFt} ft.`,
+  ];
+}
+
+/** Vy and the trim that holds it at full power, flaps up (climb-out start) */
+const VY_KT = 74;
+const CLIMB_TRIM = -0.02;
+
 /** Ungraded flight (free flight): a plain scenario with the route / approach / hold of the plan loaded. */
 export function circuitToScenario(c: Circuit): Scenario {
   let pos: LatLon;
   let alt: number;
   let hdg: number;
   let onGround = false;
-  if (c.start.type === 'runway') {
+  const climb = c.start.type === 'runway' && !!c.start.airborne;
+  if (c.start.type === 'runway' && c.start.airborne) {
+    const r = runway(c.start.airport, c.start.runway);
+    pos = destination(r.threshold, r.heading, 0.25 + c.start.airborne / 570);
+    alt = r.elevFt + c.start.airborne;
+    hdg = r.heading;
+  } else if (c.start.type === 'runway') {
     const r = runway(c.start.airport, c.start.runway);
     pos = destination(r.threshold, r.heading, 0.05);
     alt = r.elevFt;
@@ -660,7 +943,7 @@ export function circuitToScenario(c: Circuit): Scenario {
     pos,
     altFt: alt,
     hdg,
-    iasKt: onGround ? 0 : c.start.type === 'air' ? c.start.iasKt : 95,
+    iasKt: onGround ? 0 : c.start.type === 'air' ? c.start.iasKt : climb ? VY_KT : 95,
     onGround,
     weather: { turbulence: 0.15, ...c.weather },
     briefing: [],
@@ -670,6 +953,12 @@ export function circuitToScenario(c: Circuit): Scenario {
       s.av.baro = s.weather.qnh;
       s.ap.altSel = c.start.type === 'runway' ? c.start.initialAlt : Math.round(alt / 100) * 100;
       s.ap.hdgBug = Math.round(hdg) || 360;
+      if (climb) {
+        s.controls.throttle = 1;
+        s.controls.flaps = 0;
+        s.controls.trim = CLIMB_TRIM;
+        setAttitude(s, 8.5, 0, VY_KT);
+      }
       const route = filedRoute(flat);
       if (route.length) s.fp.setEnroute([{ ident: 'PPOS', lat: pos.lat, lon: pos.lon }, ...route]);
       if (ap) s.loadApproach(ap.approachId, ap.transition, route.length ? 'load' : ap.transition ? 'activate' : 'vtf');
@@ -677,7 +966,7 @@ export function circuitToScenario(c: Circuit): Scenario {
         const f = findFix(hold.ident)!;
         s.fp.setHold({ ident: f.ident, lat: f.lat, lon: f.lon }, hold.inbound, hold.turn, hold.legMin, pos, hold.alt);
       }
-      for (const f of c.failures) if (f.trigger === 'time' && f.at <= 0) s.setFailure(f.key, true);
+      for (const it of planFailures(c, c.drill?.seed ?? newSeed())) if (it.trigger === 'time' && (it.atMin ?? 0) <= 0) s.setFailure(it.key, true);
     },
   };
 }
@@ -773,32 +1062,32 @@ export interface FlightTemplate {
 }
 
 const rankOf = (a: Approach) => APPROACH_RANK[a.type] ?? 9;
-const appsAt = (icao: string, pred: (a: Approach) => boolean = () => true) =>
+export const appsAt = (icao: string, pred: (a: Approach) => boolean = () => true) =>
   APPROACHES.filter((a) => a.airport === icao && pred(a)).sort((a, b) => rankOf(a) - rankOf(b) || a.runway.localeCompare(b.runway));
-const roundAlt = (ft: number) => Math.ceil(ft / 500) * 500;
-const pickAirport = (want?: string, pred: (icao: string) => boolean = (i) => appsAt(i).length > 0) =>
+export const roundAlt = (ft: number) => Math.ceil(ft / 500) * 500;
+export const pickAirport = (want?: string, pred: (icao: string) => boolean = (i) => appsAt(i).length > 0) =>
   (want && AIRPORTS.some((a) => a.icao === want) && pred(want) ? want : AIRPORTS.find((a) => pred(a.icao))?.icao) ?? null;
 /** wind straight down the final course of `ap` (the runway in use for that approach) */
-const windFor = (ap: Approach, kt = 10): Partial<Weather> => ({ windDir: Math.round(ap.finalCourse / 10) * 10 || 360, windKt: kt });
+export const windFor = (ap: Approach, kt = 10): Partial<Weather> => ({ windDir: Math.round(ap.finalCourse / 10) * 10 || 360, windKt: kt });
 /** the published missed-approach hold of an approach, if any */
 export function missedHold(ap: Approach) {
   const m = [...ap.missed].reverse().find((l) => l.hold);
   if (!m?.hold) return null;
   return { ident: m.fix.ident, inbound: Math.round(m.hold.inbound) || 360, turn: m.hold.turn, legMin: m.hold.legMin || 1, alt: Math.max(2000, roundAlt(m.altMin ?? 3000)) };
 }
-const airStartNear = (ap: Approach, tr: Approach['transitions'][number] | undefined, alt: number): CircuitStart => {
+export const airStartNear = (ap: Approach, tr: Approach['transitions'][number] | undefined, alt: number): CircuitStart => {
   const f = tr?.legs[0]?.fix ?? ap.final[0].fix;
   const apt = AIRPORTS.find((a) => a.icao === ap.airport);
   const brg = apt ? (bearingDeg(apt, f) + 360) % 360 : (ap.finalCourse + 180) % 360;
   return { type: 'air', fix: f.ident, bearing: Math.round(brg / 5) * 5 % 360, distNm: 10, altFt: alt, hdg: null, iasKt: 100 };
 };
-const runwayStart = (icao: string, ap: Approach | undefined): CircuitStart => {
+export const runwayStart = (icao: string, ap: Approach | undefined): CircuitStart => {
   const a = AIRPORTS.find((x) => x.icao === icao)!;
   const into = ap && ap.airport === icao ? a.runways.find((r) => r.id === ap.runway) : undefined;
   const rw = into ?? [...a.runways].sort((x, y) => y.lengthFt - x.lengthFt)[0];
   return { type: 'runway', airport: icao, runway: rw.id, initialAlt: Math.max(3000, roundAlt(a.elevFt + 2500)) };
 };
-const iafAlt = (ap: Approach, tr?: Approach['transitions'][number]) => Math.max(3000, roundAlt(tr?.legs[0]?.altMin ?? ap.final[0]?.altMin ?? 3000));
+export const iafAlt = (ap: Approach, tr?: Approach['transitions'][number]) => Math.max(3000, roundAlt(tr?.legs[0]?.altMin ?? ap.final[0]?.altMin ?? 3000));
 const base = (id: string, name: string, description: string, start: CircuitStart, legs: CircuitLeg[], extra: Partial<Circuit> = {}): Circuit => ({
   id: `c${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`,
   name,
@@ -815,7 +1104,7 @@ const base = (id: string, name: string, description: string, start: CircuitStart
   ...extra,
 });
 /** which navigation data is loaded (templates tag their flights with it) */
-const currentWorld = (): 'real' | 'training' => (currentRegion() ? 'real' : 'training');
+export const currentWorld = (): 'real' | 'training' => (currentRegion() ? 'real' : 'training');
 
 export const TEMPLATES: FlightTemplate[] = [
   {
@@ -932,11 +1221,32 @@ export const TEMPLATES: FlightTemplate[] = [
   },
 ];
 
+/** A circuit read from storage, a file or a link, made safe for this version: missing arrays filled, failures
+ *  the simulator does not know dropped, unknown triggers / drill modes reset. Old circuits pass unchanged. */
+export function normalizeCircuit(c: Circuit): Circuit {
+  const trig: FailureTrigger[] = ['time', 'leg', 'fix', 'altAgl', 'random', 'instructor'];
+  c.failures = (Array.isArray(c.failures) ? c.failures : [])
+    .filter((f) => f && typeof f === 'object' && (f.key in FAILURE_LABELS || (Array.isArray(f.pool) && f.pool.some((k) => k in FAILURE_LABELS))))
+    .map((f) => {
+      const out: CircuitFailure = { ...f, trigger: trig.includes(f.trigger) ? f.trigger : 'time', at: Number.isFinite(f.at) ? f.at : 0 };
+      if (out.pool) out.pool = out.pool.filter((k) => k in FAILURE_LABELS);
+      if (!(out.key in FAILURE_LABELS)) out.key = out.pool![0];
+      return out;
+    });
+  if (c.events && !Array.isArray(c.events)) delete c.events;
+  if (c.drill) {
+    if (typeof c.drill !== 'object') delete c.drill;
+    else if (c.drill.mode !== 'training' && c.drill.mode !== 'test') c.drill.mode = 'training';
+  }
+  return c;
+}
+
 const KEY = 'ifr.circuits.v1';
 export const circuitStore = {
   list(): Circuit[] {
     try {
-      return JSON.parse(localStorage.getItem(KEY) || '[]') as Circuit[];
+      const all = JSON.parse(localStorage.getItem(KEY) || '[]') as Circuit[];
+      return Array.isArray(all) ? all.filter((c) => c && Array.isArray(c.legs) && c.start).map(normalizeCircuit) : [];
     } catch {
       return [];
     }
@@ -974,7 +1284,7 @@ export function decodeCircuit(s: string): Circuit {
   const bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
   const c = JSON.parse(new TextDecoder().decode(bytes)) as Circuit;
   if (!c || !Array.isArray(c.legs) || !c.start) throw new Error('Not a circuit');
-  return c;
+  return normalizeCircuit(c);
 }
 
 export const AIRPORT_RUNWAYS = AIRPORTS.flatMap((a) => a.runways.map((r) => ({ airport: a.icao, runway: r.id })));

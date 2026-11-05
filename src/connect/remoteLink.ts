@@ -21,6 +21,7 @@ import {
   describeCommand,
   type HostMsg,
   type RemoteCommand,
+  type RemoteProcChoice,
   type RemoteRoute,
   type RemoteSnapshot,
 } from "./remoteTypes";
@@ -29,6 +30,8 @@ export interface RemoteHostApi {
   sim: Sim;
   snapshot(): RemoteSnapshot;
   command(c: RemoteCommand): void;
+  /** procedures mode: the procedures the instructor can name as expected (club first); sent when they change */
+  procChoices?(): RemoteProcChoice[];
 }
 
 export type RemoteHostState =
@@ -409,6 +412,11 @@ export function applyCommand(
     case "message":
       log(c.text);
       return true;
+    // procedures mode needs the shell (lesson, procedure runner): the simulator alone cannot do them
+    case "procConfirm":
+    case "drillFire":
+    case "gradeProcedures":
+      return false;
   }
 }
 
@@ -427,6 +435,7 @@ function verify(
   sim: Sim,
   c: RemoteCommand,
   before: { t: number; lat: number; paused: boolean },
+  after?: RemoteSnapshot | null,
 ): { ok: boolean; text: string } {
   const text = describeCommand(c);
   switch (c.type) {
@@ -449,6 +458,22 @@ function verify(
       return !sim.paused
         ? { ok: true, text }
         : { ok: false, text: "Still frozen: unfreeze first" };
+    case "procConfirm": {
+      const it = after?.procedures
+        ?.find((p) => p.procedureId === c.procedureId)
+        ?.items.find((i) => i.id === c.itemId);
+      return it?.done
+        ? { ok: true, text: `Confirmed: ${it.text}` }
+        : { ok: false, text: "Not confirmed: the procedure is over or the item is already done" };
+    }
+    case "drillFire":
+      return after && !after.drill?.pending.some((p) => p.index === c.index)
+        ? { ok: true, text }
+        : { ok: false, text: "That drill failure is not waiting any more" };
+    case "gradeProcedures":
+      return !after?.grade || after.grade.on === c.on
+        ? { ok: true, text }
+        : { ok: false, text: "Not changed" };
     default:
       return { ok: true, text };
   }
@@ -482,6 +507,8 @@ export function startRemoteHost(
     last: number;
   } | null = null;
   let routeKey = "";
+  let procKey = "";
+  let procTick = 0;
   let closed = false;
   let netUp = false;
   let attempts = 0;
@@ -510,6 +537,19 @@ export function startRemoteHost(
       routeKey = r.key;
       active.conn.send({ k: "route", r });
     }
+    // the procedures the instructor can expect: checked every 2 s, sent when the club library changed
+    if (api.procChoices && procTick++ % 8 === 0) {
+      try {
+        const list = api.procChoices();
+        const key = list.map((p) => `${p.id}:${p.title}:${p.failures.join("+")}`).join("|");
+        if (key !== procKey) {
+          procKey = key;
+          active.conn.send({ k: "procs", list });
+        }
+      } catch {
+        /* the library is being edited: next time */
+      }
+    }
     active.conn.send({ k: "snap", s: snap });
   }, SNAP_MS);
 
@@ -537,6 +577,8 @@ export function startRemoteHost(
         me = { cid: m.cid, device: m.device || "Browser" };
         active = { conn, cid: m.cid, device: me.device, last: Date.now() };
         routeKey = "";
+        procKey = "";
+        procTick = 0;
         conn.send({ k: "welcome", v: PROTOCOL, code });
         set({ state: "connected", device: me.device, message: undefined });
         api.sim.rec.log(
@@ -581,7 +623,14 @@ export function startRemoteHost(
           });
           return;
         }
-        conn.send({ k: "ack", id: m.id, ...verify(sim, c, before) });
+        let after: RemoteSnapshot | null = null;
+        if (c.type === "procConfirm" || c.type === "drillFire" || c.type === "gradeProcedures")
+          try {
+            after = api.snapshot();
+          } catch {
+            after = null;
+          }
+        conn.send({ k: "ack", id: m.id, ...verify(sim, c, before, after) });
       }
     });
     conn.onClose(() => {

@@ -7,6 +7,8 @@ import { destination, distanceNm, toLocal, DEG, bearingDeg, type LatLon } from '
 import { flyablePath, type PathFix } from '../nav/pathgeom';
 import { isLocApproach, type Waypoint } from '../nav/flightplan';
 import type { Approach } from '../nav/types';
+import { TANK_GAL } from '../sim/systems';
+import { darkScreen, hasPower, smokeHaze } from './gauges';
 
 export const MFD_W = 1024;
 export const MFD_H = 768;
@@ -46,8 +48,21 @@ const TITLE_H = 22;
 const FPL_X = 718;
 const SOFT_Y = MFD_H - 24;
 
+/** Draw the display, then the cabin smoke veil over it (smokeHaze: electrical or engine fire) */
 export function drawMfd(ctx: CanvasRenderingContext2D, sim: Sim, st: MfdState) {
+  drawMfdBody(ctx, sim, st);
+  smokeHaze(ctx, sim, MFD_W, MFD_H, (typeof performance !== 'undefined' ? performance.now() : 0) / 1000);
+}
+
+function drawMfdBody(ctx: CanvasRenderingContext2D, sim: Sim, st: MfdState) {
   setTextScaleFor(ctx, MFD_W);
+  // the MFD is on the avionics bus: dark with the AVIONICS switch OFF or a dead bus (the PFD then shows the
+  // engine strip, reversionary mode). The flight plan and its cursor are kept: they are back with the power.
+  if (!hasPower(sim, 'mfd')) {
+    st.fms.hits = [];
+    darkScreen(ctx, MFD_W, MFD_H);
+    return;
+  }
   ctx.clearRect(0, 0, MFD_W, MFD_H);
   cbox(ctx, 0, 0, MFD_W, MFD_H, '#000');
   drawTopBar(ctx, sim, 'MFD');
@@ -86,7 +101,7 @@ const EIS_YELLOW = '#e0b000';
 const EIS_RED = '#d42a2a';
 
 /** Round gauge (RPM): 220° arc, coloured bands, white pointer, digital value in the centre. */
-function gaugeArc(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, v: number, min: number, max: number, green: [number, number], red: number, label: string, valueText: string) {
+function gaugeArc(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, v: number, min: number, max: number, green: [number, number], red: number, label: string, valueText: string, valueColor: string = C.white) {
   const a0 = 160 * DEG;
   const a1 = 380 * DEG;
   const ang = (x: number) => a0 + ((Math.max(min, Math.min(max, x)) - min) / (max - min)) * (a1 - a0);
@@ -110,16 +125,16 @@ function gaugeArc(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: numb
   }
   const a = ang(v);
   poly(ctx, [[cx + Math.cos(a) * (r + 5), cy + Math.sin(a) * (r + 5)], [cx + Math.cos(a - 0.13) * (r - 14), cy + Math.sin(a - 0.13) * (r - 14)], [cx + Math.cos(a + 0.13) * (r - 14), cy + Math.sin(a + 0.13) * (r - 14)]], C.white, C.black, 1);
-  text(ctx, valueText, cx, cy + 2, C.white, fs(22), 'center', 700);
+  text(ctx, valueText, cx, cy + 2, valueColor, fs(22), 'center', 700);
   text(ctx, label, cx, cy + r * 0.62, C.white, fs(13), 'center');
 }
 
 type Band = [number, number, string];
 /** Horizontal bar gauge: label and value above, coloured bands, white pointer under the bar pointing up. */
-function hbar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, label: string, frac: number, valueText: string, bands: Band[]): number {
+function hbar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, label: string, frac: number, valueText: string, bands: Band[], valueColor: string = C.white): number {
   const ls = fs(13);
   text(ctx, label, x, y, C.white, ls);
-  if (valueText) text(ctx, valueText, x + w, y, C.white, fs(15), 'right', 700);
+  if (valueText) text(ctx, valueText, x + w, y, valueColor, fs(15), 'right', 700);
   const by = y + ls / 2 + 5;
   cbox(ctx, x, by, w, 5, '#2a2f35');
   for (const [a, b, c] of bands) cbox(ctx, x + w * a, by, w * (b - a), 5, c);
@@ -128,66 +143,198 @@ function hbar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, la
   return by + 12 - y; // height used below the label centre
 }
 
-function drawEis(ctx: CanvasRenderingContext2D, sim: Sim) {
+/** EIS markings (C172S, G1000): value range of each gauge and its coloured bands, in the gauge's units */
+export const EIS_SCALES = {
+  rpm: { min: 0, max: 2800, bands: [[2100, 2700, 'green'], [2700, 2800, 'red']] },
+  fflow: { min: 0, max: 20, bands: [[0, 12, 'green']] },
+  oilP: { min: 0, max: 120, bands: [[0, 20, 'red'], [20, 50, 'yellow'], [50, 90, 'green'], [90, 115, 'yellow'], [115, 120, 'red']] },
+  oilT: { min: 75, max: 250, bands: [[100, 245, 'green'], [245, 250, 'red']] },
+  egt: { min: 1000, max: 1700, bands: [] },
+  vac: { min: 3, max: 7, bands: [[4.5, 5.5, 'green']] },
+  fuel: { min: 0, max: TANK_GAL, bands: [[0, 1.5, 'red'], [1.5, 8, 'yellow'], [8, TANK_GAL, 'green']] },
+} as const satisfies Record<string, { min: number; max: number; bands: readonly (readonly [number, number, 'green' | 'yellow' | 'red'])[] }>;
+
+export type EisLevel = 'normal' | 'caution' | 'warning';
+export type EisId = 'rpm' | 'fflow' | 'oilP' | 'oilT' | 'egt' | 'vac' | 'fuelL' | 'fuelR' | 'mBus' | 'eBus' | 'mBatt' | 'sBatt';
+/** one EIS reading: the value, its text, where the pointer sits (0..1) and the colour it is drawn in */
+export interface EisReading {
+  id: EisId;
+  value: number;
+  text: string;
+  frac: number;
+  level: EisLevel;
+}
+
+const levelOf = (v: number, bands: readonly (readonly [number, number, string])[]): EisLevel => {
+  if (!Number.isFinite(v)) return 'normal';
+  let red = false;
+  let yellow = false;
+  for (const [a, b, c] of bands) {
+    // band edges count as inside (a pegged needle reads red)
+    if (v >= a && v <= b) {
+      if (c === 'red') red = true;
+      else if (c === 'yellow') yellow = true;
+    }
+  }
+  // below / above the whole scale: the colour of the end band
+  const first = bands[0];
+  const last = bands[bands.length - 1];
+  if (first && v < first[0] && first[0] === Math.min(...bands.map((x) => x[0]))) {
+    if (first[2] === 'red') red = true;
+    else if (first[2] === 'yellow') yellow = true;
+  }
+  if (last && v > last[1]) {
+    if (last[2] === 'red') red = true;
+    else if (last[2] === 'yellow') yellow = true;
+  }
+  return red ? 'warning' : yellow ? 'caution' : 'normal';
+};
+
+/** What the EIS shows for the aircraft now (pure: the MFD strip, the reversionary PFD strip and the tests read
+ *  this). Real readings from the systems model: oil pressure / temperature, vacuum, fuel per tank, bus volts and
+ *  battery amps. Without a systems model (stubs) it shows a healthy engine. */
+export function eisReadings(sim: Sim): Record<EisId, EisReading> {
   const d = sim.ac.data;
-  const top = 54;
-  cbox(ctx, 0, top, EIS_W, SOFT_Y - top, '#000');
-  line(ctx, EIS_W + 0.5, top, EIS_W + 0.5, SOFT_Y, '#4a4f55', 1);
-  const x = 10;
-  const w = EIS_W - 20;
+  const sys = (sim as { sys?: Sim['sys'] }).sys;
+  const thr = sim.controls?.throttle ?? 0;
+  const mk = (id: EisId, v: number, txt: string, sc: { min: number; max: number; bands: readonly (readonly [number, number, string])[] } | null, lvl?: EisLevel): EisReading => ({
+    id,
+    value: v,
+    text: Number.isFinite(v) ? txt : '---',
+    frac: sc ? Math.max(0, Math.min(1, (finite(v, sc.min) - sc.min) / (sc.max - sc.min))) : 0,
+    level: lvl ?? (sc ? levelOf(v, sc.bands) : 'normal'),
+  });
+  const S = EIS_SCALES;
+  const oilP = sys ? sys.oilPressPsi : 60 + thr * 20;
+  const oilT = sys ? sys.oilTempF : 180 + thr * 30;
+  const egt = sys ? sys.egtF : 1200 + thr * 250;
+  const vac = sys ? sys.vacuumInHg : 5;
+  const half = finite(sim.ac.s.fuelGal) / 2;
+  const fL = sys ? sys.fuelGalL : half;
+  const fR = sys ? sys.fuelGalR : half;
+  const volts = sys ? sys.busVolts : 28;
+  const amps = sys ? sys.battAmps : 0;
+  const rpm = d.rpm;
+  const vTxt = (v: number) => v.toFixed(1);
+  const vLvl: EisLevel = volts < 24.5 ? 'warning' : volts > 32 ? 'warning' : 'normal';
+  const aTxt = (a: number) => `${a >= 0 ? '+' : '−'}${Math.abs(a) < 9.95 ? Math.abs(a).toFixed(1) : Math.round(Math.abs(a))}`;
+  return {
+    rpm: mk('rpm', rpm, String(Math.round(finite(rpm) / 10) * 10), S.rpm),
+    fflow: mk('fflow', d.fuelFlowGph, finite(d.fuelFlowGph).toFixed(1), S.fflow),
+    oilP: mk('oilP', oilP, String(Math.round(oilP)), S.oilP),
+    oilT: mk('oilT', oilT, String(Math.round(oilT)), S.oilT),
+    egt: mk('egt', egt, String(Math.round(egt)), S.egt),
+    // amber below the LOW VACUUM annunciation threshold (3.5 inHg, as the systems model lights it), so the gauge
+    // and the annunciator always agree; a low idle suction between 3.5 and the green arc stays white
+    vac: mk('vac', vac, vac.toFixed(1), S.vac, vac < 3.5 ? 'caution' : 'normal'),
+    fuelL: mk('fuelL', fL, fL.toFixed(0), S.fuel),
+    fuelR: mk('fuelR', fR, fR.toFixed(0), S.fuel),
+    // one main bus in the model: the essential bus reads the same voltage (tied in normal operation)
+    mBus: mk('mBus', volts, vTxt(volts), null, vLvl),
+    eBus: mk('eBus', volts, vTxt(volts), null, vLvl),
+    // main battery ammeter: − = discharging (no alternator); the standby battery is not modelled (reads 0)
+    mBatt: mk('mBatt', amps, aTxt(amps), null, amps < -0.5 ? 'caution' : 'normal'),
+    sBatt: mk('sBatt', 0, aTxt(0), null),
+  };
+}
+
+const LEVEL_COLOR: Record<EisLevel, string> = { normal: C.white, caution: EIS_YELLOW, warning: EIS_RED };
+const BAND_COLOR: Record<string, string> = { green: EIS_GREEN, yellow: EIS_YELLOW, red: EIS_RED };
+function bandsOf(sc: { min: number; max: number; bands: readonly (readonly [number, number, string])[] }): Band[] {
+  return sc.bands.map(([a, b, c]) => [(a - sc.min) / (sc.max - sc.min), (b - sc.min) / (sc.max - sc.min), BAND_COLOR[c]] as Band);
+}
+
+function drawEis(ctx: CanvasRenderingContext2D, sim: Sim) {
+  drawEisStrip(ctx, sim, { x: 0, top: 54, w: EIS_W, bottom: SOFT_Y }, true);
+}
+
+/** The engine strip in a region (the MFD's left edge, or the left edge of a PFD in reversionary mode). `full`
+ *  adds flaps and trim (the MFD). */
+export function drawEisStrip(ctx: CanvasRenderingContext2D, sim: Sim, r: { x: number; top: number; w: number; bottom: number }, full = false) {
+  const d = sim.ac.data;
+  const top = r.top;
+  const W = r.w;
+  cbox(ctx, r.x, top, W, r.bottom - top, '#000');
+  line(ctx, r.x + W + 0.5, top, r.x + W + 0.5, r.bottom, '#4a4f55', 1);
+  const x = r.x + 10;
+  const w = W - 20;
   const ls = fs(13);
   const vs = fs(15);
-  gaugeArc(ctx, EIS_W / 2, top + 66, 52, d.rpm, 0, 2800, [2100, 2700], 2700, 'RPM', Number.isFinite(d.rpm) ? String(Math.round(d.rpm / 10) * 10) : '----');
-  // one vertical rhythm for the whole strip: 5 engine bars, fuel (header + 2 bars), flaps, trim, engine hours
-  const y0 = top + 146;
-  const yEnd = SOFT_Y - 14;
-  const units = 5 + 0.7 + 1.5 + 0.35 + 3; // rows in units of one bar pitch
+  const e = eisReadings(sim);
+  const S = EIS_SCALES;
+  // a narrow strip (reversionary PFD) uses the short G1000 labels
+  const narrow = W < 140;
+  const gr = narrow ? 44 : Math.min(52, W * 0.34);
+  gaugeArc(ctx, r.x + W / 2, top + 14 + gr, gr, finite(d.rpm), 0, 2800, [2100, 2700], 2700, 'RPM', e.rpm.text, LEVEL_COLOR[e.rpm.level]);
+  // one vertical rhythm for the whole strip: 5 engine bars, fuel (header + 2 bars), electrical, flaps and trim
+  const y0 = top + 28 + gr * 2.3;
+  const yEnd = r.bottom - 14;
+  const units = 5 + 0.7 + 1.5 + 0.35 + 1.5 + (full ? 2 : 0); // rows in units of one bar pitch
   const pitch = Math.max(ls + 26, (yEnd - y0) / units);
-  const thr = sim.controls.throttle;
   let y = y0;
-  const g = (a: number, b: number): Band => [a, b, EIS_GREEN];
-  hbar(ctx, x, y, w, 'FFLOW GPH', finite(d.fuelFlowGph) / 20, Number.isFinite(d.fuelFlowGph) ? d.fuelFlowGph.toFixed(1) : '--.-', [g(0, 0.6)]);
-  y += pitch;
-  const oilP = 60 + thr * 20;
-  hbar(ctx, x, y, w, 'OIL PRES', oilP / 115, String(Math.round(oilP)), [[0, 0.17, EIS_RED], g(0.43, 0.87), [0.96, 1, EIS_RED]]);
-  y += pitch;
-  const oilT = 180 + thr * 30;
-  hbar(ctx, x, y, w, 'OIL TEMP', (oilT - 75) / 175, String(Math.round(oilT)), [g(0.14, 0.97), [0.97, 1, EIS_RED]]);
-  y += pitch;
-  const egt = 1200 + thr * 250;
-  hbar(ctx, x, y, w, 'EGT °F', (egt - 1000) / 700, String(Math.round(egt)), []);
-  y += pitch;
-  // vacuum: not modelled, shown as a static green band (no fake reading)
-  hbar(ctx, x, y, w, 'VAC', 0.5, '', [g(0.25, 0.75)]);
-  y += pitch;
+  const bar = (label: string, rd: EisReading, sc: { min: number; max: number; bands: readonly (readonly [number, number, string])[] }) => {
+    hbar(ctx, x, y, w, label, rd.frac, rd.text, bandsOf(sc), LEVEL_COLOR[rd.level]);
+    y += pitch;
+  };
+  bar(narrow ? 'FFLOW' : 'FFLOW GPH', e.fflow, S.fflow);
+  bar(narrow ? 'OIL P' : 'OIL PRES', e.oilP, S.oilP);
+  bar(narrow ? 'OIL T' : 'OIL TEMP', e.oilT, S.oilT);
+  bar(narrow ? 'EGT' : 'EGT °F', e.egt, S.egt);
+  bar('VAC', e.vac, S.vac);
   line(ctx, x, y - pitch * 0.3, x + w, y - pitch * 0.3, '#2c3137', 1);
-  // fuel: two thin bars (L / R), 0 .. 26 gal each
+  // fuel: two thin bars (L / R)
   y += pitch * 0.1;
-  text(ctx, 'FUEL QTY GAL', EIS_W / 2, y, C.white, ls, 'center');
+  text(ctx, narrow ? 'FUEL GAL' : 'FUEL QTY GAL', r.x + W / 2, y, C.white, ls, 'center');
   y += pitch * 0.6;
-  const q = finite(sim.ac.s.fuelGal) / 2;
-  const fb: Band[] = [[0, 0.06, EIS_RED], [0.06, 0.19, EIS_YELLOW], g(0.19, 1)];
-  for (const lbl of ['L', 'R']) {
-    text(ctx, lbl, x, y, C.white, ls, 'left', 700);
+  const fb = bandsOf(S.fuel);
+  for (const rd of [e.fuelL, e.fuelR]) {
+    text(ctx, rd.id === 'fuelL' ? 'L' : 'R', x, y, C.white, ls, 'left', 700);
     const bx = x + 16;
     const bw = w - 16 - tw(ctx, '26', vs, 700) - 8;
     const by = y - 3;
     cbox(ctx, bx, by, bw, 5, '#2a2f35');
     for (const [a, b, c] of fb) cbox(ctx, bx + bw * a, by, bw * (b - a), 5, c);
-    const px = bx + Math.max(0, Math.min(1, q / 26)) * bw;
+    const px = bx + rd.frac * bw;
     poly(ctx, [[px, by + 4], [px - 5, by + 12], [px + 5, by + 12]], C.white);
-    text(ctx, Number.isFinite(sim.ac.s.fuelGal) ? q.toFixed(0) : '--', x + w, y, q < 5 ? EIS_YELLOW : C.white, vs, 'right', 700);
+    text(ctx, rd.text, x + w, y, LEVEL_COLOR[rd.level], vs, 'right', 700);
     y += pitch * 0.75;
   }
   line(ctx, x, y - pitch * 0.15, x + w, y - pitch * 0.15, '#2c3137', 1);
-  y += pitch * 0.35;
+  // electrical: bus volts and battery amps, digital (G1000 ENGINE page)
+  y += pitch * 0.3;
+  const pair = (lbl: string, a: string, ra: EisReading, b: string, rb: EisReading) => {
+    text(ctx, lbl, x, y, C.gray, fs(11), 'left', 700);
+    y += ls + 3;
+    const half = w / 2;
+    text(ctx, a, x, y, C.white, fs(11));
+    text(ctx, ra.text, x + half - 4, y, LEVEL_COLOR[ra.level], vs, 'right', 700);
+    text(ctx, b, x + half + 4, y, C.white, fs(11));
+    text(ctx, rb.text, x + w, y, LEVEL_COLOR[rb.level], vs, 'right', 700);
+    y += pitch * 0.62;
+  };
+  if (narrow) {
+    // one value per line: main bus volts and main battery amps
+    const one = (lbl: string, rd: EisReading) => {
+      text(ctx, lbl, x, y, C.white, ls);
+      text(ctx, rd.text, x + w, y, LEVEL_COLOR[rd.level], vs, 'right', 700);
+      y += pitch * 0.6;
+    };
+    one('VOLTS', e.mBus);
+    one('M BATT', e.mBatt);
+  } else {
+    pair('VOLTS', 'M', e.mBus, 'E', e.eBus);
+    pair('AMPS', 'M', e.mBatt, 'S', e.sBatt);
+  }
+  if (!full) return;
+  line(ctx, x, y - pitch * 0.25, x + w, y - pitch * 0.25, '#2c3137', 1);
+  y += pitch * 0.2;
   // flaps: 0 / 10 / 20 / 30 detents
   text(ctx, 'FLAPS', x, y, C.white, ls);
-  text(ctx, `${Math.round(d.flapsDeg)}°`, x + w, y, C.white, vs, 'right', 700);
+  text(ctx, `${Math.round(finite(d.flapsDeg))}°`, x + w, y, C.white, vs, 'right', 700);
   const fy = y + ls / 2 + 5;
   cbox(ctx, x, fy, w, 5, '#2a2f35');
   for (const det of [0, 10, 20, 30]) line(ctx, x + (det / 30) * w, fy - 3, x + (det / 30) * w, fy + 8, '#6b7178', 1.5);
-  const fpx = x + Math.max(0, Math.min(1, d.flapsDeg / 30)) * w;
+  const fpx = x + Math.max(0, Math.min(1, finite(d.flapsDeg) / 30)) * w;
   poly(ctx, [[fpx, fy + 4], [fpx - 5, fy + 12], [fpx + 5, fy + 12]], C.white);
   y += pitch;
   // elevator trim: DN .. T/O band .. UP
@@ -202,9 +349,6 @@ function drawEis(ctx: CanvasRenderingContext2D, sim: Sim) {
   cbox(ctx, tx0 + tw0 * 0.42, ty, tw0 * 0.16, 5, EIS_GREEN);
   const tpx = tx0 + tw0 / 2 - Math.max(-1, Math.min(1, tr)) * (tw0 / 2);
   poly(ctx, [[tpx, ty + 4], [tpx - 5, ty + 12], [tpx + 5, ty + 12]], C.white);
-  y += pitch;
-  text(ctx, 'ENG HRS', x, y, C.white, ls);
-  text(ctx, (finite(sim.ac.s.hobbs) / 3600).toFixed(1), x + w, y, C.white, vs, 'right', 700);
 }
 
 // ------------------------------------------------------------------ map

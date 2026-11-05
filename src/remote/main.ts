@@ -57,7 +57,7 @@ const device = deviceName(navigator.userAgent, navigator.maxTouchPoints || 0);
 /** same-browser host? (a second window at the instructor's desk) */
 function probeLocal(
   code: string,
-  timeoutMs = 700,
+  timeoutMs = 1200, // a busy simulator window (a slow laptop, a heavy scene) may take a moment to answer
 ): Promise<BroadcastChannel | null> {
   if (typeof BroadcastChannel === "undefined") return Promise.resolve(null);
   return new Promise((res) => {

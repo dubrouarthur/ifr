@@ -1581,3 +1581,65 @@ body > .toasts.toasts-top {
   flex-direction: column; align-items: center; z-index: 80 !important; width: max-content; max-width: calc(100vw - 32px);
 }
 body > .toasts.toasts-top .toast { color: #e8eef4; background: rgba(12, 16, 21, .95); box-shadow: 0 10px 30px rgba(0, 0, 0, .35); }
+
+/* ------------------------------------------------------------------ aircraft systems panel row (procedures mode)
+   between the instruments and the pedestal: it takes its own row (the displays shrink), so it never covers one */
+.sysp-host {
+  min-width: 0;
+  overflow: hidden;
+}
+.sysp-host[hidden] {
+  display: none;
+}
+html body .pedestal .ped-btn.ped-sys {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font: 600 12px var(--font);
+  color: #cfd8e0;
+  white-space: nowrap;
+}
+html body .pedestal .ped-btn.ped-sys.on {
+  border-color: var(--ck-accent);
+  color: var(--ck-accent);
+  background: rgba(0, 228, 255, 0.08);
+}
+html body.touch .pedestal .ped-btn.ped-sys {
+  height: 44px;
+  padding: 0 14px;
+}
+
+/* ------------------------------------------------------------------ ATC box with the radio dead (COM failure, no
+   power): what was received before stays readable, dimmed; the receive light is off and Say again does nothing */
+.atc-radio.nocom { opacity: 0.62; border-color: rgba(255, 255, 255, 0.12); }
+.atc-radio.nocom .atc-led { background: #4b5563; box-shadow: none; }
+.atc-radio .atc-again:disabled { opacity: 0.45; cursor: default; }
+
+
+/* touch landscape up to a 1300 px wide screen (iPad Pro 11, iPad Air): the pedestal tightens so the Systems toggle
+   stays on screen (the pedestal never scrolls): a shorter throttle lever, the Systems toggle as a 44 px icon key under
+   its group title; every target keeps 44 px */
+@media (max-width: 1300px) {
+  html body.touch:not(.portrait) .pedestal .ped-g {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  html body.touch:not(.portrait) .pedestal input.lever {
+    width: 92px;
+  }
+  html body.touch:not(.portrait) .pedestal .flap-sel {
+    grid-template-columns: repeat(4, 46px);
+  }
+  html body.touch:not(.portrait) .pedestal .ped-btn.ped-sys {
+    width: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+  html body.touch:not(.portrait) .pedestal .ped-btn.ped-sys > span {
+    display: none;
+  }
+}

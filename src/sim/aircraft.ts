@@ -75,7 +75,7 @@ export function engineFriction(rpm: number): number {
  * airflow the cylinders pump (∝ RPM): at the idle stop a windmilling engine sees almost no MAP and absorbs
  * power. Indicated torque ∝ MAP above the pumping-loss offset; altitude by Gagg–Ferrar.
  */
-export function engineTorque(rpm: number, throttle: number, sigma: number, running = true): number {
+export function engineTorque(rpm: number, throttle: number, sigma: number, running = true, powerFactor = 1): number {
   if (!running) return -engineFriction(rpm) - 25 * Math.min(1, rpm / 300); // dead engine: friction + compression
   const n = Math.max(0.05, rpm / 2700);
   const area = THROTTLE_IDLE_AREA + (1.15 - THROTTLE_IDLE_AREA) * throttle; // throttle-plate open area
@@ -83,8 +83,90 @@ export function engineTorque(rpm: number, throttle: number, sigma: number, runni
   // Gagg–Ferrar is a *brake* power law: scale the indicated torque so that the full-throttle brake torque follows it
   const gagg = Math.max(0, sigma - (1 - sigma) / 7.55);
   const indFactor = gagg + ((1 - gagg) * 60) / Q_IND_MAX;
-  const qInd = Q_IND_MAX * indFactor * Math.max(0, (map - 0.25) / 0.75);
+  const qInd = Q_IND_MAX * indFactor * Math.max(0, (map - 0.25) / 0.75) * powerFactor;
   return qInd - engineFriction(rpm);
+}
+
+// ---------------------------------------------------------------- mixture, ignition (IO-360-L2A, RSA fuel injection)
+/**
+ * Fuel/air richness relative to the sea-level FULL RICH calibration (1 = the POH-calibrated engine). The RSA servo
+ * meters fuel from the venturi pressure (∝ ρV²), so the fuel/air ratio at a fixed knob grows as 1/√σ: full rich is
+ * ≈ 9 % richer at 6000 ft, ≈ 13 % at 8000 ft. The aux pump ON with the engine-driven pump working floods ≈ 12 %.
+ * `knob` 1 = full rich, 0 = idle cut-off (no fuel below 0.06).
+ */
+export function mixtureRichness(knob: number, sigma: number, auxFlood = false): number {
+  if (knob < 0.06) return 0;
+  return (knob * (auxFlood ? 1.12 : 1)) / Math.sqrt(Math.max(0.3, sigma));
+}
+
+/** richness of best power (≈ 100 °F rich of peak EGT); sea-level full rich (1.0) is ≈ 10 % richer, for cooling */
+export const BEST_POWER_RICHNESS = 0.9;
+
+/**
+ * Power vs. mixture as a fraction of the calibrated engine (sea-level full rich = 1). Best power ≈ 1.2 % above full
+ * rich at sea level; the rich side is flat-topped (−0.4 % per 10 % richer, faster beyond ≈ 12 % rich: full rich
+ * at 8000 ft runs slightly rough and ≈ 1.7 % below best power); lean of peak EGT the power falls fast; below ≈ 0.55 the engine misfires and
+ * it quits near 0.45 (lean cut).
+ */
+export function mixturePower(e: number): number {
+  if (e <= 0) return 0;
+  const PEAK = 1.012;
+  if (e >= 1) return Math.max(0.5, 1 - 0.04 * (e - 1) - 0.8 * Math.max(0, e - 1.12) ** 2);
+  if (e >= BEST_POWER_RICHNESS) return PEAK - 1.2 * (e - BEST_POWER_RICHNESS) ** 2;
+  const lean = PEAK - 3 * (BEST_POWER_RICHNESS - e) ** 2;
+  if (e >= 0.55) return lean;
+  // lean misfire: power collapses to zero at 0.45
+  const at55 = PEAK - 3 * (BEST_POWER_RICHNESS - 0.55) ** 2;
+  return Math.max(0, (at55 * (e - 0.45)) / 0.1);
+}
+
+/** roughness 0..1 from the mixture: misfire lean of ≈ 0.6, slight roughness when ≥ 25 % too rich */
+export function mixtureRoughness(e: number): number {
+  if (e <= 0) return 0;
+  if (e < 0.62) return Math.min(1, (0.62 - e) / 0.15);
+  if (e > 1.12) return Math.min(0.5, (e - 1.12) * 1.6);
+  return 0;
+}
+
+/** exhaust gas temperature (°F): peak ≈ 50 °F lean of best power (richness ≈ 0.8), ≈ 200 °F lower at full rich SL */
+export function egtF(e: number, powerFrac: number): number {
+  if (e <= 0) return 0;
+  const peak = 1180 + 300 * Math.max(0, Math.min(1, powerFrac));
+  const d = e - 0.8;
+  // rich of peak: ≈ 100 °F cooler at best power, ≈ 180 °F at sea-level full rich; lean of peak it falls faster
+  return peak - (d > 0 ? 700 * d + 800 * d * d : 4000 * d * d);
+}
+
+/** single-magneto running: one plug per cylinder, slower flame front, ≈ 13 % less torque (≈ −75 RPM at the
+ *  1800 RPM run-up, ≈ −50 RPM in cruise) */
+export const SINGLE_MAG_POWER = 0.87;
+
+/** dead engine (systems-driven aircraft only): below this IAS the windmilling propeller stops on compression… */
+export const PROP_STOP_KIAS = 57;
+/** …and a stopped propeller only starts turning again in a dive faster than this (or with the starter) */
+export const PROP_UNSTICK_KIAS = 100;
+
+/**
+ * What the systems model feeds the engine and airframe each step (src/sim/systems.ts). `null` (a bare Aircraft,
+ * e.g. in physics tests) keeps the POH-calibrated engine: running while there is fuel, full power, flaps free.
+ */
+export interface EngineDrive {
+  /** fuel + spark + air reach the cylinders */
+  combustion: boolean;
+  /** fraction of the calibrated indicated torque (mixture × magnetos × failures) */
+  powerFactor: number;
+  /** torque fluctuation 0..1 (rough magneto, lean misfire) */
+  roughness: number;
+  /** starter torque while cranking (N m) */
+  starterNm: number;
+  /** seized engine: the propeller stops and stays stopped */
+  seized: boolean;
+  /** fuel per unit of air relative to the calibration (mixture richness) */
+  richness: number;
+  /** flap motor unpowered or flaps jammed: the flaps stay where they are */
+  flapsHold: boolean;
+  /** extra parasite drag coefficient (door ajar) */
+  extraCd: number;
 }
 
 /** Fixed-pitch propeller: thrust and power coefficients vs advance ratio J = V / (n D).
@@ -195,6 +277,18 @@ export class Aircraft {
   private brakeHp = 0;
   /** propeller thrust (N), last substep */
   thrust = 0;
+  /** systems inputs (mixture, magnetos, fuel, failures) — set by the SystemsModel every step; null = calibrated */
+  drive: EngineDrive | null = null;
+  /** density ratio of the last substep */
+  sigma = 1;
+  /** brake horsepower of the last substep */
+  get bhp(): number {
+    return this.brakeHp;
+  }
+  private roughT = 0;
+  private ffNow = 0;
+  /** dead engine: the propeller has stopped (compression) and stays stopped until the starter or a dive turns it */
+  propStopped = false;
   /** last wheel contact (for landing feedback and grading) */
   touchdown: { vsFpm: number; pitchDeg: number; bankDeg: number; ias: number; g: number; lat: number; lon: number; kind: 'smooth' | 'normal' | 'firm' | 'hard'; bounced: boolean; t: number } | null = null;
   /** true while the wing is past the critical angle of attack */
@@ -283,7 +377,8 @@ export class Aircraft {
 
     // Flaps travel ~ 3 s per 10 deg
     const flapTarget = Math.max(0, Math.min(3, Math.round(c.flaps))) / 3;
-    s.flapPos += Math.sign(flapTarget - s.flapPos) * Math.min(Math.abs(flapTarget - s.flapPos), dt / 9);
+    const drv = this.drive;
+    if (!drv?.flapsHold) s.flapPos += Math.sign(flapTarget - s.flapPos) * Math.min(Math.abs(flapTarget - s.flapPos), dt / 9);
     const f = s.flapPos;
     // the first notch gives mostly lift (Fowler motion), drag grows with the deflection
     const fLift = f * (2 - f);
@@ -320,7 +415,7 @@ export class Aircraft {
     this.clRatio = clAtt / clMax;
     this.clLast = cl;
     // sideslip: the fuselage side area meets the air (forward slip = drag brake)
-    const cd = A.cd0 + A.flapCd * fDrag + A.k * cl * cl * (0.45 + 0.55 * ge) + A.betaCd * s.beta * s.beta + (sep ? 0.08 + overP * 0.9 : 0);
+    const cd = A.cd0 + (drv?.extraCd ?? 0) + A.flapCd * fDrag + A.k * cl * cl * (0.45 + 0.55 * ge) + A.betaCd * s.beta * s.beta + (sep ? 0.08 + overP * 0.9 : 0);
     const L = qbar * A.wingArea * cl;
     const D = qbar * A.wingArea * cd;
     this.stalled = sep && !s.onGround;
@@ -334,12 +429,47 @@ export class Aircraft {
     const pc = propCoefficients(J);
     const T = pc.ct * rho * nRps * nRps * A.propDiam ** 4;
     const qProp = (pc.cp * rho * nRps * nRps * A.propDiam ** 5) / (2 * Math.PI);
-    // fuel exhausted: no combustion, the windmilling propeller drives a dead engine
-    const qEng = engineTorque(s.rpm, this.thrEff, sigma, s.fuelGal > 0);
+    // fuel exhausted (or no combustion from the systems): the windmilling propeller drives a dead engine
+    const running = s.fuelGal > 0 && (drv ? drv.combustion : true);
+    let qEng: number;
+    if (!drv) qEng = engineTorque(s.rpm, this.thrEff, sigma, running);
+    else {
+      qEng = engineTorque(s.rpm, this.thrEff, sigma, running, running ? drv.powerFactor : 1);
+      if (running && drv.roughness > 0) {
+        // misfiring cylinders: an irregular torque ripple (deterministic, never consumes the seeded weather RNG)
+        this.roughT += dt;
+        const t = this.roughT;
+        const ripple = 0.55 * Math.sin(2 * Math.PI * 6.7 * t) + 0.3 * Math.sin(2 * Math.PI * 2.3 * t + 1.3) + 0.35 * Math.sin(2 * Math.PI * 0.9 * t + 0.4);
+        qEng += drv.roughness * 0.35 * Q_IND_MAX * ripple * Math.min(1, s.rpm / 1500);
+      }
+      qEng += drv.starterNm;
+    }
+    const rpm0 = s.rpm;
     s.rpm = Math.max(0, s.rpm + ((qEng - qProp) / A.inertia) * (60 / (2 * Math.PI)) * dt);
+    if (drv?.seized) s.rpm = Math.max(0, s.rpm - 3000 * dt); // the crankshaft locks: the propeller stops
+    else if (drv) {
+      // a dead engine's compression strokes stop a slow windmilling propeller (POH: "if the propeller has stopped
+      // (possible at low speeds)"); a stopped propeller needs the starter, or a dive, to turn again
+      const iasKt = (V * Math.sqrt(sigma)) / KT;
+      if (running || drv.starterNm > 0) this.propStopped = false;
+      else if (this.propStopped) {
+        if (iasKt > PROP_UNSTICK_KIAS) this.propStopped = false;
+      } else if (iasKt < PROP_STOP_KIAS && s.rpm < 1000) this.propStopped = true;
+      // held by the compression: it slows to a stop within a second or two and the airflow cannot turn it
+      if (this.propStopped) s.rpm = Math.max(0, Math.min(s.rpm, rpm0) - 700 * dt);
+    }
     this.brakeHp = Math.max(0, (qEng * s.rpm * 2 * Math.PI) / 60 / 745.7);
+    this.sigma = sigma;
     this.thrust = T;
-    s.fuelGal = Math.max(0, s.fuelGal - (this.fuelFlow() / 3600) * dt);
+    // fuel is metered by the air the engine breathes (not by the power a rough engine makes)
+    if (!drv) this.ffNow = this.fuelFlow();
+    else if (!running) this.ffNow = 0;
+    else {
+      const plain = drv.powerFactor === 1 && drv.roughness === 0 && drv.starterNm === 0;
+      const qAir = plain ? qEng : engineTorque(s.rpm, this.thrEff, sigma, true);
+      this.ffNow = Math.max(1.2, (Math.max(0, qAir * s.rpm * 2 * Math.PI) / 60 / 745.7) * 0.45 / 6) * drv.richness;
+    }
+    s.fuelGal = Math.max(0, s.fuelGal - (this.ffNow / 3600) * dt);
     // thrust coefficient: slipstream/P-factor effects are strongest at high power and low speed
     const Tc = Math.max(0, Math.min(0.6, T / (Math.max(qbar, 150) * A.wingArea)));
 
@@ -613,7 +743,7 @@ export class Aircraft {
       crosswindKt: components(wind.dirFrom, wind.speedKt, norm360(s.psi / DEG)).cross,
       driftDeg: Math.hypot(ve, vn) > 5 ? ((((Math.atan2(ve, vn) / DEG - s.psi / DEG) % 360) + 540) % 360) - 180 : 0,
       updraftFpm: ((this.lastWind?.up ?? 0) / FT) * 60,
-      fuelFlowGph: this.fuelFlow(),
+      fuelFlowGph: this.drive ? this.ffNow : this.fuelFlow(),
       rpm: s.rpm,
       flapsDeg: s.flapPos * 30,
     };

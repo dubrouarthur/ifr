@@ -6,6 +6,10 @@ import { svgIcon, I } from "../ui/icons";
 import {
   FAILURE_KEYS,
   FAILURE_TEXT,
+  FAILURE_GROUP_TEXT,
+  failureText,
+  type RemoteProcChoice,
+  type RemoteProcState,
   REPOSITIONS,
   REMOTE_WX_PRESETS,
   CODE_LEN,
@@ -20,6 +24,84 @@ import {
   type RemoteSnapshot,
 } from "../connect/remoteTypes";
 import type { LinkState } from "./main";
+import { FAILURE_GROUPS } from "../sim/systemsTypes";
+import { lang as phoneLang, registerStrings, t } from "../ui/i18n";
+
+registerStrings("en", {
+  "rc.f.hint": "Tap a system, pick the procedure you expect, then Fire now. Tap a failed system to restore it.",
+  "rc.f.fire": "Fire now",
+  "rc.f.cancel": "Cancel",
+  "rc.f.expect": "Expected procedure",
+  "rc.f.auto": "Automatic (the one that applies)",
+  "rc.f.none": "None: do not grade",
+  "rc.f.working": "Working",
+  "rc.f.failed": "Failed",
+  "rc.f.armed": "Choose, then Fire now",
+  "rc.p.head": "Procedures",
+  "rc.p.grade": "Grade procedures",
+  "rc.p.training": "Training",
+  "rc.p.test": "Test",
+  "rc.p.hintOn": "A failure you fire starts its procedure. Training: the student sees the emergency card. Test: only a Checklist button.",
+  "rc.p.hintOff": "Failures you fire are not graded. Drills always are.",
+  "rc.p.drill": "Failure drill in {m} mode",
+  "rc.p.pending": "Waiting for you",
+  "rc.p.none": "No procedure running.",
+  "rc.p.heard": "Heard it",
+  "rc.p.done": "{d} of {n}",
+  "rc.p.late": "late",
+  "rc.p.finished": "Finished",
+  "rc.p.checklist": "checklist",
+  "rc.p.memory": "memory items",
+  "rc.p.started": "Procedure started: {p}",
+  "rc.p.ended": "Procedure finished: {p} ({d} of {n} done)",
+  "rc.p.nocom": "Radio failed: ATC is not heard",
+  "rc.p.noxpdr": "Transponder failed",
+  "rc.ack.confirmed": "Confirmed: {i}",
+  "rc.ack.notConfirmed": "Not confirmed: the procedure is over or the item is already done",
+  "rc.ack.fired": "Drill failure fired: {f}",
+  "rc.ack.notWaiting": "That drill failure is not waiting any more",
+  "rc.ack.gradeOn": "Grading procedures ({m})",
+  "rc.ack.gradeOff": "Procedures not graded",
+  "rc.ack.notChanged": "Not changed",
+});
+registerStrings("fr", {
+  "rc.f.hint": "Touchez un système, choisissez la procédure attendue, puis Déclencher. Touchez un système en panne pour le rétablir.",
+  "rc.f.fire": "Déclencher",
+  "rc.f.cancel": "Annuler",
+  "rc.f.expect": "Procédure attendue",
+  "rc.f.auto": "Automatique (celle qui s’applique)",
+  "rc.f.none": "Aucune : ne pas évaluer",
+  "rc.f.working": "En service",
+  "rc.f.failed": "En panne",
+  "rc.f.armed": "Choisissez, puis Déclencher",
+  "rc.p.head": "Procédures",
+  "rc.p.grade": "Évaluer les procédures",
+  "rc.p.training": "Entraînement",
+  "rc.p.test": "Test",
+  "rc.p.hintOn": "Une panne déclenchée lance sa procédure. Entraînement : l’élève voit la carte d’urgence. Test : seulement un bouton Check-list.",
+  "rc.p.hintOff": "Les pannes déclenchées ne sont pas évaluées. Les exercices de panne le sont toujours.",
+  "rc.p.drill": "Exercice de panne en mode {m}",
+  "rc.p.pending": "En attente de vous",
+  "rc.p.none": "Aucune procédure en cours.",
+  "rc.p.heard": "Entendu",
+  "rc.p.done": "{d} sur {n}",
+  "rc.p.late": "en retard",
+  "rc.p.finished": "Terminée",
+  "rc.p.checklist": "check-list",
+  "rc.p.memory": "actions réflexes",
+  "rc.p.started": "Procédure lancée : {p}",
+  "rc.p.ended": "Procédure terminée : {p} ({d} sur {n})",
+  "rc.p.nocom": "Panne radio : l’ATC n’est pas entendu",
+  "rc.p.noxpdr": "Transpondeur en panne",
+  "rc.ack.confirmed": "Confirmé : {i}",
+  "rc.ack.notConfirmed": "Non confirmé : la procédure est terminée ou l’action est déjà faite",
+  "rc.ack.fired": "Panne de l’exercice déclenchée : {f}",
+  "rc.ack.notWaiting": "Cette panne de l’exercice n’est plus en attente",
+  "rc.ack.gradeOn": "Procédures évaluées ({m})",
+  "rc.ack.gradeOff": "Procédures non évaluées",
+  "rc.ack.notChanged": "Non modifié",
+});
+const L = () => phoneLang();
 
 export interface ConsoleActions {
   connect(code: string): boolean;
@@ -630,6 +712,8 @@ export class Console {
   private code = "";
   private snap: RemoteSnapshot | null = null;
   private route: RemoteRoute | null = null;
+  /** procedures the simulator can grade (protocol 2 'procs' message) */
+  private procs: RemoteProcChoice[] = [];
   private log: LogEntry[] = [];
   private pending = new Map<number, { c: RemoteCommand; at: number }>();
   private tab: Tab = (store.get("ifr.remote.tab") as Tab) || "fail";
@@ -709,6 +793,9 @@ export class Console {
       this.diff(prev, m.s);
       this.map.setSnap(m.s);
       this.refresh();
+    } else if (m.k === "procs") {
+      this.procs = Array.isArray(m.list) ? m.list : [];
+      this.refresh();
     } else if (m.k === "route") {
       this.route = m.r;
       this.map.setRoute(m.r);
@@ -725,14 +812,32 @@ export class Console {
         }
       }
       this.refresh();
-      this.toast(m.text, m.ok ? "good" : "bad");
+      const text = this.ackText(c, m.ok) ?? m.text;
+      this.toast(text, m.ok ? "good" : "bad");
       if (!m.ok)
-        this.addLog({ t: this.snap?.t ?? 0, text: m.text, kind: "bad" });
+        this.addLog({ t: this.snap?.t ?? 0, text, kind: "bad" });
       else if (c)
-        this.addLog({ t: this.snap?.t ?? 0, text: m.text, kind: "you" });
+        this.addLog({ t: this.snap?.t ?? 0, text, kind: "you" });
     }
   }
 
+  /** procedures-mode answers in the phone's own language (the simulator words them in English) */
+  private ackText(c: RemoteCommand | undefined, ok: boolean): string | null {
+    if (!c) return null;
+    if (c.type === "procConfirm") {
+      const it = this.snap?.procedures
+        ?.find((p) => p.procedureId === c.procedureId)
+        ?.items.find((i) => i.id === c.itemId);
+      return ok ? t("rc.ack.confirmed", { i: it?.text ?? c.itemId }) : t("rc.ack.notConfirmed");
+    }
+    if (c.type === "drillFire") {
+      const k = this.snap?.drill?.pending.find((p) => p.index === c.index)?.key;
+      return ok ? t("rc.ack.fired", { f: k ? failureText(k, L()).name : `#${c.index + 1}` }) : t("rc.ack.notWaiting");
+    }
+    if (c.type === "gradeProcedures")
+      return !ok ? t("rc.ack.notChanged") : c.on ? t("rc.ack.gradeOn", { m: t(`rc.p.${c.mode ?? this.snap?.grade?.mode ?? "training"}`).toLowerCase() }) : t("rc.ack.gradeOff");
+    return null;
+  }
   /** a freeze or pause on its way: a second tap before the simulator answers must not undo it */
   private inFlight(kind: "freeze" | "pause") {
     const now = performance.now();
@@ -806,13 +911,23 @@ export class Console {
       ) {
         this.addLog({
           t: b.t,
-          text: `${FAILURE_TEXT[k].name} ${b.failures[k] ? "failed" : "restored"} on the simulator`,
+          text: `${FAILURE_TEXT[k]?.name ?? k} ${b.failures[k] ? "failed" : "restored"} on the simulator`,
           kind: b.failures[k] ? "bad" : "sim",
         });
       }
     }
     if (b.crashed && !a.crashed)
       this.addLog({ t: b.t, text: "Aircraft crashed", kind: "bad" });
+    // procedures: started / finished
+    const before = new Map((a.procedures ?? []).map((p) => [`${p.procedureId}@${p.failure}`, p]));
+    for (const p of b.procedures ?? []) {
+      const was = before.get(`${p.procedureId}@${p.failure}`);
+      if (!was) this.addLog({ t: b.t, text: t("rc.p.started", { p: p.title }), kind: "sim" });
+      else if (p.finished && !was.finished) {
+        const req = p.items.filter((i) => !i.optional);
+        this.addLog({ t: b.t, text: t("rc.p.ended", { p: p.title, d: req.filter((i) => i.done).length, n: req.length }), kind: "sim" });
+      }
+    }
   }
 
   private addLog(e: LogEntry) {
@@ -1178,6 +1293,7 @@ export class Console {
   // ---------------------------------------------------------------- Failures
   private buildFailures(): HTMLElement {
     const p = h("div", {});
+    p.append(this.buildProcedures());
     const restore = h(
       "button",
       {
@@ -1192,55 +1308,92 @@ export class Console {
       },
       "Restore all",
     );
-    const grid = h("div", { class: "rc-fails" });
-    const tiles = {} as Record<FailureKey, HTMLButtonElement>;
-    for (const k of FAILURE_KEYS) {
-      const t = FAILURE_TEXT[k];
-      const b = h(
-        "button",
-        { class: "rc-fail", type: "button", "aria-pressed": "false" },
-        h(
-          "span",
-          { class: "rc-fail-st" },
-          h("i", {}),
-          h("span", { class: "lbl" }, "Working"),
-        ),
-        h("b", {}, t.name),
-        h("small", {}, t.sub),
-      );
-      const toggle = () =>
-        this.send({ type: "failure", key: k, on: !this.snap?.failures[k] });
-      if (k === "engine") confirmTap(b, "Tap again to fail", toggle);
-      else b.addEventListener("click", toggle);
-      // a restore needs no confirmation
-      if (k === "engine")
-        b.addEventListener(
-          "click",
-          (e) => {
-            if (this.snap?.failures.engine) {
-              e.stopImmediatePropagation();
-              toggle();
-            }
-          },
-          { capture: true },
-        );
-      tiles[k] = b;
-      grid.append(b);
-    }
+    const hint = h("small", {}, t("rc.f.hint"));
     p.append(
-      h(
-        "div",
-        { class: "rc-sec-h" },
+      h("div", { class: "rc-sec-h rc-fail-h" }, h("div", {}, h("h2", {}, "Failures"), hint), restore),
+    );
+    const tiles = {} as Record<FailureKey, HTMLButtonElement>;
+    const groups: { arm: HTMLElement; keys: FailureKey[] }[] = [];
+    // the failure being armed: its expected-procedure picker opens under its group
+    let arming: FailureKey | null = null;
+    const renderArm = () => {
+      for (const g of groups) {
+        clear(g.arm);
+        g.arm.hidden = !arming || !g.keys.includes(arming);
+      }
+      for (const k of FAILURE_KEYS) {
+        tiles[k].classList.toggle("picking", k === arming);
+        if (!this.snap?.failures[k])
+          (tiles[k].querySelector(".lbl") as HTMLElement).textContent =
+            k === arming ? t("rc.f.armed") : t("rc.f.working");
+      }
+      if (!arming) return;
+      const k = arming;
+      const g = groups.find((x) => x.keys.includes(k))!;
+      const choices = this.procs.filter((c) => c.failures.includes(k));
+      const sel = h(
+        "select",
+        { class: "rc-select", "aria-label": t("rc.f.expect") },
+        h("option", { value: "" }, t("rc.f.auto")),
+        ...choices.map((c) => h("option", { value: c.id }, `${c.title}${c.club ? " · club" : ""}${c.lang !== L() ? ` (${c.lang.toUpperCase()})` : ""}`)),
+        this.procs.length ? h("option", { value: "-" }, t("rc.f.none")) : null,
+      ) as HTMLSelectElement;
+      g.arm.append(
+        h("div", { class: "rc-arm-h" }, h("b", {}, failureText(k, L()).name), h("small", {}, failureText(k, L()).sub)),
+        this.procs.length ? h("label", { class: "rc-field" }, h("span", {}, t("rc.f.expect")), sel) : "",
         h(
           "div",
-          {},
-          h("h2", {}, "Failures"),
-          h("small", {}, "Tap a system to fail it. Tap again to restore."),
+          { class: "rc-arm-acts" },
+          h("button", { class: "rc-btn", type: "button", onclick: () => { arming = null; renderArm(); } }, t("rc.f.cancel")),
+          h(
+            "button",
+            {
+              class: "rc-btn danger-solid",
+              type: "button",
+              onclick: () => {
+                const v = sel.value;
+                const c: RemoteCommand = { type: "failure", key: k, on: true };
+                // "-": the instructor does not want this failure graded
+                if (v) c.expect = v;
+                this.send(c);
+                arming = null;
+                renderArm();
+              },
+            },
+            svgIcon(I.warning, 18),
+            t("rc.f.fire"),
+          ),
         ),
-        restore,
-      ),
-      grid,
-    );
+      );
+      // the picker opens under the group: bring it into view on a phone
+      requestAnimationFrame(() => g.arm.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+    };
+    for (const grp of FAILURE_GROUPS) {
+      const grid = h("div", { class: "rc-fails" });
+      const arm = h("div", { class: "rc-arm", hidden: true });
+      for (const k of grp.keys) {
+        const tx = failureText(k, L());
+        const b = h(
+          "button",
+          { class: "rc-fail", type: "button", "aria-pressed": "false" },
+          h("span", { class: "rc-fail-st" }, h("i", {}), h("span", { class: "lbl" }, t("rc.f.working"))),
+          h("b", {}, tx.name),
+          h("small", {}, tx.sub),
+        );
+        b.addEventListener("click", () => {
+          // a restore needs no confirmation; a failure asks which procedure is expected
+          if (this.snap?.failures[k]) {
+            this.send({ type: "failure", key: k, on: false });
+            if (arming === k) arming = null;
+          } else arming = arming === k ? null : k;
+          renderArm();
+        });
+        tiles[k] = b;
+        grid.append(b);
+      }
+      groups.push({ arm, keys: grp.keys });
+      p.append(h("h3", { class: "rc-sub rc-fgroup" }, FAILURE_GROUP_TEXT[grp.id][L()]), grid, arm);
+    }
     this.updaters.push(() => {
       const f = this.snap?.failures;
       let any = false;
@@ -1250,14 +1403,119 @@ export class Console {
         const b = tiles[k];
         b.classList.toggle("on", on);
         b.setAttribute("aria-pressed", String(on));
-        if (!b.classList.contains("armed"))
-          (b.querySelector(".lbl") as HTMLElement).textContent = on
-            ? "Failed"
-            : "Working";
+        (b.querySelector(".lbl") as HTMLElement).textContent = on ? t("rc.f.failed") : arming === k ? t("rc.f.armed") : t("rc.f.working");
+      }
+      if (arming && f?.[arming]) {
+        arming = null;
+        renderArm();
       }
       restore.hidden = !any;
     });
     return p;
+  }
+
+  /** procedures: grading toggle + mode, drill failures waiting for the instructor, live progress with callouts */
+  private buildProcedures(): HTMLElement {
+    const box = h("section", { class: "rc-procs", "aria-label": t("rc.p.head") });
+    let sig = "";
+    const times: (() => void)[] = [];
+    this.updaters.push(() => {
+      const s = this.snap;
+      // an older simulator (protocol 1) sends no procedures: nothing to show
+      if (!s || s.grade === undefined) {
+        box.hidden = true;
+        return;
+      }
+      box.hidden = false;
+      const ps = s.procedures ?? [];
+      const key = `${L()}|${s.grade.on}|${s.grade.mode}|${s.drill?.mode ?? ""}|${(s.drill?.pending ?? []).map((x) => x.index).join(",")}|${s.systems?.comOk}|${s.systems?.xpdrOk}|${ps.map((x) => `${x.procedureId}:${x.finished}:${x.checklistOpen}:${x.items.map((i) => `${+i.done}${+i.late}`).join("")}`).join("|")}|${this.state}`;
+      if (key === sig) {
+        for (const f of times) f();
+        return;
+      }
+      sig = key;
+      times.length = 0;
+      clear(box);
+      const live = this.state === "connected";
+      const sw = h(
+        "button",
+        { type: "button", class: `rc-switch${s.grade.on ? " on" : ""}`, role: "switch", "aria-checked": String(s.grade.on), disabled: !live, onclick: () => this.send({ type: "gradeProcedures", on: !s.grade!.on, mode: s.grade!.mode }) },
+        h("i", { "aria-hidden": "true" }),
+        t("rc.p.grade"),
+      );
+      const seg = h(
+        "div",
+        { class: "rc-seg", role: "radiogroup" },
+        ...(["training", "test"] as const).map((m) =>
+          h("button", { type: "button", role: "radio", class: s.grade!.mode === m ? "on" : "", "aria-checked": String(s.grade!.mode === m), disabled: !live || !s.grade!.on, onclick: () => this.send({ type: "gradeProcedures", on: true, mode: m }) }, t(`rc.p.${m}`)),
+        ),
+      );
+      box.append(
+        h("div", { class: "rc-sec-h" }, h("div", {}, h("h2", {}, t("rc.p.head")), h("small", {}, s.grade.on ? t("rc.p.hintOn") : t("rc.p.hintOff")))),
+        h("div", { class: "rc-grade" }, sw, seg),
+      );
+      if (s.drill) box.append(h("p", { class: "rc-drill" }, t("rc.p.drill", { m: t(`rc.p.${s.drill.mode}`).toLowerCase() })));
+      const warn: string[] = [];
+      if (s.systems && !s.systems.comOk) warn.push(t("rc.p.nocom"));
+      if (s.systems && !s.systems.xpdrOk) warn.push(t("rc.p.noxpdr"));
+      if (s.systems?.annunciators.length || warn.length)
+        box.append(h("div", { class: "rc-ann" }, ...(s.systems?.annunciators ?? []).map((a) => h("span", { class: `rc-ann-c${/VOLTS|OIL|FIRE|SMOKE/.test(a) ? " w" : ""}` }, a)), ...warn.map((w) => h("span", { class: "rc-ann-c i" }, w))));
+      const pend = s.drill?.pending ?? [];
+      if (pend.length)
+        box.append(
+          h(
+            "div",
+            { class: "rc-pending" },
+            h("h3", {}, t("rc.p.pending")),
+            ...pend.map((x) => h("div", { class: "rc-pend" }, h("b", {}, failureText(x.key, L()).name), h("button", { class: "rc-btn danger-solid small", type: "button", disabled: !live, onclick: () => this.send({ type: "drillFire", index: x.index }) }, t("rc.f.fire")))),
+          ),
+        );
+      if (!ps.length) {
+        box.append(h("p", { class: "rc-muted rc-pnone" }, t("rc.p.none")));
+        return;
+      }
+      for (const pr of [...ps].reverse()) box.append(this.procCard(pr, live, times));
+    });
+    return box;
+  }
+
+  private procCard(pr: RemoteProcState, live: boolean, times: (() => void)[]): HTMLElement {
+    const req = pr.items.filter((i) => !i.optional);
+    const d = req.filter((i) => i.done).length;
+    const clock = h("b", { class: "rc-pclock" }, mmss(pr.elapsedS));
+    if (!pr.finished)
+      times.push(() => {
+        const cur = this.snap?.procedures?.find((x) => x.procedureId === pr.procedureId && x.failure === pr.failure);
+        if (cur) clock.textContent = mmss(cur.elapsedS);
+      });
+    return h(
+      "article",
+      { class: `rc-proc${pr.finished ? " fin" : ""}` },
+      h(
+        "header",
+        {},
+        h("div", {}, h("b", {}, pr.title), h("small", {}, [failureText(pr.failure, L()).name, t(`rc.p.${pr.mode}`), pr.finished ? t("rc.p.finished") : pr.checklistOpen || !pr.items.some((i) => i.memory) ? t("rc.p.checklist") : t("rc.p.memory")].join(" · "))),
+        h("div", { class: "rc-pside" }, clock, h("small", {}, t("rc.p.done", { d, n: req.length }))),
+      ),
+      h("div", { class: "rc-pbar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(req.length), "aria-valuenow": String(d) }, h("i", { style: `width:${req.length ? Math.round((d / req.length) * 100) : 0}%` })),
+      h(
+        "ol",
+        { class: "rc-pitems" },
+        ...pr.items.map((i) =>
+          h(
+            "li",
+            { class: `${i.done ? "done" : ""}${i.late ? " late" : ""}${i.memory ? " mem" : ""}${i.optional ? " opt" : ""}` },
+            h("span", { class: "rc-pbox", "aria-hidden": "true" }, i.done ? svgIcon(I.check, 14) : null),
+            h("span", { class: "rc-ptext" }, i.text, i.late && !i.done ? h("small", {}, ` · ${t("rc.p.late")}`) : null),
+            i.manual && !i.done && !pr.finished
+              ? h("button", { class: "rc-btn small", type: "button", disabled: !live, onclick: () => this.send({ type: "procConfirm", procedureId: pr.procedureId, itemId: i.id }) }, t("rc.p.heard"))
+              : i.done && i.atS !== null
+                ? h("small", { class: "rc-pat" }, `${Math.round(i.atS)} s`)
+                : null,
+          ),
+        ),
+      ),
+    );
   }
 
   // ---------------------------------------------------------------- Weather

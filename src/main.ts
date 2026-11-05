@@ -47,6 +47,37 @@ import type { RemoteCommand, RemoteSnapshot } from './connect/remoteTypes';
 import type { RemoteHostApi } from './connect/remoteLink';
 import { CockpitAudio } from './sim/audio';
 import { Intro, introWanted } from './ui/intro';
+import { mountSystemsPanel } from './ui/systemsPanel';
+import { ProcedureController, ProcedurePanel, remoteProcStates, failureName } from './ui/procedurePanel';
+import { flightProcedures, procedureSection } from './ui/modals';
+import { openProcedureEditor } from './ui/procedureEditor';
+import { lang as uiLang, onLangChange, registerStrings, t as tr } from './ui/i18n';
+
+// pedestal and procedures-mode words of the shell (FR/EN)
+registerStrings('en', {
+  'ped.throttle': 'Throttle',
+  'ped.flaps': 'Flaps',
+  'ped.trim': 'Trim',
+  'ped.yoke': 'Yoke & rudder',
+  'ped.chrono': 'Chrono',
+  'ped.systems': 'Systems',
+  'ped.controller': 'Controller',
+  'ped.switches': 'Switches',
+  'ped.switchesTip': 'Aircraft systems: masters, magnetos, fuel pump, mixture, fuel selector (Z)',
+  'drill.endDone': 'Drill complete: procedure flown (the rest of the flight was not graded)',
+});
+registerStrings('fr', {
+  'ped.throttle': 'Gaz',
+  'ped.flaps': 'Volets',
+  'ped.trim': 'Compensateur',
+  'ped.yoke': 'Manche et palonnier',
+  'ped.chrono': 'Chrono',
+  'ped.systems': 'Systèmes',
+  'ped.controller': 'Commandes',
+  'ped.switches': 'Interrupteurs',
+  'ped.switchesTip': 'Systèmes de l’avion : interrupteurs généraux, magnétos, pompe, mélange, sélecteur carburant (Z)',
+  'drill.endDone': 'Exercice terminé : procédure effectuée (la suite du vol n’est pas évaluée)',
+});
 
 // ------------------------------------------------------------------ state
 const sim = new Sim(SCENARIOS[1]);
@@ -113,8 +144,12 @@ function toast(msg: string, kind: 'info' | 'good' | 'warn' | 'bad' = 'info', ms 
 }
 sim.rec.onEvent = (e) => {
   if (sim.assess.mode === 'checkride' && !e.text.startsWith('FAILURE') && !e.text.startsWith('CRASH')) return;
-  if (e.kind !== 'info' || /Crossed FAF|Minimums|Liftoff/.test(e.text)) toast(e.text, e.kind);
+  // a procedure test: the student diagnoses the failure from what the aircraft does — nothing names it
+  if (testQuiet() && /^(FAILURE|Expected procedure|ATC transmission not received)/.test(e.text)) return;
+  if (e.kind !== 'info' || /Crossed FAF|Minimums|Liftoff/.test(e.text)) toast(uiLang() === 'fr' && e.fr ? e.fr : e.text, e.kind);
 };
+/** a test drill (or a procedure test the instructor runs) is being flown: no announcement, no coaching */
+let testQuiet = () => false;
 
 // ------------------------------------------------------------------ modals
 const launcher = new Launcher((sc, wx, a) => startScenario(sc, wx, a));
@@ -220,8 +255,22 @@ const fc = new FlightCenter({
   pairInstructor: () => void pairInstructor(),
   openInstructor: () => ios.toggle(true),
   openConnections: () => connect.open(),
+  // procedures mode: a drill flies in one click (a real-world one first loads its region in the builder)
+  flyDrill: (c) => flyDrill(c),
+  editDrill: (x) => (typeof x === 'string' ? builder.drill(x) : builder.edit(x)),
 });
 const builder = new CircuitBuilder((c) => flyCircuit(c), (m, k) => toast(m, k ?? 'info'));
+// a failure card in the builder opens the club procedure editor (a new procedure answers that failure)
+builder.openProcedure = (id, failure) => void openProcedureEditor({ id, failure });
+function flyDrill(c: Circuit) {
+  if (c.world === 'real') {
+    builder.edit(c);
+    return;
+  }
+  backToTraining();
+  if (c.cockpit && c.cockpit !== cockpitType) setCockpit(c.cockpit);
+  startExerciseNow(circuitToExercise(c));
+}
 const setup = new FlightSetup({
   flyGraded: (c, st) => { applySetupPrefs(st); if (c.cockpit && c.cockpit !== cockpitType) setCockpit(c.cockpit); startExerciseNow(circuitToExercise(c)); },
   flyFree: (sc, st) => { applySetupPrefs(st); startScenario(sc, { id: 'custom', name: 'Custom', desc: '', wx: st.weather }, { mode: 'training', student: launcher.assess.student, handFlown: false, randomFailure: false }); },
@@ -275,6 +324,7 @@ function pickExercise(ex: Exercise, path: Path | null) {
 function startLesson(run: LessonRun) {
   lesson = run;
   lastLessonEx = run.ex;
+  startProcedures(run);
   debriefShown = true; // the lesson result replaces the automatic debrief
   sim.paused = false;
   input.keys.clear();
@@ -297,6 +347,36 @@ const ios = new InstructorDrawer(sim, (m, k) => toast(m, k ?? 'info'));
 ios.onBuilder = () => builder.edit();
 ios.onPair = () => void pairInstructor();
 
+// ------------------------------------------------------------------ procedures mode (flying clubs)
+/** grades the emergency procedures of the flight: drills, instructor / phone failures ('Grade procedures') */
+const procs = new ProcedureController({
+  sim,
+  lesson: () => lesson,
+  onStart: (r) => {
+    // training: the student needs the switches now; a test never opens anything by itself (no hint)
+    if (r.mode === 'training') setSystemsPanel(true, false);
+  },
+});
+testQuiet = () => procs.testFlight() || (procs.grade && sim.assess.mode !== 'checkride' && procs.modeNow() === 'test');
+const procPanel = new ProcedurePanel(procs);
+document.body.append(procPanel.el);
+flightProcedures.results = () => procs.results();
+ios.procs = procs;
+/** a new flight (lesson or free flight): a fresh set of procedures; a drill wires its failures to the runner */
+function startProcedures(run: LessonRun | null) {
+  procs.reset();
+  // back to the pilot's own choice for the systems panel (a drill opened it for its flight)
+  setSystemsPanel(store.get('ifr.sysp.on', false), false);
+  if (!run) return;
+  run.onDrillFailure = (k, e, m, ev) => {
+    procs.onDrillFailure(k, e, m, ev);
+  };
+  // a failure fired while the lesson was being set up (trigger 'now') is caught up
+  for (const ev of run.drillLog) procs.onDrillFailure(ev.key, ev.expect, ev.mode, ev);
+  // a failure drill is flown with the aircraft's switches at hand
+  if (run.drill?.isDrill) setSystemsPanel(true, false);
+}
+
 function startScenario(sc: Scenario, wx: WxPreset, a: AssessSettings = launcher.assess) {
   hideCrash();
   lesson = null;
@@ -309,6 +389,7 @@ function startScenario(sc: Scenario, wx: WxPreset, a: AssessSettings = launcher.
   sim.assess = { ...a };
   sim.load(sc);
   Object.assign(sim.weather, wx.wx);
+  startProcedures(null);
   sim.paused = false;
   debriefShown = false;
   endTimer = 0;
@@ -438,7 +519,13 @@ function restartFlight() {
 function endFlight() {
   sim.paused = true;
   // a lesson ends with its own result window (which offers the full debrief) — never both
-  if (lesson) { lesson.abort(); return; }
+  if (lesson) {
+    // a failure drill whose procedures are all flown ends as complete: the steps after it are not graded (the
+    // student chose to stop once the emergency was handled) — otherwise the lesson is aborted
+    if (procs.drillDone()) lesson.finish(tr('drill.endDone'), true);
+    else lesson.abort();
+    return;
+  }
   openDebrief();
 }
 document.addEventListener('click', (e) => { if (!flightMenu.contains(e.target as Node)) flightMenu.classList.remove('open'); });
@@ -937,6 +1024,8 @@ function setCockpit(t: CockpitType, announce = true) {
   cockpit.classList.toggle('with-afcs', afcsBar && t !== 'airliner');
   cockpit.dataset.theme = t;
   setSetupPanel(t === 'steam' ? 'steam' : 'glass');
+  // the G1000 EIS and the airliner show the engine and electrical readings: the gauges strip is for the steam panel
+  sysPanel.setGauges(t === 'steam');
   closeSteps();
   pfdBezel.querySelector('[data-l]')!.textContent = BEZEL_LABELS[t][0];
   mfdBezel.querySelector('[data-r]')!.textContent = BEZEL_LABELS[t][1];
@@ -983,19 +1072,47 @@ function updateChrono() {
   if (m > 0 && m !== chronoMin) audio.chime();
   chronoMin = m;
 }
-const group = (title: string, ...kids: (HTMLElement | string)[]) => h('div', { class: 'ped-g' }, h('div', { class: 'ped-t' }, title), h('div', { class: 'ped-c' }, ...kids));
+/** a pedestal group; `key` names its title in the i18n table (it follows a language change) */
+const group = (key: string, ...kids: (HTMLElement | string)[]) => h('div', { class: 'ped-g' }, h('div', { class: 'ped-t', 'data-i18n': key }, tr(key)), h('div', { class: 'ped-c' }, ...kids));
+// ------------------------------------------------------------------ aircraft systems panel (masters, magnetos, mixture, fuel…)
+/** the C172S switch panel: a row between the instruments and the pedestal, so it never covers an instrument */
+const sysHost = h('div', { class: 'sysp-host' });
+const sysPanel = mountSystemsPanel(sysHost, sim, { gauges: cockpitType === 'steam' });
+let sysOn = store.get('ifr.sysp.on', false);
+const sysBtnLbl = h('span', {}, tr('ped.switches'));
+// the label hides on a narrow touch pedestal (icon key): the accessible name stays
+const sysBtn = h('button', { class: 'ped-btn ped-sys', type: 'button', 'aria-pressed': String(sysOn), 'aria-label': tr('ped.switches'), title: tr('ped.switchesTip'), onclick: () => setSystemsPanel(!sysOn) }, svgIcon(I.gauge, 18), sysBtnLbl);
+function setSystemsPanel(on: boolean, persist = true) {
+  if (persist) store.set('ifr.sysp.on', on);
+  sysOn = on;
+  sysPanel.setVisible(on);
+  sysHost.hidden = !on;
+  sysBtn.setAttribute('aria-pressed', String(on));
+  sysBtn.classList.toggle('on', on);
+  document.body.classList.toggle('sysp-open', on);
+  fitSoon();
+}
 const footer = h('footer', { class: 'footer pedestal' },
-  group('Throttle', h('div', { class: 'lever-box' }, h('span', { class: 'lv-l' }, 'IDLE'), thr, h('span', { class: 'lv-l' }, 'FULL')), h('div', { class: 'ped-read' }, thrPct, thrRpm)),
-  group('Flaps', h('div', { class: 'flap-sel' }, ...flapBtns, flapNeedle)),
-  group('Trim', h('button', { class: 'ped-btn', onclick: () => (sim.controls.trim = Math.max(-1, sim.controls.trim - 0.05)), title: 'Nose down (Home)' }, '▼'), h('div', { class: 'trim-box' }, trimWheel, h('div', { class: 'trim-scale' }, h('span', {}, 'DN'), h('b', {}, 'T/O'), h('span', {}, 'UP'), trimMark)), h('button', { class: 'ped-btn', onclick: () => (sim.controls.trim = Math.min(1, sim.controls.trim + 0.05)), title: 'Nose up (End)' }, '▲')),
-  group('Yoke & rudder', stick, h('div', { class: 'ped-col' }, rudderBar, brakeLight)),
-  group('Chrono', h('div', { class: 'chrono' }, chronoRead, h('div', { class: 'chrono-btns' }, chronoSS, chronoRst))),
-  group('Controller', h('button', { class: 'ped-joy', 'data-tip': 'Joystick, yoke or gamepad (Controllers in the More menu)', onclick: () => joyModal.open(), title: 'Flying with the keyboard — click to connect a joystick, yoke or pedals' }, joyDot, joyLbl)),
+  group('ped.throttle', h('div', { class: 'lever-box' }, h('span', { class: 'lv-l' }, 'IDLE'), thr, h('span', { class: 'lv-l' }, 'FULL')), h('div', { class: 'ped-read' }, thrPct, thrRpm)),
+  group('ped.flaps', h('div', { class: 'flap-sel' }, ...flapBtns, flapNeedle)),
+  group('ped.trim', h('button', { class: 'ped-btn', onclick: () => (sim.controls.trim = Math.max(-1, sim.controls.trim - 0.05)), title: 'Nose down (Home)' }, '▼'), h('div', { class: 'trim-box' }, trimWheel, h('div', { class: 'trim-scale' }, h('span', {}, 'DN'), h('b', {}, 'T/O'), h('span', {}, 'UP'), trimMark)), h('button', { class: 'ped-btn', onclick: () => (sim.controls.trim = Math.min(1, sim.controls.trim + 0.05)), title: 'Nose up (End)' }, '▲')),
+  group('ped.yoke', stick, h('div', { class: 'ped-col' }, rudderBar, brakeLight)),
+  group('ped.chrono', h('div', { class: 'chrono' }, chronoRead, h('div', { class: 'chrono-btns' }, chronoSS, chronoRst))),
+  group('ped.systems', sysBtn),
+  group('ped.controller', h('button', { class: 'ped-joy', 'data-tip': 'Joystick, yoke or gamepad (Controllers in the More menu)', onclick: () => joyModal.open(), title: 'Flying with the keyboard — click to connect a joystick, yoke or pedals' }, joyDot, joyLbl)),
   h('div', { class: 'spacer' }),
   h('div', { class: 'ped-keys' }, h('span', {}, h('kbd', {}, 'F1'), ' explain'), h('span', {}, h('kbd', {}, '?'), ' shortcuts'), h('span', {}, h('kbd', {}, 'G'), ' go-around'), h('span', {}, h('kbd', {}, 'K'), ' charts')),
 );
 
-document.getElementById('app')!.append(topbar, cockpit, footer);
+document.getElementById('app')!.append(topbar, cockpit, sysHost, footer);
+onLangChange(() => {
+  footer.querySelectorAll<HTMLElement>('.ped-t[data-i18n]').forEach((e) => (e.textContent = tr(e.dataset.i18n!)));
+  sysBtnLbl.textContent = tr('ped.switches');
+  sysBtn.title = tr('ped.switchesTip');
+  sysBtn.setAttribute('aria-label', tr('ped.switches'));
+});
+sysHost.hidden = !sysOn;
+sysPanel.setVisible(sysOn);
 document.body.append(charts.el, ios.el, chromeHandle);
 
 // touch stick: relative drag (the yoke does not jump to where the finger lands), eased back to neutral on release
@@ -1066,7 +1183,7 @@ function pfdSoftkey(i: number) {
     case 'DME': pfdSt.dmeWindow = !pfdSt.dmeWindow; break;
     case 'TMR/REF': toggleTimer(); break;
     case 'XPDR': { const o = ['STBY', 'ON', 'ALT'] as const; av.xpdrMode = o[(o.indexOf(av.xpdrMode) + 1) % 3]; break; }
-    case 'IDENT': toast('IDENT — squawking ' + av.xpdr, 'info'); break;
+    case 'IDENT': toast(sim.sys.xpdrOk === false ? 'IDENT — no reply: transponder failed' : 'IDENT — squawking ' + av.xpdr, sim.sys.xpdrOk === false ? 'warn' : 'info'); break;
     case 'MINS': cycleMins(); break;
   }
 }
@@ -1271,7 +1388,12 @@ window.addEventListener('keydown', (e) => {
     case 's': altBy(-1, e.shiftKey); break;
     case 'o': sim.setCourse(sim.course() - (e.shiftKey ? 10 : 1)); break;
     case 'p': sim.setCourse(sim.course() + (e.shiftKey ? 10 : 1)); break;
-    case 'c': doAction('cdi'); break;
+    case 'c':
+      // Shift+C: the emergency checklist (procedures mode), else the normal checklist of the phase
+      if (e.shiftKey) { if (procPanel.visible) procPanel.toggleChecklist(); else showChecklist(); }
+      else doAction('cdi');
+      break;
+    case 'z': setSystemsPanel(!sysOn); break;
     case 'd': if (e.shiftKey) openDebrief(); else g1kKey('direct', () => directModal.open()); e.preventDefault(); break;
     case 'x': g1kKey('proc', () => procModal.open()); break;
     case 'i': ios.toggle(); break;
@@ -1421,7 +1543,8 @@ function updateCoach() {
     }
     const ctx = run.ctx(0);
     const ro = st?.readout ? st.readout(ctx) : '';
-    const ride0 = sim.assess.mode === 'checkride';
+    // a test drill coaches nothing: no hints, no setup checklist, no tolerance messages
+    const ride0 = sim.assess.mode === 'checkride' || procs.testFlight();
     let setupItems: SetupItem[] = [];
     if (st?.setup && !ride0 && !run.finished) {
       try { setupItems = st.setup(ctx); } catch { setupItems = []; }
@@ -1438,7 +1561,7 @@ function updateCoach() {
     coach.classList.remove('empty', 'min');
     coach.classList.toggle('details', coachDetails);
     coach.classList.toggle('collapsed', coachCollapsed);
-    const ride = sim.assess.mode === 'checkride';
+    const ride = sim.assess.mode === 'checkride' || procs.testFlight();
     const n = run.rt.steps.length;
     coachTimer = h('span', { class: 'coach-time', title: 'Exercise time' }, fmtTime(run.totalT));
     coach.append(
@@ -1479,7 +1602,12 @@ function updateCoach() {
   const d = sim.ac.data;
   const ph = sim.rec.phase(sim);
   coach.classList.remove('lesson');
-  if (sim.assess.mode === 'checkride') {
+  if (sim.assess.mode === 'checkride' || procs.testFlight()) {
+    if (sim.assess.mode !== 'checkride') {
+      // a procedure test outside a drill: the coach stays quiet
+      if (coachKey !== 'proctest') { coachKey = 'proctest'; coach.innerHTML = ''; coach.classList.add('empty'); }
+      return;
+    }
     const fails = Object.values(sim.failures).some(Boolean);
     const key = `ride|${sim.ac.s.crashed}|${sim.paused}|${fails}`;
     if (key !== coachKey) {
@@ -1585,6 +1713,8 @@ let lastAtcStep = -1;
 /** lesson steps that read as ATC instructions are transmitted on the radio */
 const ATC_LIKE = /^(fly|turn|climb|descend|maintain|cleared|hold|proceed|intercept|join|expect|contact|cross|reduce|increase|go around|track|enter)\b/i;
 let cduTick = 0;
+/** the emergency card and the systems panel refresh at 10 Hz (every write is change-checked) */
+let procAcc = 0;
 let apKeyCache: HTMLElement[] = [];
 // change-checked DOM writes (the frame loop runs 60×/s; unchanged writes still invalidate style)
 const domCache = new WeakMap<Element, Record<string, string>>();
@@ -1666,11 +1796,22 @@ function frameBody(now: number) {
   if (lesson && !sim.paused) {
     lesson.update(Math.min(0.1, dt) * sim.rate);
   }
+  // procedures: new failures start their procedure; grading at 10 Hz (sim time)
+  procs.tick(Math.min(0.1, dt) * sim.rate);
   if (lesson?.finished && !lessonResult.isOpen && !Modal.anyOpen()) {
     const run = lesson;
     lesson = null;
     sim.paused = true;
+    // the procedures stop with the lesson: their results go into the record the result window saves
+    procs.finish();
     lessonResult.show(run, lessonPath);
+    const res = procs.results();
+    if (res.length) {
+      const sec = procedureSection(res);
+      const head = lessonResult.body.querySelector('.grade-row');
+      if (head) head.after(sec);
+      else lessonResult.body.prepend(sec);
+    }
   }
 
   // auto debrief at the end of a flight
@@ -1733,6 +1874,13 @@ function frameBody(now: number) {
   }
   charts.update();
   ios.update(dt);
+  atc.update();
+  procAcc += dt;
+  if (procAcc >= 0.1) {
+    procAcc = 0;
+    procPanel.update();
+    if (sysOn) sysPanel.update();
+  }
   audio.update(sim, dt);
   updateChrono();
   if ((cduTick = (cduTick + 1) % 15) === 0) cduPanel.tick();
@@ -1806,6 +1954,10 @@ function remoteSnapshot(): RemoteSnapshot {
     flight: lesson?.ex.title ?? (sim.fp.approachId && sim.fp.approach && sim.scenario && !sim.scenario.name.includes(sim.fp.approach.name) ? `${sim.fp.approach.airport} ${sim.fp.approach.name}` : sim.scenario?.name) ?? 'Free flight',
     wpt: to ? { ident: to.ident, distNm: Math.round(g.distNm * 10) / 10 } : null,
     approach: sim.fp.approach ? { id: sim.fp.approach.id, name: sim.fp.approach.name, airport: sim.fp.approach.airport, active: sim.fp.approachActive } : null,
+    procedures: remoteProcStates(procs.states()),
+    drill: lesson?.drill?.isDrill ? { mode: lesson.drill.mode, pending: procs.pendingDrill() } : null,
+    grade: { on: procs.grade, mode: procs.freeMode },
+    systems: { annunciators: [...(sim.sys.annunciators ?? [])], comOk: sim.sys.comOk !== false, xpdrOk: sim.sys.xpdrOk !== false },
     failures: { ...sim.failures },
     weather: { windDir: Math.round(w.windDir), windKt: Math.round(w.windKt), gustKt: Math.round(w.gustKt), ceilingFt: Math.round(w.ceilingFt), visibilitySm: w.visibilitySm, turbulence: w.turbulence, qnh: w.qnh },
     ap: { on: sim.ap.ap, lat: sim.ap.lat, vert: sim.ap.vert, hdgBug: sim.ap.hdgBug, altSel: sim.ap.altSel },
@@ -1829,7 +1981,24 @@ function remoteCommand(c: RemoteCommand) {
       break;
     }
     case 'failure':
-      if (typeof c.on === 'boolean' && c.key in FAILURE_LABELS) { sim.setFailure(c.key, c.on); say(`${c.on ? 'failed' : 'restored'} ${FAILURE_LABELS[c.key]}`, c.on ? 'warn' : 'good'); }
+      if (typeof c.on === 'boolean' && c.key in FAILURE_LABELS) {
+        // firing goes through the procedures controller: the expected procedure starts (Grade procedures / expect)
+        if (c.on) procs.fire(c.key, c.expect);
+        else sim.setFailure(c.key, false);
+        // a test: the student is not told what failed
+        if (!testQuiet()) say(`${c.on ? 'failed' : 'restored'} ${failureName(c.key)}`, c.on ? 'warn' : 'good');
+        else sim.rec.log(sim.time, 'info', `Instructor: ${c.on ? 'failed' : 'restored'} ${FAILURE_LABELS[c.key]}`);
+      }
+      break;
+    case 'procConfirm':
+      procs.confirm(c.itemId, 'instructor', c.procedureId);
+      break;
+    case 'drillFire':
+      procs.fireDrill(c.index);
+      break;
+    case 'gradeProcedures':
+      procs.setGrade(c.on);
+      if (c.mode) procs.setFreeMode(c.mode);
       break;
     case 'weather': {
       const w = sim.weather;
@@ -1849,12 +2018,17 @@ function remoteCommand(c: RemoteCommand) {
         parts.push(Math.abs(dh) < 3 ? `fly heading ${pad3(hdg)}` : `turn ${dh > 0 ? 'right' : 'left'} heading ${pad3(hdg)}`);
       }
       if (alt !== null) parts.push(`${alt > sim.indicatedAlt() ? 'climb' : 'descend'} and maintain ${Math.round(alt / 100) * 100}`);
-      if (parts.length) { const t = parts.join(', '); atc.say(t.charAt(0).toUpperCase() + t.slice(1)); sim.rec.log(sim.time, 'info', `ATC (instructor): ${t}`); }
+      if (parts.length) {
+        const t = parts.join(', '); // a dead radio: the ATC box records 'not received' itself
+        if (atc.say(t.charAt(0).toUpperCase() + t.slice(1))) sim.rec.log(sim.time, 'info', `ATC (instructor): ${t}`);
+      }
       break;
     }
     case 'directTo':
       if (typeof c.ident === 'string' && /^[A-Z0-9]{2,7}$/i.test(c.ident)) {
-        if (sim.directTo(c.ident.toUpperCase())) { atc.say(`Proceed direct ${c.ident.toUpperCase()}`); sim.rec.log(sim.time, 'info', `ATC (instructor): direct ${c.ident.toUpperCase()}`); }
+        // a clearance the student cannot hear (radio failure) changes nothing in the aircraft
+        if (!atc.comOk) atc.say(`Proceed direct ${c.ident.toUpperCase()}`);
+        else if (sim.directTo(c.ident.toUpperCase())) { atc.say(`Proceed direct ${c.ident.toUpperCase()}`); sim.rec.log(sim.time, 'info', `ATC (instructor): direct ${c.ident.toUpperCase()}`); }
         else toast(`Instructor: unknown fix ${c.ident}`, 'warn');
       }
       break;
@@ -1865,7 +2039,7 @@ function remoteCommand(c: RemoteCommand) {
   }
   syncPauseBtn();
 }
-const remoteApi: RemoteHostApi = { sim, snapshot: remoteSnapshot, command: remoteCommand };
+const remoteApi: RemoteHostApi = { sim, snapshot: remoteSnapshot, command: remoteCommand, procChoices: () => procs.allChoices() };
 /** the pairing window (QR + code) loads on demand: peerjs and the QR generator stay out of the main bundle */
 async function pairInstructor() {
   try {
@@ -1878,7 +2052,30 @@ async function pairInstructor() {
 }
 
 // test/automation hook
-(window as unknown as { __ifr: unknown }).__ifr = { sim, get outside() { return outside; }, thr27: runway('PARD', '27').threshold, charts: (id: string) => chartIndex().find((c) => c.id === id)?.render() ?? '', world: () => import('./nav/world'), lesson: (id: string) => pickExercise(exercise(id), null), perf, remote: remoteApi, setView: (v: ViewMode) => setView(v), afcs: (on: boolean) => setAfcsBar(on) };
+(window as unknown as { __ifr: unknown }).__ifr = { sim, get outside() { return outside; }, thr27: runway('PARD', '27').threshold, charts: (id: string) => chartIndex().find((c) => c.id === id)?.render() ?? '', world: () => import('./nav/world'), lesson: (id: string) => pickExercise(exercise(id), null), perf, remote: remoteApi, setView: (v: ViewMode) => setView(v), afcs: (on: boolean) => setAfcsBar(on),
+  // procedures mode
+  procs,
+  procPanel,
+  advance: (sec: number, ctl: Partial<typeof sim.controls> = {}) => {
+    for (let t = 0; t < sec && !sim.paused; t += 1 / 30) {
+      Object.assign(sim.controls, ctl);
+      sim.step(1 / 30);
+      if (lesson && !lesson.finished) lesson.update(1 / 30);
+      procs.tick(1 / 30);
+    }
+    procPanel.update();
+    if (sysOn) sysPanel.update();
+    return sim.time;
+  },
+  systems: () => sysPanel,
+  setSystemsPanel: (on: boolean) => setSystemsPanel(on, false),
+  drill: (id: string, o: { airport?: string; mode?: 'training' | 'test'; phase?: import('./train/drills').DrillPhase } = {}) =>
+    import('./train/drills').then((m) => {
+      const c = m.buildDrill(id, { airport: o.airport ?? 'PARD', mode: o.mode, phase: o.phase });
+      if (c) flyDrill(c);
+      return !!c;
+    }),
+};
 
 // ------------------------------------------------------------------ boot
 let fitRaf = 0;
@@ -1921,6 +2118,17 @@ function fitPortrait() {
 portraitMq.addEventListener?.('change', () => fitSoon());
 function fitSides() {
   fitPortrait();
+  // the systems panel row costs the outside view its height: on a short landscape screen the displays give some back,
+  // so the lesson panel and the ATC box keep room for their text (and an engine failure shows the field ahead)
+  if (cockpit.style.getPropertyValue('--bz-max')) cockpit.style.removeProperty('--bz-max');
+  if (sysOn && (otwMode === 'normal' || otwMode === 'big') && !document.body.classList.contains('portrait')) {
+    const sb = sitbar.getBoundingClientRect();
+    const o = otw.getBoundingClientRect();
+    const free = o.bottom - Math.max(o.top, sb.height > 20 ? sb.bottom : o.top) - 12;
+    const short = 190 - free;
+    const bz = pfdBezel.offsetHeight;
+    if (short > 0 && bz - short >= 220) cockpit.style.setProperty('--bz-max', `${Math.round(bz - short)}px`);
+  }
   const sides = [...panel.querySelectorAll<HTMLElement>('.bezel .side')].filter((x) => x.offsetParent !== null);
   for (const side of sides) side.style.zoom = '1';
   let k = 1;
@@ -1940,6 +2148,35 @@ function fitSides() {
   if (otwMode !== 'none' && sitbar.offsetHeight > 20) document.body.style.setProperty('--sb-h', `${sitbar.offsetHeight}px`);
   else document.body.style.removeProperty('--sb-h');
   document.body.style.setProperty('--tb-h', `${topbar.offsetHeight}px`);
+  // the emergency card sits inside the right-hand display (MFD / radio stack / ND): never over the attitude
+  // indicator; above the systems panel and the pedestal
+  {
+    const right = mfdBezel.querySelector<HTMLElement>('.screen') ?? mfdBezel;
+    const r = right.getBoundingClientRect();
+    const pf = (pfdBezel.querySelector<HTMLElement>('.screen') ?? pfdBezel).getBoundingClientRect();
+    const ck = cockpit.getBoundingClientRect();
+    const vis = r.width > 40 && r.height > 40;
+    // portrait tablets stack the displays (PFD above MFD): the card stays on the MFD, centred on it, and never
+    // climbs over the PFD above it
+    const stacked = vis && pf.height > 40 && pf.bottom <= r.top + 4;
+    const b = vis ? Math.max(8, window.innerHeight - r.bottom + 8) : Math.max(8, window.innerHeight - ck.bottom + 8);
+    const w = Math.round(Math.max(300, Math.min(400, stacked ? Math.min(window.innerWidth - 24, r.width + 140) : vis ? r.width * 0.62 : 360)));
+    const rr = stacked ? Math.max(12, window.innerWidth - (r.left + r.width / 2) - w / 2) : vis ? Math.max(8, window.innerWidth - r.right + 8) : 12;
+    // below the situation bar (or the top bar when the outside view is folded away)
+    const sb = sitbar.getBoundingClientRect();
+    const tb = topbar.getBoundingClientRect();
+    let top = Math.max(ck.top, tb.bottom, otwMode !== 'none' && sb.height > 20 ? sb.bottom : 0, stacked ? pf.bottom + 6 : 0) + 8;
+    // below the touch autopilot bar too, when that still leaves the card a useful height
+    const ab = afcs.offsetHeight > 0 ? afcs.getBoundingClientRect() : null;
+    if (ab && !stacked && ab.bottom + 8 > top && window.innerHeight - b - (ab.bottom + 8) >= 320) top = ab.bottom + 8;
+    document.body.style.setProperty('--procp-b', `${Math.round(b)}px`);
+    document.body.style.setProperty('--procp-r', `${Math.round(rr)}px`);
+    // at most the display's height plus a little of the outside view: the card never reaches the top bar
+    const room = window.innerHeight - b - top;
+    const mh = Math.max(stacked ? 160 : 200, Math.min(room, (vis && !stacked ? r.height : room) + 120));
+    document.body.style.setProperty('--procp-mh', `${Math.round(mh)}px`);
+    document.body.style.setProperty('--procp-w', `${w}px`);
+  }
   // the lesson panel shows its hint and steps behind "Details" when its space is short
   const room = otwMode === 'none' ? 0 : otwMode === 'visual' ? otw.clientHeight - pfdBezel.offsetHeight - 150 : otw.clientHeight - 120;
   cockpit.classList.toggle('coach-compact', room < 300);

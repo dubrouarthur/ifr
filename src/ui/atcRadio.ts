@@ -136,7 +136,7 @@ export class AtcRadio {
           h(
             "button",
             {
-              class: "atc-b",
+              class: "atc-b atc-again",
               type: "button",
               title: "Say again (repeat the last transmission)",
               onclick: () => this.sayAgain(),
@@ -197,9 +197,47 @@ export class AtcRadio {
     };
   }
 
-  /** transmit an ATC message (shown and spoken). `addressed`: prefix the callsign */
-  say(text: string, addressed = true) {
-    if (!text) return;
+  /** the radio can receive (COM working and powered). A radio failure (or a dead bus) silences ATC until it is
+   *  cleared: the student flies the lost-communication procedure. */
+  get comOk(): boolean {
+    return this.sim.sys?.comOk !== false;
+  }
+  /** transmissions ATC made while the radio was dead (the debrief / instructor see them, the student does not) */
+  missed = 0;
+  private wasOk = true;
+  /** every frame or so: a radio that just failed goes silent at once (a transmission being spoken stops) */
+  update() {
+    const ok = this.comOk;
+    if (ok !== this.wasOk) {
+      this.wasOk = ok;
+      this.el.classList.toggle("nocom", !ok);
+      this.el.querySelectorAll<HTMLButtonElement>(".atc-again").forEach((b) => (b.disabled = !ok));
+      if (!ok && "speechSynthesis" in window) speechSynthesis.cancel();
+    }
+    // transponder failure: radar loses the reply — ATC calls the aircraft a little later (if it can hear ATC)
+    const sim = this.sim;
+    const xok = sim.sys?.xpdrOk !== false;
+    if (!xok && this.xpdrWas && !sim.ac.s.onGround) this.xpdrCallAt = sim.time + 20;
+    this.xpdrWas = xok;
+    if (xok) this.xpdrCallAt = null;
+    else if (this.xpdrCallAt !== null && sim.time >= this.xpdrCallAt) {
+      this.xpdrCallAt = null;
+      if (!sim.ac.s.onGround && sim.av.xpdrMode !== "STBY")
+        this.say(`transponder not received, recycle, squawk ${sim.av.xpdr}`);
+    }
+  }
+  private xpdrWas = true;
+  private xpdrCallAt: number | null = null;
+
+  /** transmit an ATC message (shown and spoken). `addressed`: prefix the callsign. Returns false when the radio
+   *  could not receive it (radio failure): nothing is shown or heard, the flight record notes it. */
+  say(text: string, addressed = true): boolean {
+    if (!text) return false;
+    if (!this.comOk) {
+      this.missed++;
+      this.sim.rec.log(this.sim.time, "info", `ATC transmission not received (radio failure): ${text}`, `Message ATC non reçu (panne radio) : ${text}`);
+      return false;
+    }
     const fac = this.facility();
     const msg = addressed
       ? `${this.callsign}, ${text.charAt(0).toLowerCase()}${text.slice(1)}`
@@ -214,15 +252,19 @@ export class AtcRadio {
     this.log = this.log.slice(0, 12);
     this.render();
     this.speak(tr);
+    return true;
   }
 
   sayAgain() {
     const tr = this.log[0];
-    if (tr) this.speak(tr);
+    // "say again" is a transmission too: nothing comes back on a dead radio
+    if (tr && this.comOk) this.speak(tr);
   }
 
   clear() {
     this.log = [];
+    this.missed = 0;
+    this.xpdrCallAt = null;
     this.render();
     if ("speechSynthesis" in window) speechSynthesis.cancel();
   }
