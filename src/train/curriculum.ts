@@ -435,8 +435,8 @@ export const EXERCISES: Exercise[] = [
   interceptExercise('int-lda', 'LDA intercept (offset course)', 'Intercept the I-ADN LDA (course 016) — the course is not aligned with any runway.', { navaidIdent: 'IADN', freq: 109.5, course: 16, fix: 'NIXIE', from: { brg: 286, dist: 7, off: 3 }, hdg: 60, alt: 3000, wind: [300, 12], plate: 'PARD-L36' }),
   // ---------------------------------------------------------------- Stage 4
   holdExercise('hold-direct', 'Holding: direct entry', 'ARD', 270, 'R', 300, 3000, { summary: 'The simplest entry — arriving within the 180° direct sector. Learn the hold geometry and timing.' }),
-  holdExercise('hold-teardrop', 'Holding: teardrop entry', 'ARD', 270, 'R', 120, 3000, { summary: 'Arriving from the 70° teardrop sector: outbound 30° toward the holding side, then turn inbound.' }),
-  holdExercise('hold-parallel', 'Holding: parallel entry', 'ARD', 270, 'R', 30, 3000, { summary: 'Arriving from the 110° parallel sector: fly outbound parallel on the non-holding side, turn back >180°.' }),
+  holdExercise('hold-teardrop', 'Holding: teardrop entry', 'ARD', 270, 'R', 50, 3000, { summary: 'Arriving from the 70° teardrop sector: outbound 30° toward the holding side, then turn inbound.' }),
+  holdExercise('hold-parallel', 'Holding: parallel entry', 'ARD', 270, 'R', 140, 3000, { summary: 'Arriving from the 110° parallel sector: fly outbound parallel on the non-holding side, turn back >180°.' }),
   holdExercise('hold-left', 'Non-standard (left) hold', 'MSV', 210, 'L', 290, 4500, { summary: 'Left turns are mirrored — the sectors flip. Many students get this wrong.' }),
   holdExercise('hold-wind', 'Holding with a strong wind', 'ARD', 270, 'R', 270, 3000, { wind: [360, 25], laps: 3, summary: 'A 25 kt crosswind: triple the drift on the outbound leg, adjust timing to get 1:00 inbound.' }),
   holdExercise('hold-ndb', 'Holding on an NDB', 'PA', 270, 'R', 45, 3000, { wind: [220, 15], summary: 'Hold at the PA NDB using the ADF bearing pointer only (or the GPS overlay).' }),

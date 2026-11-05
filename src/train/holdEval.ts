@@ -1,6 +1,6 @@
 // Observes a flight in a hold and grades entry, timing, protection and altitude.
 import { bearingDeg, distanceNm, wrap180, norm360 } from '../nav/geo';
-import { holdEntry, holdFrame, teardropCourse, type HoldDef, type HoldEntry } from '../nav/holding';
+import { acceptableEntries, holdEntry, holdFrame, teardropCourse, type HoldDef, type HoldEntry } from '../nav/holding';
 
 export interface HoldSnapshot {
   lat: number;
@@ -17,6 +17,8 @@ export class HoldEvaluator {
   arrivalCourse = 0;
   correctEntry: HoldEntry | null = null;
   flownEntry: HoldEntry | null = null;
+  /** the correct entry, plus its neighbour when the arrival course is within 5° of a sector boundary (AIM 5-3-8 j) */
+  okEntries: HoldEntry[] = [];
   private votes = { TEARDROP: 0 };
   /** heading change (deg) turned opposite to the hold direction before the first lap */
   private oppTurn = 0;
@@ -48,6 +50,7 @@ export class HoldEvaluator {
         this.crossedAt = s.t;
         this.arrivalCourse = s.track;
         this.correctEntry = holdEntry(h.inbound, h.turn, s.track);
+        this.okEntries = acceptableEntries(h.inbound, h.turn, s.track);
         this.lastX = fr.x;
       }
       this.prevBrg = brg;
@@ -99,7 +102,7 @@ export class HoldEvaluator {
   report(): { label: string; value: string; ok: boolean | null }[] {
     const r: { label: string; value: string; ok: boolean | null }[] = [];
     r.push({ label: 'Correct entry', value: this.correctEntry ?? '—', ok: null });
-    r.push({ label: 'Entry flown', value: this.flownEntry ?? (this.crossedAt === null ? 'fix not reached' : 'in progress'), ok: this.flownEntry === null ? null : this.flownEntry === this.correctEntry });
+    r.push({ label: 'Entry flown', value: this.flownEntry ?? (this.crossedAt === null ? 'fix not reached' : 'in progress'), ok: this.flownEntry === null ? null : this.okEntries.includes(this.flownEntry) });
     const lastIn = this.inboundTimes[this.inboundTimes.length - 1];
     r.push({ label: 'Inbound leg time', value: lastIn ? `${Math.round(lastIn)} s (target 60 ± 15)` : '—', ok: lastIn ? Math.abs(lastIn - 60) <= 15 : null });
     r.push({ label: 'Laps completed', value: String(this.laps), ok: this.laps >= 2 ? true : null });

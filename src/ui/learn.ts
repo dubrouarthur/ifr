@@ -263,7 +263,7 @@ export class HoldDrillModal extends Modal {
       crs = Math.round(Math.random() * 71) * 5 || 360;
       let a = ((crs - inbound + 540) % 360) - 180;
       if (turn === 'L') a = -a;
-      if ([-110, 70, 180, -180].every((b) => Math.abs(a - b) > 8)) break;
+      if ([-70, 110, 180, -180].every((b) => Math.abs(a - b) > 8)) break;
     }
     const fix = fixes[Math.floor(Math.random() * fixes.length)];
     this.q = { inbound, turn, crs, fix, answer: holdEntry(inbound, turn, crs) };

@@ -1,25 +1,34 @@
 import { describe, it, expect } from 'vitest';
-import { holdEntry, clearanceText, teardropCourse } from '../src/nav/holding';
+import { holdEntry, acceptableEntries, clearanceText, teardropCourse } from '../src/nav/holding';
 
 describe('hold entries (AIM 5-3-8)', () => {
-  // Right hold, inbound 360 (pattern east of the inbound course)
+  // Right hold, inbound 360: the racetrack lies south of the fix, on the east (holding) side.
+  // AIM FIG 5-3-8: direct a ∈ [-70, +110], teardrop (+110, +180], parallel [-180, -70), a = course − inbound.
   it.each([
-    [360, 'DIRECT'],
+    [360, 'DIRECT'], // straight in on the inbound course
     [60, 'DIRECT'],
-    [270, 'DIRECT'],
-    [90, 'PARALLEL'], // arriving from the west: 110° parallel sector
-    [135, 'PARALLEL'],
-    [170, 'PARALLEL'],
-    [225, 'TEARDROP'],
-    [200, 'TEARDROP'],
+    [90, 'DIRECT'], // from the west (non-holding side): 90° right at the fix → outbound on the holding side
+    [110, 'DIRECT'], // on the 70° line: direct (either is acceptable within 5°)
+    [135, 'TEARDROP'], // arriving along the outbound course from its non-holding side
+    [170, 'TEARDROP'],
+    [200, 'PARALLEL'],
+    [225, 'PARALLEL'],
+    [270, 'PARALLEL'], // from the east (holding side), heading west: parallel on the non-holding side
+    [290, 'DIRECT'], // a = −70, boundary
   ])('right turns, course to fix %i° → %s', (crs, entry) => {
     expect(holdEntry(360, 'R', crs as number)).toBe(entry);
   });
   it('left holds are mirrored', () => {
-    expect(holdEntry(360, 'L', 225)).toBe('PARALLEL');
-    expect(holdEntry(360, 'L', 135)).toBe('TEARDROP');
+    expect(holdEntry(360, 'L', 225)).toBe('TEARDROP');
+    expect(holdEntry(360, 'L', 135)).toBe('PARALLEL');
     expect(holdEntry(360, 'L', 20)).toBe('DIRECT');
-    expect(holdEntry(360, 'L', 280)).toBe('PARALLEL');
+    expect(holdEntry(360, 'L', 280)).toBe('DIRECT');
+    expect(holdEntry(360, 'L', 90)).toBe('PARALLEL');
+  });
+  it('accepts the neighbouring entry within 5° of a boundary', () => {
+    expect(acceptableEntries(360, 'R', 112).sort()).toEqual(['DIRECT', 'TEARDROP']);
+    expect(acceptableEntries(360, 'R', 140)).toEqual(['TEARDROP']);
+    expect(acceptableEntries(360, 'R', 287).sort()).toEqual(['DIRECT', 'PARALLEL']);
   });
   it('teardrop course is 30° toward the holding side', () => {
     expect(teardropCourse(270, 'R')).toBe(60);
@@ -41,10 +50,11 @@ describe('flying hold entries with the autopilot', () => {
   const def = { fix: ard, inbound: 270, turn: 'R' as const, legMin: 1, altFt: 3000 };
   it.each([
     [270, 'DIRECT'],
-    [200, 'DIRECT'], // a = -70
-    [20, 'PARALLEL'], // a = +110
-    [30, 'PARALLEL'], // course to fix 030 → a = +120
-    [120, 'TEARDROP'], // a = -150
+    [340, 'DIRECT'], // a = +70
+    [50, 'TEARDROP'], // a = +140
+    [30, 'TEARDROP'], // a = +120
+    [140, 'PARALLEL'], // a = −130
+    [120, 'PARALLEL'], // a = −150
   ])('course to fix %i° → %s entry is flown and the hold is stable', (crs, expected) => {
     const s = new Sim(SCENARIOS.find((x) => x.id === 'free'));
     s.weather.windKt = 0;

@@ -18,21 +18,34 @@ export interface HoldDef {
 }
 
 /**
- * Entry from the aircraft's course to the fix (AIM 5-3-8).
- * Sector boundaries: the inbound course through the fix and the 70° line
- * (drawn through the fix at 70° to the inbound course, toward the holding side).
- * With a = course to fix relative to the inbound course (right turns):
- *   direct   a ∈ [-110, +70]   (180° sector)
- *   parallel a ∈ (+70, +180]   (110° sector)
- *   teardrop a ∈ [-180, -110)  (70° sector)
+ * Entry from the aircraft's course to the fix (AIM 5-3-8, FIG 5-3-8).
+ * Sector boundaries: the holding course line through the fix, and the 70° line drawn through the fix
+ * at 70° to the OUTBOUND course on the holding side.
+ * With a = course to fix relative to the inbound course (right turns, positive = clockwise):
+ *   direct   a ∈ [-70, +110]    (180° sector: e.g. inbound 360, arriving heading 090 from the non-holding
+ *                                 side — a 90° right turn at the fix puts you outbound on the holding side)
+ *   teardrop a ∈ (+110, +180]   (70° sector: arriving roughly along the outbound course, from the
+ *                                 non-holding side of it)
+ *   parallel a ∈ [-180, -70)    (110° sector: arriving from the holding side, heading away from it)
+ * A course exactly on a boundary takes the direct entry (either entry is acceptable within 5°: AIM 5-3-8 j).
  * Left turns are mirrored.
  */
 export function holdEntry(inbound: number, turn: Turn, courseToFix: number): HoldEntry {
   let a = wrap180(courseToFix - inbound);
   if (turn === 'L') a = -a;
-  if (a >= -110 && a <= 70) return 'DIRECT';
-  if (a > 70) return 'PARALLEL';
-  return 'TEARDROP';
+  if (a >= -70 && a <= 110) return 'DIRECT';
+  if (a > 110) return 'TEARDROP';
+  return 'PARALLEL';
+}
+
+/** entries a pilot may fly: the correct one, plus the neighbouring one within 5° of a sector boundary */
+export function acceptableEntries(inbound: number, turn: Turn, courseToFix: number): HoldEntry[] {
+  const set = new Set<HoldEntry>([
+    holdEntry(inbound, turn, courseToFix),
+    holdEntry(inbound, turn, courseToFix - 5),
+    holdEntry(inbound, turn, courseToFix + 5),
+  ]);
+  return [...set];
 }
 
 const CARD = ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'];

@@ -47,37 +47,39 @@ export function holdDiagramSvg(
     const ang = (Math.atan2(to[1] - from[1], to[0] - from[0]) * 180) / Math.PI;
     return `<path d="M-6,-4 L3,0 L-6,4 Z" transform="translate(${r1(mx)} ${r1(my)}) rotate(${r1(ang)})" fill="#1d2833"/>`;
   };
-  // sector boundaries (aircraft POSITION bearings from the fix): 70° line = I+70s / I−110s; inbound extension = I
-  const b70a = I + 70 * s,
-    b70b = I - 110 * s;
-  // sectors by position bearing (relative to I, measured with the turn direction): teardrop [0,70), direct [70,250), parallel [250,360)
+  // sector boundaries (aircraft POSITION bearings from the fix, AIM FIG 5-3-8): the 70° line at 70° to the
+  // outbound course on the holding side = I+110s / I−70s; the holding course extended beyond the fix = I
+  const b70a = I + 110 * s,
+    b70b = I - 70 * s;
+  // sectors by position bearing (relative to I, measured with the turn direction):
+  // parallel [0,110), direct [110,290), teardrop [290,360)
   const SECT = {
-    TEARDROP: {
-      from: 0,
-      to: 70,
-      name: "SECTOR 2",
-      entry: "OFFSET",
-      sub: "(teardrop)",
-      label: 35,
-      arc: "70°",
-    },
-    DIRECT: {
-      from: 70,
-      to: 250,
-      name: "SECTOR 3",
-      entry: "DIRECT",
-      sub: "",
-      label: 214,
-      arc: "180°",
-    },
     PARALLEL: {
-      from: 250,
-      to: 360,
+      from: 0,
+      to: 110,
       name: "SECTOR 1",
       entry: "PARALLEL",
       sub: "",
-      label: 305,
+      label: 50,
       arc: "110°",
+    },
+    TEARDROP: {
+      from: 290,
+      to: 360,
+      name: "SECTOR 2",
+      entry: "OFFSET",
+      sub: "(teardrop)",
+      label: 325,
+      arc: "70°",
+    },
+    DIRECT: {
+      from: 110,
+      to: 290,
+      name: "SECTOR 3",
+      entry: "DIRECT",
+      sub: "",
+      label: 240,
+      arc: "180°",
     },
   } as const;
   const absB = (rel: number) => I + rel * s;
@@ -130,7 +132,7 @@ export function holdDiagramSvg(
       k === "DIRECT" ? RC * 0.62 : k === "TEARDROP" ? RC * 0.7 : RC * 0.58;
     // keep the label of the aircraft's sector clear of its arrival line: pick, among a few positions that
     // stay inside the sector and off the racetrack, the one farthest from the arrival bearing
-    const CAND: Record<string, number[]> = { TEARDROP: [35, 18, 52], PARALLEL: [305, 280, 330], DIRECT: [214, 236, 198] };
+    const CAND: Record<string, number[]> = { TEARDROP: [325, 342, 308], PARALLEL: [50, 30, 75], DIRECT: [240, 262, 222] };
     let ang: number = S.label;
     if (courseToFix !== undefined && entry === k) {
       const rel = ((((courseToFix + 180 - I) * s) % 360) + 360) % 360;

@@ -70,10 +70,11 @@ describe('setup assistant', () => {
     const fix = { ident: 'X', lat: 0, lon: 0 };
     const def = { fix, inbound: 360, turn: 'R' as const, legMin: 1, altFt: 3000 };
     expect(entryInstruction(def, 360).entry).toBe('Direct');
-    const t = entryInstruction(def, 230); // teardrop sector (AIM 5-3-8)
+    const t = entryInstruction(def, 150); // teardrop sector (AIM FIG 5-3-8): along the outbound course
     expect(t.entry).toBe('Teardrop');
     expect(t.text).toContain('150°'); // outbound 180 − 30° into the holding side (right turns)
-    expect(entryInstruction(def, 150).entry).toBe('Parallel');
+    expect(entryInstruction(def, 230).entry).toBe('Parallel'); // from the holding side
+    expect(entryInstruction(def, 90).entry).toBe('Direct'); // from the non-holding side, 90° right turn
   });
 
   it('hold at a GPS fix asks for the hold in the flight plan and the CDI on GPS', () => {
