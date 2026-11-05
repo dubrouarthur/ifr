@@ -5,6 +5,7 @@ import type { Sim } from "../sim/sim";
 import { AIRFRAME } from "../sim/aircraft";
 import { C, box, line, poly, text, pad3 } from "./draw";
 import { slipBarPx } from "./pfd";
+import { airDataShown, darkScreen, hasPower, smokeHaze } from "./gauges";
 import { AIRPORTS, FIXES, NAVAIDS } from "../nav/data";
 import {
   toLocal,
@@ -92,11 +93,24 @@ const fmaSince = [0, 0, 0];
 // speed trend (10-s prediction from the filtered acceleration)
 const trend = { t: -1, ias: 0, acc: 0 };
 
+/** Draw the display, then the cabin smoke veil over it (smokeHaze: electrical or engine fire) */
+export function drawAirlinerPfd(ctx: CanvasRenderingContext2D, sim: Sim) {
+  drawAirlinerPfdBody(ctx, sim);
+  smokeHaze(ctx, sim, AL_W, AL_H, (typeof performance !== 'undefined' ? performance.now() : 0) / 1000);
+}
+
 // ------------------------------------------------------------------ PFD
 // Layout (logical 1024 × 768): speed tape 58–176, ADI 258–690, LOC/GS scales, altitude tape 744–876,
 // VSI 890–980, FMA on top, heading rose at the bottom.
-export function drawAirlinerPfd(ctx: CanvasRenderingContext2D, sim: Sim) {
+function drawAirlinerPfdBody(ctx: CanvasRenderingContext2D, sim: Sim) {
   const d = sim.ac.data;
+  // no power: a dark display
+  if (!hasPower(sim, "pfd")) {
+    trend.t = -1;
+    darkScreen(ctx, AL_W, AL_H);
+    return;
+  }
+  const air = airDataShown(sim);
   ctx.clearRect(0, 0, AL_W, AL_H);
   box(ctx, 0, 0, AL_W, AL_H, "#000");
   const cx = 474;
@@ -109,11 +123,11 @@ export function drawAirlinerPfd(ctx: CanvasRenderingContext2D, sim: Sim) {
     trend.acc = 0;
   else if (sim.time > trend.t) {
     const dt = sim.time - trend.t;
-    const raw = (d.iasKt - trend.ias) / dt;
+    const raw = (air.iasKt - trend.ias) / dt;
     trend.acc += (clamp(raw, -15, 15) - trend.acc) * Math.min(1, dt / 1.2);
   }
   trend.t = sim.time;
-  trend.ias = d.iasKt;
+  trend.ias = air.iasKt;
 
   // --- ADI
   ctx.save();
@@ -357,8 +371,9 @@ export function drawAirlinerPfd(ctx: CanvasRenderingContext2D, sim: Sim) {
   drawFma(ctx, sim, cx);
   drawSpeedTape(ctx, sim, 58, cy);
   drawAltTape(ctx, sim, 744, cy);
-  drawVsiAl(ctx, sim, d.vsFpm, 890, cy);
+  drawVsiAl(ctx, sim, air.vsFpm, 890, cy);
   drawHdgArc(ctx, sim, cx, 668);
+  drawAirlinerFlags(ctx, sim, cx, cy, AW, AH);
   if (sim.paused) {
     box(ctx, cx - 70, cy + 40, 140, 32, "#000", WHT);
     text(ctx, "PAUSED", cx, cy + 56, WHT, 20, "center", 700);
@@ -443,12 +458,14 @@ function drawSpeedTape(
   cy: number,
 ) {
   const d = sim.ac.data;
+  // the tape reads the pitot-static system (an iced or blocked pitot shows on it)
+  const iasKt = airDataShown(sim).iasKt;
   const s = sim.ac.s;
   const w = 118;
   const top = cy - 210;
   const h = 420;
   const kpx = 4.6;
-  const ias = Math.max(30, d.iasKt);
+  const ias = Math.max(30, iasKt);
   const bx = x + w; // right edge: bugs hang outside
   box(ctx, x, top, w, h, TAPE);
   ctx.save();
@@ -486,8 +503,8 @@ function drawSpeedTape(
   }
   // speed trend vector: where the speed will be in 10 s
   const tr = trend.acc * 10;
-  if (Math.abs(tr) > 2 && d.iasKt > 30) {
-    const yt = clamp(yOf(d.iasKt + tr), top + 4, top + h - 4);
+  if (Math.abs(tr) > 2 && iasKt > 30) {
+    const yt = clamp(yOf(iasKt + tr), top + 4, top + h - 4);
     const xt = bx - 26;
     line(ctx, xt, cy, xt, yt, GRN, 2.5);
     const sg = tr > 0 ? 1 : -1;
@@ -509,7 +526,7 @@ function drawSpeedTape(
   const takeoff =
     s.onGround || (d.aglFt < 1000 && d.vsFpm > 100 && !sim.fp.approachActive);
   if (takeoff) bugs.push([V_TO.v1, "V1"], [V_TO.vr, "VR"], [V_TO.v2, "V2"]);
-  else if (d.iasKt < 140) {
+  else if (iasKt < 140) {
     const cur = Math.round(flaps / 10) * 10;
     for (const f of [0, 10, 20])
       if (Math.abs(f - cur) <= 10)
@@ -565,9 +582,9 @@ function drawSpeedTape(
     2,
   );
   const col = d.stallWarn ? AMB : WHT;
-  if (d.iasKt < 30) text(ctx, "---", bx - 18, cy, col, 30, "right", 700);
+  if (iasKt < 30) text(ctx, "---", bx - 18, cy, col, 30, "right", 700);
   else {
-    const v = d.iasKt;
+    const v = iasKt;
     const u = Math.floor(v);
     const fu = v - u;
     // tens/hundreds roll together with the units drum while it passes 9 → 0
@@ -628,13 +645,55 @@ function drawSpeedTape(
   );
 }
 
+/** amber boxed failure flag (Boeing) */
+function failFlag(ctx: CanvasRenderingContext2D, label: string, x: number, y: number) {
+  ctx.font = "700 22px 'Roboto Condensed', 'Arial Narrow', Arial, sans-serif";
+  const w = ctx.measureText(label).width + 18;
+  box(ctx, x - w / 2, y - 15, w, 30, "#000", AMB);
+  text(ctx, label, x, y + 1, AMB, 22, "center", 700);
+}
+
+/** Failure flags (Boeing convention: the failed indication is removed and an amber boxed flag replaces it):
+ *  ATT and HDG for an AHRS (IRS) failure, SPD / ALT / V/S for an air-data failure. */
+function drawAirlinerFlags(ctx: CanvasRenderingContext2D, sim: Sim, cx: number, cy: number, AW: number, AH: number) {
+  const f = sim.failures;
+  const d = sim.ac.data;
+  const att = f.ahrs || !Number.isFinite(d.pitchDeg) || !Number.isFinite(d.rollDeg);
+  const adc = f.airData || !Number.isFinite(d.iasKt) || !Number.isFinite(sim.indicatedAlt());
+  const flagBox = (label: string, x: number, y: number) => failFlag(ctx, label, x, y);
+  if (att) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(cx - AW, cy - AH, 2 * AW, 2 * AH, 34);
+    ctx.fillStyle = "#000";
+    ctx.fill();
+    ctx.restore();
+    flagBox("ATT", cx, cy);
+    box(ctx, cx - 270, 668 - 48, 540, AL_H - 668 + 48, "#000");
+    flagBox("HDG", cx, 700);
+  }
+  if (att) {
+    // ground speed comes from the IRS: removed with it
+    box(ctx, 58, cy + 210 + 38, 118, 28, "#000");
+  }
+  if (adc) {
+    // the speed tape goes with its bugs (flap manoeuvre speeds, selected speed) and the Mach read-out under it
+    box(ctx, 55, cy - 213, 169, 426 + 38, "#000");
+    flagBox("SPD", 58 + 59, cy);
+    box(ctx, 741, cy - 213, 138, 426, "#000");
+    flagBox("ALT", 744 + 66, cy);
+    box(ctx, 879, cy - 178, 86, 356, "#000");
+    flagBox("V/S", 922, cy);
+  }
+}
+
 function drawAltTape(
   ctx: CanvasRenderingContext2D,
   sim: Sim,
   x: number,
   cy: number,
 ) {
-  const alt = sim.indicatedAlt();
+  const alt = airDataShown(sim).altFt;
   const w = 132;
   const top = cy - 210;
   const h = 420;
@@ -980,15 +1039,32 @@ export function routePolyline(fixes: Waypoint[], gs: number): LatLon[] {
   return out;
 }
 
-export function drawNd(
+/** Draw the display, then the cabin smoke veil over it (smokeHaze: electrical or engine fire) */
+export function drawNd(ctx: CanvasRenderingContext2D, sim: Sim, rangeNm: number) {
+  drawNdBody(ctx, sim, rangeNm);
+  smokeHaze(ctx, sim, AL_W, AL_H, (typeof performance !== "undefined" ? performance.now() : 0) / 1000 + 0.7);
+}
+
+function drawNdBody(
   ctx: CanvasRenderingContext2D,
   sim: Sim,
   rangeNm: number,
 ) {
   const d = sim.ac.data;
   const s = sim.ac.s;
+  // the ND (MFD position) is on the avionics bus
+  if (!hasPower(sim, "mfd")) {
+    darkScreen(ctx, AL_W, AL_H);
+    return;
+  }
   ctx.clearRect(0, 0, AL_W, AL_H);
   box(ctx, 0, 0, AL_W, AL_H, "#000");
+  // no heading / position reference (IRS-AHRS failure): the map is removed, MAP and HDG flags
+  if (sim.failures.ahrs || !Number.isFinite(d.hdgTrue)) {
+    failFlag(ctx, "HDG", 512, 120);
+    failFlag(ctx, "MAP", 512, 400);
+    return;
+  }
   const cx = 512;
   const cy = 652;
   const R = 516;

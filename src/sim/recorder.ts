@@ -30,6 +30,9 @@ export interface FlightEvent {
   t: number;
   kind: 'info' | 'good' | 'warn' | 'bad';
   text: string;
+  /** the same in French when the event has a translation (aircraft systems, failures, switches); UIs in French
+   *  show `fr ?? text` */
+  fr?: string;
 }
 
 export interface Touchdown {
@@ -72,6 +75,8 @@ export class Recorder {
   minsUsed: number | null = null;
   missedAt: number | null = null;
   failuresInjected: string[] = [];
+  /** every switch the pilot operated (systems: masters, mixture, fuel selector…) — procedure grading */
+  actions: { t: number; key: string; value: string | number | boolean }[] = [];
   mode: 'training' | 'checkride' = 'training';
   student = '';
   handFlown = false;
@@ -99,6 +104,7 @@ export class Recorder {
     this.minsUsed = null;
     this.missedAt = null;
     this.failuresInjected = [];
+    this.actions = [];
     this.startedAt = Date.now();
     this.lesson = null;
   }
@@ -113,11 +119,16 @@ export class Recorder {
     this.log(sim.time, 'info', `${this.mode === 'checkride' ? 'CHECKRIDE' : 'Training'}: ${sim.scenario?.id === 'lesson' ? 'exercise' : sim.scenario?.name ?? 'free flight'}${this.student ? ' — ' + this.student : ''}`);
   }
 
-  log(t: number, kind: FlightEvent['kind'], text: string) {
-    const e = { t, kind, text };
+  log(t: number, kind: FlightEvent['kind'], text: string, fr?: string) {
+    const e: FlightEvent = fr ? { t, kind, text, fr } : { t, kind, text };
     if (text.startsWith('FAILURE')) this.failuresInjected.push(text.replace('FAILURE: ', ''));
     this.events.push(e);
     this.onEvent?.(e);
+  }
+
+  /** a pilot action on the aircraft systems (Sim.setSwitch) */
+  action(t: number, key: string, value: string | number | boolean) {
+    this.actions.push({ t, key, value });
   }
 
   private once(key: string, t: number, kind: FlightEvent['kind'], text: string) {
@@ -191,7 +202,7 @@ export class Recorder {
     if (active && active !== this.lastActive) {
       if (this.lastActive) {
         const passed = sim.fp.wpts.find((w) => w.ident === this.lastActive);
-        if (passed?.role === 'FAF') this.log(t, 'info', `Crossed FAF ${passed.ident} at ${Math.round(sim.indicatedAlt())} ft`);
+        if (passed?.role === 'FAF') this.log(t, 'info', `Crossed FAF ${passed.ident} at ${Math.round(sim.baroAlt())} ft`);
         else this.log(t, 'info', `Passed ${this.lastActive}`);
       }
       this.lastActive = active;
@@ -205,21 +216,21 @@ export class Recorder {
     const ph = this.phase(sim);
     if (ph === 'final' || ph === 'initial') {
       const floor = this.currentFloor(sim);
-      if (floor !== null && sim.indicatedAlt() < floor - 100 && !s.onGround) {
+      if (floor !== null && sim.baroAlt() < floor - 100 && !s.onGround) {
         this.floorViolationSec += dt;
         this.once('floor' + floor, t, 'bad', `Descended below ${floor} ft before the fix`);
       }
       const mins = sim.av.minimums;
-      if (mins !== null && sim.indicatedAlt() < mins + 100) this.once('mins100', t, 'info', '100 above minimums');
+      if (mins !== null && sim.baroAlt() < mins + 100) this.once('mins100', t, 'info', '100 above minimums');
       if (ph === 'final' && mins !== null) this.minsUsed = mins;
       if (ph === 'final' && mins !== null && !s.onGround) {
         const precision = this.vertDots(sim) !== null;
-        if (sim.indicatedAlt() < mins - (precision ? 50 : 0) && !sim.hasVisual()) {
+        if (sim.baroAlt() < mins - (precision ? 50 : 0) && !sim.hasVisual()) {
           this.belowMinsNoVisualSec += dt;
           this.once('belowmins', t, 'bad', 'Descended below minimums without visual references');
         }
       }
-      if (mins !== null && sim.indicatedAlt() < mins && !this.belowMinsAnnounced) {
+      if (mins !== null && sim.baroAlt() < mins && !this.belowMinsAnnounced) {
         this.belowMinsAnnounced = true;
         this.visualAtMins = sim.hasVisual();
         this.log(t, this.visualAtMins ? 'good' : 'warn', this.visualAtMins ? 'Runway environment in sight at minimums' : 'No visual references at minimums — missed approach required');
@@ -257,7 +268,7 @@ export class Recorder {
         t,
         lat: s.lat,
         lon: s.lon,
-        alt: sim.indicatedAlt(),
+        alt: sim.baroAlt(),
         agl: d.aglFt,
         ias: d.iasKt,
         vs: d.vsFpm,

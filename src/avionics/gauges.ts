@@ -1,5 +1,7 @@
 // Shared drawing primitives for round ("steam") instruments.
 import { FONT } from './draw';
+import type { Sim } from '../sim/sim';
+import type { Annunciator, ElecFlags, SystemsState } from '../sim/systemsTypes';
 
 export const G = {
   face: '#141516',
@@ -141,4 +143,99 @@ export function led(ctx: CanvasRenderingContext2D, s: string, x: number, y: numb
   ctx.shadowBlur = 8;
   ctx.fillText(s, x, y);
   ctx.shadowBlur = 0;
+}
+
+// ------------------------------------------------------------------ aircraft systems as the displays show them
+// Shared by the G1000 (pfd.ts / mfd.ts), the steam panel (steam.ts) and the airliner displays (airliner.ts).
+// Every reader tolerates a Sim without a systems model (older tests, stubs): it then shows a normal aircraft.
+
+/** the systems readout, or null when the Sim has none (stubs) */
+export function sysOf(sim: Sim): SystemsState | null {
+  return (sim as { sys?: SystemsState }).sys ?? null;
+}
+
+/** is this consumer powered? (true without a systems model) */
+export function hasPower(sim: Sim, k: keyof ElecFlags): boolean {
+  const e = sysOf(sim)?.elec;
+  return e ? e[k] !== false : true;
+}
+
+/** is this annunciator lit? */
+export function annLit(sim: Sim, a: Annunciator): boolean {
+  return !!sysOf(sim)?.annunciators.includes(a);
+}
+
+/** true when the pitot-static system is not plain (blocked / iced pitot, blocked static, alternate static open) */
+export function pitotStaticFault(sim: Sim): boolean {
+  const s = sysOf(sim);
+  const f = sim.failures as Partial<Record<string, boolean>>;
+  const sw = (sim as { sw?: { altStatic?: boolean } }).sw;
+  return !!(f.pitotBlocked || f.pitotIcing || f.staticBlocked || sw?.altStatic || (s && s.pitotIce > 0.001));
+}
+
+/** Air data as the pitot-static instruments read it (airspeed, altitude for the set baro, vertical speed). With a
+ *  healthy system this is the live aircraft data (no one-frame lag); with a pitot-static fault it is what the
+ *  systems model computed (an iced pitot reads low, a blocked static port freezes the altimeter…). */
+export function airDataShown(sim: Sim): { iasKt: number; altFt: number; vsFpm: number } {
+  const d = sim.ac.data;
+  const s = sysOf(sim);
+  if (s && pitotStaticFault(sim)) return { iasKt: s.indicated.iasKt, altFt: sim.indicatedAlt(), vsFpm: s.indicated.vsFpm };
+  return { iasKt: d.iasKt, altFt: sim.indicatedAlt(), vsFpm: d.vsFpm };
+}
+
+/** Attitude and heading of the vacuum gyros (steam AI / DG, G1000 standby attitude): drift and topple after a
+ *  vacuum failure. Falls back to the true attitude without a systems model. */
+export function vacuumGyro(sim: Sim): { pitchDeg: number; rollDeg: number; hdgDeg: number } {
+  const g = sysOf(sim)?.gyro;
+  const d = sim.ac.data;
+  return g ? g : { pitchDeg: d.pitchDeg, rollDeg: d.rollDeg, hdgDeg: d.hdgTrue };
+}
+
+/** Small panel shake (logical px) from engine roughness: a rough magneto or an engine about to seize is felt in
+ *  the instruments. Deterministic in time, ≤ 2.5 px, nothing for a smooth engine. */
+export function panelShake(sim: Sim, tSec: number): { dx: number; dy: number } {
+  const v = sysOf(sim)?.vibration ?? 0;
+  if (!(v > 0.05)) return { dx: 0, dy: 0 };
+  const a = Math.min(2.5, v * 2.8);
+  return { dx: a * Math.sin(tSec * 53.1) * Math.sin(tSec * 7.3), dy: a * 0.7 * Math.sin(tSec * 61.7 + 1.3) };
+}
+
+/** An unpowered display: black glass with a faint reflection of the cockpit (no data, no labels). */
+export function darkScreen(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  ctx.save();
+  ctx.fillStyle = '#030405';
+  ctx.fillRect(0, 0, w, h);
+  // the glass catches a little light from the side window: one soft diagonal sheen
+  const g = ctx.createLinearGradient(0, 0, w, h);
+  g.addColorStop(0, 'rgba(255,255,255,0.045)');
+  g.addColorStop(0.35, 'rgba(255,255,255,0.012)');
+  g.addColorStop(0.36, 'rgba(255,255,255,0)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+  ctx.restore();
+}
+
+/** Cabin smoke (electrical fire, or an engine fire with the cabin heat open) veils every instrument a little: the
+ *  pilot's first cue in a cockpit with no smoke annunciator. Grey, translucent, slowly moving; drawn last, over a
+ *  dark screen too (the smoke does not need power). Nothing without smoke. `tSec` drives the slow drift. */
+export function smokeHaze(ctx: CanvasRenderingContext2D, sim: Sim, w: number, h: number, tSec = 0) {
+  const s = sysOf(sim)?.smokeLevel ?? 0;
+  if (!(s > 0.03)) return;
+  const a = Math.min(0.42, s * 0.48);
+  ctx.save();
+  ctx.fillStyle = `rgba(178,176,170,${(a * 0.7).toFixed(3)})`;
+  ctx.fillRect(0, 0, w, h);
+  // two denser wisps drifting across the panel
+  for (let i = 0; i < 2; i++) {
+    const cx = w * (0.5 + 0.38 * Math.sin(tSec * (0.05 + i * 0.03) + i * 2.1));
+    const cy = h * (0.45 + 0.3 * Math.sin(tSec * (0.04 + i * 0.02) + i * 1.3));
+    const r = Math.max(w, h) * (0.45 + i * 0.15);
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    g.addColorStop(0, `rgba(178,176,170,${(a * 0.55).toFixed(3)})`);
+    g.addColorStop(1, 'rgba(178,176,170,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+  }
+  ctx.restore();
 }

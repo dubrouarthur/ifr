@@ -1,9 +1,12 @@
 // Classic "steam gauge" cockpit: six-pack on the left screen, radio stack + nav heads on the right.
 import type { Sim } from '../sim/sim';
+import type { Annunciator } from '../sim/systemsTypes';
 import { AIRFRAME } from '../sim/aircraft';
-import { G, bezel, glass, gtext, tick, arcBand, needle, hub, flag, lcd, led } from './gauges';
+import { G, bezel, glass, gtext, tick, arcBand, needle, hub, flag, lcd, led, airDataShown, annLit, hasPower, panelShake, smokeHaze, sysOf, vacuumGyro } from './gauges';
+import { eisReadings, EIS_SCALES } from './mfd';
 import { drawMap } from './mfd';
 import { tunedNavaid } from '../nav/radios';
+import { FONT } from './draw';
 
 export const STEAM_W = 1024;
 export const STEAM_H = 768;
@@ -14,8 +17,14 @@ interface SteamState {
   frozenPitch: number;
   frozenRoll: number;
   compass: number;
+  /** turn coordinator gyro (electric): spins down without power, the symbol settles level */
+  tcRate: number;
+  tcSpin: number;
+  /** slaved RMI card: stops where it was when its power goes */
+  rmiHdg: number;
 }
-const st: SteamState = { frozenHdg: 0, frozenPitch: 0, frozenRoll: 0, compass: 0 };
+const st: SteamState = { frozenHdg: 0, frozenPitch: 0, frozenRoll: 0, compass: 0, tcRate: 0, tcSpin: 1, rmiHdg: NaN };
+const nowS = () => (typeof performance !== 'undefined' ? performance.now() : 0) / 1000;
 
 function panelBg(ctx: CanvasRenderingContext2D, w: number, h: number) {
   const g = ctx.createLinearGradient(0, 0, 0, h);
@@ -28,31 +37,50 @@ function panelBg(ctx: CanvasRenderingContext2D, w: number, h: number) {
   for (let i = 0; i < 60; i++) ctx.fillRect((i * 97) % w, (i * 53) % h, 2, 2);
 }
 
-// ------------------------------------------------------------------ six pack
+/** Draw the display, then the cabin smoke veil over it (smokeHaze: electrical or engine fire) */
 export function drawSixPack(ctx: CanvasRenderingContext2D, sim: Sim, dt: number) {
+  drawSixPackBody(ctx, sim, dt);
+  smokeHaze(ctx, sim, STEAM_W, STEAM_H, (typeof performance !== 'undefined' ? performance.now() : 0) / 1000);
+}
+
+// ------------------------------------------------------------------ six pack
+function drawSixPackBody(ctx: CanvasRenderingContext2D, sim: Sim, dt: number) {
   const d = sim.ac.data;
   const f = sim.failures;
   ctx.clearRect(0, 0, STEAM_W, STEAM_H);
   panelBg(ctx, STEAM_W, STEAM_H);
-  // vacuum failure = AHRS failure in steam mode: AI tumbles, DG freezes
+  // the attitude indicator and the directional gyro are vacuum-driven: after a vacuum failure they drift, then
+  // topple (sim.sys.gyro). The legacy 'ahrs' failure keeps its old steam meaning (gyros tumble / freeze).
+  const g = vacuumGyro(sim);
   if (!f.ahrs) {
-    st.frozenHdg = d.hdgTrue;
-    st.frozenPitch = d.pitchDeg;
-    st.frozenRoll = d.rollDeg;
+    st.frozenHdg = g.hdgDeg;
+    st.frozenPitch = g.pitchDeg;
+    st.frozenRoll = g.rollDeg;
   } else {
     st.frozenRoll += dt * 4;
     st.frozenPitch += dt * 0.8;
   }
+  // the turn coordinator is electric: without power its gyro winds down over ≈ 20 s and the OFF flag shows
+  const tcOn = hasPower(sim, 'turnCoord');
+  if (dt > 0) st.tcSpin = tcOn ? Math.min(1, st.tcSpin + dt / 4) : Math.max(0, st.tcSpin - dt / 20);
+  else if (tcOn) st.tcSpin = 1;
+  st.tcRate = d.turnRateDps * st.tcSpin;
+  const air = airDataShown(sim);
   const R = 146;
   const cols = [176, 512, 848];
   const rows = [236, 578];
   topStrip(ctx, sim, dt);
-  asi(ctx, cols[0], rows[0], R, f.airData ? 0 : d.iasKt);
-  ai(ctx, cols[1], rows[0], R, f.ahrs ? st.frozenPitch : d.pitchDeg, f.ahrs ? st.frozenRoll : d.rollDeg, f.ahrs);
-  alt(ctx, cols[2], rows[0], R, f.airData ? sim.ac.s.altFt - 500 : sim.indicatedAlt(), sim.av.baro);
-  tc(ctx, cols[0], rows[1], R, d.turnRateDps, d.slip);
-  hsi(ctx, sim, cols[1], rows[1], R, f.ahrs ? st.frozenHdg : d.hdgTrue, f.ahrs);
-  vsi(ctx, cols[2], rows[1], R, f.airData ? 0 : d.vsFpm);
+  // a rough engine shakes the panel a little
+  const sh = panelShake(sim, nowS());
+  ctx.save();
+  ctx.translate(sh.dx, sh.dy);
+  asi(ctx, cols[0], rows[0], R, f.airData ? 0 : air.iasKt);
+  ai(ctx, cols[1], rows[0], R, st.frozenPitch, st.frozenRoll, f.ahrs);
+  alt(ctx, cols[2], rows[0], R, f.airData ? sim.ac.s.altFt - 500 : air.altFt, sim.av.baro);
+  tc(ctx, cols[0], rows[1], R, st.tcRate, d.slip, !tcOn);
+  hsi(ctx, sim, cols[1], rows[1], R, st.frozenHdg, f.ahrs);
+  vsi(ctx, cols[2], rows[1], R, f.airData ? 0 : air.vsFpm);
+  ctx.restore();
   bottomStrip(ctx, sim);
 }
 
@@ -61,7 +89,9 @@ function topStrip(ctx: CanvasRenderingContext2D, sim: Sim, dt: number) {
   ctx.fillStyle = '#121314';
   ctx.fillRect(0, 0, STEAM_W, 56);
   // marker beacon lights
-  const lights: [string, string, boolean][] = [['O', '#2a7fff', sim.marker === 'O'], ['M', '#ffb000', false], ['I', '#ffffff', false]];
+  // the marker receiver is in the audio panel (avionics bus): no light without power
+  const mkr = hasPower(sim, 'com2');
+  const lights: [string, string, boolean][] = [['O', '#2a7fff', mkr && sim.marker === 'O'], ['M', '#ffb000', false], ['I', '#ffffff', false]];
   lights.forEach(([l, c, on], i) => {
     const x = 36 + i * 46;
     ctx.fillStyle = on && Math.floor(performance.now() / 250) % 2 === 0 ? c : '#2a2c2e';
@@ -70,25 +100,20 @@ function topStrip(ctx: CanvasRenderingContext2D, sim: Sim, dt: number) {
     ctx.fill();
     gtext(ctx, l, x, 29, 14, on ? '#000' : '#777', 'center', 800);
   });
-  // annunciators
-  const ann: [string, boolean, string][] = [
-    ['STALL', d.stallWarn, G.red],
-    ['VAC', sim.failures.ahrs, G.yellow],
-    ['PITOT', sim.failures.airData, G.yellow],
-    ['AP', !sim.ap.ap && !!sim.ap.annunciation, G.yellow],
-    ['FUEL', sim.ac.s.fuelGal < 8, G.yellow],
-  ];
-  ann.forEach(([t, on, c], i) => {
-    const x = 680 + i * 68;
-    ctx.fillStyle = on ? c : '#26282a';
-    ctx.fillRect(x, 14, 60, 28);
-    gtext(ctx, t, x + 30, 29, 14, on ? '#000' : '#6b6e70', 'center', 800);
-  });
+  // stall warning light (the C172 horn is pneumatic: it works without power; the light helps with the sound off)
+  const stall = d.stallWarn;
+  ctx.fillStyle = stall ? G.red : '#26282a';
+  ctx.fillRect(176, 14, 70, 28);
+  gtext(ctx, 'STALL', 211, 29, 14, stall ? '#000' : '#6b6e70', 'center', 800);
+  // C172S annunciator panel: red warnings, amber cautions, lit from the systems model (dark without power)
+  steamAnnunciators(ctx, sim, 606, 10, 410, 36);
   // wet compass
   let diff = d.hdgTrue - st.compass;
   if (diff > 180) diff -= 360;
   if (diff < -180) diff += 360;
-  st.compass = (st.compass + diff * Math.min(1, dt * (1.2 + Math.abs(Math.cos(d.hdgTrue * D)) * 1.5)) + Math.sin(performance.now() / 700) * 0.05 + 360) % 360;
+  // the card swings towards the heading (lag, faster near north/south); paused, it shows the settled reading
+  if (dt === 0) st.compass = (d.hdgTrue + 360) % 360;
+  else st.compass = (st.compass + diff * Math.min(1, dt * (1.2 + Math.abs(Math.cos(d.hdgTrue * D)) * 1.5)) + Math.sin(performance.now() / 700) * 0.05 + 360) % 360;
   const cx = 460;
   ctx.save();
   ctx.fillStyle = '#e8e2cf';
@@ -98,7 +123,8 @@ function topStrip(ctx: CanvasRenderingContext2D, sim: Sim, dt: number) {
   ctx.clip();
   for (let h = -60; h <= 60; h += 5) {
     const hd = Math.round((st.compass + h) / 5) * 5;
-    const x = cx + (hd - st.compass) * 3.2;
+    // a wet compass is read from behind its card: higher headings sit to the LEFT of the lubber line
+    const x = cx - (hd - st.compass) * 3.2;
     const n = ((hd % 360) + 360) % 360;
     ctx.fillStyle = '#111';
     ctx.fillRect(x - 1, 8, 2, n % 10 === 0 ? 12 : 7);
@@ -107,6 +133,42 @@ function topStrip(ctx: CanvasRenderingContext2D, sim: Sim, dt: number) {
   ctx.restore();
   ctx.fillStyle = G.red;
   ctx.fillRect(cx - 1.5, 4, 3, 46);
+}
+
+/** C172S annunciator panel cells (left to right) and the systems annunciator each one shows */
+export const STEAM_ANNUNCIATORS: { label: string; ann: Annunciator; color: 'red' | 'amber' }[] = [
+  { label: 'OIL PRESS', ann: 'OIL PRESSURE', color: 'red' },
+  { label: 'LOW VAC', ann: 'LOW VACUUM', color: 'amber' },
+  { label: 'LOW VOLTS', ann: 'LOW VOLTS', color: 'red' },
+  { label: 'L LOW FUEL', ann: 'LOW FUEL L', color: 'amber' },
+  { label: 'R LOW FUEL', ann: 'LOW FUEL R', color: 'amber' },
+];
+/** when each annunciator lit (s, wall clock): a new light flashes for 10 s, then stays steady (C172S) */
+const litSince = new Map<Annunciator, number>();
+
+function steamAnnunciators(ctx: CanvasRenderingContext2D, sim: Sim, x: number, y: number, w: number, h: number) {
+  ctx.fillStyle = '#0b0c0d';
+  ctx.fillRect(x, y, w, h);
+  const n = STEAM_ANNUNCIATORS.length;
+  const gap = 4;
+  const cw = (w - gap * (n + 1)) / n;
+  const t = nowS();
+  // without a systems model the old fuel light still works
+  const legacyFuel = !sysOf(sim) && sim.ac.s.fuelGal < 8;
+  STEAM_ANNUNCIATORS.forEach((c, i) => {
+    const on = annLit(sim, c.ann) || (legacyFuel && c.ann !== 'OIL PRESSURE' && c.ann !== 'LOW VACUUM' && c.ann !== 'LOW VOLTS');
+    if (on && !litSince.has(c.ann)) litSince.set(c.ann, t);
+    if (!on) litSince.delete(c.ann);
+    const since = litSince.get(c.ann) ?? t;
+    const blink = on && t - since < 10 && Math.floor((t - since) * 2.5) % 2 === 1;
+    const lit = on && !blink;
+    const cx = x + gap + i * (cw + gap);
+    ctx.fillStyle = lit ? (c.color === 'red' ? G.red : '#f2a516') : '#1f2123';
+    ctx.fillRect(cx, y + gap, cw, h - gap * 2);
+    ctx.font = `800 16px ${FONT}`;
+    const fit = Math.min(16, (16 * (cw - 8)) / Math.max(1, ctx.measureText(c.label).width));
+    gtext(ctx, c.label, cx + cw / 2, y + h / 2 + 1, fit, lit ? '#000' : '#5a5d60', 'center', 800);
+  });
 }
 
 function bottomStrip(ctx: CanvasRenderingContext2D, sim: Sim) {
@@ -255,7 +317,7 @@ function alt(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, a
   glass(ctx, cx, cy, r);
 }
 
-function tc(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, turnRate: number, slip: number) {
+function tc(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, turnRate: number, slip: number, off = false) {
   bezel(ctx, cx, cy, r);
   for (const s of [-1, 1]) {
     tick(ctx, cx, cy, (s > 0 ? 20 : 160) * D, r - 30, r - 6, 5);
@@ -296,6 +358,7 @@ function tc(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, tu
   ctx.arc(0, 0, 14, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+  if (off) flag(ctx, cx - r + 62, cy - 34, 'OFF');
   glass(ctx, cx, cy, r);
 }
 
@@ -414,112 +477,223 @@ const LED_COM = '#ffb347';
 const LED_NAV = '#6cff8a';
 const LED_DIM = '#b8823c';
 
+/** Draw the display, then the cabin smoke veil over it (smokeHaze: electrical or engine fire) */
 export function drawStack(ctx: CanvasRenderingContext2D, sim: Sim) {
+  drawStackBody(ctx, sim);
+  smokeHaze(ctx, sim, STEAM_W, STEAM_H, (typeof performance !== 'undefined' ? performance.now() : 0) / 1000);
+}
+
+function drawStackBody(ctx: CanvasRenderingContext2D, sim: Sim) {
   ctx.clearRect(0, 0, STEAM_W, STEAM_H);
   panelBg(ctx, STEAM_W, STEAM_H);
   const d = sim.ac.data;
+  const sh = panelShake(sim, nowS() + 0.37);
+  ctx.save();
+  ctx.translate(sh.dx, sh.dy);
+  // the RMI card is slaved to a remote compass (electric): it stops where it was without power
+  if (hasPower(sim, 'adf') || hasPower(sim, 'nav2') || !Number.isFinite(st.rmiHdg)) st.rmiHdg = d.hdgTrue;
   cdiHead(ctx, sim, 196, 210, 150);
-  rmi(ctx, sim, 196, 560, 150, d.hdgTrue);
+  rmi(ctx, sim, 196, 560, 150, st.rmiHdg);
   const x = 400;
   const w = 610;
-  // audio panel: flat annunciators (lit label = selected), not buttons
+  const avionics = hasPower(sim, 'com2');
+  // audio panel: flat annunciators (lit label = selected), not buttons — dark without avionics power
   unit(ctx, x, 8, w, 40, '');
   const audio: [string, boolean][] = [['COM1', true], ['COM2', false], ['NAV1', true], ['NAV2', false], ['ADF', sim.av.bearing1 === 'ADF' || sim.av.bearing2 === 'ADF'], ['MKR', true]];
   audio.forEach(([l, on], i) => {
     const kx = x + 12 + i * 98;
     ctx.fillStyle = '#121416';
     ctx.fillRect(kx, 14, 90, 28);
-    if (on) {
+    if (on && avionics) {
       ctx.fillStyle = '#7dff9a';
       ctx.fillRect(kx + 30, 37, 30, 2);
     }
-    gtext(ctx, l, kx + 45, 27, 14, on ? '#bff7c9' : '#5d6266', 'center', 700);
+    gtext(ctx, l, kx + 45, 27, 14, !avionics ? '#3d4144' : on ? '#bff7c9' : '#5d6266', 'center', 700);
   });
-  // GNS 430-like
-  unit(ctx, x, 54, w, 236, 'GPS');
-  lcd(ctx, x + 60, 62, 300, 220);
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(x + 62, 64, 296, 216);
-  ctx.clip();
-  drawMap(ctx, sim, { x: x + 62, y: 64, w: 296, h: 216 }, 10, true);
-  ctx.restore();
-  lcd(ctx, x + 368, 62, 232, 220);
-  const g = sim.fp.out;
-  const row = (k: string, v: string, y: number, c = '#ff4df0') => {
-    gtext(ctx, k, x + 380, y, 14, '#9fb', 'left', 700);
-    gtext(ctx, v, x + 590, y, 19, c, 'right', 700);
-  };
-  gtext(ctx, g.valid ? `${g.holding ? 'HOLD ' : ''}${g.fromIdent ? g.fromIdent + ' → ' : ''}${g.toIdent}` : 'NO ACTV WPT', x + 380, 82, 16, '#ff4df0', 'left', 700);
-  row('DIS', g.valid ? `${g.distNm.toFixed(1)}nm` : '—', 114);
-  row('DTK', g.valid ? `${String(Math.round(g.dtk)).padStart(3, '0')}°` : '—', 142);
-  row('TRK', `${String(Math.round(d.trackSmooth)).padStart(3, '0')}°`, 170, '#fff');
-  row('GS', `${Math.round(d.gsSmooth)}kt`, 198, '#fff');
-  row('ETE', g.eteMin !== null ? `${Math.floor(g.eteMin)}:${String(Math.round((g.eteMin % 1) * 60)).padStart(2, '0')}` : '—', 226, '#fff');
-  gtext(ctx, `${g.mode}${g.suspended ? '  SUSP' : ''}${g.gpValid ? '  LPV' : ''}`, x + 380, 262, 15, g.suspended ? G.yellow : '#9f9', 'left', 700);
-  // NAV/COM x2 (both NAV actives in the same LED colour; the CDI source is tagged)
-  navcom(ctx, x, 298, w, sim.av.com1, sim.av.nav1, sim.av.cdi === 'NAV1');
-  navcom(ctx, x, 372, w, sim.av.com2, sim.av.nav2, sim.av.cdi === 'NAV2');
-  // ADF
-  unit(ctx, x, 446, w, 52, 'ADF');
-  lcd(ctx, x + 60, 452, 260, 40);
-  led(ctx, `ADF ${sim.av.adf.active}`, x + 76, 473, 24, LED_COM);
-  led(ctx, sim.adf.valid ? sim.adf.ident : '----', x + 300, 473, 20, LED_COM, 'right');
-  const tmr = sim.chrono() ?? sim.time;
-  lcd(ctx, x + 340, 452, 260, 40);
-  led(ctx, `${sim.chrono() !== null ? 'CHR' : 'FLT'} ${String(Math.floor(tmr / 60)).padStart(2, '0')}:${String(Math.floor(tmr % 60)).padStart(2, '0')}`, x + 356, 473, 24, LED_COM);
-  // DME (NAV1)
-  unit(ctx, x, 504, w, 52, 'DME');
-  lcd(ctx, x + 60, 510, 540, 40);
-  const dme = sim.nav1.dmeNm;
-  led(ctx, dme !== null ? `${dme.toFixed(1)} NM` : '--.- NM', x + 80, 531, 24, '#ff5a3c');
-  led(ctx, dme !== null ? `${Math.round(d.gsKt)} KT` : '--- KT', x + 300, 531, 24, '#ff5a3c');
-  led(ctx, dme !== null && d.gsKt > 30 ? `${Math.round((dme / d.gsKt) * 60)} MIN` : '-- MIN', x + 590, 531, 24, '#ff5a3c', 'right');
-  // autopilot KAP 140
-  unit(ctx, x, 562, w, 52, 'AP');
-  lcd(ctx, x + 60, 567, 540, 42);
+  // GNS 430-like (avionics bus): a blank screen without power
+  unit(ctx, x, 54, w, 212, 'GPS');
+  lcd(ctx, x + 60, 62, 300, 196);
+  lcd(ctx, x + 368, 62, 232, 196);
+  if (hasPower(sim, 'gps')) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x + 62, 64, 296, 192);
+    ctx.clip();
+    drawMap(ctx, sim, { x: x + 62, y: 64, w: 296, h: 192 }, 10, true);
+    ctx.restore();
+    const g = sim.fp.out;
+    const row = (k: string, v: string, y: number, c = '#ff4df0') => {
+      gtext(ctx, k, x + 380, y, 14, '#9fb', 'left', 700);
+      gtext(ctx, v, x + 590, y, 19, c, 'right', 700);
+    };
+    gtext(ctx, g.valid ? `${g.holding ? 'HOLD ' : ''}${g.fromIdent ? g.fromIdent + ' → ' : ''}${g.toIdent}` : 'NO ACTV WPT', x + 380, 80, 16, '#ff4df0', 'left', 700);
+    row('DIS', g.valid ? `${g.distNm.toFixed(1)}nm` : '—', 108);
+    row('DTK', g.valid ? `${String(Math.round(g.dtk)).padStart(3, '0')}°` : '—', 133);
+    row('TRK', `${String(Math.round(d.trackSmooth)).padStart(3, '0')}°`, 158, '#fff');
+    row('GS', `${Math.round(d.gsSmooth)}kt`, 183, '#fff');
+    row('ETE', g.eteMin !== null ? `${Math.floor(g.eteMin)}:${String(Math.round((g.eteMin % 1) * 60)).padStart(2, '0')}` : '—', 208, '#fff');
+    gtext(ctx, `${g.mode}${g.suspended ? '  SUSP' : ''}${g.gpValid ? '  LPV' : ''}`, x + 380, 240, 15, g.suspended ? G.yellow : '#9f9', 'left', 700);
+  }
+  // NAV/COM x2 (both NAV actives in the same LED colour; the CDI source is tagged). NAV/COM 1 is on the
+  // essential bus, NAV/COM 2 on the avionics bus
+  navcom(ctx, x, 272, w, sim.av.com1, sim.av.nav1, sim.av.cdi === 'NAV1', hasPower(sim, 'com1'));
+  navcom(ctx, x, 346, w, sim.av.com2, sim.av.nav2, sim.av.cdi === 'NAV2', hasPower(sim, 'com2'));
+  // ADF and DME (NAV1) share one row
+  unit(ctx, x, 420, w, 52, 'ADF');
+  lcd(ctx, x + 60, 426, 250, 40);
+  if (hasPower(sim, 'adf')) {
+    led(ctx, `ADF ${sim.av.adf.active}`, x + 76, 447, 22, LED_COM);
+    led(ctx, sim.adf.valid ? sim.adf.ident : '----', x + 298, 447, 18, LED_COM, 'right');
+  }
+  lcd(ctx, x + 318, 426, 282, 40);
+  gtext(ctx, 'DME', x + 330, 447, 12, '#8a9096', 'left', 800);
+  if (avionics) {
+    const dme = sim.nav1.dmeNm;
+    led(ctx, dme !== null ? `${dme.toFixed(1)}NM` : '--.-NM', x + 362, 447, 20, '#ff5a3c');
+    led(ctx, dme !== null ? `${Math.round(d.gsKt)}KT` : '---KT', x + 516, 447, 20, '#ff5a3c', 'right');
+    led(ctx, dme !== null && d.gsKt > 30 ? `${Math.round((dme / d.gsKt) * 60)}MIN` : '--MIN', x + 592, 447, 20, '#ff5a3c', 'right');
+  }
+  // autopilot KAP 140 (avionics bus, through the trim/AP breaker)
+  unit(ctx, x, 478, w, 52, 'AP');
+  lcd(ctx, x + 60, 483, 540, 42);
   const ap = sim.ap;
   const latLbl: Record<string, string> = { ROL: 'ROL', HDG: 'HDG', GPS: 'NAV', VOR: 'NAV', LOC: 'APR', BC: 'REV' };
   const AP_ON = '#ffd34d';
   const AP_ARM = '#cfa840';
-  if (ap.engaged) {
-    led(ctx, ap.ap ? 'AP' : 'FD', x + 76, 588, 22, AP_ON);
-    led(ctx, latLbl[ap.lat] ?? ap.lat, x + 136, 588, 22, AP_ON);
-    if (ap.latArmed) led(ctx, `ARM ${latLbl[ap.latArmed] ?? ''}`, x + 196, 588, 16, AP_ARM);
-    const vm = ap.vert === 'GS' || ap.vert === 'GP' ? 'GS' : ap.vert === 'FLC' ? 'VS' : ap.vert === 'PIT' ? 'VS' : ap.vert;
-    led(ctx, vm, x + 300, 588, 22, AP_ON);
-    if (ap.vertArmed.gs || ap.vertArmed.gp) led(ctx, 'ARM GS', x + 348, 588, 16, AP_ARM);
-    else if (ap.vertArmed.alts) led(ctx, 'ARM ALT', x + 348, 588, 16, AP_ARM);
-  } else if (ap.inhibited) led(ctx, ap.inhibited, x + 76, 588, 18, AP_ARM);
-  else gtext(ctx, 'AP OFF', x + 76, 588, 18, '#5a4a20', 'left', 700);
-  led(ctx, ap.vert === 'VS' && ap.engaged ? `${ap.vsSel >= 0 ? '+' : ''}${ap.vsSel} FPM` : `${ap.altSel} FT`, x + 590, 588, 24, AP_ON, 'right');
+  const apY = 504;
+  if (hasPower(sim, 'ap')) {
+    if (ap.engaged) {
+      led(ctx, ap.ap ? 'AP' : 'FD', x + 76, apY, 22, AP_ON);
+      led(ctx, latLbl[ap.lat] ?? ap.lat, x + 136, apY, 22, AP_ON);
+      if (ap.latArmed) led(ctx, `ARM ${latLbl[ap.latArmed] ?? ''}`, x + 196, apY, 16, AP_ARM);
+      const vm = ap.vert === 'GS' || ap.vert === 'GP' ? 'GS' : ap.vert === 'FLC' ? 'VS' : ap.vert === 'PIT' ? 'VS' : ap.vert;
+      led(ctx, vm, x + 300, apY, 22, AP_ON);
+      if (ap.vertArmed.gs || ap.vertArmed.gp) led(ctx, 'ARM GS', x + 348, apY, 16, AP_ARM);
+      else if (ap.vertArmed.alts) led(ctx, 'ARM ALT', x + 348, apY, 16, AP_ARM);
+    } else if (ap.inhibited) led(ctx, ap.inhibited, x + 76, apY, 18, AP_ARM);
+    else gtext(ctx, 'AP OFF', x + 76, apY, 18, '#5a4a20', 'left', 700);
+    led(ctx, ap.vert === 'VS' && ap.engaged ? `${ap.vsSel >= 0 ? '+' : ''}${ap.vsSel} FPM` : `${ap.altSel} FT`, x + 590, apY, 24, AP_ON, 'right');
+  }
   // transponder (squawk, pressure altitude reported in ALT, mode, reply light)
-  unit(ctx, x, 620, w, 50, 'XPDR');
-  lcd(ctx, x + 60, 626, 420, 38);
-  led(ctx, sim.av.xpdr, x + 80, 646, 28, LED_COM);
-  if (sim.av.xpdrMode === 'ALT') led(ctx, `FL${String(Math.max(0, Math.round(d.pressAltFt / 100))).padStart(3, '0')}`, x + 220, 646, 22, LED_COM);
-  led(ctx, sim.av.xpdrMode, x + 466, 646, 20, LED_COM, 'right');
-  ctx.fillStyle = Math.floor(performance.now() / 900) % 3 === 0 && sim.av.xpdrMode !== 'STBY' ? LED_COM : '#3a2c1a';
+  unit(ctx, x, 536, w, 50, 'XPDR');
+  lcd(ctx, x + 60, 542, 420, 38);
+  const xpOn = hasPower(sim, 'xpdr');
+  if (xpOn) {
+    led(ctx, sim.av.xpdr, x + 80, 562, 28, LED_COM);
+    if (sim.av.xpdrMode === 'ALT') led(ctx, `FL${String(Math.max(0, Math.round(d.pressAltFt / 100))).padStart(3, '0')}`, x + 220, 562, 22, LED_COM);
+    led(ctx, sim.av.xpdrMode, x + 466, 562, 20, LED_COM, 'right');
+  }
+  ctx.fillStyle = xpOn && Math.floor(performance.now() / 900) % 3 === 0 && sim.av.xpdrMode !== 'STBY' ? LED_COM : '#3a2c1a';
   ctx.beginPath();
-  ctx.arc(x + 508, 645, 7, 0, Math.PI * 2);
+  ctx.arc(x + 508, 561, 7, 0, Math.PI * 2);
   ctx.fill();
-  gtext(ctx, 'REPLY', x + 524, 646, 14, '#8a9096', 'left', 700);
-  // engine: tach, fuel flow, fuel quantity (the oil gauges are not simulated, so they are not shown)
-  unit(ctx, x, 676, w, 84, 'ENG');
-  const bar = (lbl: string, v: number, txt: string, bx: number, g0: number, g1: number) => {
-    const bw = 160;
-    gtext(ctx, lbl, bx, 694, 14, G.dim, 'left', 700);
-    gtext(ctx, txt, bx + bw, 694, 18, G.ink, 'right', 700);
-    ctx.fillStyle = '#0d0e0f';
-    ctx.fillRect(bx, 714, bw, 12);
-    ctx.fillStyle = '#1fa64a';
-    ctx.fillRect(bx + g0 * bw, 714, (g1 - g0) * bw, 12);
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(bx + Math.max(0, Math.min(1, v)) * (bw - 3), 708, 3, 24);
-  };
-  bar('TACH', d.rpm / 2800, `${Math.round(d.rpm / 10) * 10} RPM`, x + 66, 2100 / 2800, 2700 / 2800);
-  bar('FUEL FLOW', d.fuelFlowGph / 14, `${d.fuelFlowGph.toFixed(1)} GPH`, x + 252, 0.1, 0.9);
-  bar('FUEL', sim.ac.s.fuelGal / 53, `${Math.round(sim.ac.s.fuelGal)} GAL`, x + 438, 8 / 53, 1);
+  gtext(ctx, 'REPLY', x + 524, 562, 14, '#8a9096', 'left', 700);
+  // engine instruments: tachometer and the C172S cluster (fuel quantity, EGT / fuel flow, oil, vacuum / ammeter)
+  engineCluster(ctx, sim, x, 592, w, 168);
+  ctx.restore();
+}
+
+/** C172S engine cluster: tachometer and four dual-needle gauges. The tach and the suction gauge are mechanical;
+ *  the other needles are electric and fall to their stops without power. */
+function engineCluster(ctx: CanvasRenderingContext2D, sim: Sim, x: number, y: number, w: number, h: number) {
+  unit(ctx, x, y, w, h, 'ENG');
+  const e = eisReadings(sim);
+  const S = EIS_SCALES;
+  const pw = hasPower(sim, 'pfd');
+  const elec = (v: number, min: number) => (pw ? v : min);
+  // tachometer
+  const tr = 64;
+  const tcx = x + 60 + tr + 14;
+  const tcy = y + h / 2 + 4;
+  bezel(ctx, tcx, tcy, tr);
+  const tAng = (rpm: number) => (135 + (Math.max(0, Math.min(3500, rpm)) / 3500) * 270) * D;
+  arcBand(ctx, tcx, tcy, tr - 6, tAng(2100), tAng(2700), 6, G.green);
+  tick(ctx, tcx, tcy, tAng(2700), tr - 14, tr - 1, 4, G.red);
+  for (let k = 0; k <= 3500; k += 500) {
+    tick(ctx, tcx, tcy, tAng(k), tr - (k % 1000 === 0 ? 14 : 9), tr - 3, 2);
+    if (k % 1000 === 0) {
+      const a = tAng(k);
+      gtext(ctx, String(k / 100), tcx + Math.cos(a) * (tr - 24), tcy + Math.sin(a) * (tr - 24), 14, G.ink, 'center', 700);
+    }
+  }
+  gtext(ctx, 'RPM', tcx, tcy - 20, 13, G.dim, 'center', 700);
+  gtext(ctx, '×100', tcx, tcy + 22, 12, G.dim, 'center', 700);
+  needle(ctx, tcx, tcy, tAng(e.rpm.value), tr - 10, 6);
+  hub(ctx, tcx, tcy, 6);
+  glass(ctx, tcx, tcy, tr);
+  // four dual gauges
+  const gx0 = tcx + tr + 18;
+  const gw = (x + w - 8 - gx0) / 4;
+  const gy = y + 8;
+  const gh = h - 16;
+  const scale = (sc: { min: number; max: number; bands: readonly (readonly [number, number, string])[] }) => sc;
+  dualGauge(ctx, gx0, gy, gw - 6, gh, 'FUEL QTY', 'GAL',
+    { lbl: 'L', v: elec(e.fuelL.value, 0), sc: scale(S.fuel), lo: 'E', hi: 'F' },
+    { lbl: 'R', v: elec(e.fuelR.value, 0), sc: scale(S.fuel), lo: 'E', hi: 'F' });
+  dualGauge(ctx, gx0 + gw, gy, gw - 6, gh, 'EGT · FF', 'GPH',
+    { lbl: '', v: elec(e.egt.value, 1000), sc: scale(S.egt), lo: '', hi: '' },
+    { lbl: '', v: elec(e.fflow.value, 0), sc: { min: 0, max: 19, bands: [[0, 12, 'green']] }, lo: '0', hi: '19' });
+  dualGauge(ctx, gx0 + gw * 2, gy, gw - 6, gh, 'OIL T · P', '°F · PSI',
+    { lbl: '', v: elec(e.oilT.value, 75), sc: scale(S.oilT), lo: '', hi: '' },
+    { lbl: '', v: elec(e.oilP.value, 0), sc: { min: 0, max: 115, bands: [[0, 20, 'red'], [50, 90, 'green'], [112, 115, 'red']] }, lo: '0', hi: '115' });
+  dualGauge(ctx, gx0 + gw * 3, gy, gw - 6, gh, 'VAC · AMP', 'INHG · A',
+    { lbl: '', v: e.vac.value, sc: scale(S.vac), lo: '3', hi: '7' },
+    { lbl: '', v: pw ? e.mBatt.value : 0, sc: { min: -60, max: 60, bands: [] }, lo: '−', hi: '+' });
+}
+
+interface DualSide {
+  lbl: string;
+  v: number;
+  sc: { min: number; max: number; bands: readonly (readonly [number, number, string])[] };
+  lo: string;
+  hi: string;
+}
+const BAND_RGB: Record<string, string> = { green: G.green, yellow: G.yellow, red: G.red };
+
+/** Cessna-style dual gauge: two needles pivoting on the left and right edges, minimum at the bottom. */
+function dualGauge(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, title: string, sub: string, l: DualSide, r: DualSide) {
+  ctx.fillStyle = '#0e0f10';
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 10);
+  ctx.fill();
+  ctx.strokeStyle = '#3a3e42';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  gtext(ctx, title, x + w / 2, y + 16, 15, G.ink, 'center', 800);
+  if (sub) gtext(ctx, sub, x + w / 2, y + h - 14, 12, G.dim, 'center', 700);
+  const cy = y + h / 2 + 2;
+  // each scale stays on its own half of the face
+  const rad = Math.min(w / 2 - 18, h * 0.34);
+  const sweep = 50 * D;
+  for (const [side, sgn, px] of [[l, 1, x + 8], [r, -1, x + w - 8]] as const) {
+    // angle of a value: bottom (min) to top (max), on the arc facing the gauge centre
+    const ang = (v: number) => {
+      const f = Math.max(0, Math.min(1, (v - side.sc.min) / (side.sc.max - side.sc.min)));
+      const a = sweep - f * 2 * sweep; // +50° (down) … −50° (up), pointing right
+      return sgn > 0 ? a : Math.PI - a;
+    };
+    const arc = (a: number, b: number, color: string, lw: number) => {
+      const a0 = ang(a);
+      const a1 = ang(b);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      ctx.arc(px, cy, rad, Math.min(a0, a1), Math.max(a0, a1));
+      ctx.stroke();
+    };
+    arc(side.sc.min, side.sc.max, '#4a4e52', 1.5);
+    for (const [a, b, c] of side.sc.bands) arc(a, b, BAND_RGB[c] ?? G.green, 5);
+    for (let i = 0; i <= 4; i++) tick(ctx, px, cy, ang(side.sc.min + ((side.sc.max - side.sc.min) * i) / 4), rad - 6, rad + 3, 1.5, G.ink);
+    // end-of-scale legends just past the arc ends
+    const endAt = (v: number) => {
+      const a = ang(v);
+      return [px + Math.cos(a) * (rad + 9), cy + Math.sin(a) * (rad + 9)] as const;
+    };
+    if (side.hi) gtext(ctx, side.hi, ...endAt(side.sc.max), 12, G.dim, 'center', 700);
+    if (side.lo) gtext(ctx, side.lo, ...endAt(side.sc.min), 12, G.dim, 'center', 700);
+    if (side.lbl) gtext(ctx, side.lbl, px + sgn * 2, cy + rad * 0.5, 13, G.ink, sgn > 0 ? 'left' : 'right', 800);
+    needle(ctx, px, cy, ang(Number.isFinite(side.v) ? side.v : side.sc.min), rad + 2, 4, 0.08);
+  }
 }
 
 function unit(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, label: string) {
@@ -533,9 +707,13 @@ function unit(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h:
   if (label) gtext(ctx, label, x + 30, y + h / 2, 14, '#8a9096', 'center', 800);
 }
 
-function navcom(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, com: { active: number; standby: number }, nav: { active: number; standby: number }, cdi: boolean) {
+function navcom(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, com: { active: number; standby: number }, nav: { active: number; standby: number }, cdi: boolean, powered = true) {
   unit(ctx, x, y, w, 68, '');
   lcd(ctx, x + 12, y + 8, 290, 52);
+  if (!powered) {
+    lcd(ctx, x + 310, y + 8, 290, 52);
+    return;
+  }
   gtext(ctx, 'COM', x + 24, y + 28, 14, LED_DIM, 'left', 700);
   led(ctx, com.active.toFixed(3), x + 290, y + 28, 22, LED_COM, 'right');
   led(ctx, com.standby.toFixed(3), x + 290, y + 50, 16, LED_DIM, 'right');

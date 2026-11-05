@@ -8,6 +8,11 @@ import { computeNav } from '../nav/radios';
 import { HoldEvaluator } from './holdEval';
 import { holdEntry, type HoldDef } from '../nav/holding';
 import { evaluateAcs, type AcsReport } from '../sim/recorder';
+import { FAILURE_LABELS_EN, FAILURE_LABELS_FR, type FailureKey } from '../sim/systemsTypes';
+import type { DrillFailureSpec, DrillMode } from './procedureTypes';
+import { pickProcedure, simView } from './procedures';
+import { effectiveProcedures } from './procedureStore';
+import { lang as uiLang } from '../ui/i18n';
 
 export interface Ctx {
   sim: Sim;
@@ -68,7 +73,73 @@ export interface ExerciseRuntime {
   allowanceSec?: number;
   /** called every frame (e.g. scheduled failures) */
   tick?: (c: Ctx) => void;
+  /** scheduled failures of the flight (failure drills and any circuit with failures) as planned for this attempt */
+  drill?: DrillRuntime;
 }
+
+// ------------------------------------------------------------------ failure drills (runtime contract)
+// A circuit's failures become a DrillRuntime when the exercise is set up: random times and random keys are drawn
+// once per attempt from a recorded seed. LessonRun fires them (fireDrill) and calls `onDrillFailure`, the hook the
+// in-flight procedure runner (DrillSession) listens to. Instructor-triggered failures never fire on their own: the
+// instructor drawer / phone lists `instructorFailures()` and calls `fireInstructorFailure(index)`.
+
+/** one scheduled failure as planned for this attempt */
+export interface DrillPlanItem {
+  /** index in circuit.failures */
+  index: number;
+  /** the failure (a random pick from `pool` already resolved) */
+  key: FailureKey;
+  trigger: DrillFailureSpec['trigger'];
+  /** procedure id expected (undefined: the one that applies, chosen when it fires) */
+  expect?: string;
+  /** not announced to the student */
+  hidden?: boolean;
+  /** time trigger / random draw: when it fires, minutes after the start */
+  atMin?: number;
+  /** random window of the spec (minutes) */
+  window?: [number, number];
+  /** the key was drawn from a group */
+  drawn?: boolean;
+  fired: boolean;
+  /** sim time (s) it fired, null while pending */
+  firedAtS: number | null;
+}
+
+export interface DrillRuntime {
+  /** training shows the checklist, test hides it (the circuit's `drill.mode`; plain circuits: training) */
+  mode: DrillMode;
+  /** true for a flight made as a failure drill (Circuit.drill), false for a plain circuit with failures */
+  isDrill: boolean;
+  /** seed of the random draws of this attempt (recorded: the same seed replays the same failures) */
+  seed: number;
+  plan: DrillPlanItem[];
+}
+
+/** what `onDrillFailure` receives (also kept in LessonRun.drillLog) */
+export interface DrillFailureEvent {
+  index: number;
+  key: FailureKey;
+  /** procedure id asked for by the drill (undefined = automatic) */
+  expect?: string;
+  mode: DrillMode;
+  isDrill: boolean;
+  trigger: DrillFailureSpec['trigger'];
+  /** sim time (s) */
+  atS: number;
+  /** the procedure that applies now (club first, phase-aware), as announced to the student in training */
+  procedureId: string | null;
+  procedureTitle: string | null;
+  /** fired by the instructor */
+  byInstructor: boolean;
+  /** seed of this attempt's random draws (circuitToExercise(c, { seed }) replays the same failures) */
+  seed: number;
+  /** the failure was drawn at random from a group / at a random time */
+  drawn: boolean;
+}
+
+/** failures after which the flight follows the emergency procedure, not the clearance: the lesson's altitude /
+ *  heading tolerances stop counting (the procedure runner grades the flight path instead) */
+export const LEAVES_CLEARANCE: ReadonlySet<FailureKey> = new Set<FailureKey>(['engine', 'enginePartial', 'engineFire', 'electricalFire', 'oilPressure', 'fuelPump']);
 
 export interface StepResult {
   text: string;
@@ -97,6 +168,14 @@ export class LessonRun {
   holdEval: HoldEvaluator | null = null;
   finished: LessonResult | null = null;
   currentViolation: string | null = null;
+  /** hook (runner integration): a scheduled failure fired — start the expected procedure. `expectId` is the
+   *  procedure the drill asks for (undefined: pick the one that applies), `mode` training / test. */
+  onDrillFailure?: (key: FailureKey, expectId: string | undefined, mode: DrillMode, ev: DrillFailureEvent) => void;
+  /** every drill failure fired so far (a hook wired late can catch up) */
+  drillLog: DrillFailureEvent[] = [];
+  /** step tolerances suspended: an emergency failure took the flight off its clearance */
+  checksSuspended = false;
+  private drillEnd: { moved: boolean; stoppedS: number } | null = null;
 
   constructor(public ex: Exercise, public sim: Sim) {
     this.rt = ex.setup(sim);
@@ -135,7 +214,7 @@ export class LessonRun {
     }
     this.stepT += dt;
     this.currentViolation = null;
-    if (st.check && this.stepT > (st.graceSec ?? 8)) {
+    if (st.check && !this.checksSuspended && this.stepT > (st.graceSec ?? 8)) {
       const v = st.check(c);
       if (v) {
         this.currentViolation = v;
@@ -145,6 +224,7 @@ export class LessonRun {
       }
     }
     if (sim.ac.s.crashed) return this.finish(`Crash: ${sim.ac.s.crashed}`);
+    if (this.drillStopped(dt)) return this.finish(uiLang() === 'fr' ? 'Exercice terminé : avion arrêté au sol après la panne' : 'Drill complete: aircraft stopped on the ground after the failure', true);
     if (st.done(c)) {
       this.results[this.idx].done = true;
       this.idx++;
@@ -158,11 +238,82 @@ export class LessonRun {
     this.finish('Aborted');
   }
 
-  finish(reason?: string) {
+  // ---------------------------------------------------------------- failure drills
+  /** the planned failures of this flight (null: none) */
+  get drill(): DrillRuntime | null {
+    return this.rt.drill ?? null;
+  }
+  /** instructor-triggered failures still waiting (instructor drawer / phone companion) */
+  instructorFailures(): DrillPlanItem[] {
+    return this.rt.drill?.plan.filter((p) => p.trigger === 'instructor' && !p.fired) ?? [];
+  }
+  /** the instructor fires a pending failure (index in circuit.failures); false when there is none */
+  fireInstructorFailure(index: number): boolean {
+    const it = this.rt.drill?.plan.find((p) => p.index === index && p.trigger === 'instructor' && !p.fired);
+    if (!it || this.finished) return false;
+    this.fireDrill(it, true);
+    return true;
+  }
+  /** fire one planned failure: the sim fails it, the procedure is announced (training) and the hook is called */
+  fireDrill(it: DrillPlanItem, byInstructor = false): DrillFailureEvent | null {
+    const dr = this.rt.drill;
+    if (!dr || it.fired) return null;
+    const sim = this.sim;
+    it.fired = true;
+    it.firedAtS = sim.time;
+    sim.setFailure(it.key, true);
+    const l = uiLang();
+    let proc: { id: string; title: string } | null = null;
+    try {
+      proc = pickProcedure(effectiveProcedures(), it.key, l, it.expect, simView(sim));
+    } catch {
+      proc = null;
+    }
+    const ev: DrillFailureEvent = {
+      index: it.index,
+      key: it.key,
+      expect: it.expect,
+      mode: dr.mode,
+      isDrill: dr.isDrill,
+      trigger: it.trigger,
+      atS: sim.time,
+      procedureId: proc?.id ?? null,
+      procedureTitle: proc?.title ?? null,
+      byInstructor,
+      seed: dr.seed,
+      drawn: !!it.drawn || it.trigger === 'random',
+    };
+    this.drillLog.push(ev);
+    if (dr.isDrill && LEAVES_CLEARANCE.has(it.key)) this.checksSuspended = true;
+    // training: the student is told which procedure is expected; test: nothing beyond the failure itself
+    if (dr.mode === 'training' && proc)
+      sim.rec.log(sim.time, 'warn', `Expected procedure: ${proc.title} (${FAILURE_LABELS_EN[it.key]})`, `Procédure attendue : ${proc.title} (${FAILURE_LABELS_FR[it.key]})`);
+    try {
+      this.onDrillFailure?.(it.key, it.expect, dr.mode, ev);
+    } catch (e) {
+      console.error('onDrillFailure', e);
+    }
+    return ev;
+  }
+  /** a drill ends once the aircraft, having moved after a failure, is stopped on the ground (forced landing,
+   *  rejected take-off, landing after the procedure) */
+  private drillStopped(dt: number): boolean {
+    if (!this.rt.drill?.isDrill || !this.drillLog.length) return false;
+    const s = this.sim.ac.s;
+    const gs = this.sim.ac.data.gsKt;
+    this.drillEnd ??= { moved: false, stoppedS: 0 };
+    if (!s.onGround || gs > 20) this.drillEnd.moved = true;
+    if (s.onGround && gs < 1 && this.drillEnd.moved) this.drillEnd.stoppedS += dt;
+    else this.drillEnd.stoppedS = 0;
+    return this.drillEnd.stoppedS > 4;
+  }
+
+  finish(reason?: string, drillEnd = false) {
     if (this.finished) return;
     const viol = this.results.reduce((a, b) => a + b.violationSec, 0);
     const allowance = this.rt.allowanceSec ?? 15;
-    const allDone = this.results.every((r) => r.done);
+    // a drill that ends on the ground after its failure (forced landing): the steps it could not reach do not count
+    const allDone = drillEnd || this.results.every((r) => r.done);
     const holdReport = this.holdEval?.report();
     const holdOk = !holdReport || holdReport.every((r) => r.ok !== false);
     const acs = this.rt.acs ? evaluateAcs(this.sim.rec) : undefined;

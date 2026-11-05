@@ -1,0 +1,748 @@
+/* =================================================================== systems panel (src/ui/systemsPanel.ts)
+   C172S switch / fuel / engine panel: matte black panel, white placards, Cessna rocker shapes, red master and
+   mixture, metal magneto key and fuel selector. It sits in its own row between the instruments and the pedestal,
+   so it is built to be as LOW as possible: one row of controls (placards name them, no group titles), the steam
+   gauges on one slim line above, folded = a one-line status strip. Touch: every target ≥ 44 px under
+   (pointer: coarse); no hover-only state. */
+
+.sysp {
+  --sp-bg: #17191c;
+  --sp-bg2: #0e1012;
+  --sp-line: #2a2e33;
+  --sp-ink: #eef1f3;
+  --sp-dim: #8a939c;
+  --sp-faint: #5c646c;
+  --sp-red: #c0261d;
+  --sp-red-lo: #6d1611;
+  --sp-amber: #ffb020;
+  --sp-bad: #ff4d4d;
+  --sp-focus: #00e4ff;
+  /* touch target and rocker height: compact with a mouse, 44 px with a finger */
+  --tg: 34px;
+  --well: 38px;
+  --dial: 32px;
+  container: sysp / inline-size;
+  background: var(--sp-bg);
+  color: var(--sp-ink);
+  border-top: 1px solid #000;
+  font-family: var(--font-cond, "Roboto Condensed", "Arial Narrow", sans-serif);
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+@media (pointer: coarse) {
+  .sysp {
+    --tg: 44px;
+    --well: 44px;
+    --dial: 34px;
+  }
+}
+.sysp[hidden] {
+  display: none;
+}
+.sysp button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.sysp button:focus-visible,
+.sysp input:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ------------------------------------------------------------------ folded: fold toggle + status strip */
+.sysp-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--tg);
+  padding: 0 12px 0 8px;
+}
+/* unfolded, the strip gives way to the controls: the fold button sits at the end of the row */
+.sysp[data-folded="0"] .sysp-head {
+  display: none;
+}
+.sysp .sysp-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--tg);
+  padding: 0 8px 0 4px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--sp-dim);
+  white-space: nowrap;
+}
+.sysp .sysp-fold:active,
+.sysp .sysp-fold-in:active {
+  background: #22262a;
+}
+.sysp-chev {
+  transform: rotate(-90deg);
+}
+.sysp-strip {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  flex-wrap: nowrap;
+}
+.sysp-chip {
+  flex: none;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: #22262a;
+  color: #cfd5db;
+  font: 700 11px/1.3 var(--font-cond, "Roboto Condensed", sans-serif);
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+}
+.sysp-chip.caution {
+  color: var(--sp-amber);
+  background: rgba(255, 176, 32, 0.12);
+}
+.sysp-chip.warning {
+  color: #fff;
+  background: #b3261e;
+}
+
+/* ------------------------------------------------------------------ controls row */
+.sysp-body {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  padding: 3px 0 3px 4px;
+}
+.sysp[data-folded="1"] .sysp-body,
+.sysp[data-folded="1"] .sysp-gauges {
+  display: none;
+}
+.sysp-g {
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: center;
+  min-width: 0;
+  padding: 2px 6px;
+  border-right: 1px solid var(--sp-line);
+}
+.sysp-gc {
+  display: flex;
+  align-items: flex-start;
+  gap: 3px;
+}
+.sysp .sysp-fold-in {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: var(--tg);
+  min-height: var(--tg);
+  border-radius: 0;
+  border-left: 1px solid var(--sp-line);
+  color: var(--sp-dim);
+  font-weight: 700;
+  font-size: 9.5px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+.sysp-fold-in-l {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+
+/* placards: white, condensed, up to two lines (FUEL / PUMP), bottom-aligned so every rocker sits at one height */
+.rk-plac,
+.rk-mplac,
+.kn-plac,
+.fs-plac,
+.cb-plac,
+.mix-plac,
+.mag-plac {
+  font: 700 10px/1.1 var(--font-cond, "Roboto Condensed", sans-serif);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--sp-ink);
+  white-space: pre-line;
+  text-align: center;
+}
+.rk-plac,
+.kn-plac,
+.cb-plac {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 22px;
+}
+.rk-state,
+.kn-hint,
+.cb-state {
+  font:
+    700 9.5px/1.15 "Roboto Mono",
+    ui-monospace,
+    monospace;
+  color: var(--sp-faint);
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ rocker switches */
+.sysp .rk {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: var(--tg);
+  padding: 0 1px 2px;
+  border-radius: 6px;
+}
+.rk-well {
+  display: block;
+  width: 28px;
+  height: var(--well);
+  padding: 3px;
+  border-radius: 5px;
+  background: var(--sp-bg2);
+  box-shadow:
+    inset 0 0 0 1px #000,
+    0 0 0 1px #34393e;
+}
+.rk-pad {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  /* the two faces of the rocker (hard stop, not a gradient): the raised end catches the light, the pressed end is
+     in shadow */
+  background: linear-gradient(#1c1f22 0 50%, #3d4247 50% 100%);
+  box-shadow: inset 0 -2px 0 #565c62;
+}
+.rk[aria-checked="true"] .rk-pad {
+  background: linear-gradient(#3d4247 0 50%, #1c1f22 50% 100%);
+  box-shadow: inset 0 2px 0 #565c62;
+}
+.rk-red .rk-pad {
+  background: linear-gradient(var(--sp-red-lo) 0 50%, var(--sp-red) 50% 100%);
+  box-shadow: inset 0 -2px 0 #e0574e;
+}
+.rk-red[aria-checked="true"] .rk-pad {
+  background: linear-gradient(var(--sp-red) 0 50%, var(--sp-red-lo) 50% 100%);
+  box-shadow: inset 0 2px 0 #e0574e;
+}
+.rk[aria-checked="true"] .rk-state {
+  color: var(--sp-ink);
+}
+/* MASTER placard over the split ALT | BAT rocker: two lines like the other placards */
+.rk-master {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-right: 4px;
+  margin-right: 3px;
+  border-right: 1px dashed #2f3439;
+}
+.rk-mplac {
+  height: 11px;
+}
+.rk-split {
+  display: flex;
+}
+.rk-split .rk-plac {
+  height: 11px;
+}
+
+/* ------------------------------------------------------------------ magneto key */
+.mag,
+.fs {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.mag-top,
+.fs-top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: var(--dial);
+}
+.mag-dial,
+.fs-dial {
+  width: var(--dial);
+  height: var(--dial);
+  overflow: visible;
+}
+.mag-tick {
+  stroke: var(--sp-ink);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.mag-tick-start {
+  stroke: var(--sp-amber);
+}
+.mag-hub {
+  fill: #8d9297;
+}
+.mag-face,
+.fs-face {
+  fill: #25282c;
+  stroke: #44494e;
+  stroke-width: 2;
+}
+.mag-key {
+  fill: #c7cbcf;
+  stroke: #6c7176;
+  stroke-width: 1.5;
+  transition: transform 0.12s;
+}
+/* positions as a segmented row under the key / selector */
+.mag-row,
+.fs-row {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--sp-bg2);
+  box-shadow: inset 0 0 0 1px #000;
+}
+.sysp .mag-pos,
+.sysp .fs-pos {
+  min-width: var(--tg);
+  height: var(--tg);
+  padding: 0 5px;
+  border-radius: 5px;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  color: #aab2ba;
+}
+.sysp .mag-pos[aria-checked="true"],
+.sysp .fs-pos[aria-checked="true"] {
+  background: var(--sp-ink);
+  color: #0b0c0d;
+}
+.sysp .mag-start {
+  color: var(--sp-amber);
+}
+.sysp .mag-start[aria-checked="true"] {
+  background: var(--sp-amber);
+  color: #0b0c0d;
+}
+
+/* ------------------------------------------------------------------ fuel selector (rotary) */
+.fs-handle {
+  fill: #d8dbde;
+  stroke: #6c7176;
+  stroke-width: 1.5;
+  transition: transform 0.15s;
+}
+.fs[data-off="1"] .fs-handle {
+  fill: var(--sp-red);
+  stroke: #5c120d;
+}
+.fs-plac {
+  text-align: right;
+}
+/* OFF is a separate detent on the real selector (push down and turn): set apart, red */
+.sysp .fs-off {
+  margin-left: 4px;
+  color: #e57a73;
+}
+.sysp .fs-off[aria-checked="true"] {
+  background: var(--sp-red);
+  color: #fff;
+}
+
+/* ------------------------------------------------------------------ mixture (red vernier knob) */
+.mix {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas:
+    "plac plac plac"
+    "minus range plus"
+    "cut . rich";
+  align-items: center;
+  row-gap: 3px;
+  column-gap: 3px;
+}
+.mix-row,
+.mix-ends {
+  display: contents;
+}
+.mix-plac {
+  grid-area: plac;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  height: 11px;
+  text-align: left;
+}
+.mix-val {
+  font:
+    700 9.5px/1.15 "Roboto Mono",
+    ui-monospace,
+    monospace;
+  color: var(--sp-dim);
+  letter-spacing: 0;
+}
+.sysp[data-cutoff="1"] .mix-val {
+  color: var(--sp-amber);
+}
+.sysp .mix-btn {
+  height: var(--tg);
+  min-width: var(--tg);
+  border-radius: 6px;
+  background: #23272b;
+  box-shadow: inset 0 0 0 1px #33383d;
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--sp-ink);
+}
+.sysp .mix-step {
+  font-size: 18px;
+  line-height: 1;
+}
+.sysp .mix-end {
+  padding: 0 7px;
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  color: #d9dde1;
+}
+.sysp .mix-minus {
+  grid-area: minus;
+}
+.sysp .mix-plus {
+  grid-area: plus;
+}
+.sysp .mix-cut {
+  grid-area: cut;
+}
+.sysp .mix-rich {
+  grid-area: rich;
+}
+.sysp .mix-btn:active {
+  background: #30353a;
+}
+.mix-range {
+  grid-area: range;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 84px;
+  min-width: 64px;
+  /* the whole control height is the touch target; the track is drawn thin inside it */
+  height: var(--tg);
+  margin: 0 4px;
+  background: none;
+  cursor: pointer;
+  touch-action: pan-y;
+}
+.mix-range::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 4px;
+  /* travel: the pushed-in part of the shaft (rich side) shown in the knob's colour */
+  background: linear-gradient(90deg, #3a3f44 var(--v, 100%), var(--sp-bg2) var(--v, 100%));
+  box-shadow: inset 0 0 0 1px #000;
+}
+.mix-range::-moz-range-track {
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #3a3f44 var(--v, 100%), var(--sp-bg2) var(--v, 100%));
+  box-shadow: inset 0 0 0 1px #000;
+}
+.mix-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  margin-top: -8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--sp-red);
+  border: 2px solid #5c120d;
+  box-shadow:
+    inset 0 0 0 4px #a51f17,
+    0 2px 4px rgba(0, 0, 0, 0.6);
+}
+.mix-range::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--sp-red);
+  border: 2px solid #5c120d;
+  box-shadow: inset 0 0 0 4px #a51f17;
+}
+@media (pointer: coarse) {
+  .mix-range::-webkit-slider-thumb {
+    margin-top: -12px;
+    width: 32px;
+    height: 32px;
+  }
+}
+
+/* ------------------------------------------------------------------ push-pull knobs, circuit breaker */
+.sysp .kn,
+.sysp .cb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: var(--tg);
+  padding: 0 1px 2px;
+  border-radius: 6px;
+}
+.kn-body,
+.cb-body {
+  position: relative;
+  display: block;
+  width: 36px;
+  height: var(--well);
+}
+.kn-cap {
+  position: absolute;
+  left: 4px;
+  bottom: 1px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #1d2023;
+  box-shadow:
+    inset 0 0 0 2px #464b51,
+    inset 0 0 0 7px #1d2023,
+    inset 0 0 0 8px #33383d,
+    0 2px 4px rgba(0, 0, 0, 0.7);
+  transition: transform 0.12s;
+}
+.kn-shaft {
+  position: absolute;
+  left: 14px;
+  bottom: 3px;
+  width: 8px;
+  height: 0;
+  border-radius: 2px;
+  background: #aab0b6;
+  transition: height 0.12s;
+}
+.kn[data-pulled="1"] .kn-cap {
+  transform: translateY(-9px);
+}
+.kn[data-pulled="1"] .kn-shaft {
+  height: 11px;
+}
+.kn[data-pulled="1"] .kn-hint {
+  color: var(--sp-ink);
+}
+.kn-red .kn-cap {
+  background: var(--sp-red);
+  box-shadow:
+    inset 0 0 0 2px #e0574e,
+    inset 0 0 0 7px var(--sp-red),
+    inset 0 0 0 8px #8c1a13,
+    0 2px 4px rgba(0, 0, 0, 0.7);
+}
+.kn-red[data-pulled="1"] .kn-hint {
+  color: var(--sp-amber);
+}
+.cb-cap {
+  position: absolute;
+  left: 7px;
+  bottom: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #121416;
+  box-shadow:
+    inset 0 0 0 2px #3c4146,
+    0 2px 3px rgba(0, 0, 0, 0.7);
+  font:
+    700 10px/22px "Roboto Mono",
+    ui-monospace,
+    monospace;
+  color: var(--sp-ink);
+  text-align: center;
+  transition: transform 0.12s;
+}
+.cb-collar {
+  position: absolute;
+  left: 11px;
+  bottom: 5px;
+  width: 14px;
+  height: 0;
+  border-radius: 2px;
+  background: #f2f4f5;
+  transition: height 0.12s;
+}
+.cb[data-pulled="1"] .cb-cap {
+  transform: translateY(-9px);
+}
+.cb[data-pulled="1"] .cb-collar {
+  height: 11px;
+}
+.cb[data-pulled="1"] .cb-state {
+  color: var(--sp-amber);
+}
+
+/* ------------------------------------------------------------------ live gauges (steam cockpit): one slim line */
+.sysp-gauges {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px 6px 0;
+}
+.sysp-gauges[hidden] {
+  display: none;
+}
+.gz {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas:
+    "l v u"
+    "b b b";
+  align-items: baseline;
+  column-gap: 5px;
+  padding: 2px 7px 3px;
+  border-radius: 4px;
+  background: var(--sp-bg2);
+  box-shadow: inset 0 0 0 1px #000;
+  min-width: 0;
+}
+.gz-l {
+  grid-area: l;
+  font: 700 9.5px/1.3 var(--font, Inter, sans-serif);
+  letter-spacing: 0.6px;
+  color: var(--sp-dim);
+  white-space: nowrap;
+}
+.gz-v {
+  grid-area: v;
+  text-align: right;
+  font:
+    700 13px/1.25 "Roboto Mono",
+    ui-monospace,
+    monospace;
+  color: var(--sp-ink);
+}
+.gz-u {
+  grid-area: u;
+  font:
+    600 9px/1 "Roboto Mono",
+    ui-monospace,
+    monospace;
+  color: var(--sp-faint);
+}
+.gz-bar {
+  grid-area: b;
+  position: relative;
+  height: 3px;
+  margin-top: 2px;
+  border-radius: 2px;
+  background: #2a2f35;
+}
+.gz-ptr {
+  position: absolute;
+  top: -2px;
+  width: 3px;
+  height: 7px;
+  margin-left: -1.5px;
+  border-radius: 1px;
+  background: var(--sp-ink);
+}
+.gz[data-level="caution"] .gz-v {
+  color: var(--sp-amber);
+}
+.gz[data-level="warning"] .gz-v {
+  color: var(--sp-bad);
+}
+.gz[data-level="warning"] .gz-ptr {
+  background: var(--sp-bad);
+}
+
+/* ------------------------------------------------------------------ wide: the mixture on one line */
+@container sysp (min-width: 1360px) {
+  .mix {
+    grid-template-columns: auto auto 1fr auto auto;
+    grid-template-areas:
+      "plac plac plac plac plac"
+      "cut minus range plus rich";
+  }
+}
+
+/* ------------------------------------------------------------------ narrow (tablet portrait): two rows
+   electrical | ignition over engine | fuel, the fold button down the right-hand side */
+@container sysp (max-width: 1100px) {
+  .sysp-body {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      "elec ign fold"
+      "engine fuel fold";
+    row-gap: 4px;
+  }
+  .sysp-g-elec {
+    grid-area: elec;
+  }
+  .sysp-g-ign {
+    grid-area: ign;
+    border-right: 0;
+  }
+  .sysp-g-engine {
+    grid-area: engine;
+  }
+  .sysp-g-fuel {
+    grid-area: fuel;
+    border-right: 0;
+  }
+  .sysp-g-engine,
+  .sysp-g-fuel {
+    border-top: 1px solid var(--sp-line);
+    padding-top: 5px;
+  }
+  .sysp .sysp-fold-in {
+    grid-area: fold;
+    height: auto;
+    border-left: 1px solid var(--sp-line);
+    border-radius: 0;
+  }
+}
+@container sysp (max-width: 700px) {
+  .sysp-gauges {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@container sysp (max-width: 560px) {
+  .sysp-body {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "elec fold"
+      "ign fold"
+      "engine fold"
+      "fuel fold";
+  }
+  .sysp-g {
+    border-right: 0;
+  }
+  .sysp-g-ign,
+  .sysp-g-engine,
+  .sysp-g-fuel {
+    border-top: 1px solid var(--sp-line);
+    padding-top: 5px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sysp * {
+    transition: none !important;
+  }
+}
+@media (pointer: coarse) {
+  .sysp-g {
+    padding: 2px 4px;
+  }
+}

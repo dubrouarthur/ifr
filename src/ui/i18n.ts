@@ -51,3 +51,10 @@ export function t(key: string, vars?: Record<string, string | number>): string {
     ? s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m))
     : s;
 }
+
+/** translate with a count: `key.1` when the count is singular (FR: 0 and 1, EN: 1), else `key`; {n} is the count */
+export function tn(key: string, n: number, vars?: Record<string, string | number>): string {
+  const one = current === "fr" ? Math.abs(n) < 2 : Math.abs(n) === 1;
+  const k = one && (tables[current][`${key}.1`] ?? tables.en[`${key}.1`]) !== undefined ? `${key}.1` : key;
+  return t(k, { n, ...vars });
+}

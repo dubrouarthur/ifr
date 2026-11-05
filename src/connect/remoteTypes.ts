@@ -2,8 +2,49 @@
 // (remote.html). Pure module: no simulator or DOM imports, so the console bundle stays small and both sides
 // validate with the same code.
 import type { Failures } from "../sim/sim";
+import { FAILURE_GROUPS, FAILURE_LABELS_EN, FAILURE_LABELS_FR, type FailureKey as SysFailureKey } from "../sim/systemsTypes";
+import type { DrillMode, Lang } from "../train/procedureTypes";
 
-export type FailureKey = keyof Failures;
+/** every failure the simulator can inject (src/sim/systemsTypes.ts) */
+export type FailureKey = SysFailureKey;
+
+/** procedures mode: a running (or finished) emergency procedure as the instructor sees it, live */
+export interface RemoteProcState {
+  procedureId: string;
+  title: string;
+  failure: FailureKey;
+  mode: DrillMode;
+  /** s since the failure */
+  elapsedS: number;
+  checklistOpen: boolean;
+  finished: boolean;
+  /** language of the procedure text */
+  lang: Lang;
+  items: {
+    id: string;
+    text: string;
+    memory: boolean;
+    done: boolean;
+    late: boolean;
+    /** s left before the item is late (null: no limit / done) */
+    due: number | null;
+    /** a callout: confirmed by a Done button or by the instructor */
+    manual: boolean;
+    optional: boolean;
+    /** already in the required position at the failure */
+    ready: boolean;
+    /** s after the failure it was done */
+    atS: number | null;
+  }[];
+}
+/** a procedure the instructor can name as expected when firing a failure */
+export interface RemoteProcChoice {
+  id: string;
+  title: string;
+  failures: FailureKey[];
+  lang: Lang;
+  club: boolean;
+}
 export type RepositionKind = "iaf" | "if" | "final10" | "final5" | "runway";
 
 /** what the console shows: sent by the host at 4 Hz */
@@ -45,6 +86,17 @@ export interface RemoteSnapshot {
     active?: boolean;
   } | null;
   failures: Failures;
+  /** procedures mode (protocol 2): the procedures graded in this flight, live */
+  procedures?: RemoteProcState[];
+  /** the failure drill being flown: its mode and the failures waiting for the instructor */
+  drill?: {
+    mode: DrillMode;
+    pending: { index: number; key: FailureKey }[];
+  } | null;
+  /** 'Grade procedures' (failures outside a drill start their procedure) and the mode they start in */
+  grade?: { on: boolean; mode: DrillMode };
+  /** what the systems show the student: lit annunciators, radio / transponder working */
+  systems?: { annunciators: string[]; comOk: boolean; xpdrOk: boolean };
   weather: {
     windDir: number;
     windKt: number;
@@ -88,7 +140,12 @@ export type RemoteCommand =
   | { type: "restart" }
   | { type: "end" }
   | { type: "reposition"; where: RepositionKind }
-  | { type: "failure"; key: FailureKey; on: boolean }
+  | { type: "failure"; key: FailureKey; on: boolean; expect?: string }
+  /** procedures mode: the instructor confirms a callout (Done) item they heard */
+  | { type: "procConfirm"; procedureId: string; itemId: string }
+  /** fire a drill failure that waits for the instructor */
+  | { type: "drillFire"; index: number }
+  | { type: "gradeProcedures"; on: boolean; mode?: DrillMode }
   | {
       type: "weather";
       ceilingFt?: number;
@@ -103,7 +160,9 @@ export type RemoteCommand =
   | { type: "message"; text: string };
 
 // ------------------------------------------------------------------ wire protocol (JSON over the data channel)
-export const PROTOCOL = 1;
+// 2: every system failure (FailureKey widened), procedures in the snapshot, procedure commands, 'procs' message.
+// Compatible both ways: new fields are optional, and a host refuses a command it does not know with an ack.
+export const PROTOCOL = 2;
 /** console → simulator */
 export type ClientMsg =
   | { k: "hello"; v: number; cid: string; device: string }
@@ -116,6 +175,8 @@ export type HostMsg =
   | { k: "refused"; reason: string }
   | { k: "snap"; s: RemoteSnapshot }
   | { k: "route"; r: RemoteRoute }
+  /** the procedures the instructor can expect (sent when the club library changes) */
+  | { k: "procs"; list: RemoteProcChoice[] }
   | { k: "ack"; id: number; ok: boolean; text: string }
   | { k: "pong"; t: number }
   | { k: "bye"; reason: string };
@@ -151,24 +212,61 @@ export const formatPairCode = (code: string) =>
   `${code.slice(0, 3)} ${code.slice(3)}`;
 
 // ------------------------------------------------------------------ labels (console tiles, logs)
-export const FAILURE_KEYS: FailureKey[] = [
-  "ahrs",
-  "airData",
-  "gs",
-  "nav1",
-  "gps",
-  "ap",
-  "engine",
-];
-export const FAILURE_TEXT: Record<FailureKey, { name: string; sub: string }> = {
-  ahrs: { name: "Attitude / heading", sub: "AHRS or vacuum: partial panel" },
-  airData: { name: "Air data", sub: "Pitot-static: airspeed, altitude, VSI" },
-  gs: { name: "Glideslope", sub: "ILS vertical guidance" },
-  nav1: { name: "NAV 1", sub: "VOR / localizer receiver" },
-  gps: { name: "GPS", sub: "Loss of integrity" },
-  ap: { name: "Autopilot", sub: "Disconnects, cannot re-engage" },
-  engine: { name: "Engine", sub: "Total power loss" },
+/** every failure, in the order of the instructor's groups */
+export const FAILURE_KEYS: FailureKey[] = FAILURE_GROUPS.flatMap((g) => g.keys);
+export const FAILURE_GROUP_IDS = FAILURE_GROUPS.map((g) => g.id);
+export const FAILURE_GROUP_TEXT: Record<(typeof FAILURE_GROUPS)[number]["id"], Record<Lang, string>> = {
+  engine: { en: "Engine & fuel", fr: "Moteur et carburant" },
+  electrical: { en: "Electrical", fr: "Électricité" },
+  instruments: { en: "Flight instruments", fr: "Instruments de vol" },
+  avionics: { en: "Avionics & radio", fr: "Avionique et radio" },
+  other: { en: "Other", fr: "Autres" },
 };
+/** one line under each failure tile: what the student will see */
+const FAILURE_SUB: Record<FailureKey, Record<Lang, string>> = {
+  gs: { en: "ILS vertical guidance", fr: "Guidage vertical de l’ILS" },
+  nav1: { en: "VOR / localizer receiver", fr: "Récepteur VOR / localizer" },
+  gps: { en: "Loss of integrity", fr: "Perte d’intégrité" },
+  ap: { en: "Disconnects, cannot re-engage", fr: "Se déconnecte, ne se réengage pas" },
+  ahrs: { en: "G1000 attitude and heading: red X", fr: "Assiette et cap G1000 : croix rouge" },
+  airData: { en: "Pitot-static: airspeed, altitude, VSI", fr: "Vitesse, altitude, vario" },
+  engine: { en: "Total power loss", fr: "Perte totale de puissance" },
+  enginePartial: { en: "About 60 % power left", fr: "Environ 60 % de puissance" },
+  engineRough: { en: "One bad magneto: rough running", fr: "Une magnéto défaillante : vibrations" },
+  fuelPump: { en: "Engine quits unless the aux pump is ON", fr: "Le moteur s’arrête sans pompe électrique" },
+  fuelLeak: { en: "The left tank loses fuel", fr: "Le réservoir gauche se vide" },
+  oilPressure: { en: "Engine seizes about 10 min later", fr: "Serrage moteur environ 10 min plus tard" },
+  engineFire: { en: "Fire in flight", fr: "Feu en vol" },
+  alternator: { en: "LOW VOLTS: on the battery only", fr: "LOW VOLTS : sur batterie seule" },
+  battery: { en: "Battery dead, contactor open", fr: "Batterie hors service" },
+  electricalFire: { en: "Smoke until the master is OFF", fr: "Fumée jusqu’à la coupure générale" },
+  vacuum: { en: "Steam attitude and DG drift, topple", fr: "Horizon et conservateur dérivent" },
+  pitotBlocked: { en: "Airspeed acts like an altimeter", fr: "Le badin réagit comme un altimètre" },
+  pitotIcing: { en: "Airspeed to zero without pitot heat", fr: "Badin à zéro sans réchauffage" },
+  staticBlocked: { en: "Altimeter frozen, VSI at zero", fr: "Altimètre figé, vario à zéro" },
+  flaps: { en: "Stuck where they are", fr: "Bloqués dans leur position" },
+  trimRunaway: { en: "Runs nose-down until the breaker is pulled", fr: "Part à piquer jusqu’au disjoncteur" },
+  comms: { en: "No transmit, no receive: lost comms", fr: "Ni émission ni réception" },
+  xpdr: { en: "Transponder inoperative", fr: "Transpondeur hors service" },
+  door: { en: "Noise and a little drag", fr: "Bruit et un peu de traînée" },
+};
+/** the console's short English names of the historical avionics failures (kept: the session logs read them) */
+const SHORT_EN: Partial<Record<FailureKey, string>> = {
+  ahrs: "Attitude / heading",
+  airData: "Air data",
+  gs: "Glideslope",
+  nav1: "NAV 1",
+  gps: "GPS",
+  ap: "Autopilot",
+  engine: "Engine",
+};
+/** a failure's tile text in a language */
+export function failureText(k: FailureKey, lang: Lang = "en"): { name: string; sub: string } {
+  const name = lang === "en" ? (SHORT_EN[k] ?? FAILURE_LABELS_EN[k]) : FAILURE_LABELS_FR[k];
+  return { name: name ?? k, sub: FAILURE_SUB[k]?.[lang] ?? "" };
+}
+/** English tile texts (console log lines) */
+export const FAILURE_TEXT = Object.fromEntries(FAILURE_KEYS.map((k) => [k, failureText(k, "en")])) as Record<FailureKey, { name: string; sub: string }>;
 export const REPOSITIONS: { where: RepositionKind; name: string }[] = [
   { where: "iaf", name: "IAF" },
   { where: "if", name: "IF" },
@@ -298,7 +396,13 @@ export function describeCommand(c: RemoteCommand): string {
     case "reposition":
       return `Repositioned: ${REPOSITIONS.find((r) => r.where === c.where)?.name ?? c.where}`;
     case "failure":
-      return `${FAILURE_TEXT[c.key].name} ${c.on ? "failed" : "restored"}`;
+      return `${FAILURE_TEXT[c.key]?.name ?? c.key} ${c.on ? "failed" : "restored"}`;
+    case "procConfirm":
+      return "Callout confirmed";
+    case "drillFire":
+      return "Drill failure fired";
+    case "gradeProcedures":
+      return c.on ? `Procedures graded (${c.mode === "test" ? "test" : "training"})` : "Procedures not graded";
     case "weather": {
       const p: string[] = [];
       if (c.windKt !== undefined)
@@ -345,6 +449,8 @@ const isObj = (x: unknown): x is Record<string, unknown> =>
   typeof x === "object" && x !== null && !Array.isArray(x);
 const fin = (v: unknown): v is number =>
   typeof v === "number" && Number.isFinite(v);
+/** a procedure or item id: short, printable, no spaces */
+const isProcId = (v: unknown): v is string => typeof v === "string" && /^[\w.:-]{1,80}$/.test(v);
 /** a number inside [lo, hi] (rejects out-of-range values rather than silently clamping them) */
 function inRange(
   v: unknown,
@@ -370,12 +476,32 @@ export function validateCommand(x: unknown): RemoteCommand | null {
       return REPOSITIONS.some((r) => r.where === x.where)
         ? { type: "reposition", where: x.where as RepositionKind }
         : null;
-    case "failure":
-      return typeof x.key === "string" &&
-        (FAILURE_KEYS as string[]).includes(x.key) &&
-        typeof x.on === "boolean"
-        ? { type: "failure", key: x.key as FailureKey, on: x.on }
+    case "failure": {
+      if (
+        typeof x.key !== "string" ||
+        !(FAILURE_KEYS as string[]).includes(x.key) ||
+        typeof x.on !== "boolean"
+      )
+        return null;
+      const c: { type: "failure"; key: FailureKey; on: boolean; expect?: string } = { type: "failure", key: x.key as FailureKey, on: x.on };
+      if (x.expect !== undefined) {
+        if (!isProcId(x.expect)) return null;
+        c.expect = x.expect;
+      }
+      return c;
+    }
+    case "procConfirm":
+      return isProcId(x.procedureId) && isProcId(x.itemId)
+        ? { type: "procConfirm", procedureId: x.procedureId, itemId: x.itemId }
         : null;
+    case "drillFire":
+      return fin(x.index) && Number.isInteger(x.index) && x.index >= 0 && x.index < 100
+        ? { type: "drillFire", index: x.index }
+        : null;
+    case "gradeProcedures":
+      if (typeof x.on !== "boolean") return null;
+      if (x.mode !== undefined && x.mode !== "training" && x.mode !== "test") return null;
+      return x.mode ? { type: "gradeProcedures", on: x.on, mode: x.mode as DrillMode } : { type: "gradeProcedures", on: x.on };
     case "weather": {
       const lim: Record<string, [number, number]> = {
         ceilingFt: [0, 30000],

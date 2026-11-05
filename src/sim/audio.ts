@@ -2,6 +2,7 @@
 import type { Sim } from './sim';
 
 import { CalloutMonitor, type CalloutProfile } from './callouts';
+import { ANNUNCIATOR_LEVEL, type Annunciator } from './systemsTypes';
 
 const PRIORITY: Record<string, number> = { pullup: 10, terrain: 9, toolowterrain: 9, windshear: 9, stall: 8, sinkrate: 7, glideslope: 6, bankangle: 6, minimums: 5, plus100: 4, retard: 4 };
 
@@ -73,6 +74,12 @@ export class CockpitAudio {
   private hornGain!: GainNode;
   private marker!: OscillatorNode;
   private markerGain!: GainNode;
+  /** open door: buffeting wind roar through a band-pass */
+  private doorGain!: GainNode;
+  private lastAnn: readonly Annunciator[] = [];
+  private lastAnnTime = -1;
+  private lastChime = -10;
+  private roughPhase = 0;
   muted = false;
   private lastAp = false;
   private altAlerted = false;
@@ -130,6 +137,18 @@ export class CockpitAudio {
     this.noiseGain.gain.value = 0.02;
     this.noise.connect(this.noiseGain).connect(this.master);
     this.noise.start();
+    const door = c.createBufferSource();
+    door.buffer = buf;
+    door.loop = true;
+    door.playbackRate.value = 1.7;
+    const doorBp = c.createBiquadFilter();
+    doorBp.type = 'bandpass';
+    doorBp.frequency.value = 520;
+    doorBp.Q.value = 0.7;
+    this.doorGain = c.createGain();
+    this.doorGain.gain.value = 0;
+    door.connect(doorBp).connect(this.doorGain).connect(this.master);
+    door.start();
     // stall horn
     this.horn = c.createOscillator();
     this.horn.type = 'sawtooth';
@@ -189,6 +208,15 @@ export class CockpitAudio {
     n.start();
   }
 
+  /** G1000-style alert tone for a new annunciation: a short, soft single chime for a CAUTION (amber), a
+   *  two-note chime for a WARNING (red). Never louder than the callouts; silent when muted. */
+  alertChime(level: 'warning' | 'caution') {
+    if (level === 'warning') {
+      this.beep(988, 0.16, 0.07);
+      this.beep(784, 0.26, 0.07, 'sine', 0.19);
+    } else this.beep(880, 0.22, 0.05);
+  }
+
   /** soft two-tone chime (chronometer minute marks) */
   chime() {
     this.beep(1175, 0.12, 0.07);
@@ -215,12 +243,37 @@ export class CockpitAudio {
     const d = sim.ac.data;
     const now = c.currentTime;
     const rpm = sim.ac.s.crashed ? 0 : d.rpm;
+    const sys = sim.sys;
+    const running = sys ? sys.engineRunning : true;
+    const vib = running ? (sys?.vibration ?? 0) : 0;
     const f = (rpm / 60) * 2; // firing frequency-ish
-    this.engOsc.frequency.setTargetAtTime(Math.max(20, f), now, 0.1);
+    // rough engine: irregular misfires pull the level and the pitch down for a few hundredths of a second
+    this.roughPhase += dt * (5 + 7 * Math.random());
+    const miss = vib > 0.02 ? vib * (0.5 + 0.5 * Math.sin(this.roughPhase * 2.1) * Math.sin(this.roughPhase * 0.77)) : 0;
+    this.engOsc.frequency.setTargetAtTime(Math.max(20, f * (1 - 0.06 * miss)), now, 0.04);
     this.engOsc2.frequency.setTargetAtTime(Math.max(10, f / 2 + 1.5), now, 0.1);
-    this.engFilter.frequency.setTargetAtTime(250 + rpm * 0.25, now, 0.2);
-    this.engGain.gain.setTargetAtTime(sim.paused || rpm < 100 ? 0 : 0.05 + (rpm / 2700) * 0.07, now, 0.2);
-    this.noiseGain.gain.setTargetAtTime(sim.paused ? 0 : 0.005 + (d.iasKt / 120) * 0.035, now, 0.3);
+    // a windmilling dead engine: no firing pulses, only the propeller turning (low and soft); silence when stopped
+    this.engFilter.frequency.setTargetAtTime(running ? 250 + rpm * 0.25 : 120 + rpm * 0.06, now, 0.2);
+    const engLevel = sim.paused || rpm < 100 ? 0 : running ? (0.05 + (rpm / 2700) * 0.07) * (1 - 0.55 * miss) : 0.012 * Math.min(1, rpm / 1000);
+    this.engGain.gain.setTargetAtTime(engLevel, now, running ? 0.03 : 0.4);
+    const door = !!sys?.doorOpen && !sim.paused;
+    this.noiseGain.gain.setTargetAtTime(sim.paused ? 0 : (0.005 + (d.iasKt / 120) * 0.035) * (door ? 1.8 : 1), now, 0.3);
+    this.doorGain.gain.setTargetAtTime(door ? 0.02 + (d.iasKt / 120) * 0.05 * (0.8 + 0.2 * Math.sin(this.t * 9)) : 0, now, 0.15);
+    // alert chime on a new red / amber annunciation (not at the start of a flight, not during a replay)
+    // (the systems publish a new array only when the list changes: compare by identity, no per-frame work)
+    if (sys && !sim.paused && !sim.replaying) {
+      const cur = sys.annunciators;
+      if (sim.time < this.lastAnnTime || this.lastAnnTime < 0) this.lastAnn = cur; // new flight: no chime for what is already lit
+      else if (cur !== this.lastAnn) {
+        const added = cur.filter((a) => !this.lastAnn.includes(a));
+        if (added.length && this.t - this.lastChime > 1.5) {
+          this.lastChime = this.t;
+          this.alertChime(added.some((a) => ANNUNCIATOR_LEVEL[a] === 'warning') ? 'warning' : 'caution');
+        }
+        this.lastAnn = cur;
+      }
+      this.lastAnnTime = sim.time;
+    }
     this.hornGain.gain.setTargetAtTime(d.stallWarn && !sim.paused ? 0.06 : 0, now, 0.03);
     // marker: dashes 2/s
     const om = sim.marker === 'O' && !sim.paused && Math.floor(this.t * 4) % 2 === 0;

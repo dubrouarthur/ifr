@@ -2,7 +2,7 @@ import { h, clear, fmtTime, store } from './dom';
 import { svgIcon, I } from './icons';
 import { RouteMap, MAP_COL } from './routeMap';
 import type { Circuit, CircuitLeg } from '../train/circuits';
-import type { Attempt } from './history';
+import type { ProcAttempt } from './history';
 import { SCENARIOS, type Scenario, type Sim, type AssessSettings } from '../sim/sim';
 import type { Weather } from '../sim/environment';
 import { APPROACHES, FIXES, runway, findFix, groundElevation } from '../nav/data';
@@ -13,6 +13,8 @@ import { webhookCfg, postWebhook } from '../connect/webhook';
 import { trackGpx, trackKml, download } from '../connect/exports';
 import { AXIS_LABELS, BUTTON_LABELS, AxisDetector, type AxisName, type ButtonAction, type InputManager } from '../sim/input';
 import { alongTrackNm, destination, distanceNm, FT_PER_NM, type LatLon } from '../nav/geo';
+import type { Lang, ProcedureResult } from '../train/procedureTypes';
+import { FAILURE_LABELS_EN, FAILURE_LABELS_FR } from '../sim/systemsTypes';
 
 export class Modal {
   bg: HTMLElement;
@@ -385,7 +387,7 @@ export class JoystickModal extends Modal {
 
 // ----------------------------------------------------------------- debrief
 /** the training record of the current flight (one per flight: a later save replaces the earlier one) */
-export function flightRecord(sim: Sim, db = computeDebrief(sim.rec, sim.av.minimums), acs = evaluateAcs(sim.rec)): Attempt {
+export function flightRecord(sim: Sim, db = computeDebrief(sim.rec, sim.av.minimums), acs = evaluateAcs(sim.rec)): ProcAttempt {
   const rec = sim.rec;
   const ls = rec.lesson;
   const lessonScored = !!ls && ls.score !== undefined;
@@ -406,11 +408,19 @@ export function flightRecord(sim: Sim, db = computeDebrief(sim.rec, sim.av.minim
     failures: rec.failuresInjected,
     durationSec: db.durationSec,
     ...(ls ? { exercise: ls.id, exerciseTitle: ls.title, passed: ls.passed } : {}),
+    ...(() => {
+      const procedures = flightProcedures.results();
+      return procedures.length ? { procedures } : {};
+    })(),
   };
 }
+
+/** procedures mode: the shell (main.ts) hands over the procedures graded during the current flight, so the debrief,
+ *  the lesson result and the training records show them */
+export const flightProcedures: { results: () => ProcedureResult[] } = { results: () => [] };
 const posted = new Map<string, string>();
 /** save the flight in the training records (flights over ~30 s, and every lesson attempt) and post the school webhook */
-export function saveFlightRecord(sim: Sim): Attempt | null {
+export function saveFlightRecord(sim: Sim): ProcAttempt | null {
   const rec = sim.rec;
   const db = computeDebrief(rec, sim.av.minimums);
   const acs = evaluateAcs(rec);
@@ -488,6 +498,8 @@ export class DebriefModal extends Modal {
         ),
       ),
     );
+    const procs = flightProcedures.results();
+    if (procs.length) this.body.append(procedureSection(procs));
     const acsBlock = h('section', { class: 'chartbox dbf-acs' },
       h('h5', {}, 'FAA Instrument ACS evaluation', h('span', { class: `acs-badge ${acs.result}` }, acs.result === 'INCOMPLETE' ? 'Incomplete' : acs.result)),
       h('table', { class: 'items acs-table' }, h('tr', {}, ...['Result', 'Task', 'Standard', 'Performance'].map((t) => h('th', {}, t))), ...acs.items.map((i) => h('tr', { class: i.result }, h('td', { class: 'res' }, i.result === 'N/A' ? '—' : i.result), h('td', {}, i.task), h('td', { class: 'muted' }, i.standard), h('td', {}, i.actual)))),
@@ -782,6 +794,8 @@ export class HelpModal extends Modal {
       ['Learn (paths & exercises)', 'J'],
       ['Sound on/off', 'M'],
       ['Flight builder', 'U'],
+      ['Aircraft systems panel (switches, mixture, fuel)', 'Z'],
+      ['Emergency checklist: open / fold', 'Shift+C'],
       ['Outside view (camera)', 'V / Shift+V'],
       ['Knob step buttons', 'right-click a knob (tap on a touch screen)'],
       ['Flight Center', 'F2'],
@@ -809,3 +823,321 @@ export class HelpModal extends Modal {
   }
 }
 
+// ----------------------------------------------------------------- procedures mode: graded procedures (debrief, lesson result)
+const PR_W = {
+  en: {
+    head: 'Emergency procedures',
+    pass: 'PASS',
+    fail: 'FAIL',
+    training: 'Training',
+    test: 'Test',
+    at: 'at',
+    first: 'First thing to work on',
+    summary: 'Summary',
+    bonus: 'bonus',
+    reaction: 'Reaction',
+    none: 'no reaction',
+    checklist: 'Checklist opened',
+    notOpened: 'not opened',
+    ias: 'Airspeed in band',
+    bank: 'Max bank',
+    alt: 'Altitude lost',
+    item: 'Item',
+    time: 'Time',
+    result: 'Result',
+    memory: 'from memory',
+    notMemory: 'not from memory',
+    late: 'late',
+    order: 'out of order',
+    missed: 'missed',
+    notDone: 'not done',
+    verified: 'checked (already set)',
+    instructor: 'confirmed by the instructor',
+    student: 'confirmed',
+    optional: 'optional',
+    optSkipped: 'optional — not done',
+    failure: 'Failure',
+    opened: 'Checklist',
+    outcome: {
+      completed: 'Completed',
+      incomplete: 'Not completed',
+      crashed: 'Crashed',
+      landed: 'Landed',
+    },
+    followUp: 'follow-up',
+    solo: 'Solo test: callouts graded as checklist confirmations',
+    path: 'Flight path',
+    reactionShort: 'Reaction',
+    score: 'Score',
+    items: 'Items',
+    capCrash: 'capped at 20: crash',
+    capped: 'capped at',
+  },
+  fr: {
+    head: 'Procédures d’urgence',
+    pass: 'RÉUSSI',
+    fail: 'ÉCHEC',
+    training: 'Entraînement',
+    test: 'Test',
+    at: 'à',
+    first: 'À travailler en premier',
+    summary: 'Bilan',
+    bonus: 'bonus',
+    reaction: 'Réaction',
+    none: 'aucune réaction',
+    checklist: 'Check-list ouverte',
+    notOpened: 'non ouverte',
+    ias: 'Vitesse dans la plage',
+    bank: 'Inclinaison max',
+    alt: 'Altitude perdue',
+    item: 'Action',
+    time: 'Temps',
+    result: 'Résultat',
+    memory: 'de mémoire',
+    notMemory: 'pas de mémoire',
+    late: 'en retard',
+    order: 'hors ordre',
+    missed: 'oubliée',
+    notDone: 'non faites',
+    verified: 'vérifiée (déjà en place)',
+    instructor: 'confirmée par l’instructeur',
+    student: 'confirmée',
+    optional: 'facultative',
+    optSkipped: 'facultative — non faite',
+    failure: 'Panne',
+    opened: 'Check-list',
+    outcome: {
+      completed: 'Terminée',
+      incomplete: 'Non terminée',
+      crashed: 'Accident',
+      landed: 'Posé',
+    },
+    followUp: 'suite',
+    solo: 'Test en solo : les annonces sont notées comme confirmations de check-list',
+    path: 'Trajectoire',
+    reactionShort: 'Réaction',
+    score: 'Note',
+    items: 'Actions',
+    capCrash: 'plafonnée à 20 : accident',
+    capped: 'plafonnée à',
+  },
+} as const;
+const prSec = (s: number | null | undefined, l: Lang) =>
+  s === null || s === undefined ? '—' : `${(s < 10 ? Math.round(s * 10) / 10 : Math.round(s)).toString().replace('.', l === 'fr' ? ',' : '.')} s`;
+
+/** "Items 70/70 · Flight path 18/20 · Reaction 10/10": only the parts that were graded, bonus points apart */
+function breakdownText(r: ProcedureResult, w: (typeof PR_W)[Lang]): string {
+  const b = r.breakdown!;
+  const pathW = r.targets?.iasKt || r.targets?.maxBankDeg !== undefined ? 20 : 0;
+  const reactW = r.followUpOf ? 0 : 10;
+  const itemsW = 100 - pathW - reactW;
+  const items = Math.round(b.items);
+  const parts = [`${w.items} ${Math.min(items, itemsW)}/${itemsW}${items > itemsW ? ` (+${items - itemsW} ${w.bonus})` : ''}`];
+  if (pathW) parts.push(`${w.path} ${Math.round(b.path)}/${pathW}`);
+  if (reactW) parts.push(`${w.reactionShort} ${Math.round(b.reaction)}/${reactW}`);
+  // a crash caps the score: say so, or the parts would not add up to it
+  const sum = Math.min(100, Math.round(b.items + b.path + b.reaction));
+  if (r.score < sum) parts.push(r.outcome === 'crashed' ? w.capCrash : `${w.capped} ${r.score}`);
+  return parts.join(' · ');
+}
+
+/** one graded procedure: verdict and score, the notes (most important first), reaction, checklist and flight path,
+ *  a timeline of the items and the item table (time, late / out of order / missed) */
+export function procedureCard(r: ProcedureResult): HTMLElement {
+  const L: Lang = r.lang === 'fr' ? 'fr' : 'en';
+  const w = PR_W[L];
+  // nothing to fix: the first note is the summary ("… flown correctly: 100/100"), not a thing to work on
+  const clean = r.verdict === 'PASS' && !!r.notes[0] && r.notes[0].includes(r.title) && r.notes[0].includes(`${r.score}/100`);
+  const fname = (L === 'fr' ? FAILURE_LABELS_FR : FAILURE_LABELS_EN)[r.failure] ?? r.failure;
+  const pass = r.verdict === 'PASS';
+  const items = r.items;
+  // timeline: 0 = the failure, to the last thing that happened (at least 30 s)
+  const span = Math.max(30, ...items.map((i) => i.atS ?? 0), r.checklistOpenedS ?? 0, r.reactionS ?? 0) * 1.06;
+  const x = (s: number) => `${((Math.max(0, s) / span) * 100).toFixed(2)}%`;
+  const kind = (i: ProcedureResult['items'][number]) =>
+    !i.done ? (i.optional ? 'skip' : 'missed') : i.late ? 'late' : !i.inOrder || (i.memory && !i.fromMemory) ? 'warn' : 'ok';
+  const tip = (i: ProcedureResult['items'][number], n: number) =>
+    `${n + 1}. ${i.text ?? i.id} — ${i.done ? prSec(i.atS, L) : i.optional ? w.optSkipped : w.missed}`;
+  // items not done: side by side after the end of the axis, under one label
+  const notDone = items.map((i, n) => ({ i, n })).filter((x) => !x.i.done);
+  const missEl = notDone.length
+    ? h(
+        'div',
+        { class: 'prr-miss', title: notDone.map(({ i, n }) => tip(i, n)).join('\n') },
+        h('div', {}, ...notDone.map(({ i, n }) => h('span', { class: `prr-dot ${kind(i)}` }, String(n + 1)))),
+        h('small', {}, w.notDone),
+      )
+    : null;
+  const tl = h(
+    'div',
+    {
+      class: 'prr-tl',
+      role: 'img',
+      'aria-label': `${w.time}: ${items.filter((i) => i.done).length}/${items.length}`,
+    },
+    h('i', { class: 'prr-axis' }),
+    h('span', {
+      class: 'prr-m fail',
+      style: `left:0`,
+      title: `${w.failure} 0 s`,
+    }),
+    r.reactionS !== null
+      ? h('span', {
+          class: 'prr-m react',
+          style: `left:${x(r.reactionS)}`,
+          title: `${w.reaction} ${prSec(r.reactionS, L)}`,
+        })
+      : null,
+    r.checklistOpenedS !== null && r.checklistOpenedS !== undefined
+      ? h(
+          'span',
+          {
+            class: 'prr-m cl',
+            style: `left:${x(r.checklistOpenedS)}`,
+            title: `${w.checklist} ${prSec(r.checklistOpenedS, L)}`,
+          },
+          h('small', {}, w.opened),
+        )
+      : null,
+    ...(() => {
+      // done items at their time, in time order; dots closer than ~22 px share the axis on alternate lanes (above /
+      // below), never on top of each other. Items not done sit side by side past the end of the axis.
+      const lastIn: number[] = [-1e9, -1e9];
+      const done = items
+        .map((i, n) => ({ i, n }))
+        .filter((x) => x.i.done && x.i.atS !== null)
+        .sort((a, b) => a.i.atS! - b.i.atS!);
+      const dots = done.map(({ i, n }) => {
+        const pos = Math.max(0, i.atS!) / span;
+        const lane = pos - lastIn[0] > 0.035 ? 0 : pos - lastIn[1] > 0.035 ? 1 : 0;
+        lastIn[lane] = pos;
+        return h(
+          'span',
+          {
+            class: `prr-dot ${kind(i)}${lane ? ' up' : ''}`,
+            style: `left:${(pos * 100).toFixed(2)}%`,
+            title: tip(i, n),
+          },
+          String(n + 1),
+        );
+      });
+      return dots;
+    })(),
+    h('span', { class: 'prr-tick', style: 'left:0' }, '0'),
+    h('span', { class: 'prr-tick', style: 'left:100%' }, prSec(span / 1.06, L)),
+  );
+  const chip = (cls: string, t: string) => h('span', { class: `prr-chip ${cls}` }, t);
+  const rows = items.map((i, n) => {
+    const chips: HTMLElement[] = [];
+    if (!i.done) chips.push(i.optional ? chip('muted', w.optSkipped) : chip('bad', w.missed));
+    else {
+      if (i.late) chips.push(chip('warn', i.lateByS ? `${w.late} +${prSec(i.lateByS, L)}` : w.late));
+      if (!i.inOrder) chips.push(chip('warn', w.order));
+      if (i.memory) chips.push(i.fromMemory ? chip('good', w.memory) : chip('warn', w.notMemory));
+      if (i.by === 'verified') chips.push(chip('muted', w.verified));
+      else if (i.by === 'instructor') chips.push(chip('muted', w.instructor));
+      if (!chips.length) chips.push(chip('good', i.optional ? w.optional : 'OK'));
+    }
+    return h(
+      'tr',
+      {
+        class: i.done ? (i.late || !i.inOrder ? 'warn' : 'ok') : i.optional ? 'skip' : 'bad',
+      },
+      h('td', { class: 'num prr-n' }, String(n + 1)),
+      h('td', {}, i.text ?? i.id, i.limitS !== undefined && i.limitS !== null ? h('small', { class: 'muted' }, ` ≤ ${i.limitS} s`) : null),
+      h('td', { class: 'num nowrap' }, i.done ? prSec(i.atS, L) : '—'),
+      h('td', { class: 'prr-res' }, ...chips),
+    );
+  });
+  const tg = r.targets;
+  const stat = (k: string, v: string, sub?: string, bad = false) =>
+    h('div', { class: `prr-stat${bad ? ' bad' : ''}` }, h('small', {}, k), h('b', {}, v), sub ? h('span', {}, sub) : null);
+  const p = r.path;
+  return h(
+    'article',
+    { class: `prr-card ${pass ? 'pass' : 'fail'}` },
+    h(
+      'header',
+      { class: 'prr-head' },
+      h('span', { class: `prr-verdict ${pass ? 'pass' : 'fail'}` }, pass ? w.pass : w.fail),
+      h(
+        'div',
+        { class: 'prr-t' },
+        h('b', {}, r.title),
+        h(
+          'small',
+          {},
+          [fname, r.mode === 'test' ? w.test : w.training, `${w.at} ${fmtTime(r.failedAtS)}`, w.outcome[r.outcome], r.followUpOf ? w.followUp : '']
+            .filter(Boolean)
+            .join(' · '),
+        ),
+      ),
+      h(
+        'div',
+        { class: 'prr-score', 'aria-label': `${w.score} ${r.score}/100` },
+        h('div', {}, h('b', {}, String(r.score)), h('small', {}, '/100')),
+        r.breakdown ? h('span', { class: 'prr-bd' }, breakdownText(r, w)) : null,
+      ),
+    ),
+    r.notes.length
+      ? h(
+          'ol',
+          { class: 'prr-notes' },
+          ...r.notes.map((n, i) =>
+            h(
+              'li',
+              { class: i === 0 ? (clean ? 'first good' : 'first') : '' },
+              i === 0 ? h('small', {}, clean ? w.summary : w.first) : null,
+              h('span', {}, n),
+            ),
+          ),
+        )
+      : null,
+    h(
+      'div',
+      { class: 'prr-stats' },
+      stat(
+        w.reaction,
+        r.followUpOf ? '—' : r.reactionS === null ? w.none : prSec(r.reactionS, L),
+        undefined,
+        !r.followUpOf && (r.reactionS === null || r.reactionS > 8),
+      ),
+      stat(w.checklist, r.checklistOpenedS === null || r.checklistOpenedS === undefined ? w.notOpened : prSec(r.checklistOpenedS, L)),
+      p.iasBandPct !== null
+        ? stat(w.ias, `${Math.round(p.iasBandPct)} %`, tg?.iasKt ? `${tg.iasKt[0]}–${tg.iasKt[1]} kt` : undefined, p.iasBandPct < 70)
+        : null,
+      stat(
+        w.bank,
+        `${Math.round(p.maxBankDeg)}°`,
+        tg?.maxBankDeg !== undefined ? `≤ ${tg.maxBankDeg}°` : undefined,
+        tg?.maxBankDeg !== undefined && p.maxBankDeg > tg.maxBankDeg + 5,
+      ),
+      stat(w.alt, `${Math.round(p.altLostFt).toLocaleString(L === 'fr' ? 'fr-FR' : 'en-US')} ft`),
+    ),
+    h('div', { class: 'prr-tlrow' }, tl, missEl),
+    h(
+      'table',
+      { class: 'items prr-items' },
+      h('tr', {}, h('th', { class: 'num' }, '#'), h('th', {}, w.item), h('th', { class: 'num' }, w.time), h('th', {}, w.result)),
+      ...rows,
+    ),
+    r.soloTest ? h('p', { class: 'prr-solo muted' }, w.solo) : null,
+  );
+}
+
+/** the Procedures section of the debrief and of the lesson result */
+export function procedureSection(results: ProcedureResult[]): HTMLElement {
+  const L: Lang = results[0]?.lang === 'fr' ? 'fr' : 'en';
+  const pass = results.filter((r) => r.verdict === 'PASS').length;
+  return h(
+    'section',
+    { class: 'chartbox prr' },
+    h(
+      'h5',
+      {},
+      PR_W[L].head,
+      h('span', { class: `acs-badge ${pass === results.length ? 'PASS' : 'FAIL'}` }, `${pass}/${results.length} ${PR_W[L].pass}`),
+    ),
+    ...results.map((r) => procedureCard(r)),
+  );
+}

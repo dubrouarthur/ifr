@@ -5,6 +5,8 @@ import { defaultWeather, KT, type Weather } from './environment';
 import { Autopilot, type CdiSource, type NavInputs } from '../avionics/autopilot';
 import { computeAdf, computeNav, EMPTY_NAV, markerBeacon, type AdfOutput, type NavOutput } from '../nav/radios';
 import { Recorder } from './recorder';
+import { SystemsModel } from './systems';
+import { defaultSwitches, FAILURE_LABELS_EN, FAILURE_LABELS_FR, SWITCH_LABELS_EN, SWITCH_LABELS_FR, switchValueText, switchValueTextFr, type FailureKey, type Switches, type SystemsState } from './systemsTypes';
 import { FlightPlan, isLocApproach } from '../nav/flightplan';
 import { AIRPORTS, NAVAIDS, groundElevation, runway, findFix, approach, terrainEpoch } from '../nav/data';
 import { destination, distanceNm, bearingDeg, DEG, FT_PER_NM, crossTrackNm, alongTrackNm, wrap180, type LatLon } from '../nav/geo';
@@ -35,25 +37,10 @@ export interface Avionics {
   inset: boolean;
 }
 
-export interface Failures {
-  gs: boolean;
-  nav1: boolean;
-  gps: boolean;
-  ap: boolean;
-  ahrs: boolean;
-  airData: boolean;
-  engine: boolean;
-}
-export const FAILURE_LABELS: Record<keyof Failures, string> = {
-  gs: 'Glideslope',
-  nav1: 'NAV1 receiver',
-  gps: 'GPS (loss of integrity)',
-  ap: 'Autopilot',
-  ahrs: 'AHRS (attitude & heading)',
-  airData: 'Air data (pitot-static)',
-  engine: 'Engine',
-};
-export const noFailures = (): Failures => ({ gs: false, nav1: false, gps: false, ap: false, ahrs: false, airData: false, engine: false });
+/** every injectable failure (see src/sim/systemsTypes.ts FailureKey) */
+export type Failures = Record<FailureKey, boolean>;
+export const FAILURE_LABELS: Record<FailureKey, string> = FAILURE_LABELS_EN;
+export const noFailures = (): Failures => Object.fromEntries((Object.keys(FAILURE_LABELS_EN) as FailureKey[]).map((k) => [k, false])) as Failures;
 
 /** Installed avionics: lets schools train on equipment-limited aircraft (no GPS, no autopilot…). */
 export interface Equipment {
@@ -134,6 +121,14 @@ export class Sim {
   rec = new Recorder();
   /** failure injection (instructor station) */
   failures: Failures = noFailures();
+  /** what the pilot can switch (masters, mixture, magnetos, fuel selector…): change it with setSwitch() */
+  sw: Switches = defaultSwitches();
+  /** aircraft systems model (electrical, vacuum, pitot-static, engine/fuel/oil, fire…) */
+  systems = new SystemsModel();
+  /** what the systems read: gauges, annunciators, powered consumers, indicated air data */
+  sys: SystemsState = this.systems.r;
+  /** a mixture change waiting to be logged once the knob has settled */
+  private mixturePending: { t: number; from: number } | null = null;
   /** assessment settings */
   assess: AssessSettings = { mode: 'training', student: '', handFlown: false, randomFailure: false };
   private randomFailureArmed: keyof Failures | null | undefined = null;
@@ -208,6 +203,8 @@ export class Sim {
     this.autoCdiDone = '';
     this.lastMissed = false;
     this.failures = noFailures();
+    this.sw = defaultSwitches();
+    this.mixturePending = null;
     this.equip = fullEquipment();
     this.weather = defaultWeather();
     this.randomFailureArmed = null;
@@ -238,9 +235,12 @@ export class Sim {
     this.ap.hdgBug = sc.hdg;
     this.ap.altSel = Math.round(sc.altFt / 100) * 100;
     this.time = 0;
+    this.systems.reset(this);
     if (sc.weather) Object.assign(this.weather, sc.weather);
     sc.setup?.(this);
     this.ac.step(0.01, this.controls, this.weather);
+    this.systems.step(0, this);
+    this.systems.flightReady();
     this.updateAvionics(0);
     this.terrainSeen = terrainEpoch;
     this.rec.start(this);
@@ -283,6 +283,8 @@ export class Sim {
     if (this.failures.engine) this.controls.throttle = 0;
     this.maybeRandomFailure();
     this.ac.step(dt, this.controls, this.weather);
+    this.systems.step(dt, this);
+    this.flushMixtureLog();
     this.updateAvionics(dt);
     this.rec.update(this, dt);
   }
@@ -322,13 +324,21 @@ export class Sim {
       this.fp.out.valid = false;
       this.fp.out.gpValid = false;
     }
+    // no electrical power: the receivers and the GPS go dark with their bus
+    const el = this.sys.elec;
+    if (!el.nav1) this.nav1 = { ...EMPTY_NAV, course: this.av.obs1 };
+    if (!el.nav2) this.nav2 = { ...EMPTY_NAV, course: this.av.obs2 };
+    if (!el.gps) {
+      this.fp.out.valid = false;
+      this.fp.out.gpValid = false;
+    }
     if (f.ap && this.ap.ap) this.ap.disconnect();
-    this.ap.inhibited = !this.equip.ap ? 'NO AUTOPILOT' : f.ap || f.ahrs || f.airData ? 'AP FAIL' : this.assess.handFlown && this.assess.mode === 'checkride' ? 'HAND-FLOWN CHECKRIDE' : null;
+    this.ap.inhibited = !this.equip.ap ? 'NO AUTOPILOT' : f.ap || f.ahrs || f.airData || !el.ap || this.sys.trimRunning ? 'AP FAIL' : this.assess.handFlown && this.assess.mode === 'checkride' ? 'HAND-FLOWN CHECKRIDE' : null;
     if (this.ap.inhibited && this.ap.ap) this.ap.disconnect();
     this.marker = markerBeacon(pos);
     this.adf = computeAdf(this.av.adf.active, pos);
     const eq = this.equip;
-    if (!eq.adf) this.adf = { valid: false, ident: '', bearingTo: 0, distNm: 0 };
+    if (!eq.adf || !el.adf) this.adf = { valid: false, ident: '', bearingTo: 0, distNm: 0 };
     if (!eq.dme) {
       this.nav1 = { ...this.nav1, dmeNm: null };
       this.nav2 = { ...this.nav2, dmeNm: null };
@@ -378,11 +388,13 @@ export class Sim {
       alt = Math.round(alt / 10) * 10;
     }
     const onGround = kind === 'runway';
+    const fuel = this.ac.s.fuelGal;
     this.ac = new Aircraft(
       { lat: pos.lat, lon: pos.lon, altFt: onGround ? groundElevation(pos) : alt, psi: hdg * DEG, tas: onGround ? 0 : 90 * KT * (1 + alt / 1000 * 0.015), onGround, theta: onGround ? 0 : 1.5 * DEG },
       groundElevation,
     );
     this.ac.onRunwayCheck = onRunway;
+    this.ac.s.fuelGal = fuel; // the fuel on board stays on board
     this.controls.throttle = onGround ? 0 : 0.5;
     this.controls.trim = onGround ? 0 : -0.17;
     this.controls.flaps = 0;
@@ -391,18 +403,53 @@ export class Sim {
     if (kind === 'final10' || kind === 'final5') this.fp.vectorsToFinal();
     else if (kind !== 'runway') this.fp.activateApproach(this.ac.s);
     this.ac.step(0.01, this.controls, this.weather);
+    this.systems.step(0, this);
     this.updateAvionics(0);
     this.rec.log(this.time, 'info', `Instructor reposition: ${kind}`);
     return true;
   }
 
   /** Instructor: set or clear a failure, logged in the flight record. */
-  setFailure(k: keyof Failures, on: boolean) {
-    if (this.failures[k] === on) return;
+  setFailure(k: FailureKey, on: boolean) {
+    if (!(k in FAILURE_LABELS) || !!this.failures[k] === on) return;
     this.failures[k] = on;
-    this.rec.log(this.time, on ? 'warn' : 'info', `${on ? 'FAILURE' : 'Restored'}: ${FAILURE_LABELS[k]}`);
+    this.rec.log(this.time, on ? 'warn' : 'info', `${on ? 'FAILURE' : 'Restored'}: ${FAILURE_LABELS[k]}`, `${on ? 'PANNE' : 'Rétabli'} : ${FAILURE_LABELS_FR[k]}`);
     if (k === 'ap' && on) this.ap.disconnect();
+    this.systems.step(0, this);
     this.updateAvionics(0);
+  }
+
+  /** Pilot: operate a switch / control of the aircraft systems. Logged as a readable event ('Mixture → IDLE
+   *  CUT-OFF', 'Fuel selector → OFF', 'Master ALT → OFF') and as an action for procedure grading. */
+  setSwitch<K extends keyof Switches>(k: K, v: Switches[K]): void {
+    const old = this.sw[k];
+    if (k === 'mixture') v = Math.max(0, Math.min(1, Number(v))) as Switches[K];
+    if (old === v) return;
+    this.sw[k] = v;
+    if (k === 'mixture') {
+      // a knob turned in small steps logs once it has settled; IDLE CUT-OFF and FULL RICH log at once
+      const m = Number(v);
+      if (m < 0.06 || m >= 0.98) {
+        this.mixturePending = null;
+        this.logSwitch(k, v);
+      } else if (this.mixturePending) this.mixturePending.t = this.time;
+      else this.mixturePending = { t: this.time, from: Number(old) };
+    } else this.logSwitch(k, v);
+    this.systems.step(0, this);
+    this.updateAvionics(0);
+  }
+
+  private logSwitch<K extends keyof Switches>(k: K, v: Switches[K]) {
+    this.rec.action(this.time, k, v);
+    this.rec.log(this.time, 'info', `${SWITCH_LABELS_EN[k]} → ${switchValueText(k, v)}`, `${SWITCH_LABELS_FR[k]} → ${switchValueTextFr(k, v)}`);
+  }
+
+  private flushMixtureLog() {
+    const p = this.mixturePending;
+    if (p && this.time - p.t > 1.2) {
+      this.mixturePending = null;
+      this.logSwitch('mixture', this.sw.mixture);
+    }
   }
 
   /** Checkride option: one random failure somewhere on the approach. */
@@ -434,8 +481,15 @@ export class Sim {
     return distanceNm(s, thr) < visNm + 0.3;
   }
 
-  /** Indicated altitude for the current baro setting */
+  /** Altitude the altimeter shows for the current baro setting — through the static system (a blocked static
+   *  port freezes it, the alternate static source adds its small error). Displays read this. */
   indicatedAlt(): number {
+    return this.baroAlt() + this.systems.altOffsetFt;
+  }
+
+  /** True altitude referenced to the baro setting (what a perfect altimeter would read): grading, callouts of the
+   *  true flight path and the autopilot use this, never the faulty indication. */
+  baroAlt(): number {
     return this.ac.s.altFt + (this.av.baro - this.weather.qnh) * 1000;
   }
 

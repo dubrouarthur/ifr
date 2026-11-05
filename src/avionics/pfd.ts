@@ -5,7 +5,9 @@ import { C, FONT, box, line, poly, text, pad3, fmtFreq } from './draw';
 import { runwaysInView } from './world3d';
 import { wrap180, DEG } from '../nav/geo';
 import { tunedNavaid } from '../nav/radios';
-import { drawMap } from './mfd';
+import { drawMap, drawEisStrip } from './mfd';
+import { airDataShown, darkScreen, hasPower, smokeHaze, sysOf, vacuumGyro } from './gauges';
+import { ANNUNCIATOR_LEVEL } from '../sim/systemsTypes';
 
 export const PFD_W = 1024;
 export const PFD_H = 768;
@@ -175,6 +177,8 @@ export interface PfdState {
   /** trend vectors shown (hysteresis around the dead band so they never flicker) */
   trendOn: boolean;
   altTrendOn: boolean;
+  /** annunciations the pilot has acknowledged (ALERTS / WARNING / CAUTION softkey, or a tap on the window) */
+  ackAnn: string[];
 }
 
 export const newPfdState = (): PfdState => ({
@@ -196,6 +200,7 @@ export const newPfdState = (): PfdState => ({
   accF: 0,
   trendOn: false,
   altTrendOn: false,
+  ackAnn: [],
 });
 
 const fin = (v: number, dflt = 0) => (Number.isFinite(v) ? v : dflt);
@@ -286,10 +291,11 @@ export const TREND_OFF = 1;
  * acceleration, with a ±1 kt dead band and hysteresis.
  */
 export function updatePfdFilters(st: PfdState, sim: Sim) {
-  const d = sim.ac.data;
-  const ias = fin(d.iasKt);
-  const alt = fin(sim.indicatedAlt());
-  const vs = fin(d.vsFpm);
+  // the tapes read the pitot-static system (an iced pitot or a blocked static port shows on them)
+  const air = airDataShown(sim);
+  const ias = fin(air.iasKt);
+  const alt = fin(air.altFt);
+  const vs = fin(air.vsFpm);
   const simDt = sim.time - st.lastT;
   if (simDt === 0 && st.filtInit) return;
   st.lastT = sim.time;
@@ -325,10 +331,28 @@ export function updatePfdFilters(st: PfdState, sim: Sim) {
   st.lastAlt = alt;
 }
 
+/** Draw the display, then the cabin smoke veil over it (smokeHaze: electrical or engine fire) */
 export function drawPfd(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState, dt: number) {
+  drawPfdBody(ctx, sim, st, dt);
+  smokeHaze(ctx, sim, PFD_W, PFD_H, (typeof performance !== 'undefined' ? performance.now() : 0) / 1000);
+}
+
+function drawPfdBody(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState, dt: number) {
   setTextScaleFor(ctx, PFD_W);
   st.flash += dt;
+  bindPfdPointer(ctx.canvas, st, sim);
+  // no power on the essential bus: the PFD is dark (black glass); it boots again with the power
+  if (!hasPower(sim, 'pfd')) {
+    st.filtInit = false;
+    darkScreen(ctx, PFD_W, PFD_H);
+    return;
+  }
   updatePfdFilters(st, sim);
+  const cas = casMessages(sim, st.ackAnn);
+  // an annunciation that went out is forgotten: if it comes back it flashes again
+  if (st.ackAnn.length) st.ackAnn = st.ackAnn.filter((a) => cas.some((m) => m.text === a));
+  // the MFD is dark (avionics bus off or failed): the PFD shows the engine strip (reversionary display)
+  const reversion = !hasPower(sim, 'mfd');
 
   ctx.save();
   ctx.clearRect(0, 0, PFD_W, PFD_H);
@@ -339,13 +363,18 @@ export function drawPfd(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState, d
   drawAltimeter(ctx, sim, st);
   drawVsi(ctx, sim, st);
   drawHsi(ctx, sim, st);
-  drawLowerWindows(ctx, sim, st);
-  drawFailures(ctx, sim, st);
+  drawLowerWindows(ctx, sim, st, reversion);
+  drawFailures(ctx, sim, st, cas);
+  if (reversion) drawEisStrip(ctx, sim, { x: 0, top: 54, w: EIS_REV_W, bottom: 712 });
   const keys = PFD_SOFTKEYS.slice();
   keys[0] = sim.obsKeyLabel();
+  // the ALERTS key becomes WARNING / CAUTION while an annunciation waits to be acknowledged (G1000)
+  const pending = cas.filter((m) => m.ackable && !st.ackAnn.includes(m.text));
+  if (pending.length) keys[11] = pending.some((m) => m.level === 'warning') ? 'WARNING' : 'CAUTION';
   // the shell flashes a softkey on every press (bezel button or a tap on its label): the OBS / SUSP press is
   // acted on here, where the key is drawn (Sim.obsKey ignores a second call for the same press)
   if (st.softkeyFlash === 0 && st.lastFlash !== 0) sim.obsKey();
+  if (st.softkeyFlash === 11 && st.lastFlash !== 11) acknowledgePfdAlerts(sim, st);
   st.lastFlash = st.softkeyFlash;
   drawSoftkeys(ctx, keys, st.softkeyFlash, {
     OBS: sim.fp.obsMode,
@@ -355,8 +384,80 @@ export function drawPfd(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState, d
     BRG2: sim.av.bearing2 !== 'OFF',
     DME: st.dmeWindow,
     'TMR/REF': sim.chrono() !== null,
-  }, obsAvailable(sim) ? INERT_SOFTKEYS : INERT_WITH_OBS);
+  }, obsAvailable(sim) ? INERT_SOFTKEYS : INERT_WITH_OBS, pending.length ? { 11: pending.some((m) => m.level === 'warning') ? C.red : C.amber } : undefined, Math.floor(st.flash * 2) % 2 === 0);
   ctx.restore();
+}
+
+/** width of the engine strip a PFD in reversionary mode draws on its left edge */
+const EIS_REV_W = 116;
+
+// ------------------------------------------------------------------ crew alerting (annunciation window)
+/** One line of the PFD annunciation window. */
+export interface CasMsg {
+  text: string;
+  /** red warning, amber caution; 'advisory' = an avionics failure message (amber, not acknowledged) */
+  level: 'warning' | 'caution' | 'advisory';
+  /** drawn flashing (a warning not yet acknowledged) */
+  flash: boolean;
+  /** waits for an acknowledgement (WARNING / CAUTION softkey) */
+  ackable: boolean;
+}
+
+/** What the annunciation window lists, warnings first (G1000 order): the aircraft-system annunciators of
+ *  sim.sys (red warnings flash until acknowledged, amber cautions steady) then the avionics failure messages. */
+export function casMessages(sim: Sim, acked: readonly string[] = []): CasMsg[] {
+  const out: CasMsg[] = [];
+  const sys = sysOf(sim);
+  const f = sim.failures;
+  if (sys) {
+    for (const lvl of ['warning', 'caution'] as const)
+      for (const a of sys.annunciators) {
+        if (ANNUNCIATOR_LEVEL[a] !== lvl) continue;
+        const ack = acked.includes(a);
+        out.push({ text: a, level: lvl, flash: lvl === 'warning' && !ack, ackable: true });
+      }
+  } else if (sim.ac.s.fuelGal < 8) out.push({ text: 'LOW FUEL', level: 'caution', flash: false, ackable: false });
+  const adv = (on: boolean | undefined, text: string) => on && out.push({ text, level: 'advisory', flash: false, ackable: false });
+  adv(f.gps, 'GPS LOI');
+  adv(f.ap, 'AP FAIL');
+  adv(f.nav1, 'NAV1 FAIL');
+  adv(f.gs, 'GS FAIL');
+  // without a systems model an engine failure has no other annunciation
+  adv(f.engine && !sys, 'ENGINE FAIL');
+  return out;
+}
+
+/** WARNING / CAUTION softkey (or a tap on the annunciation window): every current annunciation is acknowledged,
+ *  the warnings stop flashing. */
+export function acknowledgePfdAlerts(sim: Sim, st: PfdState) {
+  st.ackAnn = casMessages(sim, st.ackAnn).filter((m) => m.ackable).map((m) => m.text);
+}
+
+const pfdBound = new WeakMap<HTMLCanvasElement, { st: PfdState; sim: Sim; at: number }>();
+/** A tap on the annunciation window or on the WARNING / CAUTION softkey label acknowledges the alerts. The canvas
+ *  is shared with the other cockpits: only taps while the PFD is being drawn count. */
+function bindPfdPointer(canvas: HTMLCanvasElement | null | undefined, st: PfdState, sim: Sim) {
+  if (!canvas || typeof canvas.addEventListener !== 'function') return;
+  const now = typeof performance !== 'undefined' ? performance.now() : 0;
+  const b = pfdBound.get(canvas);
+  if (b) {
+    b.st = st;
+    b.sim = sim;
+    b.at = now;
+    return;
+  }
+  const ref = { st, sim, at: now };
+  pfdBound.set(canvas, ref);
+  canvas.addEventListener('click', (e: MouseEvent) => {
+    if (performance.now() - ref.at > 500) return;
+    const r = canvas.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    const x = ((e.clientX - r.left) / r.width) * PFD_W;
+    const y = ((e.clientY - r.top) / r.height) * PFD_H;
+    const onKey = softkeyAt(x, y) === 11;
+    const onWindow = x >= CAS_X && x <= CAS_X + CAS_W && y >= CAS_Y && y <= 700;
+    if ((onKey || onWindow) && casMessages(ref.sim, ref.st.ackAnn).some((m) => m.ackable && !ref.st.ackAnn.includes(m.text))) acknowledgePfdAlerts(ref.sim, ref.st);
+  });
 }
 
 const INERT_WITH_OBS: ReadonlySet<string> = new Set([...INERT_SOFTKEYS, 'OBS']);
@@ -1237,7 +1338,10 @@ function redX(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h:
 }
 
 let compassHdg = 0;
-function drawFailures(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
+const CAS_X = 898;
+const CAS_W = 120;
+const CAS_Y = 436;
+function drawFailures(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState, cas: CasMsg[]) {
   const f = sim.failures;
   const d = sim.ac.data;
   // invalid (non-finite) sensor data is shown like a failure: red X, never "NaN"
@@ -1245,15 +1349,16 @@ function drawFailures(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
   const adcBad = !Number.isFinite(d.iasKt) || !Number.isFinite(sim.indicatedAlt()) || !Number.isFinite(d.vsFpm);
   if (f.ahrs || ahrsBad) {
     redX(ctx, 222, 84, 556, 370);
-    // standby attitude indicator (vacuum/electric backup)
+    // standby attitude indicator (vacuum-driven in the C172: it drifts too after a vacuum failure)
     const cx = 500, cy = 270, r = 92;
+    const sb = vacuumGyro(sim);
     ctx.save();
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.clip();
     ctx.translate(cx, cy);
-    ctx.rotate(-d.rollDeg * DEG);
-    ctx.translate(0, d.pitchDeg * 4);
+    ctx.rotate(-fin(sb.rollDeg) * DEG);
+    ctx.translate(0, fin(sb.pitchDeg) * 4);
     ctx.fillStyle = '#2b78c9';
     ctx.fillRect(-300, -300, 600, 300);
     ctx.fillStyle = '#7a4c1c';
@@ -1289,26 +1394,24 @@ function drawFailures(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
     redX(ctx, 896, 118, 46, 300);
     text(ctx, 'ADC FAIL', ALT_X + ALT_W / 2, 540, C.red, fs(15), 'center', 700);
   }
-  // annunciation window (right column, under the VSI)
-  const alerts: string[] = [];
-  if (f.gps) alerts.push('GPS LOI');
-  if (f.ap) alerts.push('AP FAIL');
-  if (f.nav1) alerts.push('NAV1 FAIL');
-  if (f.gs) alerts.push('GS FAIL');
-  if (f.engine) alerts.push('ENGINE FAIL');
-  if (sim.ac.s.fuelGal < 8) alerts.push('LOW FUEL');
+  // annunciation window (right column, under the VSI): warnings red, cautions amber; an unacknowledged warning
+  // flashes (inverse video) until the WARNING softkey is pressed
   const as = fs(13);
   const ah = as + 9;
-  alerts.forEach((a, i) => {
-    const flash = Math.floor(st.flash * 2) % 2 === 0 || st.flash % 10 > 5;
-    const y = 436 + i * (ah + 4);
-    cbox(ctx, 898, y, 120, ah, flash ? C.amber : '#000', C.amber);
-    text(ctx, a, 958, y + ah / 2 + 1, flash ? '#000' : C.amber, as, 'center', 700);
+  const on = Math.floor(st.flash * 2) % 2 === 0;
+  const max = Math.floor((700 - CAS_Y) / (ah + 4));
+  cas.slice(0, max).forEach((m, i) => {
+    const c = m.level === 'warning' ? C.red : C.amber;
+    const inv = m.flash && on;
+    const y = CAS_Y + i * (ah + 4);
+    cbox(ctx, CAS_X, y, CAS_W, ah, inv ? c : '#000', c);
+    const fit = Math.min(as, as * ((CAS_W - 8) / Math.max(1, tw(ctx, m.text, as, 700))));
+    text(ctx, m.text, CAS_X + CAS_W / 2, y + ah / 2 + 1, inv ? '#000' : c, fit, 'center', 700);
   });
 }
 
 // ------------------------------------------------------------------ lower windows
-function drawLowerWindows(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
+function drawLowerWindows(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState, reversion = false) {
   const d = sim.ac.data;
   const s15 = fs(15);
   const s16 = fs(16);
@@ -1352,8 +1455,8 @@ function drawLowerWindows(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState)
     tri(x2 - 9, xw >= 0 ? 'left' : 'right', xc);
     text(ctx, String(Math.abs(xw)), wx + ww - 8, cy2 + 1, xc, s15, 'right');
   } else text(ctx, 'NO WIND DATA', wx + ww / 2, wy + wh / 2, C.white, fs(12), 'center');
-  // inset map
-  if (sim.av.inset) {
+  // inset map (not in reversionary mode: the engine strip takes the left edge)
+  if (sim.av.inset && !reversion) {
     const x = 6;
     const y = 536;
     const w = 236;
@@ -1388,7 +1491,7 @@ function drawLowerWindows(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState)
 }
 
 /** Softkey labels along the bottom edge. Active keys are inverse (light grey, black text), a pressed key flashes a cyan border. */
-export function drawSoftkeys(ctx: CanvasRenderingContext2D, labels: string[], flashIdx: number | null, active: Record<string, boolean>, inertKeys: ReadonlySet<string> = INERT_SOFTKEYS) {
+export function drawSoftkeys(ctx: CanvasRenderingContext2D, labels: string[], flashIdx: number | null, active: Record<string, boolean>, inertKeys: ReadonlySet<string> = INERT_SOFTKEYS, alert?: Record<number, string>, alertOn = true) {
   const h = 24;
   const y = PFD_H - h;
   cbox(ctx, 0, y, PFD_W, h, '#000');
@@ -1401,6 +1504,15 @@ export function drawSoftkeys(ctx: CanvasRenderingContext2D, labels: string[], fl
     if (!l) return;
     const on = !!active[l];
     const inert = inertKeys.has(l);
+    // WARNING / CAUTION key: red / amber, flashing with the annunciation it acknowledges
+    const ac = alert?.[i];
+    if (ac) {
+      if (alertOn) cbox(ctx, x + 4, y + 2, w - 8, h - 3, ac);
+      if (flashIdx === i) strokeBox(ctx, x + 3, y + 1, w - 6, h - 1, C.cyan, 2);
+      const fit = Math.min(size, size * ((w - 12) / Math.max(1, tw(ctx, l, size, 700))));
+      text(ctx, l, x + w / 2, y + h / 2 + 1, alertOn ? '#000' : ac, fit, 'center', 700);
+      return;
+    }
     if (on) cbox(ctx, x + 4, y + 2, w - 8, h - 3, '#c9ced3');
     if (flashIdx === i) strokeBox(ctx, x + 3, y + 1, w - 6, h - 1, C.cyan, 2);
     const fit = Math.min(size, size * ((w - 12) / Math.max(1, tw(ctx, l, size, 700))));

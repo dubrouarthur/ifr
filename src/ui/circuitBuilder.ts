@@ -6,7 +6,10 @@
 //   time, a leg or a fix) | a large live map (click to add a fix or a hold, drag a hold to another fix) with the
 //   vertical profile (altitudes, MEA, SID/STAR constraints, glidepath, minimums) below it.
 // Entry points: CircuitBuilder.edit(c?) and FlightSetup.start(type?, world?) (src/ui/flightsetup.ts) open the
-// same editor.
+// same editor. Failure drills (flying-club procedures mode): the library lists them first; a drill opens on the
+// Drill tab, a quick form — where / phase, failures (what, when, expected procedure), training or test, weather.
+// openDrill(templateId | circuit) opens it from the Flight Center; `builder.openProcedure` (set by main.ts) opens
+// the club procedure editor from a failure card.
 import { h, clear, store } from "./dom";
 import { Modal, WX_PRESETS } from "./modals";
 import { svgIcon, I } from "./icons";
@@ -33,7 +36,36 @@ import {
   type CircuitFailure,
   type CircuitEvent,
   type EventTrigger,
+  triggerText,
 } from "../train/circuits";
+import {
+  DRILL_TEMPLATES,
+  DRILL_WX,
+  PHASES,
+  applyMode,
+  applyPhase,
+  applyWx,
+  buildDrill,
+  defaultTrigger,
+  drillAirport,
+  groupKeys,
+  heightTrigger,
+  refreshExpect,
+  procedureChoices,
+  suggestProcedure,
+  type DrillPhase,
+  type DrillWx,
+} from "../train/drills";
+import { baseId } from "../train/procedures";
+import { failuresWithProcedure, onProceduresChange } from "../train/procedureStore";
+import type { DrillMode } from "../train/procedureTypes";
+import {
+  FAILURE_GROUPS,
+  FAILURE_LABELS_EN,
+  FAILURE_LABELS_FR,
+  type FailureKey,
+} from "../sim/systemsTypes";
+import { lang, onLangChange, registerStrings, t } from "./i18n";
 import {
   FIXES,
   APPROACHES,
@@ -58,13 +90,7 @@ import {
   type IndexRow,
 } from "../nav/world";
 import { bearingDeg } from "../nav/geo";
-import {
-  FAILURE_LABELS,
-  fullEquipment,
-  type Equipment,
-  type Failures,
-  type Scenario,
-} from "../sim/sim";
+import { fullEquipment, type Equipment, type Scenario } from "../sim/sim";
 import type { Approach } from "../nav/types";
 import type { Weather } from "../sim/environment";
 import {
@@ -109,6 +135,22 @@ const visTxt = (v: number) => {
   const f = fr > 0.7 ? "3/4" : fr > 0.4 ? "1/2" : fr > 0.1 ? "1/4" : "";
   return whole && f ? `${whole} ${f}` : whole ? String(whole) : f || "0";
 };
+/** the same line in the ICAO / EASA format a European pilot reads: visibility in metres (9999 = 10 km or more),
+ *  CAVOK, QNH in hPa, e.g. 25010KT 3200 OVC009 Q1013 */
+export function metarLineIcao(w: Partial<Weather>): string {
+  const x = { ...WX0, ...w };
+  const wind =
+    x.windKt < 3
+      ? "00000KT"
+      : `${pad3(x.windDir)}${String(Math.round(x.windKt)).padStart(2, "0")}${x.gustKt > x.windKt + 3 ? `G${Math.round(x.gustKt)}` : ""}KT`;
+  const m = x.visibilitySm * 1609.34;
+  const qnh = `Q${Math.round(x.qnh * 33.8639)}`;
+  if (m >= 10000 && x.ceilingFt >= 5000) return `${wind} CAVOK ${qnh}`;
+  // reportable steps: 50 m below 800 m, 100 m below 5 km, 1000 m above
+  const vis = m >= 10000 ? "9999" : String(m < 800 ? Math.round(m / 50) * 50 : m < 5000 ? Math.round(m / 100) * 100 : Math.round(m / 1000) * 1000).padStart(4, "0");
+  const sky = x.ceilingFt >= 15000 ? "NSC" : `OVC${String(Math.round(x.ceilingFt / 100)).padStart(3, "0")}`;
+  return `${wind} ${vis} ${sky} ${qnh}`;
+}
 /** one METAR-like line, e.g. 25010KT 2SM OVC009 A2992 */
 export function metarLine(w: Partial<Weather>): string {
   const x = { ...WX0, ...w };
@@ -154,6 +196,259 @@ export const EQUIP_PRESETS: {
   },
 ];
 
+// ------------------------------------------------------------------ failure drills: strings (FR / EN)
+registerStrings("en", {
+  "fbd.lib": "Failure drills",
+  "fbd.libClub": "Club drill",
+  "fbd.tab": "Drill",
+  "fbd.where": "Where",
+  "fbd.whereHint": "Airport and the moment the drill starts",
+  "fbd.failures": "Failures",
+  "fbd.failuresHint": "What fails, when, and the procedure expected",
+  "fbd.how": "Training or test",
+  "fbd.howHint": "What the student sees, and the weather",
+  "fbd.airport": "Airport",
+  "fbd.change": "Change",
+  "fbd.phase": "Start",
+  "fbd.failure": "Failure",
+  "fbd.when": "When",
+  "fbd.expect": "Expected procedure",
+  "fbd.auto": "Automatic",
+  "fbd.autoNone": "Automatic (no procedure answers this failure)",
+  "fbd.autoRandom": "Automatic: the procedure of the failure drawn",
+  "fbd.club": "Club procedures",
+  "fbd.library": "Library (POH, paraphrased)",
+  "fbd.edit": "Edit procedure",
+  "fbd.write": "Write a club procedure",
+  "fbd.noproc": "no procedure",
+  "fbd.random": "Random",
+  "fbd.randomAny": "Random: any failure",
+  "fbd.randomName": "Random failure",
+  "fbd.randomGroup": "Random: {g}",
+  "fbd.add": "Add a failure",
+  "fbd.addMore": "Add another failure",
+  "fbd.remove": "Remove this failure",
+  "fbd.t.now": "Now",
+  "fbd.t.time": "After a time",
+  "fbd.t.altAgl": "At a height",
+  "fbd.t.fix": "At a fix",
+  "fbd.t.leg": "At a leg",
+  "fbd.t.random": "At a random time",
+  "fbd.t.instructor": "By the instructor",
+  "fbd.min": "Minutes",
+  "fbd.ft": "Height (ft AGL)",
+  "fbd.climb": "Climbing",
+  "fbd.descent": "Descending",
+  "fbd.from": "From (min)",
+  "fbd.to": "To (min)",
+  "fbd.fix": "Fix",
+  "fbd.leg": "Leg",
+  "fbd.nowHint": "Fails as soon as the flight starts.",
+  "fbd.instrHint": "Fired from the instructor drawer or the phone companion, when you choose.",
+  "fbd.training": "Training",
+  "fbd.test": "Test",
+  "fbd.trainingHint": "The student gets the emergency card: memory items with live ticks, then the checklist.",
+  "fbd.testHint": "Nothing is announced and the checklist stays hidden (opening it is recorded). Graded at the end.",
+  "fbd.wx": "Weather",
+  "fbd.assign": "Assign to",
+  "fbd.student": "Student name (optional)",
+  "fbd.ready": "Ready: press Fly. “Save” keeps it in the club drills.",
+  "fbd.noApt": "No airport of the loaded data has a runway for this drill.",
+  "fbd.loading": "The drill is built at {a} as soon as its real-world data is loaded.",
+  "fbd.phaseNoApp": "{a} has no instrument approach: the drill ends with the take-off or the cruise.",
+  "fbd.flightNote": "Failures are set in the Drill tab.",
+  "fbd.opt": "Procedures",
+  "fbd.optNone": "No drill",
+  "fbd.optTraining": "Drill: training",
+  "fbd.optTest": "Drill: test",
+  "fbd.g.engine": "Engine and fuel",
+  "fbd.g.electrical": "Electrical",
+  "fbd.g.instruments": "Instruments",
+  "fbd.g.avionics": "Avionics and radio",
+  "fbd.g.other": "Other",
+  "fbd.g.any": "any",
+  "fbd.hidden": "Hidden",
+  "fbd.n": "{n} failures",
+  "fbd.one": "1 failure",
+  "fbd.built": "Drill built at {a}",
+  // builder chrome (FR / EN)
+  "fb.title": "Flight builder",
+  "fb.namePh": "Name this flight",
+  "fb.nameAria": "Flight name",
+  "fb.lib": "Library",
+  "fb.loadingApt": "Loading {a}",
+  "fb.realData": "Real-world data",
+  "fb.realDataAll": "Real-world data: navaids, procedures, terrain",
+  "fb.retry": "Retry",
+  "fb.notLoaded": "{a}: the real-world data is not loaded yet.",
+  "fb.loadRegion": "Load region",
+  "fb.libOpen": "Open the library: drills, templates and my flights",
+  "fb.new": "+ New flight",
+  "fb.search": "Search flights",
+  "fb.import": "Import…",
+  "fb.exportAll": "Export all",
+  "fb.templates": "Templates",
+  "fb.mine": "My flights",
+  "fb.tabFlight": "Flight · {n} leg",
+  "fb.tabFlights": "Flight · {n} legs",
+  "fb.tabOptions": "Weather & options",
+  "fb.share": "Share",
+  "fb.export": "Export",
+  "fb.save": "Save",
+  "fb.saved": "Saved",
+  "fb.delete": "Delete",
+  "fb.duplicate": "Duplicate",
+  "fb.fly": "Fly",
+  "fb.flyFree": "Fly (free)",
+  "fb.loadFly": "Load & fly",
+  "fb.ready": "Ready to fly",
+  "fb.readyLoad": "Ready: the region loads when you fly",
+  "fb.issue": "{n} issue",
+  "fb.issues": "{n} issues",
+  "fb.fixFirst": "Fix the issues first",
+  "fb.s.route": "Route",
+  "fb.s.dist": "Distance",
+  "fb.s.time": "Est. time",
+  "fb.s.holds": "Holds",
+  "fb.s.apps": "Approaches",
+  "fb.s.events": "Events",
+  "fb.s.phase": "Phase",
+  "fb.s.fails": "Failures",
+  "fb.hint": "Click a fix to add it · drag a hold to another fix",
+  "fb.prof": "Vertical profile",
+  "fb.profHint": "Planned altitudes · MEA · SID/STAR constraints · glidepath and minimums",
+});
+registerStrings("fr", {
+  "fbd.lib": "Exercices de panne",
+  "fbd.libClub": "Exercice du club",
+  "fbd.tab": "Exercice",
+  "fbd.where": "Où",
+  "fbd.whereHint": "Le terrain et le moment où commence l’exercice",
+  "fbd.failures": "Pannes",
+  "fbd.failuresHint": "Ce qui tombe en panne, quand, et la procédure attendue",
+  "fbd.how": "Entraînement ou test",
+  "fbd.howHint": "Ce que voit l’élève, et la météo",
+  "fbd.airport": "Terrain",
+  "fbd.change": "Changer",
+  "fbd.phase": "Départ",
+  "fbd.failure": "Panne",
+  "fbd.when": "Quand",
+  "fbd.expect": "Procédure attendue",
+  "fbd.auto": "Automatique",
+  "fbd.autoNone": "Automatique (aucune procédure pour cette panne)",
+  "fbd.autoRandom": "Automatique : la procédure de la panne tirée",
+  "fbd.club": "Procédures du club",
+  "fbd.library": "Bibliothèque (d’après le POH)",
+  "fbd.edit": "Modifier la procédure",
+  "fbd.write": "Écrire une procédure du club",
+  "fbd.noproc": "sans procédure",
+  "fbd.random": "Au hasard",
+  "fbd.randomAny": "Au hasard : toutes pannes",
+  "fbd.randomName": "Panne aléatoire",
+  "fbd.randomGroup": "Au hasard : {g}",
+  "fbd.add": "Ajouter une panne",
+  "fbd.addMore": "Ajouter une autre panne",
+  "fbd.remove": "Supprimer cette panne",
+  "fbd.t.now": "Tout de suite",
+  "fbd.t.time": "Après un délai",
+  "fbd.t.altAgl": "À une hauteur",
+  "fbd.t.fix": "À un point",
+  "fbd.t.leg": "À une étape",
+  "fbd.t.random": "À un moment aléatoire",
+  "fbd.t.instructor": "Par l’instructeur",
+  "fbd.min": "Minutes",
+  "fbd.ft": "Hauteur (ft sol)",
+  "fbd.climb": "En montée",
+  "fbd.descent": "En descente",
+  "fbd.from": "De (min)",
+  "fbd.to": "À (min)",
+  "fbd.fix": "Point",
+  "fbd.leg": "Étape",
+  "fbd.nowHint": "La panne survient dès le début du vol.",
+  "fbd.instrHint": "Déclenchée depuis le tiroir instructeur ou le téléphone, quand vous le décidez.",
+  "fbd.training": "Entraînement",
+  "fbd.test": "Test",
+  "fbd.trainingHint": "L’élève voit la carte d’urgence : actions de mémoire cochées en direct, puis la check-list.",
+  "fbd.testHint": "Rien n’est annoncé et la check-list reste masquée (son ouverture est enregistrée). Notation à la fin.",
+  "fbd.wx": "Météo",
+  "fbd.assign": "Attribuer à",
+  "fbd.student": "Nom de l’élève (facultatif)",
+  "fbd.ready": "Prêt : appuyez sur Voler. « Enregistrer » le garde dans les exercices du club.",
+  "fbd.noApt": "Aucun terrain des données chargées n’a de piste pour cet exercice.",
+  "fbd.loading": "L’exercice est construit à {a} dès que ses données réelles sont chargées.",
+  "fbd.phaseNoApp": "{a} n’a pas d’approche aux instruments : l’exercice se termine avec le décollage ou la croisière.",
+  "fbd.flightNote": "Les pannes se règlent dans l’onglet Exercice.",
+  "fbd.opt": "Procédures",
+  "fbd.optNone": "Aucun exercice",
+  "fbd.optTraining": "Exercice : entraînement",
+  "fbd.optTest": "Exercice : test",
+  "fbd.g.engine": "Moteur et carburant",
+  "fbd.g.electrical": "Électrique",
+  "fbd.g.instruments": "Instruments",
+  "fbd.g.avionics": "Avionique et radio",
+  "fbd.g.other": "Autres",
+  "fbd.g.any": "toutes",
+  "fbd.hidden": "Masquée",
+  "fbd.n": "{n} pannes",
+  "fbd.one": "1 panne",
+  "fbd.built": "Exercice construit à {a}",
+  "fb.title": "Éditeur de vols",
+  "fb.namePh": "Nommez ce vol",
+  "fb.nameAria": "Nom du vol",
+  "fb.lib": "Bibliothèque",
+  "fb.loadingApt": "Chargement de {a}",
+  "fb.realData": "Données réelles",
+  "fb.realDataAll": "Données réelles : balises, procédures, relief",
+  "fb.retry": "Réessayer",
+  "fb.notLoaded": "{a} : les données réelles ne sont pas encore chargées.",
+  "fb.loadRegion": "Charger la région",
+  "fb.libOpen": "Ouvrir la bibliothèque : exercices, modèles et mes vols",
+  "fb.new": "+ Nouveau vol",
+  "fb.search": "Rechercher un vol",
+  "fb.import": "Importer…",
+  "fb.exportAll": "Exporter",
+  "fb.templates": "Modèles",
+  "fb.mine": "Mes vols",
+  "fb.tabFlight": "Vol · {n} étape",
+  "fb.tabFlights": "Vol · {n} étapes",
+  "fb.tabOptions": "Météo et options",
+  "fb.share": "Partager",
+  "fb.export": "Exporter",
+  "fb.save": "Enregistrer",
+  "fb.saved": "Enregistré",
+  "fb.delete": "Supprimer",
+  "fb.duplicate": "Dupliquer",
+  "fb.fly": "Voler",
+  "fb.flyFree": "Voler (libre)",
+  "fb.loadFly": "Charger et voler",
+  "fb.ready": "Prêt à voler",
+  "fb.readyLoad": "Prêt : la région se charge au départ",
+  "fb.issue": "{n} problème",
+  "fb.issues": "{n} problèmes",
+  "fb.fixFirst": "Corrigez d’abord les problèmes",
+  "fb.s.route": "Route",
+  "fb.s.dist": "Distance",
+  "fb.s.time": "Durée",
+  "fb.s.holds": "Attentes",
+  "fb.s.apps": "Approches",
+  "fb.s.events": "Événements",
+  "fb.s.phase": "Phase",
+  "fb.s.fails": "Pannes",
+  "fb.hint": "Cliquez un point pour l’ajouter · glissez une attente vers un autre point",
+  "fb.prof": "Profil vertical",
+  "fb.profHint": "Altitudes prévues · MEA · contraintes SID/STAR · plan de descente et minima",
+});
+const failLabel = (k: FailureKey) =>
+  (lang() === "fr" ? FAILURE_LABELS_FR : FAILURE_LABELS_EN)[k] ?? k;
+type GroupId = (typeof FAILURE_GROUPS)[number]["id"] | "any";
+/** the group a random failure draws from (its pool matches a group's failures with a procedure) */
+function poolGroup(pool: FailureKey[]): GroupId {
+  const same = (a: FailureKey[]) =>
+    a.length === pool.length && a.every((k) => pool.includes(k));
+  for (const g of FAILURE_GROUPS) if (same(groupKeys(g.id))) return g.id;
+  return "any";
+}
+
 // ------------------------------------------------------------------ wiring with the planner entry point
 /** what "Plan a flight" (FlightSetup) gives the builder: region changes and its fly paths */
 export interface PlannerHooks {
@@ -172,6 +467,19 @@ export function connectPlanner(hk: PlannerHooks) {
 /** the builder instance (one editor shared by every entry point) */
 export function sharedBuilder(): CircuitBuilder | null {
   return shared;
+}
+/**
+ * Open the flight builder on a failure drill (Flight Center hub): a template id from DRILL_TEMPLATES (built at
+ * `airport`, else the student's home airport / the loaded region) or a saved drill (a Circuit with `drill`).
+ * Returns false when the builder is not mounted yet. The hub lists the drills with listDrills() (train/drills.ts).
+ */
+export function openDrill(
+  x: string | Circuit,
+  opts: { airport?: string; mode?: DrillMode } = {},
+): boolean {
+  if (!shared) return false;
+  shared.drill(x, opts);
+  return true;
 }
 
 /** the student's home airport (profile), else the departure of the last real-world flight */
@@ -245,7 +553,13 @@ export class CircuitBuilder extends Modal {
   private sourceId: string | null = null;
   /** selected leg (−1 = start, null = none) */
   private selLeg: number | null = null;
-  private tab: "flight" | "options" = "flight";
+  private tab: "drill" | "flight" | "options" = "flight";
+  /** hook (main.ts): open the club procedure editor on a procedure (null: a new one for `failure`) */
+  openProcedure?: (id: string | null, failure?: FailureKey) => void;
+  /** the drill's airport is being changed (real world: the search box shows) */
+  private drillPickApt = false;
+  /** a drill waiting for its real-world region: rebuilt in this phase once loaded */
+  private pendingPhase: DrillPhase | null = null;
   private q = "";
   private lib!: HTMLElement;
   private libList!: HTMLElement;
@@ -287,6 +601,9 @@ export class CircuitBuilder extends Modal {
       h("div", { class: "cbx-grid" }, this.lib, this.ed, this.mapCol),
     );
     this.buildLibrary();
+    // FR / EN switch and club procedures edited elsewhere: the open builder follows
+    onLangChange(() => this.isOpen && this.render());
+    onProceduresChange(() => this.isOpen && this.tab === "drill" && this.renderEditor());
     // the library drawer (narrow screens) closes once a flight is picked
     this.lib.addEventListener("click", (e) => {
       if ((e.target as HTMLElement).closest(".cbx-item, .cbx-new, .fb-libclose"))
@@ -317,7 +634,8 @@ export class CircuitBuilder extends Modal {
     if (this.c.preset) this.copyFrom(this.c);
     else this.dirty = !circuitStore.list().some((x) => x.id === this.c.id);
     this.selLeg = null;
-    this.tab = "flight";
+    this.tab = this.c.drill ? "drill" : "flight";
+    this.drillPickApt = false;
     this.routeDraft = null;
     this.routeMsg = null;
     this.open();
@@ -357,12 +675,90 @@ export class CircuitBuilder extends Modal {
         );
     });
   }
+  /** A failure drill in the builder: a template id (built at `opts.airport`, else at the current / home airport;
+   *  a real-world airport loads its region first) or a saved drill. The Drill tab opens with the quick form. */
+  drill(x: string | Circuit, opts: { airport?: string; mode?: DrillMode } = {}) {
+    if (typeof x !== "string") {
+      this.edit(x);
+      return;
+    }
+    this.guardOpen(() => {
+      const tpl = DRILL_TEMPLATES.find((d) => d.id === x);
+      if (!tpl) return;
+      this.open();
+      this.startDrill(tpl.id, opts.airport, opts.mode);
+    });
+  }
+  /** build a drill template where the builder is (real world or training region) */
+  private startDrill(id: string, airport?: string, mode?: DrillMode) {
+    // an airport of the loaded data is used as it is; another one is a real-world airport (its region loads)
+    const real = airport
+      ? !AIRPORTS.some((a) => a.icao === airport) || !!currentRegion()
+      : this.c.world === "real" || !!currentRegion();
+    // the airport of the flight being edited, when it is of the same world (a training flight's PARD is no
+    // real-world airport), else the home airport, else the first airport of the loaded region
+    const same = (this.c.world === "real") === real;
+    const here = same ? this.icaos()[0] : undefined;
+    const home = real ? homeAirport() : "";
+    const at =
+      airport ||
+      here ||
+      home ||
+      (real && currentRegion() ? AIRPORTS.find((a) => a.runways.length && APPROACHES.some((x) => x.airport === a.icao))?.icao : "") ||
+      "";
+    this.sourceId = null;
+    this.dirty = true;
+    this.selLeg = null;
+    this.routeDraft = null;
+    this.routeMsg = null;
+    this.drillPickApt = false;
+    this.tab = "drill";
+    this.pendingMode = mode ?? null;
+    if (real && (!at || !this.regionOk() || !this.icaos().includes(at))) {
+      const tpl = DRILL_TEMPLATES.find((d) => d.id === id)!;
+      this.c = this.blank("real", at);
+      this.c.dest = at || undefined;
+      this.c.name = at ? `${tpl.name[lang()]} · ${at}` : tpl.name[lang()];
+      this.c.drill = { mode: mode ?? tpl.mode, phase: tpl.phase, wx: tpl.wx };
+      this.pendingTemplate = id;
+      if (!at) this.drillPickApt = true;
+      this.render();
+      if (at) void this.ensureRegion();
+      return;
+    }
+    if (!real && currentRegion()) this.leaveReal();
+    const c = buildDrill(id, { airport: at || undefined, mode, lang: lang() });
+    if (!c) {
+      this.toast(t("fbd.noApt"), "warn");
+      return;
+    }
+    this.c = c;
+    this.render();
+  }
+  private pendingMode: DrillMode | null = null;
   private pendingTemplate: string | null = null;
   private applyPendingTemplate() {
+    if (this.pendingPhase && this.c.drill) {
+      const ph = this.pendingPhase;
+      this.pendingPhase = null;
+      applyPhase(this.c, ph, this.c.dep);
+      this.renameDrill();
+    }
     if (!this.pendingTemplate) return;
-    const t = TEMPLATES.find((x) => x.id === this.pendingTemplate);
+    if (this.pendingTemplate.startsWith("d-")) {
+      const id = this.pendingTemplate;
+      this.pendingTemplate = null;
+      const c = buildDrill(id, { airport: this.c.dep, mode: this.pendingMode ?? undefined, lang: lang() });
+      this.pendingMode = null;
+      if (c) {
+        this.c = c;
+        this.tab = "drill";
+      } else this.toast(t("fbd.noApt"), "warn");
+      return;
+    }
+    const t0 = TEMPLATES.find((x) => x.id === this.pendingTemplate);
     this.pendingTemplate = null;
-    const c = t?.build({
+    const c = t0?.build({
       airport: this.c.dep,
       dest: this.c.dest ?? this.c.dep,
     });
@@ -630,7 +1026,20 @@ export class CircuitBuilder extends Modal {
     this.updateMap();
     this.renderFooter();
   }
+  /** the builder's fixed labels in the UI language (FR / EN) */
+  private chrome() {
+    const ttl = t("fb.title");
+    const h2 = this.box.querySelector("header h2");
+    if (h2) h2.textContent = ttl;
+    this.box.setAttribute("aria-label", ttl);
+    this.box.querySelectorAll<HTMLElement>("[data-fbt]").forEach((el) => (el.textContent = t(el.dataset.fbt!)));
+    this.box.querySelectorAll<HTMLInputElement>("[data-fbp]").forEach((el) => {
+      el.placeholder = t(el.dataset.fbp!);
+      el.setAttribute("aria-label", el.placeholder);
+    });
+  }
   private render() {
+    this.chrome();
     this.renderLibrary();
     this.renderEditor();
     this.renderMapCol();
@@ -656,8 +1065,9 @@ export class CircuitBuilder extends Modal {
     const search = h("input", {
       type: "search",
       class: "cbx-search",
-      placeholder: "Search flights",
-      "aria-label": "Search flights",
+      placeholder: t("fb.search"),
+      "aria-label": t("fb.search"),
+      "data-fbp": "fb.search",
       spellcheck: "false",
     }) as HTMLInputElement;
     search.addEventListener("input", () => {
@@ -704,6 +1114,7 @@ export class CircuitBuilder extends Modal {
         "button",
         {
           class: "btn cbx-new",
+          "data-fbt": "fb.new",
           onclick: () =>
             this.guard(() => {
               const real = !!currentRegion() || this.c.world === "real";
@@ -723,7 +1134,7 @@ export class CircuitBuilder extends Modal {
                 void this.ensureRegion();
             }),
         },
-        "+ New flight",
+        t("fb.new"),
       ),
       search,
       this.libList,
@@ -736,19 +1147,21 @@ export class CircuitBuilder extends Modal {
           {
             class: "btn ghost sm",
             title: "Import flights from a JSON file",
+            "data-fbt": "fb.import",
             onclick: () => file.click(),
           },
-          "Import…",
+          t("fb.import"),
         ),
         h(
           "button",
           {
             class: "btn ghost sm",
             title: "Download all your flights as JSON",
+            "data-fbt": "fb.exportAll",
             onclick: () =>
               this.download(circuitStore.list(), "ifr-flights.json"),
           },
-          "Export all",
+          t("fb.exportAll"),
         ),
       ),
     );
@@ -796,6 +1209,8 @@ export class CircuitBuilder extends Modal {
             this.selLeg = null;
             this.routeDraft = null;
             this.routeMsg = null;
+            this.tab = this.c.drill ? "drill" : this.tab === "drill" ? "flight" : this.tab;
+            this.drillPickApt = false;
             if (this.c.world !== "real" && currentRegion()) this.leaveReal();
             this.render();
             if (this.c.world === "real" && !this.regionOk())
@@ -809,8 +1224,8 @@ export class CircuitBuilder extends Modal {
         [
           dest && dest !== where ? `${where} → ${dest}` : where,
           `~${circuitStats(c).minutes} min`,
-          c.mode === "checkride" ? "Checkride" : "",
-          c.assignee ? `for ${c.assignee}` : "",
+          c.drill ? (c.drill.mode === "test" ? t("fbd.test") : t("fbd.training")) : c.mode === "checkride" ? "Checkride" : "",
+          c.assignee ? `${lang() === "fr" ? "pour" : "for"} ${c.assignee}` : "",
         ]
           .filter(Boolean)
           .join(" · "),
@@ -828,9 +1243,34 @@ export class CircuitBuilder extends Modal {
     const match = (s: string) => !this.q || s.toLowerCase().includes(this.q);
     const sec = (t: string, n: number) =>
       h("div", { class: "cbx-sec" }, t, h("span", {}, String(n)));
+    // failure drills first (flying clubs): the club's saved drills, then the templates, built at the flight's airport
+    const L = lang();
+    const all0 = circuitStore.list();
+    const clubDrills = all0.filter((c) => c.drill);
+    const dtpls = DRILL_TEMPLATES.filter((d) => match(`${d.name.fr} ${d.name.en} ${d.desc[L]}`));
+    const myDrills = clubDrills.filter((c) => match(`${c.name} ${c.description} ${c.assignee ?? ""}`));
+    this.libList.append(sec(t("fbd.lib"), clubDrills.length + DRILL_TEMPLATES.length));
+    myDrills.forEach((c) => this.libList.append(this.libItem(c, "mine")));
+    for (const d of dtpls)
+      this.libList.append(
+        h(
+          "button",
+          {
+            class: `cbx-item tpl drill${this.c.template === d.id && this.dirty && !this.isSaved() ? " on" : ""}`,
+            title: d.desc[L],
+            onclick: () => this.guard(() => this.startDrill(d.id)),
+          },
+          h("b", {}, d.name[L]),
+          h(
+            "small",
+            {},
+            `${PHASES.find((p) => p.id === d.phase)!.name[L]} · ${d.mode === "test" ? t("fbd.test") : t("fbd.training")} · ${DRILL_WX.find((w) => w.id === d.wx)!.name[L]}`,
+          ),
+        ),
+      );
     // templates: built for the flight's airport (real world or training region)
     const tpls = TEMPLATES.filter((t) => match(`${t.name} ${t.desc}`));
-    this.libList.append(sec("Templates", TEMPLATES.length));
+    this.libList.append(sec(t("fb.templates"), TEMPLATES.length));
     for (const t of tpls)
       this.libList.append(
         h(
@@ -878,11 +1318,12 @@ export class CircuitBuilder extends Modal {
           h("small", {}, t.desc),
         ),
       );
-    const all = circuitStore.list();
+    // the club's drills are listed with the drills above
+    const all = all0.filter((c) => !c.drill);
     const mine = all.filter((c) =>
       match(`${c.name} ${c.description} ${c.assignee ?? ""}`),
     );
-    this.libList.append(sec("My flights", all.length));
+    this.libList.append(sec(t("fb.mine"), all.length));
     if (!all.length)
       this.libList.append(
         h(
@@ -1223,20 +1664,21 @@ export class CircuitBuilder extends Modal {
 
   // ---------------------------------------------------------------- validation per leg
   private problems() {
-    const all = validate(this.c);
+    // the failure drill form speaks the club's language; the rest of the builder is in English
+    const all = validate(this.c, this.c.drill ? lang() : "en");
     const legs = new Map<number, string[]>();
     const start: string[] = [];
     const events: string[] = [];
     const general: string[] = [];
     for (const e of all) {
-      const m = /^Leg (\d+): (.*)$/.exec(e);
+      const m = /^(?:Leg|Étape) (\d+) ?: (.*)$/.exec(e);
       if (m)
         legs.set(Number(m[1]) - 1, [
           ...(legs.get(Number(m[1]) - 1) ?? []),
           m[2].replace(/^./, (x) => x.toUpperCase()),
         ]);
-      else if (/start fix|runway/i.test(e)) start.push(e);
-      else if (/^(Failure|Weather)/.test(e)) events.push(e);
+      else if (/start fix|runway|point de départ|piste|départ en montée/i.test(e)) start.push(e);
+      else if (/^(Failure|Weather|Panne|Météo)/.test(e)) events.push(e);
       else
         general.push(
           e === "Add at least one leg."
@@ -1276,8 +1718,8 @@ export class CircuitBuilder extends Modal {
       type: "text",
       value: c.name,
       class: "cbx-name",
-      placeholder: "Name this flight",
-      "aria-label": "Flight name",
+      placeholder: t("fb.namePh"),
+      "aria-label": t("fb.nameAria"),
       spellcheck: "false",
     }) as HTMLInputElement;
     name.addEventListener("input", () => {
@@ -1286,18 +1728,23 @@ export class CircuitBuilder extends Modal {
       this.renderFooter();
     });
     name.addEventListener("keydown", stop);
+    if (this.tab === "drill" && !c.drill) this.tab = "flight";
+    const tabList: ["drill" | "flight" | "options", string][] = [
+      [
+        "flight",
+        t(c.legs.length === 1 ? "fb.tabFlight" : "fb.tabFlights", { n: c.legs.length }),
+      ],
+      ["options", t("fb.tabOptions")],
+    ];
+    if (c.drill)
+      tabList.unshift([
+        "drill",
+        `${t("fbd.tab")} · ${c.failures.length === 1 ? t("fbd.one") : t("fbd.n", { n: c.failures.length })}`,
+      ]);
     const tabs = h(
       "div",
       { class: "cbx-tabs", role: "tablist" },
-      ...(
-        [
-          [
-            "flight",
-            `Flight · ${c.legs.length} leg${c.legs.length === 1 ? "" : "s"}`,
-          ],
-          ["options", "Weather & options"],
-        ] as const
-      ).map(([k, t]) =>
+      ...tabList.map(([k, t]) =>
         h(
           "button",
           {
@@ -1329,16 +1776,16 @@ export class CircuitBuilder extends Modal {
             "button",
             {
               class: "btn sm fb-libbtn",
-              "aria-label": "Open the flight library",
-              title: "Templates, my flights and school presets",
+              "aria-label": t("fb.libOpen"),
+              title: t("fb.libOpen"),
               onclick: () => this.box.classList.toggle("lib-open"),
             },
             svgIcon(I.records, 14),
-            "Library",
+            t("fb.lib"),
           ),
           h(
             "label",
-            { class: "cbx-name-w", title: "Rename" },
+            { class: "cbx-name-w", title: lang() === "fr" ? "Renommer" : "Rename" },
             name,
             svgIcon(I.feather, 15),
           ),
@@ -1347,7 +1794,8 @@ export class CircuitBuilder extends Modal {
       ),
       scroll,
     );
-    if (this.tab === "flight") this.buildFlight(scroll);
+    if (this.tab === "drill") this.buildDrillForm(scroll);
+    else if (this.tab === "flight") this.buildFlight(scroll);
     else this.buildOptions(scroll);
     scroll.scrollTop = keepScroll;
   }
@@ -1618,13 +2066,13 @@ export class CircuitBuilder extends Modal {
         h(
           "span",
           { class: "fb-prog-t" },
-          h("b", {}, `Loading ${this.icaos().join(" and ")}`),
+          h("b", {}, t("fb.loadingApt", { a: this.icaos().join(lang() === "fr" ? " et " : " and ") })),
           h(
             "small",
             {},
             this.progress
-              ? `Real-world data: ${this.progress}`
-              : "Real-world data: navaids, procedures, terrain",
+              ? `${t("fb.realData")}${lang() === "fr" ? " :" : ":"} ${this.progress}`
+              : t("fb.realDataAll"),
           ),
         ),
       );
@@ -1637,7 +2085,7 @@ export class CircuitBuilder extends Modal {
         h(
           "button",
           { class: "btn sm", onclick: () => void this.ensureRegion() },
-          "Retry",
+          t("fb.retry"),
         ),
       );
     return h(
@@ -1647,12 +2095,12 @@ export class CircuitBuilder extends Modal {
       h(
         "span",
         {},
-        `${this.icaos().join(" and ")}: the real-world data is not loaded yet.`,
+        t("fb.notLoaded", { a: this.icaos().join(lang() === "fr" ? " et " : " and ") }),
       ),
       h(
         "button",
         { class: "btn sm primary", onclick: () => void this.ensureRegion() },
-        "Load region",
+        t("fb.loadRegion"),
       ),
     );
   }
@@ -2252,7 +2700,16 @@ export class CircuitBuilder extends Modal {
   private eventsList(errs: string[]) {
     const c = this.c;
     const box = h("div", { class: "fb-events" });
-    c.failures.forEach((f, k) => box.append(this.failureCard(f, k)));
+    if (c.drill && c.failures.length)
+      box.append(
+        h(
+          "button",
+          { class: "fb-addproc", onclick: () => { this.tab = "drill"; this.renderEditor(); } },
+          svgIcon(I.warning, 15),
+          h("span", {}, h("b", {}, c.failures.length === 1 ? t("fbd.one") : t("fbd.n", { n: c.failures.length })), h("small", {}, t("fbd.flightNote"))),
+        ),
+      );
+    else c.failures.forEach((f, k) => box.append(this.failureCard(f, k)));
     (c.events ?? []).forEach((w, k) => box.append(this.weatherCard(w, k)));
     for (const e of errs)
       box.append(h("div", { class: "cbx-err" }, svgIcon(I.warning, 13), e));
@@ -2269,6 +2726,10 @@ export class CircuitBuilder extends Modal {
           {
             class: "fb-chip",
             onclick: () => {
+              if (c.drill) {
+                this.addDrillFailure();
+                return;
+              }
               // default: at the start of the first approach (the glideslope on the ILS), else after 5 min
               const ap = c.legs.findIndex((l) => l.type === "approach");
               c.failures.push({
@@ -2312,37 +2773,178 @@ export class CircuitBuilder extends Modal {
         ? `at leg ${t.at}`
         : `passing ${t.fix || "…"}`;
   }
+  /** A scheduled failure: what fails (grouped like the instructor panel, or drawn at random from a group), when
+   *  (now, after a time, at a height, at a fix or a leg, at a random time, by the instructor) and the procedure
+   *  expected. The number matches its marker on the map and the profile. */
   private failureCard(f: CircuitFailure, k: number) {
     const c = this.c;
-    const hid = h("input", {
-      type: "checkbox",
-      checked: !!f.hidden,
-    }) as HTMLInputElement;
+    const drill = !!c.drill;
+    const answered = failuresWithProcedure();
+    // what fails
+    const random = !!f.pool?.length;
+    const failVal = random ? `pool:${poolGroup(f.pool!)}` : f.key;
+    const groups = FAILURE_GROUPS.map((g) => ({
+      group: t(`fbd.g.${g.id}`),
+      opts: g.keys.map(
+        (key) =>
+          [key, answered.has(key) ? failLabel(key) : `${failLabel(key)} (${t("fbd.noproc")})`] as [string, string],
+      ),
+    }));
+    const pools: [string, string][] = (["any", ...FAILURE_GROUPS.map((g) => g.id)] as GroupId[])
+      .filter((g) => groupKeys(g).length > 1)
+      .map((g) => [`pool:${g}`, g === "any" ? t("fbd.randomAny") : t("fbd.randomGroup", { g: t(`fbd.g.${g}`).toLowerCase() })]);
+    const failSel = this.sel(
+      failVal,
+      [...groups, { group: t("fbd.random"), opts: pools }],
+      (v) => {
+        if (v.startsWith("pool:")) {
+          const keys = groupKeys(v.slice(5) as GroupId);
+          f.pool = keys;
+          f.key = keys[0] ?? f.key;
+          delete f.expect;
+          if (f.trigger !== "random") Object.assign(f, { trigger: "random", at: Math.max(1, f.trigger === "time" ? f.at : 2), window: 6, dir: undefined });
+        } else {
+          delete f.pool;
+          f.key = v as FailureKey;
+          delete f.expect;
+        }
+      },
+      true,
+    );
+    failSel.setAttribute("aria-label", t("fbd.failure"));
+    // when
+    const trigVal = f.trigger === "time" && f.at <= 0 ? "now" : f.trigger;
+    const trigOpts: [string, string][] = (["now", "time", "altAgl", "fix", "leg", "random", "instructor"] as const)
+      .filter((x) => x !== "leg" || c.legs.length > 0)
+      .map((x) => [x, t(`fbd.t.${x}`)]);
+    const trigSel = this.sel(
+      trigVal,
+      trigOpts,
+      (v) => {
+        const was = f.trigger;
+        delete f.dir;
+        delete f.window;
+        if (v === "now") Object.assign(f, { trigger: "time", at: 0 });
+        else if (v === "time") Object.assign(f, { trigger: "time", at: was === "time" && f.at > 0 ? f.at : 2 });
+        else if (v === "altAgl") Object.assign(f, heightTrigger(c)); else if (v === "fix") Object.assign(f, { trigger: "fix", at: 0, fix: f.fix || this.refFix(c.legs.length) || "" });
+        else if (v === "leg") Object.assign(f, { trigger: "leg", at: Math.min(Math.max(1, Math.round(f.at) || 1), Math.max(1, c.legs.length)) });
+        else if (v === "random") Object.assign(f, { trigger: "random", at: was === "time" && f.at > 0 ? f.at : 2, window: 6 });
+        else Object.assign(f, { trigger: "instructor", at: 0 });
+        // an EFATO moved from the take-off height to a time in flight: the in-flight procedure is expected
+        refreshExpect(c, f);
+      },
+      true,
+    );
+    trigSel.setAttribute("aria-label", t("fbd.when"));
+    const param: (HTMLElement | null)[] = [];
+    const nf = (label: string, v: number, on: (x: number) => void, o: { min: number; max: number; step: number }) =>
+      this.field(label, this.num(v, (x) => on(x ?? o.min), { ...o, structural: true, label }));
+    switch (f.trigger) {
+      case "time":
+        if (f.at > 0) param.push(nf(t("fbd.min"), f.at, (x) => (f.at = Math.max(0.1, x)), { min: 0.5, max: 240, step: 0.5 }));
+        else param.push(h("p", { class: "fbd-note" }, t("fbd.nowHint")));
+        break;
+      case "altAgl":
+        param.push(
+          nf(t("fbd.ft"), f.at, (x) => (f.at = Math.round(x)), { min: 50, max: 15000, step: 50 }),
+          this.field(
+            "",
+            this.seg(f.dir === "descent" ? "descent" : "climb", [["climb", t("fbd.climb")], ["descent", t("fbd.descent")]], (v) => {
+              f.dir = v;
+              this.changed(true);
+            }, "fbd-dir"),
+          ),
+        );
+        break;
+      case "random": {
+        const w = Math.max(0, f.window ?? 5);
+        param.push(
+          nf(t("fbd.from"), f.at, (x) => (f.at = Math.max(0, x)), { min: 0, max: 239, step: 0.5 }),
+          nf(t("fbd.to"), f.at + w, (x) => (f.window = Math.max(0.5, x - f.at)), { min: 0.5, max: 240, step: 0.5 }),
+        );
+        break;
+      }
+      case "fix":
+        param.push(this.field(t("fbd.fix"), this.fixInput(f.fix ?? "", (v) => (f.fix = v))));
+        break;
+      case "leg":
+        param.push(
+          this.field(
+            t("fbd.leg"),
+            this.sel(
+              String(f.at),
+              c.legs.map((l, j) => [String(j + 1), `${j + 1} · ${legText(l)}`.slice(0, 48)] as [string, string]),
+              (v) => (f.at = Number(v)),
+              true,
+            ),
+          ),
+        );
+        break;
+      case "instructor":
+        param.push(h("p", { class: "fbd-note" }, t("fbd.instrHint")));
+        break;
+    }
+    // the procedure expected (club first; automatic = the one the drill session picks for the phase)
+    const L = lang();
+    const choices = random ? [] : procedureChoices(f.key, L);
+    const sugg = random ? null : suggestProcedure(c, { ...f, expect: undefined }, L);
+    const chosen = f.expect
+      ? (choices.find((p) => p.id === f.expect) ??
+        choices.find((p) => baseId(p.id) === baseId(f.expect!) || (p.basedOn && baseId(p.basedOn) === baseId(f.expect!))))
+      : undefined;
+    const club = choices.filter((p) => p.source === "club");
+    const lib = choices.filter((p) => p.source !== "club");
+    const procSel = this.sel(
+      chosen?.id ?? "",
+      [
+        ["", random ? t("fbd.autoRandom") : sugg ? `${t("fbd.auto")} · ${sugg.title}` : t("fbd.autoNone")],
+        { group: t("fbd.club"), opts: club.map((p) => [p.id, p.title] as [string, string]) },
+        { group: t("fbd.library"), opts: lib.map((p) => [p.id, p.title] as [string, string]) },
+      ],
+      (v) => {
+        const p = choices.find((x) => x.id === v);
+        // a library procedure is kept by its base id: each student gets it in their language (or the club's version)
+        if (!p) delete f.expect;
+        else f.expect = p.source === "club" ? p.id : baseId(p.id);
+      },
+      true,
+    );
+    procSel.setAttribute("aria-label", t("fbd.expect"));
+    if (random) procSel.disabled = true;
+    const target = chosen ?? sugg;
+    const editLink =
+      this.openProcedure && !random
+        ? h(
+            "button",
+            {
+              type: "button",
+              class: "linkbtn fbd-edit",
+              onclick: () => this.openProcedure?.(target?.id ?? null, f.key),
+            },
+            target ? t("fbd.edit") : t("fbd.write"),
+          )
+        : null;
+    const hid = h("input", { type: "checkbox", checked: !!f.hidden }) as HTMLInputElement;
     hid.addEventListener("change", () => {
       f.hidden = hid.checked;
       this.changed(true);
     });
+    const pg = random ? poolGroup(f.pool!) : null;
+    const name = pg === "any" ? t("fbd.randomName") : pg ? t("fbd.randomGroup", { g: t(`fbd.g.${pg}`).toLowerCase() }) : failLabel(f.key);
     return h(
       "div",
-      { class: "fb-ev fail" },
+      { class: `fb-ev fail fbd-fail${f.hidden && !drill ? " hid" : ""}` },
       h(
         "div",
         { class: "fb-ev-h" },
-        svgIcon(I.warning, 14),
-        h("b", {}, `${FAILURE_LABELS[f.key]} fails ${this.trigText(f)}`),
-        f.hidden
-          ? h(
-              "span",
-              {
-                class: "fb-hidden",
-                title: "Not announced in the student's briefing",
-              },
-              "Hidden",
-            )
+        h("span", { class: "fbd-n", "aria-hidden": "true" }, String(k + 1)),
+        h("b", {}, `${name} · ${triggerText(f, L)}`),
+        f.hidden && !drill
+          ? h("span", { class: "fb-hidden", title: L === "fr" ? "Non annoncée dans le briefing de l’élève" : "Not announced in the student's briefing" }, t("fbd.hidden"))
           : null,
         this.iconBtn(
           "×",
-          "Remove this failure",
+          t("fbd.remove"),
           () => {
             c.failures.splice(k, 1);
             this.changed(true);
@@ -2350,29 +2952,202 @@ export class CircuitBuilder extends Modal {
           "del show",
         ),
       ),
+      h("div", { class: "fbd-row one" }, this.field(t("fbd.failure"), failSel)),
+      h("div", { class: `fbd-row trig ${f.trigger}` }, this.field(t("fbd.when"), trigSel), ...param),
       h(
         "div",
-        { class: "cb-row" },
-        this.field(
-          "Failure",
-          this.sel(
-            f.key,
-            (Object.keys(FAILURE_LABELS) as (keyof Failures)[]).map(
-              (x) => [x, FAILURE_LABELS[x]] as [keyof Failures, string],
-            ),
-            (v) => (f.key = v),
-            true,
-          ),
-        ),
-        ...this.trigFields(f),
+        { class: "fbd-row one" },
+        this.field(t("fbd.expect"), procSel),
+        editLink,
       ),
-      h(
-        "label",
-        { class: "fb-check" },
-        hid,
-        h("span", {}, "Hide from the student (not in the briefing)"),
+      drill
+        ? null
+        : h("label", { class: "fb-check" }, hid, h("span", {}, L === "fr" ? "Masquer à l’élève (absente du briefing)" : "Hide from the student (not in the briefing)")),
+    );
+  }
+
+  /** a new failure in the drill: the first one with a procedure that the drill does not have yet */
+  private addDrillFailure() {
+    const c = this.c;
+    const have = new Set(c.failures.map((f) => f.key));
+    const answered = failuresWithProcedure();
+    const order: FailureKey[] = ["engine", "alternator", "vacuum", "engineRough", "electricalFire", "pitotIcing", "comms", "staticBlocked", "flaps", "trimRunaway"];
+    const key = order.find((k) => answered.has(k) && !have.has(k)) ?? "alternator";
+    c.failures.push({ key, ...defaultTrigger(c.drill?.phase, key), hidden: c.drill?.mode === "test" });
+    this.changed(true);
+    requestAnimationFrame(() =>
+      this.ed.querySelector(".fbd-fail:last-of-type")?.scrollIntoView({ block: "nearest", behavior: "smooth" }),
+    );
+  }
+
+  /** the drill's name follows its airport (' · LFPN') while it keeps the template's form */
+  private renameDrill() {
+    const c = this.c;
+    const at = drillAirport(c);
+    if (!at) return;
+    const m = / · [A-Z0-9]{3,4}$/.exec(c.name);
+    if (m) c.name = c.name.slice(0, m.index) + ` · ${at}`;
+    else if (c.template && DRILL_TEMPLATES.some((d) => d.id === c.template && (d.name.fr === c.name || d.name.en === c.name))) c.name += ` · ${at}`;
+  }
+
+  /** The quick drill form: (1) where — airport and phase, (2) failures — what, when, the procedure expected,
+   *  (3) training or test, the weather. Then Fly. */
+  private buildDrillForm(box: HTMLElement) {
+    const c = this.c;
+    const d = c.drill!;
+    const L = lang();
+    const real = c.world === "real";
+    const step = (n: number, title: string, hint: string) =>
+      h("div", { class: "fbd-step" }, h("span", { class: "fbd-sn" }, String(n)), h("div", {}, h("b", {}, title), h("small", {}, hint)));
+    if (real && (this.loading || this.loadErr || (!this.regionOk() && this.icaos().length))) box.append(this.regionBar());
+    // ---- 1 where
+    box.append(step(1, t("fbd.where"), t("fbd.whereHint")));
+    const at = drillAirport(c) ?? "";
+    const where = h("div", { class: "fbd-card" });
+    if (real && (this.drillPickApt || !at)) {
+      where.append(
+        this.airportPicker(
+          t("fbd.airport"),
+          L === "fr" ? "Terrain : code OACI, nom ou ville (ex. LFPN)" : "Airport: ICAO, name or city (e.g. KSFO)",
+          (r) => {
+            this.drillPickApt = false;
+            const ph = d.phase ?? "cruise";
+            c.dep = r[0];
+            c.dest = r[0];
+            c.start = { type: "runway", airport: r[0], runway: "", initialAlt: 3000 };
+            c.legs = [];
+            this.dirty = true;
+            if (this.regionOk()) {
+              applyPhase(c, ph, r[0]);
+              this.renameDrill();
+            } else if (this.pendingTemplate?.startsWith("d-")) {
+              /* the template is built there once loaded */
+            } else this.pendingPhase = ph;
+            this.render();
+            if (!this.regionOk()) void this.ensureRegion();
+          },
+          async () => searchAirports("", 8),
+          L === "fr" ? "Terrains IFR fréquents" : "Popular IFR airports",
+        ),
+      );
+    } else {
+      const aptRow = h(
+        "div",
+        { class: "fbd-apt" },
+        h("b", {}, at || "—"),
+        h("span", {}, at ? this.aptName(at) : ""),
+      );
+      if (real)
+        aptRow.append(
+          h("button", { type: "button", class: "btn sm", onclick: () => { this.drillPickApt = true; this.renderEditor(); requestAnimationFrame(() => this.ed.querySelector<HTMLInputElement>(".fbd-card .fb-apt input")?.focus()); } }, t("fbd.change")),
+        );
+      else {
+        const s0 = this.sel(
+          at,
+          AIRPORTS.filter((a) => a.runways.length)
+            .sort((x, y) => x.icao.localeCompare(y.icao))
+            .map((a) => [a.icao, a.icao] as [string, string]),
+          (v) => {
+            applyPhase(c, d.phase ?? "cruise", v);
+            this.renameDrill();
+            this.refit = true;
+          },
+          true,
+        );
+        s0.setAttribute("aria-label", t("fbd.airport"));
+        aptRow.append(s0);
+      }
+      where.append(aptRow);
+    }
+    const waiting = real && !this.regionOk();
+    const phases = h(
+      "div",
+      { class: "fbd-phases", role: "radiogroup", "aria-label": t("fbd.phase") },
+      ...PHASES.map((p) =>
+        h(
+          "button",
+          {
+            type: "button",
+            role: "radio",
+            "aria-checked": String(d.phase === p.id),
+            class: d.phase === p.id ? "on" : "",
+            disabled: waiting,
+            onclick: () => {
+              if (d.phase === p.id) return;
+              if (!applyPhase(c, p.id)) return this.toast(t("fbd.noApt"), "warn");
+              this.refit = true;
+              this.changed(true);
+            },
+          },
+          p.name[L],
+        ),
       ),
     );
+    const ph = PHASES.find((p) => p.id === d.phase);
+    where.append(phases);
+    if (ph)
+      where.append(
+        h("p", { class: "fbd-note" }, c.start.type === "air" ? `${ph.desc[L]} · ${c.start.altFt}\u00a0ft` : ph.desc[L]),
+      );
+    if (at && !waiting && !APPROACHES.some((a) => a.airport === at) && d.phase !== "lineup" && d.phase !== "climbout")
+      where.append(h("p", { class: "fbd-note warn" }, t("fbd.phaseNoApp", { a: at })));
+    box.append(where);
+    if (waiting) {
+      box.append(h("p", { class: "fb-hint" }, t("fbd.loading", { a: at || "…" })));
+      return;
+    }
+    // ---- 2 failures
+    box.append(step(2, t("fbd.failures"), t("fbd.failuresHint")));
+    c.failures.forEach((f, k) => box.append(this.failureCard(f, k)));
+    const pr = this.problems();
+    for (const e of pr.events) box.append(h("div", { class: "cbx-err" }, svgIcon(I.warning, 13), e));
+    box.append(
+      h(
+        "button",
+        { type: "button", class: "fb-addproc fbd-add", onclick: () => this.addDrillFailure() },
+        h("i", { class: "fbd-plus", "aria-hidden": "true" }, "+"),
+        h("span", {}, h("b", {}, c.failures.length ? t("fbd.addMore") : t("fbd.add"))),
+      ),
+    );
+    // ---- 3 training or test, weather
+    box.append(step(3, t("fbd.how"), t("fbd.howHint")));
+    const who = h("input", { type: "text", value: c.assignee ?? "", placeholder: t("fbd.student"), spellcheck: "false", "aria-label": t("fbd.assign") }) as HTMLInputElement;
+    who.addEventListener("input", () => {
+      c.assignee = who.value.trim() || undefined;
+      this.dirty = true;
+      this.renderFooter();
+    });
+    who.addEventListener("keydown", stop);
+    const wxNow = d.wx ?? "imc";
+    box.append(
+      h(
+        "div",
+        { class: "fbd-card" },
+        this.seg(d.mode, [["training", t("fbd.training")], ["test", t("fbd.test")]], (v) => {
+          applyMode(c, v);
+          this.changed(true);
+        }, "fbd-mode"),
+        h("p", { class: "fbd-note" }, d.mode === "test" ? t("fbd.testHint") : t("fbd.trainingHint")),
+        h(
+          "div",
+          { class: "fbd-row two" },
+          this.field(
+            t("fbd.wx"),
+            this.seg(wxNow, DRILL_WX.map((w) => [w.id, w.name[L]] as [DrillWx, string]), (v) => {
+              applyWx(c, v);
+              this.changed(true);
+            }, "fbd-wx"),
+            h(
+              "small",
+              { class: "fbd-note metar" },
+              `${DRILL_WX.find((w) => w.id === wxNow)?.desc[L] ?? ""} · ${L === "fr" ? metarLineIcao(c.weather) : metarLine(c.weather)}`,
+            ),
+          ),
+          this.field(t("fbd.assign"), who),
+        ),
+      ),
+    );
+    if (!pr.all.length) box.append(h("p", { class: "fb-hint fbd-ready" }, svgIcon(I.check, 14), t("fbd.ready")));
   }
   private weatherCard(w: CircuitEvent, k: number) {
     const c = this.c;
@@ -2985,12 +3760,12 @@ export class CircuitBuilder extends Modal {
               title: failHere
                 .map(
                   (f) =>
-                    `${FAILURE_LABELS[f.key]} fails at the start of this leg${f.hidden ? " (hidden from the student)" : ""}`,
+                    `${failLabel(f.key)}: at the start of this leg${f.hidden ? " (hidden from the student)" : ""}`,
                 )
                 .join("\n"),
             },
             svgIcon(I.warning, 13),
-            FAILURE_LABELS[failHere[0].key],
+            failLabel(failHere[0].key),
           )
         : null,
       errs.length
@@ -3691,6 +4466,22 @@ export class CircuitBuilder extends Modal {
           { class: "cb-row" },
           this.field("Assigned to", who),
           this.field(
+            t("fbd.opt"),
+            this.sel(
+              c.drill ? c.drill.mode : "none",
+              [
+                ["none", t("fbd.optNone")],
+                ["training", t("fbd.optTraining")],
+                ["test", t("fbd.optTest")],
+              ],
+              (v) => {
+                if (v === "none") delete c.drill;
+                else applyMode(c, v);
+              },
+              true,
+            ),
+          ),
+          this.field(
             "Mode",
             this.sel(
               c.mode,
@@ -3707,7 +4498,9 @@ export class CircuitBuilder extends Modal {
             ),
           ),
         ),
-        h(
+        c.drill
+          ? null
+          : h(
           "label",
           { class: "fb-check" },
           hideAll,
@@ -3750,6 +4543,14 @@ export class CircuitBuilder extends Modal {
     this.map = new RouteMap(this.c, {
       height: 0,
       legNumbers: true,
+      failures: true,
+      // the "click a fix" hint sits over the map's top-left corner: labels keep clear of it
+      reserve: () => {
+        const el = this.mapCol?.querySelector<HTMLElement>(".fb-maphint");
+        return el && el.offsetWidth
+          ? [[el.offsetLeft - 4, el.offsetTop - 4, el.offsetLeft + el.offsetWidth + 4, el.offsetTop + el.offsetHeight + 4]]
+          : [];
+      },
       highlight: this.selLeg,
       onPickLeg: (i) => this.select(this.selLeg === i ? null : i),
       onMapClick: (_p, fix, at) => this.mapMenu(fix, at),
@@ -3774,6 +4575,7 @@ export class CircuitBuilder extends Modal {
     this.prof = new RouteProfile(this.c, {
       height: 168,
       highlight: this.selLeg,
+      failures: true,
     });
     this.mapCol.append(
       this.stats,
@@ -3786,18 +4588,14 @@ export class CircuitBuilder extends Modal {
           : h(
               "div",
               { class: "fb-maphint" },
-              "Click a fix to add it · drag a hold to another fix",
+              t("fb.hint"),
             ),
       ),
       h(
         "div",
         { class: "cbx-prof-t" },
-        "Vertical profile",
-        h(
-          "span",
-          {},
-          "Planned altitudes · MEA · SID/STAR constraints · glidepath and minimums",
-        ),
+        t("fb.prof"),
+        h("span", {}, t("fb.profHint")),
       ),
       this.prof.el,
     );
@@ -3823,18 +4621,31 @@ export class CircuitBuilder extends Modal {
     const chip = (k: string, v: string) =>
       h("div", {}, h("small", {}, k), h("b", {}, v));
     const route = this.icaos();
+    const time =
+      s.minutes >= 60
+        ? `${Math.floor(s.minutes / 60)} h ${String(Math.round(s.minutes % 60)).padStart(2, "0")}`
+        : `${Math.round(s.minutes)} min`;
+    // a failure drill: where it starts, how many failures, how long — holds and approaches matter less
+    this.stats.classList.toggle("drill", !!c.drill);
+    if (c.drill) {
+      const L = lang();
+      const ph = PHASES.find((p) => p.id === c.drill!.phase);
+      this.stats.append(
+        chip(t("fb.s.route"), route.length ? route.join(" → ") : "—"),
+        chip(t("fb.s.phase"), ph ? ph.name[L] : "—"),
+        chip(t("fb.s.fails"), String(c.failures.length)),
+        chip(t("fb.s.time"), time),
+        chip(t("fb.s.dist"), `${s.distNm.toFixed(0)} NM`),
+      );
+      return;
+    }
     this.stats.append(
-      chip("Route", route.length ? route.join(" → ") : "—"),
-      chip("Distance", `${s.distNm.toFixed(0)} NM`),
-      chip(
-        "Est. time",
-        s.minutes >= 60
-          ? `${Math.floor(s.minutes / 60)} h ${String(Math.round(s.minutes % 60)).padStart(2, "0")}`
-          : `${Math.round(s.minutes)} min`,
-      ),
-      chip("Holds", String(holds)),
-      chip("Approaches", String(apps)),
-      chip("Events", String(c.failures.length + (c.events?.length ?? 0))),
+      chip(t("fb.s.route"), route.length ? route.join(" → ") : "—"),
+      chip(t("fb.s.dist"), `${s.distNm.toFixed(0)} NM`),
+      chip(t("fb.s.time"), time),
+      chip(t("fb.s.holds"), String(holds)),
+      chip(t("fb.s.apps"), String(apps)),
+      chip(t("fb.s.events"), String(c.failures.length + (c.events?.length ?? 0))),
     );
   }
   /** click on the map: add the fix there as a direct leg, a hold or a cleared-direct amendment */
@@ -3967,7 +4778,7 @@ export class CircuitBuilder extends Modal {
             "span",
             { class: "cbx-status ok" },
             svgIcon(I.check, 15),
-            needLoad ? "Ready: the region loads when you fly" : "Ready to fly",
+            needLoad ? t("fb.readyLoad") : t("fb.ready"),
           )
         : h(
             "button",
@@ -3975,6 +4786,12 @@ export class CircuitBuilder extends Modal {
               class: "cbx-status bad",
               title: pr.all.join("\n"),
               onclick: () => {
+                // a drill's failures (and its general problems) are on the Drill tab
+                if (this.c.drill && firstLeg === undefined && !pr.start.length) {
+                  this.tab = "drill";
+                  this.renderEditor();
+                  return;
+                }
                 this.tab = "flight";
                 if (firstLeg !== undefined) this.select(firstLeg);
                 else if (pr.start.length) this.select(-1);
@@ -3990,7 +4807,7 @@ export class CircuitBuilder extends Modal {
               },
             },
             svgIcon(I.warning, 15),
-            `${pr.all.length} issue${pr.all.length === 1 ? "" : "s"} · ${pr.general[0] ?? pr.start[0] ?? (firstLeg !== undefined ? `Leg ${firstLeg + 1}: ${pr.legs.get(firstLeg)![0]}` : (pr.events[0] ?? pr.all[0]))}`,
+            `${t(pr.all.length === 1 ? "fb.issue" : "fb.issues", { n: pr.all.length })} · ${pr.general[0] ?? pr.start[0] ?? (firstLeg !== undefined ? `${lang() === "fr" && this.c.drill ? "Étape" : "Leg"} ${firstLeg + 1}${lang() === "fr" && this.c.drill ? " :" : ":"} ${pr.legs.get(firstLeg)![0]}` : (pr.events[0] ?? pr.all[0]))}`,
           );
     const saved = this.isSaved();
     this.foot.classList.add("cbx-foot");
@@ -4010,7 +4827,7 @@ export class CircuitBuilder extends Modal {
             onclick: (e: Event) => this.share(e.currentTarget as HTMLElement),
           },
           svgIcon(I.link, 14),
-          "Share",
+          t("fb.share"),
         ),
         h(
           "button",
@@ -4024,7 +4841,7 @@ export class CircuitBuilder extends Modal {
                 `${this.c.name.replace(/[^\w-]+/g, "_")}.json`,
               ),
           },
-          "Export",
+          t("fb.export"),
         ),
         h("span", { class: "cbx-sep" }),
         saved
@@ -4044,7 +4861,7 @@ export class CircuitBuilder extends Modal {
                   this.render();
                 },
               },
-              "Delete",
+              t("fb.delete"),
             )
           : null,
         // a copy only means something for a flight that is kept (a new flight is a copy already)
@@ -4068,17 +4885,17 @@ export class CircuitBuilder extends Modal {
               this.toast("Duplicated: save to keep the copy", "info");
             },
           },
-          "Duplicate",
+          t("fb.duplicate"),
         ),
         h(
           "button",
           {
             class: `btn${this.dirty ? " accent" : ""}`,
             disabled: !ok || (!this.dirty && saved),
-            title: ok ? "" : "Fix the issues first",
+            title: ok ? "" : t("fb.fixFirst"),
             onclick: () => this.save(),
           },
-          !this.dirty && saved ? "Saved" : "Save",
+          !this.dirty && saved ? t("fb.saved") : t("fb.save"),
         ),
         h(
           "button",
@@ -4089,14 +4906,14 @@ export class CircuitBuilder extends Modal {
               ? this.c.graded === false
                 ? "Fly this flight (not graded)"
                 : "Fly with ATC instructions and grading"
-              : "Fix the issues first",
+              : t("fb.fixFirst"),
             onclick: () => void this.fly(),
           },
           needLoad
-            ? "Load & fly"
+            ? t("fb.loadFly")
             : this.c.graded === false
-              ? "Fly (free)"
-              : "Fly",
+              ? t("fb.flyFree")
+              : t("fb.fly"),
           svgIcon(I.plane, 15),
         ),
       ].filter((x): x is HTMLElement => !!x),

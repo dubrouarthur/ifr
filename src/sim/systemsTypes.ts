@@ -123,6 +123,141 @@ export interface SystemsReadout {
   xpdrOk: boolean;
   flapsStuck: boolean;
   annunciators: Annunciator[];
+  // ---- additive (systems-core): always filled by SystemsModel — read them through `SystemsState` (all required)
+  /** steam attitude indicator and directional gyro (vacuum) as the pilot sees them: true attitude while the
+   *  vacuum is good, slow drift then a toppled gyro after a vacuum failure. G1000 AHRS is electrical: unaffected. */
+  gyro?: { pitchDeg: number; rollDeg: number; hdgDeg: number };
+  /** engine vibration / roughness 0..1 (rough magneto, lean misfire, engine about to seize) */
+  vibration?: number;
+  /** alternator output (A) and total electrical load (A) */
+  altAmps?: number;
+  loadAmps?: number;
+  /** which consumers have power — the cockpit draws dead screens / flags from these */
+  elec?: ElecFlags;
+  /** fuel pressure available at the engine (engine-driven pump turning, or aux pump ON) */
+  fuelPressOk?: boolean;
+  egtF?: number;
+  chtF?: number;
+  /** what is burning (null = no fire) */
+  fireKind?: "engine" | "electrical" | null;
+  /** cabin smoke density 0..1 (smoke = smokeLevel > 0.2) */
+  smokeLevel?: number;
+  /** pitot ice accretion 0..1 */
+  pitotIce?: number;
+  /** visible moisture at a freezing OAT, or pitot icing injected: PITOT HEAT should be ON */
+  icingConditions?: boolean;
+  engineSeized?: boolean;
+  /** starter engaged (magnetos START, battery power, RPM < 300) */
+  starterEngaged?: boolean;
+  /** electric trim currently running away */
+  trimRunning?: boolean;
+  doorOpen?: boolean;
+  /** magneto of the engineRough failure (null when none) */
+  badMag?: "L" | "R" | null;
+}
+
+/** consumers powered by the electrical system (true = working) */
+export interface ElecFlags {
+  /** PFD (essential bus) */
+  pfd: boolean;
+  /** MFD (avionics bus) */
+  mfd: boolean;
+  com1: boolean;
+  com2: boolean;
+  nav1: boolean;
+  nav2: boolean;
+  gps: boolean;
+  adf: boolean;
+  xpdr: boolean;
+  ap: boolean;
+  /** electric pitch trim (also needs the trim/AP breaker in) */
+  trim: boolean;
+  flaps: boolean;
+  turnCoord: boolean;
+  /** stall warning horn is pneumatic in a C172: always true, listed for completeness */
+  stallHorn: boolean;
+  pitotHeat: boolean;
+  landingLight: boolean;
+  beacon: boolean;
+  auxPump: boolean;
+}
+
+/** SystemsReadout with every additive field present (what `sim.sys` holds) */
+export type SystemsState = Required<SystemsReadout>;
+
+/** G1000 annunciator colours: red WARNING (chime, repeats until acknowledged) or amber CAUTION (single chime) */
+export const ANNUNCIATOR_LEVEL: Record<Annunciator, "warning" | "caution"> = {
+  "LOW VOLTS": "warning",
+  "OIL PRESSURE": "warning",
+  FIRE: "warning",
+  SMOKE: "warning",
+  "LOW VACUUM": "caution",
+  "LOW FUEL L": "caution",
+  "LOW FUEL R": "caution",
+  "PITOT HEAT OFF": "caution",
+  "FUEL PRESS": "caution",
+  DOOR: "caution",
+};
+
+/** pilot-facing switch names (event log, debrief, checklists) */
+export const SWITCH_LABELS_EN: Record<keyof Switches, string> = {
+  batMaster: "Master BAT",
+  altMaster: "Master ALT",
+  avionics: "Avionics master",
+  auxPump: "Aux fuel pump",
+  magnetos: "Magnetos",
+  mixture: "Mixture",
+  fuelSelector: "Fuel selector",
+  fuelShutoff: "Fuel shutoff valve",
+  pitotHeat: "Pitot heat",
+  altStatic: "Alternate static",
+  trimCb: "Trim / AP breaker",
+  cabinHeat: "Cabin heat / air",
+  landingLight: "Landing light",
+  beacon: "Beacon",
+};
+
+export const SWITCH_LABELS_FR: Record<keyof Switches, string> = {
+  batMaster: "Batterie (BAT)",
+  altMaster: "Alternateur (ALT)",
+  avionics: "Avionique",
+  auxPump: "Pompe électrique",
+  magnetos: "Magnétos",
+  mixture: "Mélange",
+  fuelSelector: "Robinet carburant",
+  fuelShutoff: "Coupe-carburant",
+  pitotHeat: "Réchauffage pitot",
+  altStatic: "Prise statique secours",
+  trimCb: "Disjoncteur trim / PA",
+  cabinHeat: "Chauffage / air cabine",
+  landingLight: "Phare d’atterrissage",
+  beacon: "Anticollision",
+};
+
+/** the value of a switch as a pilot says it (EN): 'ON', 'OFF', 'IDLE CUT-OFF', 'BOTH', 'PULLED'… */
+export function switchValueText(k: keyof Switches, v: Switches[keyof Switches]): string {
+  if (k === "mixture") {
+    const m = Number(v);
+    return m < 0.06 ? "IDLE CUT-OFF" : m >= 0.98 ? "FULL RICH" : `LEAN (${Math.round(m * 100)} %)`;
+  }
+  if (k === "trimCb") return v ? "IN" : "PULLED";
+  if (k === "altStatic") return v ? "OPEN" : "CLOSED";
+  if (typeof v === "boolean") return v ? "ON" : "OFF";
+  return String(v);
+}
+
+/** the same in French: 'MARCHE', 'ARRÊT', 'ÉTOUFFOIR', 'LES DEUX'… */
+export function switchValueTextFr(k: keyof Switches, v: Switches[keyof Switches]): string {
+  if (k === "mixture") {
+    const m = Number(v);
+    return m < 0.06 ? "ÉTOUFFOIR" : m >= 0.98 ? "PLEIN RICHE" : `APPAUVRI (${Math.round(m * 100)} %)`;
+  }
+  if (k === "trimCb") return v ? "ENFONCÉ" : "TIRÉ";
+  if (k === "altStatic") return v ? "OUVERTE" : "FERMÉE";
+  if (k === "fuelSelector") return ({ LEFT: "GAUCHE", RIGHT: "DROITE", BOTH: "LES DEUX", OFF: "FERMÉ" } as Record<string, string>)[String(v)] ?? String(v);
+  if (k === "magnetos") return ({ OFF: "ARRÊT", L: "G", R: "D", BOTH: "LES DEUX", START: "DÉMARRAGE" } as Record<string, string>)[String(v)] ?? String(v);
+  if (typeof v === "boolean") return v ? "MARCHE" : "ARRÊT";
+  return String(v);
 }
 
 export const FAILURE_LABELS_EN: Record<FailureKey, string> = {

@@ -13,6 +13,30 @@ import { approach, TRAINING_REGION } from "../nav/data";
 import { I, svgIcon } from "./icons";
 import type { AssessSettings, Scenario } from "../sim/sim";
 import type { Exercise } from "../train/engine";
+import type { Attempt } from "./history";
+import type { Circuit } from "../train/circuits";
+import { circuitStore } from "../train/circuits";
+import { registerStrings, t, tn, lang as uiLang, setLang, onLangChange, type UiLang } from "./i18n";
+import { PHASES, listDrills, type DrillEntry } from "../train/drills";
+import {
+  clubName,
+  effectiveProcedures,
+  exportPack,
+  exportPackJson,
+  importPack,
+  importShare,
+  decodeShare,
+  shareCodeFromUrl,
+  listClub,
+  onProceduresChange,
+  setClubName,
+  type ConflictPolicy,
+  type ImportReport,
+} from "../train/procedureStore";
+import { CATEGORY_LABELS, CATEGORY_ORDER, DISCLAIMER } from "../train/procedureLibrary";
+import type { Lang, Procedure, ProcedureResult } from "../train/procedureTypes";
+import type { FailureKey } from "../sim/systemsTypes";
+import { CAT_ICONS, categoryFor, failureName, openProcedureEditor, openShareDialog, pIcon, type PIcon } from "./procedureEditor";
 
 export type CockpitType = "g1000" | "steam" | "airliner";
 
@@ -37,7 +61,16 @@ export interface FcHooks {
   openInstructor?: () => void;
   /** connections (data link, webhooks, Navigraph); shown only when wired */
   openConnections?: () => void;
+  /** procedures mode: fly a failure drill (a saved club drill or a template built at an airport). Default:
+   *  flyCircuit */
+  flyDrill?: (c: Circuit) => void;
+  /** procedures mode: open a drill in the flight builder's Drill tab — a DRILL_TEMPLATES id or a saved drill.
+   *  Default: the builder's openDrill() (circuitBuilder.ts), else openBuilder(circuit) */
+  editDrill?: (x: Circuit | string) => void;
 }
+
+/** the sections of the Procedures · Flying club page */
+export type ClubTab = "drills" | "library" | "results" | "pack";
 
 type View =
   | { type: "home" }
@@ -45,7 +78,8 @@ type View =
   | { type: "all" }
   | { type: "cat"; cat: CatId; sub: string | null }
   | { type: "path"; path: Path }
-  | { type: "search" };
+  | { type: "search" }
+  | { type: "club"; tab: ClubTab };
 
 type QuickKind = "approach" | "hold";
 
@@ -159,6 +193,411 @@ export function continueInfo(items: Item[]) {
   };
 }
 
+// ------------------------------------------------------------------ procedures mode: results (pure, tested)
+/** a training record, with the procedure results the runner stores on it (runner-integration: history.ts) */
+type ProcAttempt = Attempt & { procedures?: ProcedureResult[] };
+
+/** one procedure attempt: a row of the Results table and of the CSV */
+export interface ProcRow {
+  attemptId: string;
+  date: string;
+  student: string;
+  /** the drill (flight) it was flown in */
+  drill: string;
+  procedureId: string;
+  procedure: string;
+  failure: FailureKey;
+  mode: "training" | "test";
+  score: number;
+  verdict: "PASS" | "FAIL";
+  reactionS: number | null;
+  /** the most important debrief note */
+  note: string;
+  /** every debrief note, the most important first (what was late, missed or out of order) */
+  notes: string[];
+  outcome: ProcedureResult["outcome"];
+}
+
+/** every procedure attempt of the training records, newest first */
+export function procedureRows(list: Attempt[]): ProcRow[] {
+  const rows: ProcRow[] = [];
+  for (const a of list as ProcAttempt[]) {
+    if (!Array.isArray(a?.procedures)) continue;
+    for (const r of a.procedures) {
+      if (!r || typeof r !== "object") continue;
+      rows.push({
+        attemptId: a.id,
+        date: a.date,
+        student: (a.student ?? "").trim(),
+        drill: a.exerciseTitle || a.scenario || "",
+        procedureId: r.procedureId,
+        procedure: r.title,
+        failure: r.failure,
+        mode: r.mode ?? (a.mode === "checkride" ? "test" : "training"),
+        score: Math.round(Number(r.score) || 0),
+        verdict: r.verdict === "PASS" ? "PASS" : "FAIL",
+        reactionS: typeof r.reactionS === "number" ? r.reactionS : null,
+        note: r.notes?.[0] ?? "",
+        notes: Array.isArray(r.notes) ? r.notes.filter((x) => typeof x === "string" && x) : [],
+        outcome: r.outcome,
+      });
+    }
+  }
+  return rows.sort((x, y) => (y.date > x.date ? 1 : y.date < x.date ? -1 : 0));
+}
+
+export interface ProcFilter {
+  student?: string;
+  verdict?: "" | "PASS" | "FAIL";
+  /** words matched against the procedure, the drill and the student */
+  q?: string;
+}
+export function filterProcRows(rows: ProcRow[], f: ProcFilter): ProcRow[] {
+  const words = (f.q ?? "").toLowerCase().split(/\s+/).filter(Boolean);
+  return rows.filter(
+    (r) =>
+      (!f.student || r.student === f.student) &&
+      (!f.verdict || r.verdict === f.verdict) &&
+      words.every((w) => `${r.procedure} ${r.drill} ${r.student}`.toLowerCase().includes(w)),
+  );
+}
+
+/** the students who appear in the rows, sorted (no name: '') */
+export function studentsOf(rows: ProcRow[]): string[] {
+  return [...new Set(rows.map((r) => r.student))].sort((a, b) => a.localeCompare(b));
+}
+
+export interface ProcSummary {
+  n: number;
+  pass: number;
+  /** 0..100, null without attempts */
+  passRate: number | null;
+  avgScore: number | null;
+  /** median reaction time (s) of the attempts with a reaction */
+  reactionS: number | null;
+  /** per procedure, the weakest (lowest pass rate, then lowest average) first */
+  byProcedure: { procedureId: string; procedure: string; n: number; pass: number; avgScore: number }[];
+}
+export function procSummary(rows: ProcRow[]): ProcSummary {
+  const n = rows.length;
+  const pass = rows.filter((r) => r.verdict === "PASS").length;
+  const reacts = rows.map((r) => r.reactionS).filter((x): x is number => x !== null).sort((a, b) => a - b);
+  const med = reacts.length
+    ? reacts.length % 2
+      ? reacts[(reacts.length - 1) / 2]
+      : (reacts[reacts.length / 2 - 1] + reacts[reacts.length / 2]) / 2
+    : null;
+  const by = new Map<string, { procedureId: string; procedure: string; n: number; pass: number; sum: number }>();
+  for (const r of rows) {
+    const k = r.procedureId;
+    const e = by.get(k) ?? { procedureId: k, procedure: r.procedure, n: 0, pass: 0, sum: 0 };
+    e.n++;
+    e.sum += r.score;
+    if (r.verdict === "PASS") e.pass++;
+    by.set(k, e);
+  }
+  return {
+    n,
+    pass,
+    passRate: n ? Math.round((pass / n) * 100) : null,
+    avgScore: n ? Math.round(rows.reduce((s, r) => s + r.score, 0) / n) : null,
+    reactionS: med === null ? null : Math.round(med * 10) / 10,
+    byProcedure: [...by.values()]
+      .map((e) => ({ procedureId: e.procedureId, procedure: e.procedure, n: e.n, pass: e.pass, avgScore: Math.round(e.sum / e.n) }))
+      .sort((a, b) => a.pass / a.n - b.pass / b.n || a.avgScore - b.avgScore || a.procedure.localeCompare(b.procedure)),
+  };
+}
+
+/** the Results table as CSV (one row per procedure attempt; Excel-friendly quoting) */
+export function procCsv(rows: ProcRow[]): string {
+  const head = ["date", "student", "drill", "procedure", "procedure_id", "failure", "mode", "score", "verdict", "reaction_s", "outcome", "main_point"];
+  const q = (v: string | number | null) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  return [
+    head.join(","),
+    ...rows.map((r) =>
+      [r.date, r.student, r.drill, r.procedure, r.procedureId, r.failure, r.mode, r.score, r.verdict, r.reactionS === null ? "" : Math.round(r.reactionS * 10) / 10, r.outcome, r.note]
+        .map(q)
+        .join(","),
+    ),
+  ].join("\n");
+}
+
+/** plain-language import report, in the UI language */
+export function importSummary(r: ImportReport): { ok: boolean; lines: string[] } {
+  const lines: string[] = [...r.issues];
+  if (r.added.length) lines.push(tn("ch.imp.added", r.added.length));
+  if (r.replaced.length) lines.push(tn("ch.imp.replaced", r.replaced.length));
+  if (r.renamed.length) lines.push(tn("ch.imp.renamed", r.renamed.length));
+  for (const s of r.skipped) lines.push(t("ch.imp.skipped", { id: s.id, why: s.reason }));
+  if (!lines.length) lines.push(t("ch.imp.nothing"));
+  return { ok: !r.issues.length && r.added.length + r.replaced.length + r.renamed.length > 0, lines };
+}
+
+/** what a share link holds, in the UI language: a title line and the procedures (title, item count) */
+export function shareSummary(code: string): { ok: boolean; title: string; procs: { title: string; items: number }[] } {
+  const s = decodeShare(code);
+  if (!s) return { ok: false, title: t("ch.p.linkBad"), procs: [] };
+  const list = s.kind === "pack" ? s.pack.procedures : [s.procedure];
+  const procs = list.map((p) => ({ title: p.title, items: Array.isArray(p.items) ? p.items.length : 0 }));
+  return {
+    ok: true,
+    title:
+      s.kind === "pack"
+        ? tn("ch.p.linkPack", procs.length, { c: s.pack.club || t("ch.p.linkClub") })
+        : t("ch.p.linkProc", { t: s.procedure.title }),
+    procs,
+  };
+}
+
+// ------------------------------------------------------------------ procedures mode: strings (FR / EN)
+registerStrings("en", {
+  "ch.tile": "Procedures · Flying club",
+  "ch.tileDesc": "Failure drills, the club’s checklists and the students’ results.",
+  "ch.tileMeta": "{d} drills · {p} procedures",
+  "ch.title": "Procedures · Flying club",
+  "ch.sub": "Test your students on failures and emergencies: fly a drill, adapt the checklists to your club, follow the results.",
+  "ch.back": "Flight Center",
+  "ch.searchAll": "Search all flights",
+  "ch.lang": "Language",
+  "ch.tab.drills": "Drills",
+  "ch.tab.library": "Procedures",
+  "ch.tab.results": "Results",
+  "ch.tab.pack": "Club pack",
+  "ch.d.student": "Student flying",
+  "ch.d.studentPh": "Name (for the records)",
+  "ch.d.new": "Create a drill",
+  "ch.d.newTip": "In the flight builder: where and when, the failure and its trigger, training or test",
+  "ch.d.club": "Club drills",
+  "ch.d.clubNone": "No club drill yet",
+  "ch.d.clubNoneSub": "Open a template, adjust it in the flight builder and Save: it appears here for every instructor and student.",
+  "ch.d.mine": "Assigned to {s}",
+  "ch.d.tpl": "Templates",
+  "ch.d.tplSub": "Ready to fly at your airport. Edit one to make a club drill.",
+  "ch.d.fly": "Fly",
+  "ch.d.edit": "Edit",
+  "ch.d.assign": "Assign",
+  "ch.d.assigned": "Assigned to {s}",
+  "ch.d.assignTo": "Assign to a student",
+  "ch.d.assignPh": "Student name",
+  "ch.d.assignOk": "Assign",
+  "ch.d.unassign": "Remove",
+  "ch.d.assignDone": "“{d}” assigned to {s}",
+  "ch.d.noBuild": "No airport of the loaded data fits this drill: it opens in the flight builder.",
+  "ch.d.training": "Training",
+  "ch.d.test": "Test",
+  "ch.d.trainingTip": "Emergency card shown: memory items with live ticks, then the checklist",
+  "ch.d.testTip": "Nothing announced, checklist hidden: graded at the end",
+  "ch.d.random": "Random failure",
+  "ch.l.search": "Search procedures",
+  "ch.l.all": "All",
+  "ch.l.club": "Club",
+  "ch.l.library": "Library",
+  "ch.l.new": "New procedure",
+  "ch.l.custom": "Customised",
+  "ch.l.items": "{n} items",
+  "ch.l.items.1": "1 item",
+  "ch.l.mem": "{n} memory",
+  "ch.l.mem.1": "1 memory",
+  "ch.l.answers": "Answers",
+  "ch.l.open": "Open",
+  "ch.l.edit": "Edit",
+  "ch.l.share": "Share",
+  "ch.l.none": "No procedure matches “{q}”",
+  "ch.l.noneSub": "Try a failure (alternator, vacuum) or a word of the title.",
+  "ch.l.noClub": "Your club has no procedure of its own yet",
+  "ch.l.noClubSub": "Open a library procedure and press Customise, or write a new one.",
+  "ch.l.otherLang": "in English",
+  "ch.l.saved": "“{t}” saved in the club library",
+  "ch.l.deleted": "Procedure deleted",
+  "ch.r.n": "Attempts",
+  "ch.r.pass": "Pass rate",
+  "ch.r.avg": "Average score",
+  "ch.r.react": "Median reaction",
+  "ch.r.student": "Student",
+  "ch.r.allStudents": "All students",
+  "ch.r.noName": "(no name)",
+  "ch.r.verdict": "Result",
+  "ch.r.allVerdicts": "Pass and fail",
+  "ch.v.PASS": "PASS",
+  "ch.v.FAIL": "FAIL",
+  "ch.r.csv": "Export CSV",
+  "ch.r.date": "Date",
+  "ch.r.drill": "Drill",
+  "ch.r.proc": "Procedure",
+  "ch.r.score": "Score",
+  "ch.r.weak": "To work on",
+  "ch.r.weakLine": "{p}/{n} passed · average {a}",
+  "ch.r.none": "No procedure result yet",
+  "ch.r.noneSub": "Fly a drill: every procedure the student runs is graded and listed here, with what was late, missed or out of order.",
+  "ch.r.noneFilter": "No result for these filters",
+  "ch.r.records": "All training records",
+  "ch.r.shown": "{n} shown",
+  "ch.r.more": "+{n} more",
+  "ch.r.more.1": "+1 more",
+  "ch.l.reset": "“{t}”: back to the library version",
+  "ch.p.name": "Club name",
+  "ch.p.namePh": "e.g. Aéroclub de Toussus",
+  "ch.p.nameHint": "Shown on the packs you share.",
+  "ch.p.export": "Share the club library",
+  "ch.p.exportSub": "The {n} procedures of your club, for the other instructors and your students’ devices.",
+  "ch.p.exportSub.1": "Your club’s procedure, for the other instructors and your students’ devices.",
+  "ch.p.exportNone": "Your club has no procedure of its own yet: customise or write one first.",
+  "ch.p.download": "Download the pack (.json)",
+  "ch.p.link": "Share link and QR code",
+  "ch.p.import": "Import a pack",
+  "ch.p.importSub": "A .json file from another instructor, or a share link or code.",
+  "ch.p.file": "Choose a file",
+  "ch.p.paste": "Paste a share link or code",
+  "ch.p.go": "Import",
+  "ch.p.policy": "When a procedure already exists",
+  "ch.p.newer": "Keep the most recent",
+  "ch.p.replace": "Replace ours",
+  "ch.p.keep": "Keep ours",
+  "ch.p.copy": "Import as a copy",
+  "ch.p.linkTitle": "Shared with you",
+  "ch.p.linkProc": "Procedure “{t}”",
+  "ch.p.linkPack": "{n} procedures shared by {c}",
+  "ch.p.linkPack.1": "1 procedure shared by {c}",
+  "ch.p.linkClub": "another club",
+  "ch.p.linkBad": "This share link is damaged or incomplete: ask for a new one.",
+  "ch.p.linkLater": "Not now",
+  "ch.p.disclaimer": "Club packs carry the club’s own texts: check them against the aircraft POH/AFM.",
+  "ch.imp.added": "{n} procedures added",
+  "ch.imp.added.1": "1 procedure added",
+  "ch.imp.replaced": "{n} procedures updated",
+  "ch.imp.replaced.1": "1 procedure updated",
+  "ch.imp.renamed": "{n} procedures imported as a copy",
+  "ch.imp.renamed.1": "1 procedure imported as a copy",
+  "ch.imp.skipped": "{id}: not imported ({why})",
+  "ch.imp.nothing": "Nothing to import",
+  "ch.nav": "Procedures · Club",
+});
+registerStrings("fr", {
+  "ch.tile": "Procédures · Aéroclub",
+  "ch.tileDesc": "Exercices de panne, check-lists du club et résultats des élèves.",
+  "ch.tileMeta": "{d} exercices · {p} procédures",
+  "ch.title": "Procédures · Aéroclub",
+  "ch.sub": "Entraînez et contrôlez vos élèves sur les pannes et les urgences : lancez un exercice, adaptez les check-lists à votre club, suivez les résultats.",
+  "ch.back": "Flight Center",
+  "ch.searchAll": "Rechercher un vol",
+  "ch.lang": "Langue",
+  "ch.tab.drills": "Exercices",
+  "ch.tab.library": "Procédures",
+  "ch.tab.results": "Résultats",
+  "ch.tab.pack": "Pack du club",
+  "ch.d.student": "Élève aux commandes",
+  "ch.d.studentPh": "Nom (pour le suivi)",
+  "ch.d.new": "Créer un exercice",
+  "ch.d.newTip": "Dans le constructeur de vol : où et quand, la panne et son déclenchement, entraînement ou contrôle",
+  "ch.d.club": "Exercices du club",
+  "ch.d.clubNone": "Pas encore d’exercice du club",
+  "ch.d.clubNoneSub": "Ouvrez un modèle, ajustez-le dans le constructeur de vol et enregistrez : il apparaît ici pour tous les instructeurs et élèves.",
+  "ch.d.mine": "Attribués à {s}",
+  "ch.d.tpl": "Modèles",
+  "ch.d.tplSub": "Prêts à voler sur votre terrain. Modifiez-en un pour créer un exercice du club.",
+  "ch.d.fly": "Voler",
+  "ch.d.edit": "Modifier",
+  "ch.d.assign": "Attribuer",
+  "ch.d.assigned": "Attribué à {s}",
+  "ch.d.assignTo": "Attribuer à un élève",
+  "ch.d.assignPh": "Nom de l’élève",
+  "ch.d.assignOk": "Attribuer",
+  "ch.d.unassign": "Retirer",
+  "ch.d.assignDone": "« {d} » attribué à {s}",
+  "ch.d.noBuild": "Aucun terrain des données chargées ne convient : l’exercice s’ouvre dans le constructeur de vol.",
+  "ch.d.training": "Entraînement",
+  "ch.d.test": "Contrôle",
+  "ch.d.trainingTip": "Carte d’urgence affichée : actions réflexes cochées en direct, puis la check-list",
+  "ch.d.testTip": "Rien n’est annoncé, check-list masquée : notation à la fin",
+  "ch.d.random": "Panne aléatoire",
+  "ch.l.search": "Rechercher une procédure",
+  "ch.l.all": "Toutes",
+  "ch.l.club": "Club",
+  "ch.l.library": "Bibliothèque",
+  "ch.l.new": "Nouvelle procédure",
+  "ch.l.custom": "Personnalisée",
+  "ch.l.items": "{n} points",
+  "ch.l.items.1": "1 point",
+  "ch.l.mem": "{n} réflexes",
+  "ch.l.mem.1": "1 réflexe",
+  "ch.l.answers": "Pannes",
+  "ch.l.open": "Ouvrir",
+  "ch.l.edit": "Modifier",
+  "ch.l.share": "Partager",
+  "ch.l.none": "Aucune procédure ne correspond à « {q} »",
+  "ch.l.noneSub": "Essayez une panne (alternateur, dépression) ou un mot du titre.",
+  "ch.l.noClub": "Votre club n’a pas encore de procédure à lui",
+  "ch.l.noClubSub": "Ouvrez une procédure de la bibliothèque et appuyez sur Personnaliser, ou rédigez-en une.",
+  "ch.l.otherLang": "en français",
+  "ch.l.saved": "« {t} » enregistrée dans la bibliothèque du club",
+  "ch.l.deleted": "Procédure supprimée",
+  "ch.r.n": "Tentatives",
+  "ch.r.pass": "Taux de réussite",
+  "ch.r.avg": "Note moyenne",
+  "ch.r.react": "Réaction médiane",
+  "ch.r.student": "Élève",
+  "ch.r.allStudents": "Tous les élèves",
+  "ch.r.noName": "(sans nom)",
+  "ch.r.verdict": "Résultat",
+  "ch.r.allVerdicts": "Réussis et échoués",
+  "ch.v.PASS": "RÉUSSI",
+  "ch.v.FAIL": "ÉCHEC",
+  "ch.r.csv": "Exporter en CSV",
+  "ch.r.date": "Date",
+  "ch.r.drill": "Exercice",
+  "ch.r.proc": "Procédure",
+  "ch.r.score": "Note",
+  "ch.r.weak": "À retravailler",
+  "ch.r.weakLine": "{p}/{n} réussies · moyenne {a}",
+  "ch.r.none": "Pas encore de résultat de procédure",
+  "ch.r.noneSub": "Lancez un exercice : chaque procédure de l’élève est notée et listée ici, avec ce qui était en retard, oublié ou dans le désordre.",
+  "ch.r.noneFilter": "Aucun résultat pour ces filtres",
+  "ch.r.records": "Tout le carnet de vol",
+  "ch.r.shown": "{n} affichés",
+  "ch.r.more": "+{n} remarques",
+  "ch.r.more.1": "+1 remarque",
+  "ch.l.reset": "« {t} » : retour à la version de la bibliothèque",
+  "ch.p.name": "Nom du club",
+  "ch.p.namePh": "ex. Aéroclub de Toussus",
+  "ch.p.nameHint": "Affiché sur les packs que vous partagez.",
+  "ch.p.export": "Partager la bibliothèque du club",
+  "ch.p.exportSub": "Les {n} procédures de votre club, pour les autres instructeurs et les appareils des élèves.",
+  "ch.p.exportSub.1": "La procédure de votre club, pour les autres instructeurs et les appareils des élèves.",
+  "ch.p.exportNone": "Votre club n’a pas encore de procédure à lui : personnalisez-en ou rédigez-en une d’abord.",
+  "ch.p.download": "Télécharger le pack (.json)",
+  "ch.p.link": "Lien de partage et QR code",
+  "ch.p.import": "Importer un pack",
+  "ch.p.importSub": "Un fichier .json d’un autre instructeur, ou un lien ou code de partage.",
+  "ch.p.file": "Choisir un fichier",
+  "ch.p.paste": "Collez un lien ou un code de partage",
+  "ch.p.go": "Importer",
+  "ch.p.policy": "Si une procédure existe déjà",
+  "ch.p.newer": "Garder la plus récente",
+  "ch.p.replace": "Remplacer la nôtre",
+  "ch.p.keep": "Garder la nôtre",
+  "ch.p.copy": "Importer en copie",
+  "ch.p.linkTitle": "Partagé avec vous",
+  "ch.p.linkProc": "Procédure « {t} »",
+  "ch.p.linkPack": "{n} procédures partagées par {c}",
+  "ch.p.linkPack.1": "1 procédure partagée par {c}",
+  "ch.p.linkClub": "un autre club",
+  "ch.p.linkBad": "Ce lien de partage est abîmé ou incomplet : demandez-en un nouveau.",
+  "ch.p.linkLater": "Plus tard",
+  "ch.p.disclaimer": "Les packs contiennent les textes propres au club : vérifiez-les avec le manuel de vol (POH/AFM).",
+  "ch.imp.added": "{n} procédures ajoutées",
+  "ch.imp.added.1": "1 procédure ajoutée",
+  "ch.imp.replaced": "{n} procédures mises à jour",
+  "ch.imp.replaced.1": "1 procédure mise à jour",
+  "ch.imp.renamed": "{n} procédures importées en copie",
+  "ch.imp.renamed.1": "1 procédure importée en copie",
+  "ch.imp.skipped": "{id} : non importée ({why})",
+  "ch.imp.nothing": "Rien à importer",
+  "ch.nav": "Procédures · Club",
+});
+
+const uiL = (): Lang => (uiLang() === "fr" ? "fr" : "en");
+const CLUB_TAB_KEY = "ifr.fc.clubTab";
+
 export class FlightCenter extends Modal {
   private view: View = { type: "home" };
   /** where to go back to when the search is emptied */
@@ -185,6 +624,18 @@ export class FlightCenter extends Modal {
   private searchClear!: HTMLElement;
   private plateView: HTMLElement | null = null;
   private quickPop: HTMLElement | null = null;
+  // procedures mode page
+  private flash: { text: string; kind: "ok" | "warn" } | null = null;
+  private assignFor: string | null = null;
+  private libQ = "";
+  private libSrc: "all" | "club" | "library" = "all";
+  private resStudent = "";
+  private resVerdict: "" | "PASS" | "FAIL" = "";
+  private packPolicy: ConflictPolicy = "newer";
+  private packReport: { ok: boolean; lines: string[] } | null = null;
+  /** a share link the page was opened with (?proc=<code>): offered for import on the Club pack page */
+  private pendingShare: string | null =
+    typeof location !== "undefined" ? shareCodeFromUrl(location.href) : null;
 
   constructor(private hooks: FcHooks) {
     super("Flight Center");
@@ -209,11 +660,15 @@ export class FlightCenter extends Modal {
     this.body.append(this.gridEl);
     this.foot.remove();
     this.buildHeader();
+    // the procedures page follows the FR / EN switch and the club library
+    onLangChange(() => this.isOpen && this.render());
+    onProceduresChange(() => this.isOpen && this.view.type === "club" && this.renderMain());
     // "/" focuses the search field; Esc closes the plate viewer / Quick start before it closes the Flight Center
     window.addEventListener(
       "keydown",
       (e) => {
-        if (!this.isOpen) return;
+        // another window stacked over the Flight Center (procedure editor) owns the keyboard
+        if (!this.isOpen || Modal.stack[Modal.stack.length - 1] !== this) return;
         if (e.key === "Escape" && (this.plateView || this.quickPop)) {
           e.stopImmediatePropagation();
           e.preventDefault();
@@ -301,9 +756,18 @@ export class FlightCenter extends Modal {
   }
 
   open() {
+    // opened from a share link: straight to the Club pack page, where the link waits to be imported
+    if (this.pendingShare && this.view.type !== "club") return this.openClub("pack");
     this.items = catalog();
     this.render();
     super.open();
+  }
+
+  /** open on the Procedures · Flying club page (main.ts: ?proc= share links, the builder's procedure links) */
+  openClub(tab?: ClubTab) {
+    this.items = catalog();
+    if (!this.isOpen) super.open();
+    this.goClub(tab);
   }
 
   close() {
@@ -313,8 +777,12 @@ export class FlightCenter extends Modal {
   }
 
   private go(v: View) {
+    this.flash = null;
+    if (v.type === "club") store.set(CLUB_TAB_KEY, v.tab);
     this.view = v;
     this.sel = null;
+    this.assignFor = null;
+    this.packReport = null;
     if (v.type !== "search") {
       this.q = "";
       this.searchInput.value = "";
@@ -331,10 +799,16 @@ export class FlightCenter extends Modal {
   }
 
   render() {
-    const home = this.view.type === "home" || this.view.type === "instructor";
+    const home =
+      this.view.type === "home" ||
+      this.view.type === "instructor" ||
+      this.view.type === "club";
     this.gridEl.classList.toggle("home", home);
     this.box.classList.toggle("fc-is-home", home);
     this.searchClear.hidden = !this.q;
+    // the search field follows the FR / EN switch of the procedures page
+    this.searchInput.placeholder = t("ch.searchAll");
+    this.searchInput.setAttribute("aria-label", t("ch.searchAll"));
     this.renderCrumb();
     if (home) clear(this.side);
     else this.renderSide();
@@ -349,6 +823,8 @@ export class FlightCenter extends Modal {
         ? ""
         : v.type === "instructor"
           ? "Instructor"
+          : v.type === "club"
+            ? t("ch.title")
           : v.type === "all"
             ? "All flights"
             : v.type === "search"
@@ -411,6 +887,11 @@ export class FlightCenter extends Modal {
         icon: svgIcon(I.records),
         key: "all",
         count: String(this.items.length),
+      }),
+      navBtn(t("ch.nav"), false, () => this.goClub(), {
+        icon: pIcon("drill"),
+        key: "club",
+        tip: t("ch.tileDesc"),
       }),
     );
     this.side.append(h("div", { class: "fc-sec" }, "Flight types"));
@@ -749,6 +1230,7 @@ export class FlightCenter extends Modal {
     const v = this.view;
     if (v.type === "home") return this.renderHome();
     if (v.type === "instructor") return this.renderInstructor();
+    if (v.type === "club") return this.renderClub(v.tab);
     if (v.type === "path") return this.renderPath(v.path);
     if (v.type === "search") {
       const res = this.searchResults();
@@ -1060,6 +1542,17 @@ export class FlightCenter extends Modal {
         run: () => this.go({ type: "cat", cat: "procedures", sub: "Holdings" }),
       }),
       this.tile({
+        img: "departure",
+        title: t("ch.tile"),
+        desc: t("ch.tileDesc"),
+        meta: t("ch.tileMeta", {
+          d: listDrills(uiL()).length,
+          p: effectiveProcedures(uiL()).length,
+        }),
+        run: () => this.goClub(),
+        cls: "fc-tile-club",
+      }),
+      this.tile({
         img: "sky",
         title: "My flights & circuits",
         desc: "Your saved and shared flights, school presets and templates.",
@@ -1074,6 +1567,7 @@ export class FlightCenter extends Modal {
         desc: "Pair a phone, build a lesson, run the session and review the records.",
         meta: "School tools",
         run: () => this.go({ type: "instructor" }),
+        cls: "fc-tile-ins",
       }),
       this.tile({
         img: "steam",
@@ -1176,6 +1670,7 @@ export class FlightCenter extends Modal {
     bar?: number;
     run?: () => void;
     href?: string;
+    cls?: string;
   }): HTMLElement {
     const inner = [
       h(
@@ -1217,7 +1712,11 @@ export class FlightCenter extends Modal {
           },
           ...inner,
         )
-      : h("button", { class: "fc-tile", onclick: t.run }, ...inner);
+      : h(
+          "button",
+          { class: `fc-tile${t.cls ? ` ${t.cls}` : ""}`, onclick: t.run },
+          ...inner,
+        );
   }
 
   // ------------------------------------------------------------------ Quick start
@@ -1390,6 +1889,13 @@ export class FlightCenter extends Modal {
       });
     acts.push(
       {
+        icon: I.warning,
+        title: t("ch.title"),
+        desc: t("ch.sub"),
+        label: t("ch.tab.drills"),
+        run: () => this.goClub("drills"),
+      },
+      {
         icon: I.plan,
         title: "Build a lesson",
         desc: "In the flight builder: chain a departure, holds and approaches with weather and scheduled failures, or start from a school preset. Share it with a link.",
@@ -1468,6 +1974,804 @@ export class FlightCenter extends Modal {
           ),
         ),
       ),
+    );
+  }
+
+  // ------------------------------------------------------------------ procedures · flying club
+  private goClub(tab?: ClubTab) {
+    const last = store.get<ClubTab>(CLUB_TAB_KEY, "drills");
+    this.go({ type: "club", tab: tab ?? (["drills", "library", "results", "pack"].includes(last) ? last : "drills") });
+  }
+
+  private say(text: string, kind: "ok" | "warn" = "ok") {
+    this.flash = { text, kind };
+    this.renderMain();
+  }
+
+  private renderClub(tab: ClubTab) {
+    const l = uiL();
+    const drills = listDrills(l);
+    const procs = effectiveProcedures(l);
+    const nRes = procedureRows(history.all()).length;
+    const langSeg = h(
+      "div",
+      { class: "seg ch-lang", role: "group", "aria-label": t("ch.lang") },
+      ...(["fr", "en"] as UiLang[]).map((x) =>
+        h(
+          "button",
+          {
+            class: uiLang() === x ? "on" : "",
+            "aria-pressed": String(uiLang() === x),
+            title: x === "fr" ? "Français" : "English",
+            onclick: () => setLang(x),
+          },
+          x === "fr" ? "FR" : "EN",
+        ),
+      ),
+    );
+    const tabs: [ClubTab, PIcon, string, number | null][] = [
+      ["drills", "drill", t("ch.tab.drills"), drills.length],
+      ["library", "book", t("ch.tab.library"), procs.length],
+      ["results", "chart", t("ch.tab.results"), nRes],
+      ["pack", "share", t("ch.tab.pack"), null],
+    ];
+    const page = h(
+      "div",
+      { class: "fc-home ch" },
+      h(
+        "div",
+        { class: "fc-head ch-head" },
+        h(
+          "div",
+          {},
+          h(
+            "button",
+            { class: "fc-back", onclick: () => this.go({ type: "home" }) },
+            svgIcon(I.arrow, 14),
+            t("ch.back"),
+          ),
+          h("h2", {}, t("ch.title")),
+          h("p", { class: "muted" }, t("ch.sub")),
+        ),
+        langSeg,
+      ),
+      h(
+        "div",
+        { class: "ch-tabs", role: "tablist", "aria-label": t("ch.title") },
+        ...tabs.map(([id, icon, label, n]) =>
+          h(
+            "button",
+            {
+              role: "tab",
+              class: `ch-tab${tab === id ? " on" : ""}`,
+              "aria-selected": String(tab === id),
+              "data-tab": id,
+              onclick: () => this.go({ type: "club", tab: id }),
+            },
+            pIcon(icon, 18),
+            h("span", {}, label),
+            n !== null ? h("span", { class: "ct" }, String(n)) : null,
+          ),
+        ),
+      ),
+    );
+    if (this.flash)
+      page.append(
+        h(
+          "div",
+          { class: `ch-flash ${this.flash.kind}`, role: "status" },
+          pIcon(this.flash.kind === "ok" ? "check" : "warn", 16),
+          h("span", {}, this.flash.text),
+          h(
+            "button",
+            {
+              class: "fc-x",
+              "aria-label": "OK",
+              onclick: () => {
+                this.flash = null;
+                this.renderMain();
+              },
+            },
+            "×",
+          ),
+        ),
+      );
+    const body = h("div", { class: "ch-body", role: "tabpanel" });
+    if (tab === "drills") this.clubDrills(body, drills);
+    else if (tab === "library") this.clubLibrary(body);
+    else if (tab === "results") this.clubResults(body);
+    else this.clubPack(body);
+    page.append(body);
+    this.main.append(page);
+  }
+
+  // ---- drills
+  private flyEntry(e: DrillEntry) {
+    const c = e.build();
+    if (!c) {
+      this.editEntry(e);
+      return;
+    }
+    if (!c.assignee && this.assess.student) c.assignee = this.assess.student;
+    this.leave(() => (this.hooks.flyDrill ?? this.hooks.flyCircuit)(c));
+  }
+
+  private editEntry(e: DrillEntry) {
+    const x: Circuit | string = e.kind === "template" ? e.id : (e.build() ?? e.id);
+    this.leave(() => {
+      if (this.hooks.editDrill) return this.hooks.editDrill(x);
+      void import("./circuitBuilder").then((m) => {
+        if (!m.openDrill(x)) this.hooks.openBuilder(typeof x === "string" ? undefined : x);
+      });
+    });
+  }
+
+  private assign(e: DrillEntry, name: string) {
+    const who = name.trim();
+    const c = e.kind === "club" ? circuitStore.list().find((x) => x.id === e.id) : e.build();
+    if (!c) {
+      this.say(t("ch.d.noBuild"), "warn");
+      return;
+    }
+    if (who) c.assignee = who;
+    else delete c.assignee;
+    circuitStore.save(c);
+    this.assignFor = null;
+    this.flash = who ? { text: t("ch.d.assignDone", { d: c.name, s: who }), kind: "ok" } : null;
+    this.renderMain();
+  }
+
+  /** the students the club knows: assignees and the names in the records */
+  private knownStudents(): string[] {
+    const names = new Set<string>();
+    for (const c of circuitStore.list()) if (c.assignee) names.add(c.assignee);
+    for (const a of history.all()) if (a.student?.trim()) names.add(a.student.trim());
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }
+
+  private drillCard(e: DrillEntry): HTMLElement {
+    const l = uiL();
+    const keys = e.failures.filter((f): f is FailureKey => f !== "random");
+    const icon: PIcon = keys.length ? CAT_ICONS[categoryFor(keys[0])] : "drill";
+    const phase = PHASES.find((p) => p.id === e.phase);
+    const fails = e.failures.map((f) => (f === "random" ? t("ch.d.random") : failureName(f, l)));
+    const card = h(
+      "article",
+      { class: `ch-drill${e.kind === "club" ? " club" : ""}${e.mode === "test" ? " test" : ""}`, "data-id": e.id },
+      h(
+        "div",
+        { class: "ch-drill-top" },
+        h("span", { class: `ch-ic cat-${keys.length ? categoryFor(keys[0]) : "other"}` }, pIcon(icon, 20)),
+        h(
+          "div",
+          { class: "ch-drill-tx" },
+          h("h3", {}, e.name),
+          h(
+            "div",
+            { class: "ch-meta" },
+            phase ? h("span", {}, phase.name[l]) : null,
+            h(
+              "span",
+              { class: `ch-mode ${e.mode}`, title: t(e.mode === "test" ? "ch.d.testTip" : "ch.d.trainingTip") },
+              t(e.mode === "test" ? "ch.d.test" : "ch.d.training"),
+            ),
+            e.assignee ? h("span", { class: "ch-who" }, pIcon("users", 13), e.assignee) : null,
+          ),
+        ),
+      ),
+    );
+    // while assigning, the form takes the place of the description (the card keeps its height)
+    if (this.assignFor !== e.id)
+      card.append(
+        h("p", { class: "ch-desc" }, e.desc || ""),
+        h("div", { class: "ch-fails" }, ...fails.map((f) => h("span", {}, f))),
+      );
+    if (this.assignFor === e.id) {
+      const input = h("input", {
+        type: "text",
+        value: e.assignee ?? this.assess.student ?? "",
+        placeholder: t("ch.d.assignPh"),
+        "aria-label": t("ch.d.assignTo"),
+        list: "ch-students",
+        enterkeyhint: "done",
+      }) as HTMLInputElement;
+      input.addEventListener("keydown", (ev) => {
+        ev.stopPropagation();
+        if (ev.key === "Enter") this.assign(e, input.value);
+        if (ev.key === "Escape") {
+          this.assignFor = null;
+          this.renderMain();
+        }
+      });
+      card.append(
+        h(
+          "div",
+          { class: "ch-assign" },
+          h("label", {}, h("span", {}, t("ch.d.assignTo")), input),
+          h("datalist", { id: "ch-students" }, ...this.knownStudents().map((s) => h("option", { value: s }))),
+          h(
+            "div",
+            { class: "ch-assign-b" },
+            e.assignee ? h("button", { class: "btn ghost", onclick: () => this.assign(e, "") }, t("ch.d.unassign")) : null,
+            h("button", { class: "btn", onclick: () => ((this.assignFor = null), this.renderMain()) }, t("pe.cancel")),
+            h("button", { class: "btn primary", onclick: () => this.assign(e, input.value) }, t("ch.d.assignOk")),
+          ),
+        ),
+      );
+      requestAnimationFrame(() => input.focus());
+    }
+    card.append(
+      h(
+        "div",
+        { class: "ch-acts" },
+        h("button", { class: "btn primary", onclick: () => this.flyEntry(e) }, pIcon("play", 15), t("ch.d.fly")),
+        h("button", { class: "btn", onclick: () => this.editEntry(e) }, pIcon("edit", 15), t("ch.d.edit")),
+        h(
+          "button",
+          {
+            class: `btn ghost${this.assignFor === e.id ? " on" : ""}`,
+            "aria-expanded": String(this.assignFor === e.id),
+            onclick: () => {
+              this.assignFor = this.assignFor === e.id ? null : e.id;
+              this.renderMain();
+            },
+          },
+          pIcon("users", 15),
+          t("ch.d.assign"),
+        ),
+      ),
+    );
+    return card;
+  }
+
+  private clubDrills(body: HTMLElement, all: DrillEntry[]) {
+    const name = h("input", {
+      type: "text",
+      value: this.assess.student,
+      placeholder: t("ch.d.studentPh"),
+      "aria-label": t("ch.d.student"),
+      list: "ch-students-all",
+      autocomplete: "off",
+    }) as HTMLInputElement;
+    name.addEventListener("keydown", (e) => e.stopPropagation());
+    name.addEventListener("change", () => {
+      this.assess.student = name.value.trim();
+      store.set("ifr.assess", this.assess);
+      this.renderMain();
+    });
+    body.append(
+      h(
+        "div",
+        { class: "ch-bar" },
+        h(
+          "label",
+          { class: "ch-student" },
+          pIcon("users", 16),
+          h("span", {}, t("ch.d.student")),
+          name,
+          h("datalist", { id: "ch-students-all" }, ...this.knownStudents().map((s) => h("option", { value: s }))),
+        ),
+        h("span", { class: "grow" }),
+        h(
+          "button",
+          {
+            class: "btn primary ch-new",
+            title: t("ch.d.newTip"),
+            onclick: () => this.editEntry(listDrills(uiL()).find((d) => d.kind === "template")!),
+          },
+          pIcon("plus", 16),
+          t("ch.d.new"),
+        ),
+      ),
+    );
+    const club = all.filter((d) => d.kind === "club");
+    const me = this.assess.student.trim().toLowerCase();
+    const mine = me ? club.filter((d) => d.assignee?.trim().toLowerCase() === me) : [];
+    const rest = club.filter((d) => !mine.includes(d));
+    const tpls = all.filter((d) => d.kind === "template");
+    const templates = () =>
+      body.append(
+        h(
+          "div",
+          { class: "fc-sec2" },
+          t("ch.d.tpl"),
+          h("span", { class: "ct" }, String(tpls.length)),
+          h("small", { class: "ch-sec-sub" }, t("ch.d.tplSub")),
+        ),
+        h("div", { class: "ch-grid" }, ...tpls.map((d) => this.drillCard(d))),
+      );
+    if (mine.length)
+      body.append(
+        h("div", { class: "fc-sec2" }, pIcon("users", 16), t("ch.d.mine", { s: this.assess.student }), h("span", { class: "ct" }, String(mine.length))),
+        h("div", { class: "ch-grid" }, ...mine.map((d) => this.drillCard(d))),
+      );
+    if (rest.length)
+      body.append(
+        h("div", { class: "fc-sec2" }, t("ch.d.club"), h("span", { class: "ct" }, String(rest.length))),
+        h("div", { class: "ch-grid" }, ...rest.map((d) => this.drillCard(d))),
+      );
+    templates();
+    // no club drill yet: the templates come first, then how to make the club's own
+    if (!club.length)
+      body.append(
+        h("div", { class: "fc-sec2" }, t("ch.d.club"), h("span", { class: "ct" }, "0")),
+        h(
+          "div",
+          { class: "ch-empty" },
+          h("span", { class: "fc-none-ic" }, pIcon("drill", 24)),
+          h("div", {}, h("b", {}, t("ch.d.clubNone")), h("span", {}, t("ch.d.clubNoneSub"))),
+        ),
+      );
+  }
+
+  // ---- procedure library
+  private openProc(id: string | null) {
+    openProcedureEditor({
+      id,
+      lang: uiL(),
+      onSaved: (p, how) =>
+        this.say(how === "reset" && p ? t("ch.l.reset", { t: p.title }) : p ? t("ch.l.saved", { t: p.title }) : t("ch.l.deleted")),
+    });
+  }
+
+  private procRow(p: Procedure): HTMLElement {
+    const l = uiL();
+    const mem = p.items.filter((i) => i.memory).length;
+    const club = p.source === "club";
+    return h(
+      "li",
+      { class: `ch-proc${club ? " club" : ""}`, "data-id": p.id },
+      h(
+        "button",
+        { class: "ch-proc-main", onclick: () => this.openProc(p.id), title: club ? t("ch.l.edit") : t("ch.l.open") },
+        h("span", { class: `ch-ic cat-${p.category}` }, pIcon(CAT_ICONS[p.category] ?? "other", 18)),
+        h(
+          "span",
+          { class: "ch-proc-tx" },
+          h(
+            "b",
+            {},
+            p.title,
+            p.lang !== l ? h("span", { class: "ch-lang-tag" }, p.lang.toUpperCase()) : null,
+          ),
+          p.summary ? h("span", { class: "ch-proc-sum" }, p.summary) : null,
+          h(
+            "span",
+            { class: "ch-proc-meta" },
+            h("span", { class: `ch-src ${club ? "club" : "lib"}` }, club ? (p.basedOn ? t("ch.l.custom") : t("ch.l.club")) : t("ch.l.library")),
+            h("span", {}, tn("ch.l.items", p.items.length)),
+            mem ? h("span", { class: "ch-mem" }, tn("ch.l.mem", mem)) : null,
+            p.failures.length
+              ? h("span", { class: "ch-ans", title: p.failures.map((f) => failureName(f, l)).join(", ") }, l === "fr" ? `${t("ch.l.answers")}\u00a0: ` : `${t("ch.l.answers")}: `, p.failures.map((f) => failureName(f, l)).join(", "))
+              : null,
+          ),
+        ),
+      ),
+      h(
+        "div",
+        { class: "ch-proc-acts" },
+        h(
+          "button",
+          { class: "pe-ib", title: t("ch.l.share"), "aria-label": `${t("ch.l.share")} · ${p.title}`, onclick: () => openShareDialog(p) },
+          pIcon("share", 16),
+        ),
+        h("button", { class: "btn", onclick: () => this.openProc(p.id) }, club ? pIcon("edit", 15) : pIcon("eye", 15), club ? t("ch.l.edit") : t("ch.l.open")),
+      ),
+    );
+  }
+
+  private clubLibrary(body: HTMLElement) {
+    const l = uiL();
+    const other: Lang = l === "fr" ? "en" : "fr";
+    // the library in the screen language, and every club procedure (a club writes in its own language)
+    const all = [...effectiveProcedures(l), ...effectiveProcedures(other).filter((p) => p.source === "club")];
+    const words = this.libQ.toLowerCase().split(/\s+/).filter(Boolean);
+    const shown = all.filter(
+      (p) =>
+        (this.libSrc === "all" || (this.libSrc === "club") === (p.source === "club")) &&
+        words.every((w) =>
+          `${p.title} ${p.summary ?? ""} ${p.failures.map((f) => failureName(f, l)).join(" ")} ${CATEGORY_LABELS[p.category]?.[l] ?? ""}`
+            .toLowerCase()
+            .includes(w),
+        ),
+    );
+    const search = h("input", {
+      type: "search",
+      value: this.libQ,
+      placeholder: t("ch.l.search"),
+      "aria-label": t("ch.l.search"),
+      enterkeyhint: "search",
+    }) as HTMLInputElement;
+    search.addEventListener("keydown", (e) => e.stopPropagation());
+    search.addEventListener("input", () => {
+      this.libQ = search.value;
+      const pos = search.selectionStart;
+      this.renderMain();
+      const again = this.main.querySelector<HTMLInputElement>(".ch-search input");
+      again?.focus();
+      if (pos !== null) again?.setSelectionRange(pos, pos);
+    });
+    const nClub = all.filter((p) => p.source === "club").length;
+    const src = (id: typeof this.libSrc, label: string, n: number) =>
+      h(
+        "button",
+        {
+          class: this.libSrc === id ? "on" : "",
+          "aria-pressed": String(this.libSrc === id),
+          onclick: () => {
+            this.libSrc = id;
+            this.renderMain();
+          },
+        },
+        label,
+        h("span", { class: "ct" }, String(n)),
+      );
+    body.append(
+      h(
+        "div",
+        { class: "ch-bar" },
+        h("label", { class: "ch-search" }, pIcon("search", 16), search),
+        h(
+          "div",
+          { class: "seg ch-seg", role: "group" },
+          src("all", t("ch.l.all"), all.length),
+          src("club", t("ch.l.club"), nClub),
+          src("library", t("ch.l.library"), all.length - nClub),
+        ),
+        h("span", { class: "grow" }),
+        h("button", { class: "btn primary", onclick: () => this.openProc(null) }, pIcon("plus", 16), t("ch.l.new")),
+      ),
+    );
+    if (!shown.length) {
+      body.append(
+        h(
+          "div",
+          { class: "ch-empty" },
+          h("span", { class: "fc-none-ic" }, pIcon(this.libQ ? "search" : "book", 24)),
+          this.libQ
+            ? h("div", {}, h("b", {}, t("ch.l.none", { q: this.libQ })), h("span", {}, t("ch.l.noneSub")))
+            : h("div", {}, h("b", {}, t("ch.l.noClub")), h("span", {}, t("ch.l.noClubSub"))),
+        ),
+      );
+    } else
+      for (const cat of CATEGORY_ORDER) {
+        const list = shown.filter((p) => p.category === cat);
+        if (!list.length) continue;
+        body.append(
+          h(
+            "div",
+            { class: "fc-sec2 ch-cat" },
+            h("span", { class: `ch-ic sm cat-${cat}` }, pIcon(CAT_ICONS[cat], 15)),
+            CATEGORY_LABELS[cat][l],
+            h("span", { class: "ct" }, String(list.length)),
+          ),
+          h("ul", { class: "ch-procs" }, ...list.map((p) => this.procRow(p))),
+        );
+      }
+    body.append(h("p", { class: "ch-disc" }, pIcon("book", 14), DISCLAIMER[l]));
+  }
+
+  // ---- results
+  private clubResults(body: HTMLElement) {
+    const rows = procedureRows(history.all());
+    if (!rows.length) {
+      body.append(
+        h(
+          "div",
+          { class: "ch-empty big" },
+          h("span", { class: "fc-none-ic" }, pIcon("chart", 28)),
+          h("div", {}, h("b", {}, t("ch.r.none")), h("span", {}, t("ch.r.noneSub"))),
+          h("button", { class: "btn primary", onclick: () => this.go({ type: "club", tab: "drills" }) }, pIcon("drill", 15), t("ch.tab.drills")),
+        ),
+      );
+      return;
+    }
+    const studs = studentsOf(rows);
+    if (this.resStudent && !studs.includes(this.resStudent)) this.resStudent = "";
+    const f = filterProcRows(rows, { student: this.resStudent || undefined, verdict: this.resVerdict });
+    const sum = procSummary(f);
+    const sel = (label: string, value: string, opts: [string, string][], set: (v: string) => void) =>
+      h(
+        "label",
+        { class: "ch-sel" },
+        h("span", {}, label),
+        h(
+          "select",
+          {
+            "aria-label": label,
+            onchange: (e: Event) => {
+              set((e.target as HTMLSelectElement).value);
+              this.renderMain();
+            },
+          },
+          ...opts.map(([v, tx]) => h("option", { value: v, selected: v === value }, tx)),
+        ),
+      );
+    const dl = () => {
+      const blob = new Blob([`﻿${procCsv(f)}`], { type: "text/csv;charset=utf-8" });
+      const a = h("a", { href: URL.createObjectURL(blob), download: `procedures-${new Date().toISOString().slice(0, 10)}.csv` });
+      document.body.append(a);
+      a.click();
+      setTimeout(() => (URL.revokeObjectURL(a.href), a.remove()), 1000);
+    };
+    const stat = (label: string, v: string, cls = "") => h("div", { class: `ch-stat ${cls}` }, h("span", {}, label), h("b", {}, v));
+    body.append(
+      h(
+        "div",
+        { class: "ch-bar" },
+        sel(t("ch.r.student"), this.resStudent, [["", t("ch.r.allStudents")], ...studs.map((s) => [s, s || t("ch.r.noName")] as [string, string])], (v) => (this.resStudent = v)),
+        sel(t("ch.r.verdict"), this.resVerdict, [["", t("ch.r.allVerdicts")], ["PASS", t("ch.v.PASS")], ["FAIL", t("ch.v.FAIL")]], (v) => (this.resVerdict = v as "" | "PASS" | "FAIL")),
+        // the two actions wrap together, to the right
+        h(
+          "div",
+          { class: "ch-bar-end" },
+          h("button", { class: "btn ghost", onclick: () => this.leave(() => this.hooks.openRecords()) }, svgIcon(I.clipboard, 15), t("ch.r.records")),
+          h("button", { class: "btn", onclick: dl, disabled: !f.length }, pIcon("download", 15), t("ch.r.csv")),
+        ),
+      ),
+      h(
+        "div",
+        { class: "ch-stats" },
+        stat(t("ch.r.n"), String(sum.n)),
+        stat(t("ch.r.pass"), sum.passRate === null ? "—" : `${sum.passRate} %`, sum.passRate !== null && sum.passRate >= 70 ? "ok" : sum.passRate !== null ? "bad" : ""),
+        stat(t("ch.r.avg"), sum.avgScore === null ? "—" : `${sum.avgScore}/100`),
+        stat(t("ch.r.react"), sum.reactionS === null ? "—" : `${String(sum.reactionS).replace(".", uiL() === "fr" ? "," : ".")} s`),
+      ),
+    );
+    if (!f.length) {
+      body.append(h("div", { class: "ch-empty" }, h("span", { class: "fc-none-ic" }, pIcon("search", 24)), h("div", {}, h("b", {}, t("ch.r.noneFilter")))));
+      return;
+    }
+    const weak = sum.byProcedure.filter((p) => p.pass < p.n).slice(0, 3);
+    if (weak.length)
+      body.append(
+        h(
+          "div",
+          { class: "ch-weak" },
+          h("b", {}, pIcon("warn", 15), t("ch.r.weak")),
+          ...weak.map((w) => h("span", {}, h("strong", {}, w.procedure), ` · ${t("ch.r.weakLine", { p: w.pass, n: w.n, a: w.avgScore })}`)),
+        ),
+      );
+    const date = (iso: string) => {
+      const d = new Date(iso);
+      return Number.isFinite(d.getTime())
+        ? d.toLocaleDateString(uiL() === "fr" ? "fr-FR" : "en-GB", { day: "numeric", month: "short", year: "numeric" })
+        : "";
+    };
+    body.append(
+      h(
+        "div",
+        { class: "ch-table-wrap" },
+        h(
+          "table",
+          { class: "ch-table" },
+          h(
+            "thead",
+            {},
+            h(
+              "tr",
+              {},
+              h("th", {}, t("ch.r.date")),
+              h("th", {}, t("ch.r.student")),
+              h("th", { class: "c-drill" }, t("ch.r.drill")),
+              h("th", {}, t("ch.r.proc")),
+              h("th", { class: "num" }, t("ch.r.score")),
+              h("th", {}, t("ch.r.verdict")),
+            ),
+          ),
+          h(
+            "tbody",
+            {},
+            ...f.slice(0, 300).map((r) =>
+              h(
+                "tr",
+                {},
+                h("td", { class: "c-date" }, date(r.date)),
+                h("td", {}, r.student || h("span", { class: "muted" }, "—")),
+                h("td", { class: "c-drill" }, r.drill),
+                h(
+                  "td",
+                  { class: "c-proc" },
+                  h(
+                    "div",
+                    {},
+                  h("b", {}, r.procedure),
+                  h(
+                    "small",
+                    {},
+                    // the drill column is hidden on narrow screens: its name rides along here
+                    r.drill ? h("span", { class: "c-drill-sm" }, r.drill, " · ") : null,
+                    failureName(r.failure, uiL()),
+                    " · ",
+                    t(r.mode === "test" ? "ch.d.test" : "ch.d.training"),
+                  ),
+                  r.notes.length > 1
+                    ? h(
+                        "details",
+                        { class: "c-notes" },
+                        h("summary", {}, h("span", { class: "c-note" }, r.note), h("span", { class: "c-more" }, tn("ch.r.more", r.notes.length - 1))),
+                        h("ul", {}, ...r.notes.slice(1).map((x) => h("li", {}, x))),
+                      )
+                    : r.note
+                      ? h("span", { class: "c-note" }, r.note)
+                      : null,
+                  ),
+                ),
+                h("td", { class: "num" }, h("b", {}, String(r.score))),
+                h("td", {}, h("span", { class: `ch-verdict ${r.verdict === "PASS" ? "ok" : "bad"}` }, t(`ch.v.${r.verdict}`))),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /** the share link the page was opened with: what it holds, Import / Not now */
+  private pendingCard(): HTMLElement | null {
+    const code = this.pendingShare;
+    if (!code) return null;
+    const done = () => {
+      this.pendingShare = null;
+      // the link is used once: a reload does not offer it again
+      try {
+        const u = new URL(location.href);
+        u.searchParams.delete("proc");
+        if (u.hash.includes("proc=")) u.hash = "";
+        window.history.replaceState(window.history.state, "", u.toString());
+      } catch {
+        /* not a browser */
+      }
+    };
+    const { ok, title, procs } = shareSummary(code);
+    return h(
+      "section",
+      { class: `ch-pending${ok ? "" : " bad"}`, role: "region", "aria-label": t("ch.p.linkTitle") },
+      h("span", { class: "ch-ic" }, pIcon(ok ? "link" : "warn", 18)),
+      h(
+        "div",
+        { class: "ch-pending-tx" },
+        h("small", {}, t("ch.p.linkTitle")),
+        h("b", {}, title),
+        procs.length
+          ? h(
+              "ul",
+              {},
+              ...procs.slice(0, 6).map((p) =>
+                h("li", {}, p.title, h("span", { class: "muted" }, ` · ${tn("ch.l.items", p.items)}`)),
+              ),
+              procs.length > 6 ? h("li", { class: "muted" }, `+ ${procs.length - 6}`) : null,
+            )
+          : null,
+      ),
+      h(
+        "div",
+        { class: "ch-pending-b" },
+        h("button", { class: "btn ghost", onclick: () => (done(), this.renderMain()) }, t("ch.p.linkLater")),
+        ok
+          ? h(
+              "button",
+              {
+                class: "btn primary",
+                onclick: () => {
+                  const r = importShare(code, this.packPolicy, uiL());
+                  done();
+                  this.packReport = importSummary(r);
+                  this.renderMain();
+                },
+              },
+              pIcon("download", 15),
+              t("ch.p.go"),
+            )
+          : null,
+      ),
+    );
+  }
+
+  // ---- club pack
+  private clubPack(body: HTMLElement) {
+    const pending = this.pendingCard();
+    if (pending) body.append(pending);
+    const n = listClub().length;
+    const name = h("input", {
+      type: "text",
+      value: clubName(),
+      placeholder: t("ch.p.namePh"),
+      "aria-label": t("ch.p.name"),
+      maxlength: 80,
+    }) as HTMLInputElement;
+    name.addEventListener("keydown", (e) => e.stopPropagation());
+    name.addEventListener("change", () => setClubName(name.value));
+    const download = () => {
+      const blob = new Blob([exportPackJson()], { type: "application/json" });
+      const slug = (clubName() || "club").toLowerCase().normalize("NFD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "club";
+      const a = h("a", { href: URL.createObjectURL(blob), download: `${slug}-procedures.json` });
+      document.body.append(a);
+      a.click();
+      setTimeout(() => (URL.revokeObjectURL(a.href), a.remove()), 1000);
+    };
+    const report = (r: ImportReport) => {
+      this.packReport = importSummary(r);
+      this.renderMain();
+    };
+    const file = h("input", { type: "file", accept: ".json,application/json", class: "ch-file", "aria-label": t("ch.p.file") }) as HTMLInputElement;
+    file.addEventListener("change", async () => {
+      const f = file.files?.[0];
+      if (!f) return;
+      report(importPack(await f.text(), this.packPolicy, uiL()));
+    });
+    const code = h("input", { type: "text", placeholder: t("ch.p.paste"), "aria-label": t("ch.p.paste"), autocomplete: "off" }) as HTMLInputElement;
+    code.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter" && code.value.trim()) report(importShare(code.value, this.packPolicy, uiL()));
+    });
+    const pol: [ConflictPolicy, string][] = [
+      ["newer", t("ch.p.newer")],
+      ["replace", t("ch.p.replace")],
+      ["keep", t("ch.p.keep")],
+      ["copy", t("ch.p.copy")],
+    ];
+    const card = (icon: PIcon, title: string, sub: string, ...content: (Node | null)[]) =>
+      h(
+        "section",
+        { class: "ch-card" },
+        h("div", { class: "ch-card-h" }, h("span", { class: "ch-ic" }, pIcon(icon, 18)), h("div", {}, h("b", {}, title), h("small", {}, sub))),
+        ...content,
+      );
+    body.append(
+      h(
+        "div",
+        { class: "ch-pack" },
+        card("users", t("ch.p.name"), t("ch.p.nameHint"), h("div", { class: "ch-row" }, name)),
+        card(
+          "upload",
+          t("ch.p.export"),
+          n ? tn("ch.p.exportSub", n) : t("ch.p.exportNone"),
+          h(
+            "div",
+            { class: "ch-row" },
+            h("button", { class: "btn primary", disabled: !n, onclick: download }, pIcon("download", 15), t("ch.p.download")),
+            h("button", { class: "btn", disabled: !n, onclick: () => openShareDialog(exportPack()) }, pIcon("qr", 15), t("ch.p.link")),
+          ),
+        ),
+        card(
+          "download",
+          t("ch.p.import"),
+          t("ch.p.importSub"),
+          h(
+            "label",
+            { class: "ch-sel" },
+            h("span", {}, t("ch.p.policy")),
+            h(
+              "select",
+              {
+                onchange: (e: Event) => (this.packPolicy = (e.target as HTMLSelectElement).value as ConflictPolicy),
+              },
+              ...pol.map(([v, tx]) => h("option", { value: v, selected: v === this.packPolicy }, tx)),
+            ),
+          ),
+          h(
+            "div",
+            { class: "ch-row" },
+            h("button", { class: "btn", onclick: () => file.click() }, pIcon("other", 15), t("ch.p.file")),
+            file,
+          ),
+          h(
+            "div",
+            { class: "ch-row" },
+            code,
+            h("button", { class: "btn", onclick: () => code.value.trim() && report(importShare(code.value, this.packPolicy, uiL())) }, t("ch.p.go")),
+          ),
+          this.packReport
+            ? h(
+                "div",
+                { class: `ch-report ${this.packReport.ok ? "ok" : "warn"}`, role: "status" },
+                ...this.packReport.lines.map((x) => h("div", {}, x)),
+              )
+            : null,
+        ),
+      ),
+      h("p", { class: "ch-disc" }, pIcon("book", 14), t("ch.p.disclaimer")),
     );
   }
 
