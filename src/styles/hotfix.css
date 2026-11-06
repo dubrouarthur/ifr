@@ -16,19 +16,12 @@
 body.chrome-auto #app { grid-template-rows: minmax(0, 1fr) auto; }
 body.chrome-auto .topbar { position: fixed !important; top: 0; left: 0; right: 0; z-index: 70; transition: transform .22s ease, box-shadow .22s; box-shadow: 0 6px 24px rgba(15,23,32,.18); }
 body.chrome-auto.chrome-hidden .topbar { transform: translateY(-100%); box-shadow: none; }
-body.chrome-auto .drawer { top: 56px; }
-/* layout picker */
-.layout-menu { right: 0; min-width: 320px; }
-.layout-item { display: grid !important; grid-template-columns: 44px 1fr; gap: 10px; align-items: center; padding: 8px 10px !important; }
-.layout-item b { display: block; font-size: 13px; color: var(--text); } .layout-item small { display: block; font-size: 11.5px; color: var(--muted); font-weight: 500; }
-.layout-item.on { background: #eef5ff; } .layout-item.on b { color: var(--accent); }
-.lay-ic { width: 44px; height: 30px; border-radius: 5px; border: 1.5px solid var(--line-strong); background: linear-gradient(#9cc2e8 0 var(--sky, 45%), #2b3036 var(--sky, 45%)); }
-.lay-big { --sky: 65%; } .lay-visual { --sky: 100%; position: relative; } .lay-none { --sky: 0%; }
-.lay-visual::after { content: ''; position: absolute; left: 3px; bottom: 3px; width: 14px; height: 10px; background: #2b3036; border-radius: 2px; }
-/* layout modes: explicit rows so a hidden MCP never shifts the panel (layouts: see ui-shell.css) */
-.cockpit > .otw { grid-row: 1; }
-.cockpit > .mcp { grid-row: 2; }
-.cockpit > .panel { grid-row: 3; }
+body.chrome-auto .drawer { top: var(--tb-flight-h, 44px); }
+/* layout modes: named areas (otw / mcp / afcs / panel) so a hidden MCP or autopilot bar never shifts another row */
+.cockpit > .otw { grid-area: otw; }
+.cockpit > .mcp { grid-area: mcp; }
+.cockpit > .afcs { grid-area: afcs; }
+.cockpit > .panel { grid-area: panel; }
 /* crash screen */
 .crash-veil { position: fixed; inset: 0; z-index: 75; display: none; align-items: center; justify-content: center; background: rgba(10, 4, 4, 0.55); backdrop-filter: blur(3px); }
 .crash-veil.open { display: flex; }

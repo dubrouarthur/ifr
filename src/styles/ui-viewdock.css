@@ -1,0 +1,581 @@
+/* =================================================================== ui-viewdock
+   The view dock (src/ui/viewDock.ts): five labelled cameras, the current layout, Pause — always on the outside
+   view, in the situation bar in Instruments. The View panel it opens (also from the top bar's View button). The
+   situation bar's Menu button (shows the auto-hidden top bar). The lesson window's docked slot. The dark menus of
+   the top bar. Loads after ui-shell.css (src/styles/load.ts globs ./*.css in order). */
+
+/* ------------------------------------------------------------------ view dock */
+.view-dock {
+  --vd-h: 36px;
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(10, 14, 18, 0.86);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+  color: #c9d3dc;
+  font: 600 13px/1 var(--font);
+  pointer-events: auto;
+  -webkit-font-smoothing: antialiased;
+}
+.view-dock button {
+  appearance: none;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: var(--vd-h);
+  margin: 0;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.view-dock button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.view-dock button:focus-visible {
+  outline: 2px solid #00c4e0;
+  outline-offset: 0;
+}
+.view-dock .ico {
+  flex: none;
+  color: currentColor;
+}
+.vd-cams {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+/* the active camera: a filled light pill */
+.view-dock .vd-cam.on {
+  background: #e9eef3;
+  color: #0d1217;
+}
+.view-dock .vd-cam:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: none;
+}
+.vd-sep {
+  flex: none;
+  width: 1px;
+  height: 22px;
+  margin: 0 3px;
+  background: rgba(255, 255, 255, 0.14);
+}
+.view-dock .vd-lay {
+  padding: 0 9px 0 8px;
+  color: #eef3f7;
+}
+.view-dock .vd-lay[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.1);
+}
+.view-dock .vd-lay .ico:last-child {
+  color: #8592a0;
+}
+.view-dock .vd-pause {
+  width: var(--vd-h);
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.view-dock .vd-pause.on {
+  background: #ffb347;
+  border-color: #ffb347;
+  color: #1a1100;
+}
+.view-dock .vd-back {
+  display: none;
+}
+/* the layout pictogram (dock, View panel): sky over the panel in each layout's proportions */
+.vd-pic {
+  position: relative;
+  flex: none;
+  display: block;
+  width: 26px;
+  height: 18px;
+  box-sizing: border-box;
+  border-radius: 3px;
+  border: 1.5px solid #8b98a5;
+  background: linear-gradient(
+    #7fb0de 0 var(--sky, 45%),
+    #27303a var(--sky, 45%)
+  );
+}
+.vd-pic-big {
+  --sky: 65%;
+}
+.vd-pic-visual {
+  --sky: 100%;
+}
+.vd-pic-visual::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  bottom: 2px;
+  width: 8px;
+  height: 6px;
+  border-radius: 1px;
+  background: #27303a;
+}
+.vd-pic-none {
+  --sky: 0%;
+}
+.vd-pic-none::after {
+  content: "";
+  position: absolute;
+  inset: 3px 3px auto;
+  height: 7px;
+  border-radius: 1px;
+  background: repeating-linear-gradient(
+    90deg,
+    #4b5866 0 7px,
+    transparent 7px 9px
+  );
+}
+/* Instruments: a compact pair in the situation bar — [layout ▾] [back to the outside view] [pause] */
+.sb-dock:empty {
+  display: none;
+}
+.sb-dock {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 0 6px 0 4px;
+  margin-left: auto;
+}
+.sb-dock .view-dock {
+  position: static;
+  padding: 2px;
+  gap: 2px;
+  border-radius: 10px;
+  box-shadow: none;
+  backdrop-filter: none;
+  background: rgba(255, 255, 255, 0.04);
+  --vd-h: 32px;
+}
+.view-dock.compact .vd-cams,
+.view-dock.compact .vd-sep {
+  display: none;
+}
+.view-dock.compact .vd-back {
+  display: inline-flex;
+}
+/* the pro look: the dock stays, quieter until used */
+body.pro .otw > .view-dock {
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+body.pro .otw > .view-dock:hover,
+body.pro .otw > .view-dock:focus-within {
+  opacity: 1;
+}
+/* touch and mid-size windows: 44 px keys */
+@media (max-width: 1279px) {
+  .view-dock {
+    --vd-h: 44px;
+  }
+  .view-dock button {
+    padding: 0 12px;
+  }
+}
+body.touch .view-dock {
+  --vd-h: 44px;
+}
+body.touch .sb-dock .view-dock {
+  --vd-h: 44px;
+}
+/* narrow (iPad portrait, small windows): icons only, except the active camera, which keeps its name */
+@media (max-width: 999px) {
+  .view-dock .vd-cam:not(.on) .vd-l,
+  .view-dock .vd-lay .vd-l,
+  .view-dock .vd-back .vd-l {
+    display: none;
+  }
+  .view-dock .vd-cam:not(.on) {
+    width: 44px;
+    padding: 0;
+  }
+}
+/* the same when the dock's zone is narrower than the dock (fit() in viewDock.ts) */
+.view-dock.narrow .vd-cam:not(.on) .vd-l,
+.view-dock.narrow .vd-lay .vd-l {
+  display: none;
+}
+.view-dock.narrow .vd-cam:not(.on) {
+  width: var(--vd-h);
+  padding: 0;
+}
+
+/* ------------------------------------------------------------------ View panel (popover, position: fixed on body) */
+.view-pop {
+  position: fixed;
+  z-index: 82;
+  box-sizing: border-box;
+  overflow-y: auto;
+  padding: 12px 14px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #12181e;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+  color: #dfe6ec;
+  font: 500 13px/1.3 var(--font);
+  -webkit-font-smoothing: antialiased;
+  scrollbar-width: thin;
+}
+.view-pop[hidden] {
+  display: none;
+}
+.vp-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 12px 2px 8px;
+  font: 700 10.5px/1 var(--font);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #8592a0;
+}
+.vp-h:first-child {
+  margin-top: 2px;
+}
+.vp-h kbd {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: 600 11px/1 var(--font);
+  letter-spacing: 0.3px;
+  text-transform: none;
+  color: #8592a0;
+}
+.view-pop button {
+  appearance: none;
+  margin: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: #182028;
+  color: #dfe6ec;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.view-pop button:hover {
+  background: #1f2932;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.view-pop button:focus-visible {
+  outline: 2px solid #00c4e0;
+  outline-offset: 1px;
+}
+.view-pop button.on {
+  background: #17303a;
+  border-color: #00c4e0;
+  color: #fff;
+}
+.view-pop button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.vp-cams {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+.vp-cam {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 64px;
+  padding: 0 4px;
+  text-align: center !important;
+  font-weight: 600 !important;
+}
+.vp-cam .ico {
+  color: #aab6c2;
+}
+.vp-cam.on .ico {
+  color: #00c4e0;
+}
+.vp-lays,
+.vp-pans {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.vp-pans {
+  grid-template-columns: 1fr;
+}
+.vp-lay,
+.vp-pan {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 6px 10px;
+}
+.vp-pan {
+  min-height: 48px;
+}
+.vp-lay .vd-pic {
+  width: 34px;
+  height: 24px;
+}
+.vp-lay b,
+.vp-pan b {
+  display: block;
+  font-weight: 650;
+  color: #f1f5f9;
+}
+.vp-lay small,
+.vp-pan small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: #9aa6b2;
+}
+.vp-pan-ic {
+  flex: none;
+  width: 34px;
+  height: 24px;
+  box-sizing: border-box;
+  border-radius: 3px;
+  border: 1.5px solid #8b98a5;
+  background: #0c1116;
+}
+.vp-pan-g1000 {
+  background: linear-gradient(
+    90deg,
+    #0c1116 0 3px,
+    #2c6fb0 3px 15px,
+    #0c1116 15px 17px,
+    #1e4f3a 17px 29px,
+    #0c1116 29px
+  );
+}
+.vp-pan-steam {
+  background:
+    radial-gradient(circle at 6px 7px, #9aa6b2 0 2.5px, transparent 3px),
+    radial-gradient(circle at 15px 7px, #9aa6b2 0 2.5px, transparent 3px),
+    radial-gradient(circle at 24px 7px, #9aa6b2 0 2.5px, transparent 3px),
+    radial-gradient(circle at 6px 16px, #9aa6b2 0 2.5px, transparent 3px),
+    radial-gradient(circle at 15px 16px, #9aa6b2 0 2.5px, transparent 3px),
+    radial-gradient(circle at 24px 16px, #9aa6b2 0 2.5px, transparent 3px),
+    #1a1f24;
+}
+.vp-pan-airliner {
+  background:
+    linear-gradient(#3a434c 0 5px, #0c1116 5px 6px, transparent 6px),
+    linear-gradient(
+      90deg,
+      #0c1116 0 3px,
+      #2c6fb0 3px 15px,
+      #0c1116 15px 17px,
+      #10161c 17px 29px,
+      #0c1116 29px
+    );
+}
+.vp-note {
+  margin: 8px 2px 0;
+  font-size: 11.5px;
+  color: #8592a0;
+}
+.view-pop .vp-sw {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 12px;
+  padding: 0 12px;
+  border-color: transparent;
+  border-top-color: rgba(255, 255, 255, 0.08);
+  border-radius: 0 0 8px 8px;
+  background: none;
+}
+.view-pop .vp-sw:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.view-pop .sw {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 20px;
+  border-radius: 10px;
+  background: #3a4652;
+  transition: background 0.15s;
+}
+.view-pop .sw::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+}
+.view-pop .sw.on {
+  background: #00a6c2;
+}
+.view-pop .sw.on::after {
+  transform: translateX(14px);
+}
+body.touch .view-pop .vp-cam {
+  height: 68px;
+}
+
+/* ------------------------------------------------------------------ situation bar: Menu button (top bar hidden) */
+.cockpit .sitbar .sb-cells {
+  display: contents;
+}
+.cockpit .sitbar {
+  min-height: var(--tb-flight-h, 44px);
+  box-sizing: border-box;
+  align-items: stretch;
+}
+.cockpit .sitbar .sb {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.sb-menu {
+  appearance: none;
+  flex: none;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: #dfe6ec;
+  cursor: pointer;
+}
+.sb-menu:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.sb-menu:focus-visible {
+  outline: 2px solid #00c4e0;
+  outline-offset: -2px;
+}
+body.chrome-auto.chrome-hidden:not(.intro-open) .sb-menu {
+  display: flex;
+}
+body.touch .sb-menu {
+  width: 52px;
+  min-height: 44px;
+}
+
+/* ------------------------------------------------------------------ top-bar menus: dark, like the bar */
+.topbar .menu {
+  --surface: #12181e;
+  --surface-3: #1f2830;
+  --bg3: #1f2830;
+  --text: #e6ecf2;
+  --muted: #9aa6b2;
+  --line: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+.topbar .menu .menu-item kbd {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+  color: #c9d3dc;
+}
+.topbar .menu .menu-item.danger span {
+  color: #ff8a8a;
+}
+.topbar .menu .menu-item .sw {
+  background: #3a4652;
+}
+.topbar .menu .menu-item .sw.on {
+  background: #00a6c2;
+}
+
+/* ------------------------------------------------------------------ the lesson window's docked slot
+   fitSides() (main.ts) sets .cockpit[data-lesson] = column | row | strip | card | float | none and --lesson-w.
+   Only the column zone takes room of its own: a full-height, opaque column on the left of the outside view,
+   from under the situation bar down to the autopilot bar; the 3D view starts right of it, so nothing of the world
+   and no instrument is covered. The other zones keep the panel's own placement (row card, strip, card). */
+.lesson-slot {
+  display: contents;
+}
+html body .cockpit[data-lesson="column"] .lesson-slot {
+  position: absolute;
+  z-index: 8;
+  left: 0;
+  top: calc(var(--sb-top) + var(--sb-h));
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  width: var(--lesson-w, 340px);
+  box-sizing: border-box;
+  background: #0f151b;
+  border-right: 1px solid rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+}
+html body .cockpit[data-lesson="column"] .lesson-slot > .coach {
+  position: relative;
+  inset: auto;
+  flex: 1 1 auto;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  overflow-y: auto;
+}
+html body .cockpit[data-lesson="column"] .otw > canvas {
+  left: var(--lesson-w, 340px);
+  width: calc(100% - var(--lesson-w, 340px));
+}
+html body .cockpit[data-lesson="column"] .otw > canvas:not(.gl) {
+  position: absolute;
+  top: 0;
+  height: 100%;
+}
+html body .cockpit[data-lesson="column"] .otw > .glare,
+html body .cockpit[data-lesson="column"] .pause-veil {
+  left: var(--lesson-w, 340px);
+}
+html body .cockpit[data-lesson="column"] .look-hint {
+  left: calc(var(--lesson-w, 340px) + (100% - var(--lesson-w, 340px)) / 2);
+}
+/* toasts: bottom-centre of the 3D area, above the dock */
+html body .cockpit:not(.no-otw) .otw > .toasts {
+  bottom: calc(var(--vd-dock-h, 52px) + 24px);
+}
+html body .cockpit[data-lesson="column"] .otw > .toasts {
+  left: calc(var(--lesson-w, 340px) + (100% - var(--lesson-w, 340px)) / 2);
+}
+/* iPad portrait, Instruments: the docked top bar carries View and Pause; the situation bar keeps its two rows */
+body.portrait .cockpit.no-otw .sb-dock {
+  display: none;
+}

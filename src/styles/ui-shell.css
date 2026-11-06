@@ -4,129 +4,149 @@
    One block per component. Loads after styles.css and hotfix.css (src/styles/load.ts). */
 
 /* ------------------------------------------------------------------ shared geometry
-   --sb-top   where the situation bar sits (under the auto-hiding top bar while it is shown)
+   --sb-top   where the situation bar sits (0: the auto-hiding top bar overlays it and never moves it)
    --ov-top   where overlays start (under the situation bar)
    --pfd-w/h, --ped-h are measured by fitSides() in main.ts */
 body {
   --sb-top: 0px;
   --sb-h: 40px;
   --ov-top: calc(var(--sb-top) + var(--sb-h) + 12px);
-  --ped-h: 74px;
-}
-body.chrome-auto:not(.chrome-hidden) {
-  --sb-top: 56px;
+  --ped-h: 44px;
 }
 
-/* ------------------------------------------------------------------ top bar */
-.topbar {
+/* ------------------------------------------------------------------ top bar
+   Dark in the cockpit (it never flashes white over a night panel). Six labelled controls: Flight Center, EFB,
+   (CDU in the airliner), Instructor, View, Pause | 1x, More. In flight it overlays the situation bar at exactly
+   its height (--tb-flight-h) and moves nothing; elsewhere (pinned, Instruments) it is a docked row. */
+body {
+  --tb-flight-h: 44px;
+}
+body.touch {
+  --tb-flight-h: 52px;
+}
+html body .topbar {
   gap: 10px;
-}
-body .topbar {
-  box-shadow: 0 1px 0 rgba(15, 23, 32, 0.1);
-}
-body.chrome-auto:not(.chrome-hidden) .topbar {
-  box-shadow:
-    0 1px 0 rgba(15, 23, 32, 0.1),
-    0 8px 24px rgba(15, 23, 32, 0.14);
-}
-body.chrome-auto.chrome-hidden .topbar {
+  min-height: 0;
+  height: 56px;
+  background: #0e1319;
+  backdrop-filter: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
   box-shadow: none;
+  color: #e6ecf2;
+}
+html body.chrome-auto .topbar {
+  height: var(--tb-flight-h);
+  padding-top: 0;
+  padding-bottom: 0;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+html body.chrome-auto.chrome-hidden .topbar {
+  box-shadow: none;
+}
+.topbar .brand .logo {
+  width: 26px;
+  height: 26px;
+}
+.topbar .brand-t b,
+.topbar .brand-t span {
+  color: #e6ecf2;
 }
 .scn-wrap {
   flex: 0 1 520px;
+}
+body .topbar .scn-wrap {
+  border-left-color: rgba(255, 255, 255, 0.1);
+}
+body .topbar .scn-wrap .scn b {
+  color: #f1f5f9;
+}
+body .topbar .scn-wrap .scn span,
+body .topbar .scn-wrap .scn::after {
+  color: #9aa6b2;
+}
+body .topbar .scn-wrap .scn:hover {
+  background: rgba(255, 255, 255, 0.06);
 }
 .tb-actions {
   align-items: center;
   gap: 6px;
 }
-.tb-actions .btn {
+html body .topbar .tb-actions .btn {
   height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #e6ecf2;
+  box-shadow: none;
+  font-weight: 600;
+}
+html body .topbar .tb-actions .btn .ico {
+  color: #aab6c2;
+}
+html body .topbar .tb-actions .btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+html body .topbar .tb-actions .btn.on {
+  background: #1d2a33;
+  border-color: #00c4e0;
+  color: #fff;
+}
+html body .topbar .tb-actions .btn.on .ico {
+  color: #00c4e0;
+}
+html body .topbar .tb-actions .btn:focus-visible {
+  outline: 2px solid #00c4e0;
+  outline-offset: 1px;
 }
 body .tb-actions .btn .lbl {
   display: inline;
 }
-.tb-actions .tb-icon {
-  width: 36px;
-  padding: 0;
-  justify-content: center;
-}
-.tb-group {
-  display: inline-flex;
-  align-items: center;
-  height: 36px;
-  box-sizing: border-box;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-sm);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
-}
-.tb-group .btn {
-  height: 34px;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-}
-.tb-group .btn + .btn {
-  border-left: 1px solid var(--line);
+.tb-actions .tb-cdu[hidden],
+.more-menu .menu-item[hidden] {
+  display: none;
 }
 .tb-sim {
   display: inline-flex;
   align-items: center;
 }
-.tb-sim .btn {
+html body .topbar .tb-sim .btn {
   border-radius: 0;
 }
-.tb-sim .tb-pause {
-  border-radius: var(--r-sm) 0 0 var(--r-sm);
+html body .topbar .tb-sim .tb-pause {
+  border-radius: 8px 0 0 8px;
 }
-.tb-sim .tb-pause.on {
-  color: var(--accent);
-  background: #eef5ff;
-  border-color: #b9d3f3;
+html body .topbar .tb-sim .tb-pause.on {
+  color: #1a1100;
+  background: #ffb347;
+  border-color: #ffb347;
 }
-.tb-sim .tb-rate {
-  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+html body .topbar .tb-sim .tb-pause.on .ico {
+  color: #1a1100;
+}
+html body .topbar .tb-sim .tb-rate {
+  border-radius: 0 8px 8px 0;
   border-left: 0;
-  min-width: 42px;
+  min-width: 44px;
   padding: 0 10px;
   justify-content: center;
-  color: var(--text-2);
+  color: #aab6c2;
   font-variant-numeric: tabular-nums;
 }
-.tb-sim .tb-rate.on {
-  color: var(--accent);
+html body .topbar .tb-sim .tb-rate.on {
+  color: #00c4e0;
   font-weight: 700;
 }
-body .tb-actions > .seg.tb-cockpit {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  height: 36px;
-  box-sizing: border-box;
-}
-.tb-cockpit button {
-  height: 30px;
-  padding: 0 10px;
-  white-space: nowrap;
-}
-@media (max-width: 1700px) {
-  body .tb-actions > .seg.tb-cockpit {
+/* labels by width: every control keeps its word down to 1000 px; below, Instructor and More drop it */
+@media (max-width: 999px) {
+  body .tb-actions .tb-ios .lbl,
+  body .tb-actions .tb-more .lbl {
     display: none;
   }
 }
-@media (max-width: 1500px) {
-  body .tb-actions .tb-pause .lbl {
-    display: none;
-  }
-  .tb-actions .tb-pause {
-    width: 38px;
-    padding: 0;
-    justify-content: center;
-  }
-}
-@media (max-width: 1279px) {
-  body .tb-actions .btn:not(.primary) .lbl {
+@media (max-width: 1200px) {
+  body .topbar .brand {
     display: none;
   }
 }
@@ -565,7 +585,7 @@ body .tb-actions > .seg.tb-cockpit {
 }
 .panel {
   --bz-chrome: 30px;
-  --bz-fit: calc((50vw - 62px - 2 * var(--side-w)) * 0.75 + var(--bz-chrome));
+  --bz-fit: calc((50vw - 62px - var(--side-w) - var(--side-r, var(--side-w))) * 0.75 + var(--bz-chrome));
 }
 .panel.theme-g1000 {
   --bz-chrome: 52px;
@@ -600,7 +620,7 @@ body .tb-actions > .seg.tb-cockpit {
 }
 body .cockpit .panel .bezel {
   height: min(var(--bz-fit), var(--bz-max));
-  grid-template-columns: var(--side-w) auto var(--side-w);
+  grid-template-columns: var(--side-w) auto var(--side-r, var(--side-w));
   padding-top: 18px;
 }
 .cockpit > .panel:has(.pknob.show),
@@ -640,7 +660,7 @@ body .bezel .side {
 .bezel .ap-col,
 .bezel .bkey-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 4px;
   width: calc(var(--side-w) - 6px);
 }
@@ -781,8 +801,10 @@ body .cockpit .panel.theme-airliner .bezel.mfd {
 }
 
 /* ------------------------------------------------------------------ Instruments: overlays docked in a row above the panel */
+/* four named rows (otw / mcp / afcs / panel): the hidden MCP (G1000, steam) never pulls the autopilot bar into a
+   0 px row, so the bar keeps its full height above the displays */
 body .cockpit.no-otw {
-  grid-template-rows: auto 0 minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   --bz-max: 100%;
 }
 body .cockpit.no-otw > .otw {
@@ -799,7 +821,7 @@ body .cockpit.no-otw > .otw {
   background: none;
 }
 body.chrome-auto .cockpit.no-otw > .otw {
-  padding-top: 56px;
+  padding-top: var(--tb-h, 56px);
 }
 .cockpit.no-otw > .otw > canvas,
 .cockpit.no-otw .otw > .glare,
@@ -819,7 +841,13 @@ body.chrome-auto .cockpit.no-otw > .otw {
   top: auto;
   left: auto;
   right: auto;
-  max-height: 30vh;
+  max-height: min(30vh, 210px);
+}
+@media (max-width: 1279px) {
+  .cockpit.no-otw .coach,
+  .cockpit.no-otw .atc-radio {
+    max-height: min(30vh, 190px);
+  }
 }
 .cockpit.no-otw .coach {
   flex: 0 1 420px;
@@ -833,7 +861,13 @@ body.chrome-auto .cockpit.no-otw > .otw {
 }
 .cockpit.no-otw > .panel {
   align-items: center;
-  padding: 4px 14px 12px;
+  gap: 10px;
+  padding: 4px 8px 10px;
+}
+/* Instruments: the instruments are the largest thing on the screen — the bezels take the full width (thinner
+   gutters than Standard) and the free height (--bz-max: 100% of the panel row) */
+body .cockpit.no-otw > .panel {
+  --bz-fit: calc((50vw - 30px - var(--side-w) - var(--side-r, var(--side-w))) * 0.75 + var(--bz-chrome));
 }
 .cockpit.no-otw .toasts,
 .cockpit.no-otw .replay {
@@ -841,73 +875,7 @@ body.chrome-auto .cockpit.no-otw > .otw {
   bottom: calc(var(--ped-h) + 12px);
 }
 
-/* ------------------------------------------------------------------ control pedestal */
-.footer.pedestal {
-  overflow: hidden;
-  flex-wrap: nowrap;
-}
-.pedestal .ped-g {
-  flex: none;
-  padding: 8px 14px;
-}
-.pedestal .ped-joy {
-  white-space: nowrap;
-}
-.pedestal .lv-l {
-  font: 700 10px var(--font);
-  letter-spacing: 0.6px;
-  color: #8b97a4;
-}
-.pedestal .brake-light {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0;
-  border: 0;
-  background: none;
-  box-shadow: none;
-  color: #5d6873;
-  font: 800 9.5px var(--font);
-  letter-spacing: 1px;
-}
-.pedestal .brake-light i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #2a323b;
-  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6);
-}
-.pedestal .brake-light.on {
-  color: #ffcf7a;
-  background: none;
-  border: 0;
-  box-shadow: none;
-}
-.pedestal .brake-light.on i {
-  background: #ffb020;
-  box-shadow: 0 0 6px rgba(255, 176, 32, 0.6);
-}
-.pedestal .chrono-lcd.idle {
-  color: #8a6a2a;
-}
-@media (max-width: 1699px) {
-  .pedestal .ped-keys {
-    display: none;
-  }
-}
-@media (max-width: 1439px) {
-  .pedestal .ped-g {
-    padding: 7px 11px;
-  }
-  .pedestal input.lever {
-    width: 120px;
-  }
-  .pedestal .flap-sel {
-    grid-template-columns: repeat(4, 40px);
-  }
-}
-
-/* ------------------------------------------------------------------ top bar: never clipped, logo pins it */
+/* ------------------------------------------------------------------ top bar: never clipped */
 .topbar .tb-actions,
 .topbar .tb-actions > * {
   flex: none;
@@ -920,73 +888,19 @@ body.chrome-auto .cockpit.no-otw > .otw {
   min-width: 120px;
 }
 body .topbar .brand {
-  appearance: none;
   flex: none;
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 0 0 0 -6px;
-  padding: 4px 8px 4px 6px;
-  border: 0;
-  border-radius: 10px;
-  background: none;
-  color: var(--text);
-  font: inherit;
+  gap: 8px;
+  margin: 0;
+  padding: 0 4px 0 0;
   font-weight: 700;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-body .topbar .brand:hover {
-  background: var(--surface-3);
-}
-body .topbar .brand:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  pointer-events: none;
 }
 @media (max-width: 1440px) {
   body .topbar .brand-t {
     display: none;
   }
-}
-/* the handle: a slim tab at the top centre while the bar is hidden; it grows under the pointer */
-.tb-handle {
-  position: fixed;
-  top: 0;
-  left: 50%;
-  z-index: 71;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  width: 64px;
-  height: 7px;
-  padding: 0;
-  transform: translateX(-50%);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-top: 0;
-  border-radius: 0 0 8px 8px;
-  background: rgba(14, 19, 25, 0.82);
-  color: #cfd8e1;
-  cursor: pointer;
-  overflow: hidden;
-  transition:
-    height 0.15s,
-    background 0.15s;
-}
-.tb-handle svg {
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.tb-handle:hover,
-.tb-handle:focus-visible {
-  height: 20px;
-  background: rgba(14, 19, 25, 0.95);
-}
-.tb-handle:hover svg,
-.tb-handle:focus-visible svg {
-  opacity: 1;
-}
-body.chrome-auto.chrome-hidden:not(.intro-open) .tb-handle {
-  display: flex;
 }
 
 /* ------------------------------------------------------------------ lesson panel v2: header row, progress, fold */
@@ -1406,53 +1320,6 @@ body.chrome-auto .cockpit.no-otw {
   white-space: normal;
 }
 
-/* ------------------------------------------------------------------ layout menu: outside view (camera) */
-.layout-menu .menu-h:first-child {
-  margin-top: 2px;
-}
-.layout-menu .view-h {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 6px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-}
-.layout-menu .view-h kbd {
-  font: 600 10.5px var(--font);
-  letter-spacing: 0;
-  text-transform: none;
-}
-.view-seg {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 3px;
-  margin: 2px 4px 6px;
-  padding: 3px;
-  border-radius: 9px;
-  background: var(--surface-2, #f1f4f7);
-  border: 1px solid var(--line);
-}
-.view-seg button {
-  min-height: 34px;
-  padding: 0 4px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: var(--text-2, #4a5561);
-  font: 600 12.5px var(--font);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.view-seg button:hover {
-  background: var(--surface-3, #e8edf2);
-  color: var(--text);
-}
-.view-seg button.on {
-  background: var(--surface, #fff);
-  color: var(--accent);
-  box-shadow: 0 1px 3px rgba(15, 23, 32, 0.16);
-}
 /* exterior views: the look-around hint belongs to the cockpit view only */
 .cockpit .otw.ext-view .look-hint {
   display: none;
@@ -1511,11 +1378,26 @@ body.chrome-auto .cockpit.no-otw {
   margin-bottom: 4px;
 }
 
-/* ------------------------------------------------------------------ pause veil: centred in the visible view, with its own Resume */
+/* ------------------------------------------------------------------ pause veil: a chip at the bottom-left of the 3D view (never
+   over the aircraft in Chase, never under the dock), with its own Resume */
 .cockpit .pause-veil {
-  padding-top: calc(var(--ov-top) - 12px);
-  justify-items: center;
-  gap: 10px;
+  grid-auto-flow: column;
+  align-content: end;
+  justify-content: start;
+  align-items: center;
+  justify-items: start;
+  gap: 12px;
+  padding: 0 0 14px 14px;
+  background: rgba(3, 6, 9, 0.22);
+}
+.cockpit .pause-veil > b {
+  padding: 0 14px;
+  border-radius: 10px;
+  background: rgba(10, 14, 18, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font-size: 15px;
+  line-height: 38px;
+  letter-spacing: 2px;
 }
 .cockpit .pause-veil .pv-acts {
   display: flex;
@@ -1557,14 +1439,8 @@ body.touch .cockpit .pause-veil .pv-resume {
   min-height: 44px;
 }
 /* a short view (iPad portrait): title and button on one line */
-body.portrait .cockpit .pause-veil {
-  grid-auto-flow: column;
-  align-items: center;
-  align-content: center;
-  gap: 16px;
-}
-body.portrait .cockpit .pause-veil b {
-  font-size: 20px;
+body.touch .cockpit .pause-veil > b {
+  line-height: 44px;
 }
 .cockpit .coach .setup-done {
   display: flex;
@@ -1591,55 +1467,8 @@ body > .toasts.toasts-top .toast { color: #e8eef4; background: rgba(12, 16, 21, 
 .sysp-host[hidden] {
   display: none;
 }
-html body .pedestal .ped-btn.ped-sys {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  width: auto;
-  height: 34px;
-  padding: 0 12px;
-  border-radius: 8px;
-  font: 600 12px var(--font);
-  color: #cfd8e0;
-  white-space: nowrap;
-}
-html body .pedestal .ped-btn.ped-sys.on {
-  border-color: var(--ck-accent);
-  color: var(--ck-accent);
-  background: rgba(0, 228, 255, 0.08);
-}
-html body.touch .pedestal .ped-btn.ped-sys {
-  height: 44px;
-  padding: 0 14px;
-}
-
 /* ------------------------------------------------------------------ ATC box with the radio dead (COM failure, no
    power): what was received before stays readable, dimmed; the receive light is off and Say again does nothing */
 .atc-radio.nocom { opacity: 0.62; border-color: rgba(255, 255, 255, 0.12); }
 .atc-radio.nocom .atc-led { background: #4b5563; box-shadow: none; }
 .atc-radio .atc-again:disabled { opacity: 0.45; cursor: default; }
-
-
-/* touch landscape up to a 1300 px wide screen (iPad Pro 11, iPad Air): the pedestal tightens so the Systems toggle
-   stays on screen (the pedestal never scrolls): a shorter throttle lever, the Systems toggle as a 44 px icon key under
-   its group title; every target keeps 44 px */
-@media (max-width: 1300px) {
-  html body.touch:not(.portrait) .pedestal .ped-g {
-    padding-left: 10px;
-    padding-right: 10px;
-  }
-  html body.touch:not(.portrait) .pedestal input.lever {
-    width: 92px;
-  }
-  html body.touch:not(.portrait) .pedestal .flap-sel {
-    grid-template-columns: repeat(4, 46px);
-  }
-  html body.touch:not(.portrait) .pedestal .ped-btn.ped-sys {
-    width: 44px;
-    padding: 0;
-    justify-content: center;
-  }
-  html body.touch:not(.portrait) .pedestal .ped-btn.ped-sys > span {
-    display: none;
-  }
-}

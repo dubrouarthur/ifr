@@ -31,6 +31,53 @@ export interface StepRow {
   coarse?: string;
   onStep: (dir: 1 | -1, coarse: boolean) => void;
   push?: { label: string; fn: () => void; title?: string };
+  /** labels of the fine − / + buttons when a sign reads wrong (the FMS outer knob: ◀ Field / Row ▶) */
+  minus?: string;
+  plus?: string;
+  /** more keys on the row after the push action (the FMS pad: ENT, CLR) */
+  actions?: { label: string; fn: () => void; title?: string }[];
+}
+
+/** the G1000 FMS knob as a step pad: the outer knob moves between fields / pages, the inner knob changes the
+ *  value (or moves the cursor); PUSH shows the cursor, ENT confirms, CLR cancels */
+export function fmsSteps(key: (k: 'outer+' | 'outer-' | 'inner+' | 'inner-' | 'push' | 'ent' | 'clr') => void, value: () => string): StepRow[] {
+  return [
+    { label: 'Outer', value, fine: '', minus: '◀ Field', plus: 'Row ▶', onStep: (d) => key(d > 0 ? 'outer+' : 'outer-'), push: { label: 'PUSH', fn: () => key('push'), title: 'Push the FMS knob: show / hide the cursor' } },
+    { label: 'Inner', value, fine: '', minus: '−', plus: '+', onStep: (d) => key(d > 0 ? 'inner+' : 'inner-'), actions: [
+      { label: 'ENT', fn: () => key('ent'), title: 'Enter / confirm' },
+      { label: 'CLR', fn: () => key('clr'), title: 'Clear / cancel' },
+    ] },
+  ];
+}
+
+export interface PadRect { left: number; top: number; right: number; bottom: number }
+const overlap = (a: PadRect, b: PadRect) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+/** where the step pad goes (pure): above, below or beside the control, or above / below its bezel — the first
+ *  spot inside the window that covers no display screen; else the spot that covers the least of one */
+export function placePad(anchor: PadRect, pw: number, ph: number, win: { w: number; h: number }, avoid: PadRect[], frame?: PadRect | null, m = 8): { x: number; y: number } {
+  const cx = (anchor.left + anchor.right) / 2;
+  const cy = (anchor.top + anchor.bottom) / 2;
+  const clampX = (x: number) => Math.max(m, Math.min(win.w - pw - m, x));
+  const clampY = (y: number) => Math.max(m, Math.min(win.h - ph - m, y));
+  const c: { x: number; y: number }[] = [
+    { x: anchor.right + 10, y: cy - ph / 2 },
+    { x: anchor.left - pw - 10, y: cy - ph / 2 },
+    { x: cx - pw / 2, y: anchor.top - ph - 10 },
+    { x: cx - pw / 2, y: anchor.bottom + 10 },
+  ];
+  if (frame) c.push({ x: cx - pw / 2, y: frame.top - ph - 6 }, { x: cx - pw / 2, y: frame.bottom + 6 });
+  let best: { x: number; y: number } | null = null;
+  let bestCost = Infinity;
+  for (const p of c) {
+    const fits = p.x >= m && p.x + pw <= win.w - m && p.y >= m && p.y + ph <= win.h - m;
+    const q = { x: clampX(p.x), y: clampY(p.y) };
+    const r = { left: q.x, top: q.y, right: q.x + pw, bottom: q.y + ph };
+    // never over the control itself, and never over a screen
+    const cost = avoid.reduce((a, s) => a + overlap(r, s), 0) + overlap(r, anchor) * 4 + (fits ? 0 : 1);
+    if (cost < bestCost) { bestCost = cost; best = q; }
+    if (cost === 0) break;
+  }
+  return best ?? { x: clampX(cx - pw / 2), y: clampY(anchor.top - ph - 10) };
 }
 
 const DETENT_PX = 14;
@@ -267,12 +314,13 @@ export function openSteps(anchor: HTMLElement, rows: StepRow[], title?: string):
       rows.length > 1 ? h('div', { class: 'sp-l' }, r.label) : null,
       h('div', { class: 'sp-ctl' },
         r.coarse ? btn(`−${r.coarse}`, `${r.label} minus ${r.coarse}`, () => r.onStep(-1, true), 'big') : null,
-        btn(`−${r.fine}`, `${r.label} minus ${r.fine}`, () => r.onStep(-1, false)),
+        btn(r.minus ?? `−${r.fine}`, `${r.label} ${r.minus ?? `minus ${r.fine}`}`, () => r.onStep(-1, false)),
         v,
-        btn(`+${r.fine}`, `${r.label} plus ${r.fine}`, () => r.onStep(1, false)),
+        btn(r.plus ?? `+${r.fine}`, `${r.label} ${r.plus ?? `plus ${r.fine}`}`, () => r.onStep(1, false)),
         r.coarse ? btn(`+${r.coarse}`, `${r.label} plus ${r.coarse}`, () => r.onStep(1, true), 'big') : null,
       ),
       r.push ? h('button', { type: 'button', class: 'sp-push', title: r.push.title ?? r.push.label, onclick: () => { r.push!.fn(); refresh(); } }, r.push.label) : null,
+      ...(r.actions ?? []).map((a) => h('button', { type: 'button', class: 'sp-push', title: a.title ?? a.label, onclick: () => { a.fn(); refresh(); } }, a.label)),
     );
   });
   pad = h('div', { class: 'steppad', role: 'dialog', 'aria-label': title ?? rows.map((r) => r.label).join(' / ') },
@@ -282,20 +330,12 @@ export function openSteps(anchor: HTMLElement, rows: StepRow[], title?: string):
   document.body.append(pad);
   padAnchor = anchor;
   anchor.classList.add('stepping');
-  // place it above the control when there is room, else below; always inside the window
+  // beside, above or below the control, or above / below its bezel: never over a display screen (the pad must
+  // not hide the PFD or the MFD it drives), always inside the window
   const r = anchor.getBoundingClientRect();
-  const pw = pad.offsetWidth;
-  const ph = pad.offsetHeight;
-  const m = 8;
-  let x = r.left + r.width / 2 - pw / 2;
-  x = Math.max(m, Math.min(innerWidth - pw - m, x));
-  let y = r.top - ph - 10;
-  if (y < m) y = Math.min(innerHeight - ph - m, r.bottom + 10);
-  // beside the control when neither above nor below has room (a knob in a tall side column)
-  if (y < m || (y < r.bottom && y + ph > r.top)) {
-    y = Math.max(m, Math.min(innerHeight - ph - m, r.top + r.height / 2 - ph / 2));
-    x = r.right + 10 + pw < innerWidth - m ? r.right + 10 : Math.max(m, r.left - pw - 10);
-  }
+  const screens = [...document.querySelectorAll<HTMLElement>('.bezel .screen')].filter((e) => e.offsetParent !== null).map((e) => e.getBoundingClientRect()).filter((b) => b.width > 40);
+  const frame = anchor.closest<HTMLElement>('.bezel')?.getBoundingClientRect() ?? null;
+  const { x, y } = placePad(r, pad.offsetWidth, pad.offsetHeight, { w: innerWidth, h: innerHeight }, screens, frame);
   pad.style.left = `${Math.round(x)}px`;
   pad.style.top = `${Math.round(y)}px`;
   padTimer = window.setInterval(refresh, 200);
@@ -343,7 +383,7 @@ export function installLongPressTips(root: Document = document): void {
       const y = r.top - th - 10 >= 8 ? r.top - th - 10 : Math.min(innerHeight - th - 8, r.bottom + 10);
       tip.style.left = `${Math.round(x)}px`;
       tip.style.top = `${Math.round(y)}px`;
-      swallow = !start.el.closest('.pknob, .stick, .lever, input, [data-hold]');
+      swallow = !start.el.closest('.pknob, .pd-yoke, .lever, input, [data-hold]');
     }, 520);
   }, true);
   root.addEventListener('pointermove', (e) => {

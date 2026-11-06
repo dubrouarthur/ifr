@@ -26,9 +26,6 @@ body.touch .pedestal,
 body.touch .afcs {
   touch-action: none;
 }
-body.touch .pedestal input.lever {
-  touch-action: none;
-}
 .sr-only {
   position: absolute;
   width: 1px;
@@ -43,16 +40,11 @@ html body .topbar {
   padding-left: max(14px, env(safe-area-inset-left));
   padding-right: max(14px, env(safe-area-inset-right));
 }
-html body .footer.pedestal {
-  padding-left: max(14px, env(safe-area-inset-left));
-  padding-right: max(14px, env(safe-area-inset-right));
-  padding-bottom: max(8px, env(safe-area-inset-bottom));
-}
 
 /* ------------------------------------------------------------------ autopilot bar */
 .afcs {
   display: none;
-  grid-row: 2;
+  grid-area: afcs;
   position: relative;
   z-index: 6;
   align-items: center;
@@ -312,10 +304,7 @@ html body .afcs .bkey.on::after {
 
 /* ------------------------------------------------------------------ touch targets (≥ 44 px) */
 body.touch {
-  --sb-h: 44px;
-}
-body.touch.chrome-auto:not(.chrome-hidden) {
-  --sb-top: var(--tb-h, 60px);
+  --sb-h: 52px;
 }
 html body.touch .topbar .btn,
 html body.touch .topbar .scn,
@@ -325,36 +314,17 @@ html body.touch .topbar .brand {
 html body.touch .topbar .btn {
   min-width: 44px;
 }
-html body.touch .tb-group .btn {
-  min-width: 48px;
+html body.touch .topbar .tb-actions .btn {
+  height: 44px;
 }
 html body.touch.chrome-auto .drawer {
-  top: var(--tb-h, 60px);
+  top: var(--tb-flight-h, 52px);
 }
 html body.touch.chrome-auto.chrome-hidden .drawer {
   top: 0;
 }
 html body.touch .menu-item {
   min-height: 46px;
-}
-html body.touch .view-seg button {
-  min-height: 44px;
-}
-/* touch: the handle is a visible tab (no hover to grow it) on a strip the situation bar keeps free for it */
-html body.touch.chrome-auto.chrome-hidden:not(.intro-open) .tb-handle {
-  width: 84px;
-  height: 12px;
-}
-html body.touch .tb-handle svg {
-  opacity: 0.85;
-}
-html body.touch.chrome-auto .cockpit:not(.no-otw) .sitbar {
-  padding-top: 10px;
-}
-html body.touch .tb-handle::before {
-  content: "";
-  position: absolute;
-  inset: -4px -12px -22px;
 }
 /* bezel: keys and knobs keep their look; their hit area grows to the space around them */
 html body.touch .bezel .bkey::before {
@@ -368,74 +338,65 @@ html body.touch .bezel .pknob::after {
   inset: -8px;
   border-radius: 50%;
 }
+/* softkeys: one 44 px strip under each screen (the labels are on the screen above each key). Twelve keys share the
+   screen's width, so each key takes its whole slot (no gap: the keys' own borders separate them) */
 html body.touch .softrow {
-  gap: 5px;
+  gap: 0;
+  padding-left: 0;
+  padding-right: 0;
 }
 html body.touch .softrow button {
-  height: 24px;
+  height: 44px;
   position: relative;
-}
-html body.touch .softrow button::before {
-  content: "";
-  position: absolute;
-  inset: -8px -2px -6px;
+  border-radius: 2px;
 }
 html body.touch .panel.theme-g1000 {
-  --bz-chrome: 60px;
+  --bz-chrome: 80px;
 }
-/* pedestal */
-html body.touch .pedestal .ped-btn {
-  width: 44px;
-  height: 44px;
-  font-size: 12px;
-}
-html body.touch .pedestal .flap-sel button {
-  height: 44px;
-}
-html body.touch .pedestal .flap-sel {
-  grid-template-columns: repeat(4, 48px);
-}
-html body.touch .pedestal .stick {
-  width: 88px;
-  height: 64px;
-}
-html body.touch .pedestal .chrono-b {
-  width: 52px;
-  /* styles.css sets this height with !important */
-  height: 36px !important;
-}
-html body.touch .pedestal .chrono-btns {
-  gap: 6px;
-}
-html body.touch .pedestal .ped-joy {
+/* the swap keys and CDI: 44 px tall; the FMS key grid: as tall as the column allows, its hit area grown into the gaps.
+   Portrait (the bezels are height-bound, there is width to spare): the key grid's column (--side-r) widens to a 2 × 3
+   grid of 42 × 40 px keys whose hit areas meet in the 4 px gaps (44 × 44). Landscape keeps the narrow column: a wider
+   one would shrink both displays. The airliner has no key grid (its MCP and CDU carry those keys) */
+html body.touch .bezel .side > .bkey {
   min-height: 44px;
 }
-html body.touch .pedestal input.lever {
-  height: 14px;
+html body.touch .bezel .bkey-grid {
+  gap: 6px 4px;
 }
-html body.touch .pedestal input.lever::-webkit-slider-thumb {
-  width: 30px;
-  height: 44px;
+html body.touch .bezel .bkey-grid .bkey {
+  height: 32px;
+  font-size: 10px;
 }
-html body.touch .pedestal .ped-keys {
-  display: none;
+html body.touch .bezel .bkey-grid .bkey::before {
+  inset: -6px -2px;
 }
-html body.touch .pedestal .ped-g {
-  padding-top: 6px;
-  padding-bottom: 6px;
+html body.touch.portrait .cockpit .panel:not(.theme-airliner) {
+  --side-r: 92px;
+}
+html body.touch.portrait .bezel .bkey-grid {
+  gap: 4px;
+  width: calc(var(--side-r, var(--side-w)) - 6px);
+}
+html body.touch.portrait .bezel .bkey-grid .bkey {
+  height: 40px;
+  font-size: 11px;
+}
+html body.touch.portrait .bezel .bkey-grid .bkey::before {
+  inset: -2px;
 }
 /* lesson panel, ATC strip, replay and crash buttons */
 html body.touch .cockpit .coach .acts .btn,
 html body.touch .cockpit .coach h4 .coach-fold,
 html body.touch .cockpit .coach .setup-h {
-  min-height: 40px;
+  min-height: 44px;
 }
 html body.touch .cockpit .coach h4 .coach-fold {
-  min-width: 40px;
+  min-width: 44px;
+  min-height: 44px;
 }
 html body.touch .atc-radio .atc-b {
-  min-width: 40px;
-  min-height: 40px;
+  min-width: 44px;
+  min-height: 44px;
 }
 html body.touch .replay .btn,
 html body.touch .replay .seg button,
@@ -460,12 +421,12 @@ html body.portrait .cockpit .mcp {
   row-gap: 6px;
 }
 html body.portrait .cockpit {
-  grid-template-rows: minmax(0, 1fr) auto auto;
+  grid-template-rows: minmax(0, 1fr) auto auto auto;
   --side-w: 64px;
   --knob: 48px;
 }
 html body.portrait .cockpit.no-otw {
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
 }
 html body.portrait .cockpit .panel {
   flex-direction: column;
@@ -480,7 +441,7 @@ html body.portrait .cockpit .panel .bezel {
   max-width: none;
   height: var(--bz-h, 420px);
   margin: 0;
-  grid-template-columns: var(--side-w) auto var(--side-w);
+  grid-template-columns: var(--side-w) auto var(--side-r, var(--side-w));
 }
 html body.portrait .cockpit .panel.theme-airliner .bezel.mfd {
   grid-template-columns: 0 auto var(--side-w);
@@ -516,20 +477,6 @@ html body .cockpit.vis-otw.with-afcs > .afcs {
     max-height: calc(100% - var(--ov-top) - var(--pfd-h, 420px) - var(--afcs-h, 56px) - 44px);
   }
 }
-/* pedestal on two rows */
-html body.portrait .footer.pedestal {
-  flex-wrap: wrap;
-  justify-content: center;
-  row-gap: 0;
-  overflow: visible;
-}
-html body.portrait .pedestal > .spacer,
-html body.portrait .pedestal .ped-keys {
-  display: none;
-}
-html body.portrait .pedestal .ped-g {
-  padding: 5px 10px;
-}
 /* situation bar: the six cells on two rows of three */
 html body.portrait .cockpit .sitbar {
   flex-wrap: wrap;
@@ -545,10 +492,11 @@ html body.portrait .cockpit .sitbar .sb-fill {
 html body.portrait .cockpit:not(.no-otw) .coach {
   max-height: calc(100% - var(--ov-top) - 12px);
 }
-/* autopilot bar on one row in portrait: the mode keys, HDG − / + and ALT SEL (its pad also sets VS / FLC speed);
-   CRS, BARO and MINS stay on the bezel knobs (a tap opens their step pad) */
+/* autopilot bar in portrait: two rows that keep every selector — the mode keys with HDG and ALT SEL, then the
+   vertical target, CRS, BARO and MINS (X29) */
 html body.portrait .afcs {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  row-gap: 6px;
   padding: 6px 6px;
 }
 html body.portrait .afcs-g {
@@ -556,40 +504,24 @@ html body.portrait .afcs-g {
   gap: 4px;
 }
 html body.portrait .afcs .bkey {
-  width: 42px;
+  width: 44px;
+  height: 44px;
 }
-html body.portrait .afcs .g-nav2,
-html body.portrait .afcs [data-k='vert'],
+html body.portrait .afcs [data-k='vert'] {
+  display: grid;
+}
 html body.portrait .afcs-sel[data-k='alt'] .afcs-inc {
-  display: none;
+  display: inline-block;
 }
 html body.portrait .afcs-sel .afcs-val {
   min-width: 64px;
-}
-/* compact pedestal rows */
-html body.portrait .pedestal .ped-g {
-  padding: 4px 10px;
-}
-html body.portrait .pedestal .ped-t {
-  margin-bottom: 2px;
-}
-html body.portrait .pedestal .stick {
-  width: 76px;
-  height: 48px;
-}
-html body.portrait .pedestal .chrono-b {
-  height: 32px !important;
-}
-/* touch: no keyboard / joystick status group in the pedestal (Controllers stays in the More menu) */
-html body.touch .pedestal .ped-g:has(.ped-joy) {
-  display: none;
 }
 html body.touch .cockpit .coach .acts {
   padding-top: 6px;
   padding-bottom: 8px;
 }
 html body.touch .cockpit .coach .acts .btn {
-  min-height: 38px;
+  min-height: 44px;
 }
 .steppad:focus {
   outline: none;
@@ -610,14 +542,6 @@ html body.touch.chrome-auto .cockpit.no-otw {
 html body.portrait .cockpit:not(.no-otw):not(.vis-otw) .toasts {
   top: calc(var(--sb-top) + 6px);
   bottom: auto;
-}
-/* portrait: the top bar, when shown, lies over the situation bar instead of pushing it (and everything under it)
-   down — the outside view is only a strip and the instruments must not jump */
-html body.portrait.chrome-auto:not(.chrome-hidden) {
-  --sb-top: 0px;
-}
-html body.portrait.chrome-auto:not(.chrome-hidden) .cockpit:not(.no-otw):not(.vis-otw) .toasts {
-  top: calc(var(--tb-h, 60px) + 6px);
 }
 /* portrait: the lesson panel and the ATC strip fill the strip — the veil only dims; the lesson panel carries
    Resume and a tap on the PAUSED pill resumes too */
@@ -646,4 +570,23 @@ html body.touch .cockpit.coach-compact .coach .setup.compact {
 /* portrait: while the top bar is shown over it, the situation bar steps aside (half a bar reads as broken) */
 html body.portrait.chrome-auto:not(.chrome-hidden) .cockpit:not(.no-otw) .sitbar {
   visibility: hidden;
+}
+/* the autopilot bar on touch: every key, step button and readout 44 px (X18) */
+html body.touch .afcs .bkey,
+html body.touch .afcs .afcs-inc,
+html body.touch .afcs .afcs-val {
+  height: 44px;
+}
+html body.touch .afcs .bkey,
+html body.touch .afcs .afcs-inc {
+  min-width: 44px;
+}
+/* iPad portrait, Instruments: the lesson and ATC cards share one row of at most 112 px, so each display keeps
+   well over a third of the height (X17) */
+html body.portrait .cockpit.no-otw .coach,
+html body.portrait .cockpit.no-otw .atc-radio {
+  flex: 1 1 0;
+  min-width: 0;
+  max-height: 112px;
+  overflow-y: auto;
 }

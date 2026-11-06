@@ -3,6 +3,7 @@ import { h, clear, fmtTime } from './dom';
 import { svgIcon, I } from './icons';
 import { FAILURE_LABELS, type Failures, type Sim } from '../sim/sim';
 import { WX_PRESETS, Modal } from './modals';
+import { confirmAction } from './confirm';
 import { evaluateAcs, computeDebrief } from '../sim/recorder';
 import { FAILURE_GROUPS, FAILURE_LABELS_EN, FAILURE_LABELS_FR, type FailureKey } from '../sim/systemsTypes';
 import type { ProcedureController } from './procedurePanel';
@@ -113,6 +114,7 @@ registerStrings('en', {
   'hist.fail': 'fail',
   'hist.clearAsk': 'Delete all training records stored in this browser?',
   'hist.clear': 'Clear records',
+  'hist.clearBody': 'Every flight, score and exercise result in the training records is deleted. Export a CSV first to keep a copy.',
   'hist.csv': 'Export CSV',
 });
 registerStrings('fr', {
@@ -220,6 +222,7 @@ registerStrings('fr', {
   'hist.fail': 'échec',
   'hist.clearAsk': 'Supprimer tous les enregistrements de formation de ce navigateur ?',
   'hist.clear': 'Effacer le carnet',
+  'hist.clearBody': 'Tous les vols, notes et résultats d’exercices du carnet sont supprimés. Exportez d’abord un CSV pour en garder une copie.',
   'hist.csv': 'Exporter en CSV',
 });
 const fName = (k: FailureKey) => (lang() === 'fr' ? FAILURE_LABELS_FR : FAILURE_LABELS_EN)[k] ?? k;
@@ -557,7 +560,7 @@ export class HistoryModal extends Modal {
         ),
       );
     this.foot.append(
-      h('button', { class: 'btn link quiet', disabled: !all.length, onclick: () => { if (confirm(t('hist.clearAsk'))) { history.clear(); this.render(); } } }, t('hist.clear')),
+      h('button', { class: 'btn link quiet', disabled: !all.length, onclick: async (e: Event) => { if (await confirmAction({ title: t('hist.clearAsk'), body: t('hist.clearBody'), confirmLabel: t('hist.clear'), cancelLabel: t('ios.cancel'), destructive: true, anchor: e.currentTarget as HTMLElement })) { history.clear(); this.render(); } } }, t('hist.clear')),
       h('span', { class: 'grow' }),
       h('button', { class: 'btn primary', disabled: !list.length, onclick: () => {
         const blob = new Blob([history.csv(list)], { type: 'text/csv' });
