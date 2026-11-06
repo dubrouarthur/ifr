@@ -2278,6 +2278,19 @@ function fitSides() {
     const mh = Math.max(stacked ? 160 : 200, Math.min(room, (vis && !stacked ? r.height : room) + 120));
     document.body.style.setProperty('--procp-mh', `${Math.round(mh)}px`);
     document.body.style.setProperty('--procp-w', `${w}px`);
+    // an outside view tall enough: the card sits in its right part, under the situation bar and above the
+    // autopilot bar, so it covers no instrument at all (the pilot can still drag it anywhere)
+    const o = otw.getBoundingClientRect();
+    const oTop = Math.max(o.top, sb.height > 20 ? sb.bottom : o.top) + 8;
+    const free = o.bottom - 8 - oTop;
+    if (otwMode !== 'none' && !document.body.classList.contains('portrait') && free >= 150 && o.width >= 700) {
+      // short outside views (laptops): a wider card wraps less, so the memory items still fit its height
+      const ow = Math.round(Math.max(320, Math.min(free < 300 ? 460 : 400, o.width * 0.36)));
+      document.body.style.setProperty('--procp-b', `${Math.round(window.innerHeight - o.bottom + 8)}px`);
+      document.body.style.setProperty('--procp-r', `${Math.round(Math.max(8, window.innerWidth - o.right + 12))}px`);
+      document.body.style.setProperty('--procp-mh', `${Math.round(free)}px`);
+      document.body.style.setProperty('--procp-w', `${ow}px`);
+    }
   }
   // the lesson window's zone, then: the panel shows its hint and steps behind "Details" when its space is short
   const zone = syncLessonZone();

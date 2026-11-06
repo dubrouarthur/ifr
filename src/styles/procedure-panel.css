@@ -1037,3 +1037,23 @@ body.procp-on:not(.portrait) .cockpit:has(.coach:not(.empty)) .atc-radio {
     min-height: 44px;
   }
 }
+
+/* moved by the pilot: it stays where it was dropped (drag the header; double-click it to put it back) */
+.procp.moved {
+  right: auto;
+  bottom: auto;
+  max-height: var(--procp-mh-moved, 70vh);
+}
+body.ios-open .procp.moved {
+  right: auto;
+}
+.procp .pv-top {
+  cursor: grab;
+  touch-action: none;
+}
+.procp.dragging .pv-top {
+  cursor: grabbing;
+}
+.procp.dragging .procp-card {
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.65);
+}

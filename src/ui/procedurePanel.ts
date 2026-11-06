@@ -567,6 +567,67 @@ export class ProcedurePanel {
       },
       this.card,
     );
+    this.wireDrag();
+  }
+
+  // ---------------------------------------------------------------- moving the card
+  /** where the pilot put the card (left/top in px), or null for the default anchor */
+  private pos: { x: number; y: number } | null = readPos();
+  /** drag the card by its header (not by its buttons); a double-click on the header puts it back */
+  private wireDrag() {
+    const el = this.el;
+    let start: { px: number; py: number; x: number; y: number; id: number } | null = null;
+    el.addEventListener("pointerdown", (e) => {
+      const head = (e.target as HTMLElement).closest(".pv-top");
+      if (!head || (e.target as HTMLElement).closest("button, a, input, select")) return;
+      const r = el.getBoundingClientRect();
+      start = { px: e.clientX, py: e.clientY, x: r.left, y: r.top, id: e.pointerId };
+      head.setPointerCapture?.(e.pointerId);
+      el.classList.add("dragging");
+      e.preventDefault();
+    });
+    el.addEventListener("pointermove", (e) => {
+      if (!start || e.pointerId !== start.id) return;
+      this.place({ x: start.x + e.clientX - start.px, y: start.y + e.clientY - start.py });
+    });
+    const end = (e: PointerEvent) => {
+      if (!start || e.pointerId !== start.id) return;
+      start = null;
+      el.classList.remove("dragging");
+      if (this.pos) writePos(this.pos);
+    };
+    el.addEventListener("pointerup", end);
+    el.addEventListener("pointercancel", end);
+    el.addEventListener("dblclick", (e) => {
+      if (!(e.target as HTMLElement).closest(".pv-top") || (e.target as HTMLElement).closest("button")) return;
+      this.pos = null;
+      writePos(null);
+      this.applyPos();
+    });
+    window.addEventListener("resize", () => this.applyPos());
+    this.applyPos();
+  }
+  private place(p: { x: number; y: number }) {
+    const r = this.el.getBoundingClientRect();
+    const w = r.width || 360;
+    const h = Math.min(r.height || 200, window.innerHeight - 16);
+    this.pos = {
+      x: Math.round(Math.max(8, Math.min(window.innerWidth - w - 8, p.x))),
+      y: Math.round(Math.max(8, Math.min(window.innerHeight - Math.min(h, 120) - 8, p.y))),
+    };
+    this.applyPos();
+  }
+  private applyPos() {
+    const el = this.el;
+    el.classList.toggle("moved", !!this.pos);
+    if (this.pos) {
+      el.style.left = `${this.pos.x}px`;
+      el.style.top = `${this.pos.y}px`;
+      el.style.setProperty("--procp-mh-moved", `${Math.max(160, window.innerHeight - this.pos.y - 8)}px`);
+    } else {
+      el.style.removeProperty("left");
+      el.style.removeProperty("top");
+    }
   }
 
   get visible() {
@@ -690,6 +751,7 @@ export class ProcedurePanel {
       "div",
       {
         class: `pv-top${fin ? (outcome === "completed" || outcome === "landed" ? " ok" : " stop") : ""}`,
+        title: "Drag to move · double-click to put it back",
       },
       h(
         "span",
@@ -1085,3 +1147,21 @@ export class ProcedurePanel {
 /** plain words for a failure in the UI language (instructor drawer, toasts) */
 export const failureName = (k: FailureKey) => failureText(k, uiLang());
 export type { ProcedureRunner };
+
+const POS_KEY = "ifr.procp.pos";
+function readPos(): { x: number; y: number } | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(POS_KEY) ?? "null");
+    return v && Number.isFinite(v.x) && Number.isFinite(v.y) ? { x: v.x, y: v.y } : null;
+  } catch {
+    return null;
+  }
+}
+function writePos(p: { x: number; y: number } | null) {
+  try {
+    if (p) localStorage.setItem(POS_KEY, JSON.stringify(p));
+    else localStorage.removeItem(POS_KEY);
+  } catch {
+    /* storage blocked: the position lasts for this flight only */
+  }
+}
