@@ -579,3 +579,66 @@ html body .cockpit[data-lesson="column"] .otw > .toasts {
 body.portrait .cockpit.no-otw .sb-dock {
   display: none;
 }
+
+/* ------------------------------------------------------------------ the dock in the top bar
+   Cameras and the screen layout sit in the top bar, between the flight name and the actions: one row of chrome,
+   nothing floats over the outside view. Pause stays the top bar's own button. */
+.topbar .tb-views {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  padding: 0 8px;
+}
+html body .topbar .view-dock {
+  --vd-h: 32px;
+  position: static;
+  inset: auto;
+  z-index: auto;
+  flex: none;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  font-size: 12.5px;
+}
+html body .topbar .view-dock button {
+  padding: 0 10px;
+  border-radius: 8px;
+}
+html body .topbar .view-dock .vd-pause {
+  display: none;
+}
+/* the View panel opens below the top bar: the chevron points down */
+html body .topbar .view-dock .vd-lay .ico:last-child {
+  transform: rotate(180deg);
+}
+html body.touch .topbar .view-dock {
+  --vd-h: 40px;
+}
+/* a narrow top bar: only the layout button (the View panel holds the cameras) */
+html body .topbar .view-dock.tiny .vd-cams,
+html body .topbar .view-dock.tiny .vd-sep,
+html body .topbar .view-dock.tiny .vd-lay .vd-l {
+  display: none;
+}
+.topbar .tb-views {
+  overflow: hidden;
+}
+/* the flight name gives room to the cameras: it ellipsizes first (its full text is in the button's tooltip) */
+html body .topbar .scn-wrap {
+  flex: 0 1 300px;
+  min-width: 120px;
+}
+/* below 1440 px the three tool buttons are icons (tooltips name them), so the cameras keep their labels longer */
+@media (max-width: 1439px) {
+  html body .topbar .tb-actions .tb-fc .lbl,
+  html body .topbar .tb-actions .tb-efb .lbl,
+  html body .topbar .tb-actions .tb-ios .lbl {
+    display: none;
+  }
+}

@@ -131,7 +131,7 @@ export class ViewDock {
         title: "Screen layout, camera and instrument panel (Tab · Shift+Tab)",
         onclick: (e: Event) => {
           e.stopPropagation();
-          this.toggle(this.layBtn, "up");
+          this.toggle(this.layBtn, this.popDir);
         },
       },
       this.layPic,
@@ -228,16 +228,21 @@ export class ViewDock {
     this.pauseBtn.title = p ? "Resume (Esc)" : "Pause (Esc)";
     this.pauseBtn.classList.toggle("on", p);
   }
+  /** where the View panel opens from the dock's layout button: above it (dock over the outside view) or below it
+   *  (dock in the top bar) */
+  popDir: "up" | "down" = "up";
   /** without WebGL the cameras stay (disabled), so the dock never changes shape */
-  /** the dock's width with every label shown (measured while it shows them) */
-  private wideW = 0;
-  /** keep the labels when the dock's zone has room for them; else icons only, except the active camera, which
-   *  keeps its name (Immersive on an iPad: the dock sits right of the floating PFD) */
+  /** keep the labels when there is room; else icons only (the active camera keeps its name); else, when even that
+   *  does not fit (a narrow top bar), only the layout button, which opens the View panel with the cameras */
   fit(avail: number): void {
-    const narrow = this.el.classList.contains("narrow");
-    if (!narrow && this.el.offsetWidth > 0) this.wideW = this.el.offsetWidth;
-    const want = this.wideW > 0 && this.wideW > avail;
-    if (want !== narrow) this.el.classList.toggle("narrow", want);
+    const el = this.el;
+    if (avail <= 0 || !el.isConnected) return;
+    el.classList.remove("narrow", "tiny");
+    if (el.scrollWidth <= avail) return;
+    el.classList.add("narrow");
+    if (el.scrollWidth <= avail) return;
+    el.classList.remove("narrow");
+    el.classList.add("tiny");
   }
   setAvailable(gl: boolean): void {
     this.gl = gl;

@@ -443,7 +443,10 @@ const viewDock = new ViewDock({
 });
 const viewBtn = h('button', { class: 'btn tb-view', 'aria-haspopup': 'dialog', 'aria-expanded': 'false', title: 'View: camera, screen layout and instrument panel (V camera · Tab layout)', onclick: (e: Event) => { e.stopPropagation(); viewDock.toggle(viewBtn, 'down'); } }, icon(I.layout), h('span', { class: 'lbl' }, 'View'));
 /** the instrument panel picker lives in the View panel (More and the Flight menu open it there) */
-const openPanelPicker = () => { chromeShow(true); requestAnimationFrame(() => viewDock.open(viewBtn, 'down')); };
+const openPanelPicker = () => { chromeShow(true); requestAnimationFrame(() => viewDock.open(viewDock.el, 'down')); };
+// the cameras and the layout live in the top bar: one row of chrome, the outside view stays clear
+viewDock.popDir = 'down';
+const tbViews = h('div', { class: 'tb-views' }, viewDock.el);
 // ------------------------------------------------------------------ exterior views (Cockpit / Chase / Orbit / Tower / Fly-by)
 /** the list and names come from the 3D module once it is loaded (outside3d re-exports them); these are the defaults */
 let viewList: readonly ViewMode[] = ['cockpit', 'chase', 'orbit', 'tower', 'flyby'];
@@ -693,14 +696,13 @@ const topbar = h('header', { class: 'topbar' },
   // the app mark is decorative (it used to be a hidden "pin the bar" toggle: that is the View panel switch now)
   h('div', { class: 'brand', 'aria-hidden': 'true' }, h('img', { class: 'logo', src: '/favicon.svg', alt: '' }), h('span', { class: 'brand-t' }, h('b', {}, 'IFR'), h('span', {}, ' Trainer'))),
   h('div', { class: 'menu-wrap scn-wrap' }, scnBtn, flightMenu),
-  h('div', { class: 'spacer' }),
+  tbViews,
   h('div', { class: 'tb-actions' },
     // the single way home: every flight, lesson and path starts in the Flight Center (Shift N still plans directly)
     h('button', { class: 'btn tb-fc', onclick: () => fc.open(), title: 'Flight Center — plan a flight, lessons, paths and records (F2)' }, icon(I.plane), h('span', { class: 'lbl' }, 'Flight Center')),
     h('button', { class: 'btn tb-efb', onclick: () => charts.toggle(), title: 'EFB — charts, airport, navlog, weather, checklists (K)' }, icon(I.tablet), h('span', { class: 'lbl' }, 'EFB')),
     cduBtn,
     h('button', { class: 'btn tb-ios', onclick: () => ios.toggle(), title: 'Instructor station (I)' }, icon(I.instructor), h('span', { class: 'lbl' }, 'Instructor')),
-    viewBtn,
     h('div', { class: 'tb-sim' }, pauseBtn, rateBtn),
     h('div', { class: 'menu-wrap' }, moreBtn, moreMenu),
   ),
@@ -776,7 +778,7 @@ lessonWin.onAction((a) => {
       break;
   }
 });
-const otw = h('section', { class: 'otw' }, otwCanvas, glCanvas, glare, lookHint, sitbar, pauseVeil, lessonSlot, toasts, replayBar, atc.el, viewDock.el);
+const otw = h('section', { class: 'otw' }, otwCanvas, glCanvas, glare, lookHint, sitbar, pauseVeil, lessonSlot, toasts, replayBar, atc.el);
 let outside: Outside3D | null = null;
 let timeOfDay = store.get<TimeOfDay>('ifr.tod', 'day');
 // tablets: the lighter scene at native pixel ratio 1 (a 2x retina canvas costs 4x the fill rate on an iPad GPU)
@@ -1395,7 +1397,6 @@ function setOtw(m: OtwMode, announce = false) {
   if (m === 'none') chromeShow(true);
   else if (autoHide && !chromeBusy()) scheduleHide(900);
   // the dock: bottom-right of the outside view, or the right end of the situation bar in Instruments
-  (m === 'none' ? sitDock : otw).append(viewDock.el);
   viewDock.setLayout(m);
   if (announce) toast(`Layout: ${layoutName(m)}`, 'info', 2200);
   fitSoon();
@@ -2287,9 +2288,10 @@ function fitSides() {
   if (otwMode !== 'none') {
     const o = otw.getBoundingClientRect();
     const leftEdge = otwMode === 'visual' ? pfdBezel.getBoundingClientRect().right : zone === 'column' ? o.left + lessonColumnW(window.innerWidth, touchUi) : o.left;
-    viewDock.fit(o.right - leftEdge - 24);
+    void leftEdge;
+    viewDock.fit(tbViews.clientWidth - 8);
   }
-  document.body.style.setProperty('--vd-dock-h', `${viewDock.el.offsetHeight || 52}px`);
+  document.body.style.setProperty('--vd-dock-h', '0px');
   // exterior cameras frame the aircraft in the free part of the 3D view: under the situation bar, above the dock,
   // and left of or below the ATC card, whichever leaves more room (F13)
   if (outside) outside.setSafeArea(freeView());
@@ -2299,8 +2301,7 @@ function freeView() {
   const c = glCanvas.getBoundingClientRect();
   if (otwMode === 'none' || c.width < 50 || c.height < 50) return { top: 0, bottom: 0, left: 0, right: 0 };
   const top = Math.max(c.top, sitbar.getBoundingClientRect().bottom);
-  const dock = viewDock.el.getBoundingClientRect();
-  const bottom = Math.min(c.bottom, dock.height > 0 ? dock.top - 8 : c.bottom);
+  const bottom = c.bottom;
   const a = atc.el.getBoundingClientRect();
   const atcOn = a.width > 0 && a.height > 0 && a.bottom > top && a.top < bottom;
   // two candidates when the ATC card is up: the band left of it, or the band below it
