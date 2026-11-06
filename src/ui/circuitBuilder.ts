@@ -3684,7 +3684,7 @@ export class CircuitBuilder extends Modal {
       (l.type === "hold" && !!l.ppos) ||
       (l.type === "approach" && !!l.change);
     const card = h("div", {
-      class: `cbx-leg ${l.type}${atc ? " atc" : ""}${on ? " on" : ""}${errs.length ? " bad" : ""}`,
+      class: `cbx-leg ${l.type}${atc ? " is-atc" : ""}${on ? " on" : ""}${errs.length ? " bad" : ""}`,
       "data-i": String(i),
     });
     const grip = h(
@@ -4150,7 +4150,7 @@ export class CircuitBuilder extends Modal {
           this.sel(
             l.outcome,
             [
-              ["missed", "Missed approach, continue"],
+              ["missed", "Missed approach"],
               ["land", "Full-stop landing"],
             ],
             (v) => (l.outcome = v),
