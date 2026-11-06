@@ -37,6 +37,27 @@ export interface Avionics {
   inset: boolean;
 }
 
+/** the avionics of a fresh page: radios, courses, sources, transponder (the lesson baseline starts from it) */
+export const defaultAvionics = (): Avionics => ({
+  nav1: { active: 110.3, standby: 114.2 },
+  nav2: { active: 114.2, standby: 112.7 },
+  com1: { active: 119.85, standby: 118.3 },
+  com2: { active: 127.65, standby: 121.9 },
+  obs1: 270,
+  obs2: 90,
+  cdi: 'GPS',
+  baro: 29.92,
+  minimums: 670,
+  xpdr: '1200',
+  xpdrMode: 'ALT',
+  timerStart: null,
+  timerHold: null,
+  bearing1: 'OFF',
+  bearing2: 'OFF',
+  adf: { active: 344, standby: 344 },
+  inset: true,
+});
+
 /** every injectable failure (see src/sim/systemsTypes.ts FailureKey) */
 export type Failures = Record<FailureKey, boolean>;
 export const FAILURE_LABELS: Record<FailureKey, string> = FAILURE_LABELS_EN;
@@ -95,25 +116,7 @@ export class Sim {
   controls: Controls = neutralControls();
   ap = new Autopilot();
   fp = new FlightPlan();
-  av: Avionics = {
-    nav1: { active: 110.3, standby: 114.2 },
-    nav2: { active: 114.2, standby: 112.7 },
-    com1: { active: 119.85, standby: 118.3 },
-    com2: { active: 127.65, standby: 121.9 },
-    obs1: 270,
-    obs2: 90,
-    cdi: 'GPS',
-    baro: 29.92,
-    minimums: 670,
-    xpdr: '1200',
-    xpdrMode: 'ALT',
-    timerStart: null,
-    timerHold: null,
-    bearing1: 'OFF',
-    bearing2: 'OFF',
-    adf: { active: 344, standby: 344 },
-    inset: true,
-  };
+  av: Avionics = defaultAvionics();
   nav1: NavOutput = EMPTY_NAV;
   nav2: NavOutput = EMPTY_NAV;
   marker: 'O' | null = null;

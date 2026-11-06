@@ -56,6 +56,15 @@ const P = {
   chevDown: 'M6 9l6 6 6-6',
   chevUp: 'M6 15l6-6 6 6',
   arrow: 'M5 12h14M13 6l6 6-6 6',
+  // pedestal: a toggle switch (aircraft switch panel)
+  toggle: 'M7 7h10a5 5 0 0 1 0 10H7A5 5 0 0 1 7 7zM16 9.5a2.5 2.5 0 1 0 0 5a2.5 2.5 0 1 0 0-5',
+  // cameras (view dock): windshield, aircraft from behind, orbit, control tower, fly-by camera
+  camCockpit: 'M3 17c2.5-6 5.5-9 9-9s6.5 3 9 9M3 17h18M12 8v9M8 12.5l-1.5 4.5M16 12.5l1.5 4.5',
+  camChase: 'M2 13h20M12 10.5a2.5 2.5 0 1 0 0 5a2.5 2.5 0 1 0 0-5M12 10.5V6M9.5 18.5h5',
+  camOrbit: 'M12 9.5a2.5 2.5 0 1 0 0 5a2.5 2.5 0 1 0 0-5M3 12c0-2.5 4-4.5 9-4.5s9 2 9 4.5-4 4.5-9 4.5c-2 0-3.8-.3-5.3-.9M6.7 15.6L5 18M6.7 15.6l2.8.3',
+  camTower: 'M8 4h8l-1 5H9zM10 9l-1 12M14 9l1 12M7 21h10M9.5 14h5',
+  camFlyby: 'M3 8h10v8H3zM13 11l5-3v8l-5-3M16 4l4 0M18 2l2 2-2 2',
+  menu: 'M4 7h16M4 12h16M4 17h16',
 };
 /** icon names, for `svgIcon(I.check)` */
 export const I = Object.fromEntries(Object.keys(P).map((k) => [k, k])) as { [K in keyof typeof P]: K };

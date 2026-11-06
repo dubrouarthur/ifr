@@ -53,3 +53,40 @@ describe('terrain data updates', () => {
     setTerrainProvider(null);
   });
 });
+
+// ---------------------------------------------------------------- the FMS step pad (X20)
+import { fmsSteps, placePad } from '../src/ui/knob';
+
+describe('FMS step pad', () => {
+  it('names the knobs Outer and Inner, and + on Outer turns the outer knob', () => {
+    const keys: string[] = [];
+    const rows = fmsSteps((k) => keys.push(k), () => 'ACTV PA');
+    expect(rows.map((r) => r.label)).toEqual(['Outer', 'Inner']);
+    expect(rows[0].minus).toMatch(/Field/);
+    expect(rows[0].plus).toMatch(/Row/);
+    rows[0].onStep(1, false);
+    rows[0].onStep(-1, false);
+    rows[1].onStep(1, false);
+    rows[0].push!.fn();
+    for (const a of rows[1].actions!) a.fn();
+    expect(keys).toEqual(['outer+', 'outer-', 'inner+', 'push', 'ent', 'clr']);
+    expect(rows[1].actions!.map((a) => a.label)).toEqual(['ENT', 'CLR']);
+  });
+
+  it('never opens over a display screen when a free spot exists', () => {
+    // the FMS knob at the bottom right of the MFD bezel on a 1180x820 iPad
+    const mfd = { left: 672, top: 406, right: 1081, bottom: 713 };
+    const pfd = { left: 99, top: 406, right: 508, bottom: 713 };
+    const knobR = { left: 1090, top: 690, right: 1142, bottom: 742 };
+    const bezel = { left: 598, top: 386, right: 1156, bottom: 760 };
+    const p = placePad(knobR, 300, 150, { w: 1180, h: 820 }, [pfd, mfd], bezel);
+    const r = { left: p.x, top: p.y, right: p.x + 300, bottom: p.y + 150 };
+    for (const s of [pfd, mfd]) {
+      const ix = Math.min(r.right, s.right) - Math.max(r.left, s.left);
+      const iy = Math.min(r.bottom, s.bottom) - Math.max(r.top, s.top);
+      expect(ix > 0 && iy > 0).toBe(false);
+    }
+    expect(p.x).toBeGreaterThanOrEqual(8);
+    expect(p.x + 300).toBeLessThanOrEqual(1172);
+  });
+});

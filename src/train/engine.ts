@@ -1,5 +1,5 @@
 // Lesson engine: an exercise is a sequence of steps with completion conditions and tolerances.
-import type { Sim, Scenario, Failures } from '../sim/sim';
+import { defaultAvionics, type Sim, type Scenario, type Failures, type Avionics } from '../sim/sim';
 import { holdSetup, approachSetup, type SetupItem } from './setupAssist';
 import type { FlightData } from '../sim/aircraft';
 import type { Weather } from '../sim/environment';
@@ -37,6 +37,9 @@ export interface Step {
   readout?: (c: Ctx) => string;
   /** setup assistant: what to configure for this step (source, frequency, course, altitude, entry), checked live */
   setup?: (c: Ctx) => SetupItem[];
+  /** a sustained deviation: out of tolerance longer than this (s) on this one step fails the exercise, whatever
+   *  the allowance of the whole exercise (ACS: a momentary deviation corrected at once is not a failure) */
+  limitSec?: number;
 }
 
 export interface Quiz {
@@ -150,13 +153,20 @@ export interface StepResult {
 
 export interface LessonResult {
   passed: boolean;
-  score: number;
+  /** false: the exercise was ended before it was complete (End) — no score, no attempt, no best score.
+   *  Absent on results made before the field existed (= graded). */
+  graded?: boolean;
+  /** 0–100; null when the run is not graded */
+  score: number | null;
   steps: StepResult[];
   holdReport?: { label: string; value: string; ok: boolean | null }[];
   acs?: AcsReport;
   reason: string;
   durationSec: number;
 }
+
+/** the reason of a run ended with End before it was complete (not graded) */
+export const ENDED_EARLY = 'Ended early — not graded';
 
 export class LessonRun {
   rt: ExerciseRuntime;
@@ -178,7 +188,10 @@ export class LessonRun {
   private drillEnd: { moved: boolean; stoppedS: number } | null = null;
 
   constructor(public ex: Exercise, public sim: Sim) {
+    // a clean avionics baseline, whatever the previous flight left (startAt applies it again after Sim.load)
+    avionicsBaseline(sim);
     this.rt = ex.setup(sim);
+    markPresets(this.rt.steps, { ...this.ctx(0), mem: {} });
     this.results = this.rt.steps.map((s) => ({ text: s.text, done: false, violationSec: 0, worst: null }));
     if (this.rt.hold) this.holdEval = new HoldEvaluator(this.rt.hold);
     sim.ap.inhibited = ex.allowAp ? sim.ap.inhibited : 'AP NOT ALLOWED';
@@ -234,8 +247,17 @@ export class LessonRun {
     }
   }
 
+  /** the student ended the exercise before it was complete: the run is not graded (no score, not an attempt) */
   abort() {
-    this.finish('Aborted');
+    if (this.finished) return;
+    this.finished = {
+      passed: false,
+      graded: false,
+      score: null,
+      steps: this.results,
+      reason: ENDED_EARLY,
+      durationSec: this.totalT,
+    };
   }
 
   // ---------------------------------------------------------------- failure drills
@@ -323,14 +345,30 @@ export class LessonRun {
     if (!allDone) score -= 30;
     if (crashed) score = 0;
     score = Math.max(0, Math.round(score));
-    const passed = allDone && !crashed && viol <= allowance && holdOk && acsOk;
+    // one step out of tolerance for longer than its own limit (a sustained deviation) fails the exercise
+    const overIdx = this.rt.steps.findIndex((s, i) => s.limitSec !== undefined && this.results[i].violationSec > s.limitSec);
+    const over = overIdx >= 0 ? this.results[overIdx] : null;
+    const passed = allDone && !crashed && viol <= allowance && !over && holdOk && acsOk;
     this.finished = {
       passed,
+      graded: true,
       score,
       steps: this.results,
       holdReport,
       acs,
-      reason: reason ?? (passed ? 'All standards met' : !allDone ? 'Not all steps completed' : viol > allowance ? `Out of tolerance for ${Math.round(viol)} s (allowed ${allowance} s)` : !holdOk ? 'Holding standards not met' : 'ACS standards not met'),
+      reason:
+        reason ??
+        (passed
+          ? 'All standards met'
+          : !allDone
+            ? 'Not all steps completed'
+            : viol > allowance
+              ? `Out of tolerance for ${Math.round(viol)} s (allowed ${allowance} s)`
+              : over
+                ? `${over.worst ?? 'Out of tolerance'} — held for ${Math.round(over.violationSec)} s on step ${overIdx + 1} (max ${this.rt.steps[overIdx].limitSec} s)`
+                : !holdOk
+                  ? 'Holding standards not met'
+                  : 'ACS standards not met'),
       durationSec: this.totalT,
     };
   }
@@ -339,6 +377,56 @@ export class LessonRun {
 // ------------------------------------------------------------------ step builders
 const fmtHdg = (h: number) => String(Math.round(((h % 360) + 360) % 360) || 360).padStart(3, '0');
 const hdgErr = (d: FlightData, h: number) => Math.abs(wrap180(d.hdgTrue - h));
+
+// ------------------------------------------------------------------ standard-rate turns (FAA-S-ACS-8C IR.IV.A)
+export const STD_RATE = 3;
+/** turn rate tolerance on a standard-rate turn (°/s) */
+export const STD_RATE_TOL = 0.6;
+/** bank tolerance around the standard-rate bank (°) */
+export const STD_BANK_TOL = 5;
+/** seconds after the step starts before the rate / bank standards apply (roll-in) */
+export const TURN_GRACE_SEC = 4;
+/** degrees to go below which the pilot is leading the roll-out: rate and bank are not graded there */
+const TURN_ROLLOUT_ZONE = 15;
+/** rule of thumb for the standard-rate bank angle (°) */
+export const stdRateBank = (tasKt: number) => tasKt / 10 + 7;
+
+interface TurnState {
+  /** degrees still to turn in the commanded direction (negative: past the target heading) */
+  remaining: number;
+  /** turn rate, smoothed over ~1 s (°/s, unsigned) — a gust is not a deviation */
+  rate: number;
+  /** bank, smoothed the same way (°, unsigned) */
+  bank: number;
+}
+/** progress of a turn step, updated once per frame: the heading is unwrapped so a 180° turn and an overshoot read
+ *  right, and the direction is the commanded one (or the shorter way, fixed when the step starts) */
+function turnState(c: Ctx, hdg: number, dir: 'L' | 'R' | null): TurnState {
+  const m = c.mem;
+  const key = `${c.run.idx}`;
+  const cur = c.d.hdgTrue;
+  if (m.tsKey !== key) {
+    const sgn = dir === 'R' ? 1 : dir === 'L' ? -1 : wrap180(hdg - cur) >= 0 ? 1 : -1;
+    let total = (((hdg - cur) * sgn) % 360 + 360) % 360;
+    if (total > 355) total -= 360; // already on the heading (a few degrees past it)
+    m.tsKey = key;
+    m.tsSgn = sgn;
+    m.tsTotal = total;
+    m.tsTurned = 0;
+    m.tsPrev = cur;
+    m.tsT = c.t;
+    m.tsRate = Math.abs(c.d.turnRateDps);
+    m.tsBank = Math.abs(c.d.rollDeg);
+  } else if (m.tsT !== c.t) {
+    const k = Math.min(1, c.dt / 1);
+    m.tsTurned = (m.tsTurned as number) + wrap180(cur - (m.tsPrev as number)) * (m.tsSgn as number);
+    m.tsPrev = cur;
+    m.tsT = c.t;
+    m.tsRate = (m.tsRate as number) + (Math.abs(c.d.turnRateDps) - (m.tsRate as number)) * k;
+    m.tsBank = (m.tsBank as number) + (Math.abs(c.d.rollDeg) - (m.tsBank as number)) * k;
+  }
+  return { remaining: (m.tsTotal as number) - (m.tsTurned as number), rate: m.tsRate as number, bank: m.tsBank as number };
+}
 
 export interface Tol {
   alt?: number;
@@ -376,17 +464,39 @@ export const S = {
       readout: (c) => `${Math.round(sec - c.t)} s left`,
     };
   },
-  turnTo(hdg: number, dir: 'L' | 'R' | null, alt: number, opts: { maxBank?: number; ias?: number } = {}): Step {
+  turnTo(hdg: number, dir: 'L' | 'R' | null, alt: number, opts: { maxBank?: number; ias?: number; rollOutTol?: number } = {}): Step {
+    const maxBank = opts.maxBank ?? 30;
     return {
       text: `${dir === 'L' ? 'Turn left' : dir === 'R' ? 'Turn right' : 'Turn'} to heading ${fmtHdg(hdg)} at standard rate, maintain ${alt} ft`,
       hint: 'Standard rate ≈ 15° of bank at 90 KIAS (TAS/10 + 7). Lead the roll-out by ½ the bank angle.',
-      done: (c) => hdgErr(c.d, hdg) < 5 && Math.abs(c.d.rollDeg) < 5,
+      done: (c) => {
+        turnState(c, hdg, dir);
+        return hdgErr(c.d, hdg) < 5 && Math.abs(c.d.rollDeg) < 5;
+      },
       check: (c) => {
-        if (Math.abs(c.d.rollDeg) > (opts.maxBank ?? 30)) return `Bank ${Math.round(Math.abs(c.d.rollDeg))}° (max ${opts.maxBank ?? 30})`;
-        if (dir && c.t < 6 && Math.abs(c.d.rollDeg) > 5 && Math.sign(c.d.rollDeg) !== (dir === 'R' ? 1 : -1)) return 'Turning the wrong way';
+        const ts = turnState(c, hdg, dir);
+        const bank = Math.abs(c.d.rollDeg);
+        if (bank > maxBank) return `Bank ${Math.round(bank)}° (max ${maxBank})`;
+        if (dir && c.t < 6 && bank > 5 && Math.sign(c.d.rollDeg) !== (dir === 'R' ? 1 : -1)) return 'Turning the wrong way';
+        // roll-out: heading ±10° (±15° on the compass with the AHRS failed) — FAA-S-ACS-8C IR.IV.A
+        const tol = opts.rollOutTol ?? (c.sim.failures.ahrs ? 15 : 10);
+        if (ts.remaining < -tol) return `Overshot ${fmtHdg(hdg)} by ${Math.ceil(-ts.remaining)}°`;
+        // established in the turn (not rolling in, not leading the roll-out): standard rate 3°/s ±0.6, or the
+        // bank for it (TAS/10 + 7) ±5°
+        if (ts.remaining > TURN_ROLLOUT_ZONE) {
+          if (Math.abs(ts.rate - STD_RATE) > STD_RATE_TOL) return `Turn rate ${ts.rate.toFixed(1)}°/s (standard 3°/s)`;
+          const std = stdRateBank(c.d.tasKt);
+          if (Math.abs(ts.bank - std) > STD_BANK_TOL) return `Bank ${Math.round(ts.bank)}° (standard rate ≈ ${Math.round(std)}°)`;
+        }
         return devCheck(c, { alt, ias: opts.ias }, {});
       },
-      graceSec: 3,
+      readout: (c) => {
+        const ts = turnState(c, hdg, dir);
+        return `${ts.rate.toFixed(1)}°/s · bank ${Math.round(Math.abs(c.d.rollDeg))}° (std ${Math.round(stdRateBank(c.d.tasKt))}°) · ${Math.max(0, Math.round(ts.remaining))}° to go`;
+      },
+      // roll-in grace: the rate and bank standards apply once the turn is established
+      graceSec: TURN_GRACE_SEC,
+      limitSec: 6,
     };
   },
   changeAlt(target: number, ias: number, hdg: number | null, vs?: number): Step {
@@ -587,7 +697,90 @@ export const S = {
   },
 };
 
+// ------------------------------------------------------------------ setup checklists: what the exercise presets
+/** the detail of a checklist item the exercise set itself */
+export const PRESET_DETAIL = 'Preset for this exercise';
+const rawSetup = new WeakMap<Step, NonNullable<Step['setup']>>();
+/** An item already satisfied when the exercise starts was set by the exercise, not by the student: it reads as
+ *  information (ok: null), so the checklist never says "Set up complete" at 0:00 (X09). Once it is changed it is a
+ *  to-do again. Measured once, on the state the exercise starts in (after the avionics baseline). */
+function markPresets(steps: Step[], c: Ctx) {
+  for (const st of steps) {
+    const build = rawSetup.get(st) ?? st.setup;
+    if (!build) continue;
+    let preset: Set<string>;
+    try {
+      preset = new Set(build(c).filter((i) => i.ok === true).map((i) => i.label));
+    } catch {
+      continue;
+    }
+    rawSetup.set(st, build);
+    // the preset items go last: what the student has to do first, then how to fly it (the first information item
+    // is the instruction the panel keeps in view), then what is already set
+    st.setup = preset.size
+      ? (cx) => {
+          const todo: SetupItem[] = [];
+          const done: SetupItem[] = [];
+          for (const i of build(cx)) {
+            if (i.ok === true && preset.has(i.label)) done.push({ ...i, ok: null, action: undefined, detail: i.detail ? `${i.detail} · ${PRESET_DETAIL.toLowerCase()}` : PRESET_DETAIL });
+            else todo.push(i);
+          }
+          return todo.concat(done);
+        }
+      : build;
+  }
+}
+
+// ------------------------------------------------------------------ seeded set-up (briefing preview)
+/** a seed for the random draws of one attempt (see withSeed) */
+export const newRunSeed = () => (Math.floor(Math.random() * 0x7fffffff) || 1) >>> 0;
+/** runs `fn` with Math.random drawn from a seeded generator (mulberry32): an exercise set up twice with the same seed
+ *  draws the same hold, quiz order and failure plan. The briefing of a Restart previews the run on a scratch Sim and
+ *  Start builds the same run on the live one. Only the synchronous call is seeded; Math.random is restored after. */
+export function withSeed<T>(seed: number, fn: () => T): T {
+  const orig = Math.random;
+  let a = seed >>> 0;
+  Math.random = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  try {
+    return fn();
+  } finally {
+    Math.random = orig;
+  }
+}
+
 // ------------------------------------------------------------------ scenario helpers
+/** Every exercise starts from the same avionics, never from what the previous flight left (X09): CDI on GPS,
+ *  BRG1/BRG2 off, NAV1/NAV2, COM, ADF and courses as on a fresh page, no minimums, XPDR 1200 ALT, chronometer reset.
+ *  The altimeter is set by startAt (local QNH); the inset map is a display preference and is kept. The exercise's
+ *  own setup runs after this and presets what it means to. Values are changed in place (radios included), so a
+ *  panel holding `sim.av` or `sim.av.nav1` keeps reading the live state. */
+export function avionicsBaseline(sim: Sim) {
+  const av = sim.av;
+  const base = defaultAvionics();
+  const radios = ['nav1', 'nav2', 'com1', 'com2', 'adf'] as const;
+  for (const k of radios) Object.assign(av[k], base[k]);
+  const rest: Omit<Avionics, (typeof radios)[number] | 'inset'> = {
+    obs1: base.obs1,
+    obs2: base.obs2,
+    cdi: 'GPS',
+    baro: base.baro,
+    minimums: null,
+    xpdr: '1200',
+    xpdrMode: 'ALT',
+    timerStart: null,
+    timerHold: null,
+    bearing1: 'OFF',
+    bearing2: 'OFF',
+  };
+  Object.assign(av, rest);
+}
+
 export function startAt(
   sim: Sim,
   o: { pos: LatLon; altFt: number; hdg: number; iasKt: number; onGround?: boolean; weather?: Partial<Weather>; failures?: Partial<Failures>; setup?: (s: Sim) => void },
@@ -606,7 +799,7 @@ export function startAt(
     weather: { ceilingFt: 20000, visibilitySm: 10, windKt: 0, gustKt: 0, turbulence: 0.08, ...o.weather },
     briefing: [],
     setup: (s) => {
-      s.av.minimums = null;
+      avionicsBaseline(s);
       s.av.baro = s.weather.qnh;
       o.setup?.(s);
     },

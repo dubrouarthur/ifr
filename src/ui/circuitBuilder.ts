@@ -12,6 +12,7 @@
 // the club procedure editor from a failure card.
 import { h, clear, store } from "./dom";
 import { Modal, WX_PRESETS } from "./modals";
+import { confirmAction } from "./confirm";
 import { svgIcon, I } from "./icons";
 import {
   PRESET_CIRCUITS,
@@ -297,6 +298,12 @@ registerStrings("en", {
   "fb.save": "Save",
   "fb.saved": "Saved",
   "fb.delete": "Delete",
+  "fb.discardAsk": "Discard the unsaved changes to “{name}”?",
+  "fb.discardBody": "The flight stays as it was last saved.",
+  "fb.discard": "Discard changes",
+  "fb.keepEditing": "Keep editing",
+  "fb.deleteAsk": "Delete “{name}” from your flights?",
+  "fb.deleteBody": "The flight is removed from My flights in this browser. This cannot be undone.",
   "fb.duplicate": "Duplicate",
   "fb.fly": "Fly",
   "fb.flyFree": "Fly (free)",
@@ -417,6 +424,12 @@ registerStrings("fr", {
   "fb.save": "Enregistrer",
   "fb.saved": "Enregistré",
   "fb.delete": "Supprimer",
+  "fb.discardAsk": "Abandonner les modifications de « {name} » ?",
+  "fb.discardBody": "Le vol reste tel qu’il a été enregistré.",
+  "fb.discard": "Abandonner",
+  "fb.keepEditing": "Continuer",
+  "fb.deleteAsk": "Supprimer « {name} » de vos vols ?",
+  "fb.deleteBody": "Le vol est retiré de Mes vols dans ce navigateur. Action irréversible.",
   "fb.duplicate": "Dupliquer",
   "fb.fly": "Voler",
   "fb.flyFree": "Voler (libre)",
@@ -1167,15 +1180,22 @@ export class CircuitBuilder extends Modal {
     );
   }
 
-  /** confirm before throwing away unsaved edits of a saved flight */
+  /** confirm before throwing away unsaved edits of a saved flight (the in-app sheet, not the browser dialog) */
   private guard(go: () => void) {
-    if (
-      this.dirty &&
-      this.isSaved() &&
-      !confirm(`Discard the unsaved changes to “${this.c.name}”?`)
-    )
+    if (!(this.dirty && this.isSaved())) {
+      go();
       return;
-    go();
+    }
+    const name = this.c.name;
+    void confirmAction({
+      title: t("fb.discardAsk", { name }),
+      body: t("fb.discardBody"),
+      confirmLabel: t("fb.discard"),
+      cancelLabel: t("fb.keepEditing"),
+      destructive: true,
+    }).then((ok) => {
+      if (ok) go();
+    });
   }
   private guardOpen(go: () => void) {
     if (this.isOpen) this.guard(go);
@@ -4849,9 +4869,18 @@ export class CircuitBuilder extends Modal {
               "button",
               {
                 class: "btn danger-ghost",
-                onclick: () => {
-                  if (!confirm(`Delete “${this.c.name}” from your flights?`))
-                    return;
+                onclick: async (e: Event) => {
+                  const name = this.c.name;
+                  const id = this.c.id;
+                  const ok = await confirmAction({
+                    title: t("fb.deleteAsk", { name }),
+                    body: t("fb.deleteBody"),
+                    confirmLabel: t("fb.delete"),
+                    destructive: true,
+                    anchor: e.currentTarget as HTMLElement,
+                  });
+                  // the flight on the page changed while the question was asked: nothing to delete
+                  if (!ok || this.c.id !== id) return;
                   circuitStore.remove(this.c.id);
                   this.toast(`Deleted “${this.c.name}”`, "info");
                   this.c = this.freshCircuit();

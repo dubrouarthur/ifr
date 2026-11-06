@@ -27,13 +27,13 @@ export class SettingsModal extends Modal {
       h('div', { class: 'seg' }, ...opts.map(([v, l]) => h('button', { class: s[key] === v ? 'on' : '', onclick: () => { this.set({ [key]: v } as Partial<SettingsState>); this.render(); } }, l)));
     const row = (title: string, desc: string, ctl: HTMLElement) => h('div', { class: 'set-row' }, h('div', {}, h('b', {}, title), h('span', {}, desc)), ctl);
     this.body.append(
-      h('div', { class: 'set-sec' }, 'Cockpit'),
-      row('Instrument panel', 'Glass G1000, classic steam gauges with a radio stack, or an airliner PFD/ND with MCP.', seg('cockpit', [['g1000', 'G1000'], ['steam', 'Steam'], ['airliner', 'Airliner']])),
+      h('div', { class: 'set-sec' }, 'Instrument panel'),
+      row('Instrument panel', 'G1000 glass, a classic six-pack with a radio stack, or an airliner-style PFD / ND with a mode control panel. Every panel flies the same Cessna 172 flight model.', seg('cockpit', [['g1000', 'G1000'], ['steam', 'Six-pack'], ['airliner', 'Airliner PFD / ND']])),
       row('Synthetic vision', 'Terrain and runway overlay on the G1000 PFD.', seg('svt', [[true, 'On'], [false, 'Off']])),
       h('div', { class: 'set-sec' }, 'Outside view'),
       row('Time of day', 'Night makes the approach lights, PAPI and runway lighting the only visual cues.', seg('tod', [['day', 'Day'], ['dusk', 'Dusk'], ['night', 'Night']])),
       row('Graphics quality', 'High: dense terrain, trees and anti-aliasing. Performance: lighter scene for laptops.', seg('gfx', [['high', 'High'], ['low', 'Performance']])),
-      row('Window size', 'Size of the outside view above the panel (Tab cycles).', seg('otw', [['normal', 'Normal'], ['big', 'Large'], ['visual', 'Immersive'], ['none', 'Panel only']])),
+      row('Screen layout', 'How much outside view and how much panel (Tab / Shift+Tab, or the View button).', seg('otw', [['normal', 'Standard'], ['big', 'Large view'], ['visual', 'Immersive'], ['none', 'Instruments']])),
       h('div', { class: 'set-sec' }, 'Training'),
       row('Pro mode', 'No coach panel, no informational pop-ups — only failures and critical alerts. Lessons keep their step list.', seg('pro', [[false, 'Off'], [true, 'On']])),
       row('Cockpit audio', 'Engine, stall horn, marker beacons, AP disconnect, altitude alerter and minimums call-out.', seg('sound', [[true, 'On'], [false, 'Off']])),

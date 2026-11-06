@@ -629,7 +629,29 @@ export class Outside3D {
     }
   }
 
+  /** the part of the canvas the overlays leave free (px from each edge): exterior cameras centre the aircraft in it */
+  private safe = { top: 0, bottom: 0, left: 0, right: 0 };
+  private sizePx = { w: 1, h: 1 };
+  private offsetKey = '';
+  setSafeArea(a: { top: number; bottom: number; left: number; right: number }) {
+    this.safe = { top: Math.max(0, a.top), bottom: Math.max(0, a.bottom), left: Math.max(0, a.left), right: Math.max(0, a.right) };
+  }
+  /** exterior views: shift the projection centre to the middle of the free rectangle (no shift in the cockpit view) */
+  private applyViewOffset(ext: boolean) {
+    const { w: W, h: H } = this.sizePx;
+    const dx = ext ? Math.round((this.safe.left - this.safe.right) / 2) : 0;
+    const dy = ext ? Math.round((this.safe.top - this.safe.bottom) / 2) : 0;
+    const key = `${W}x${H}:${dx},${dy}`;
+    if (key === this.offsetKey) return;
+    this.offsetKey = key;
+    if (dx === 0 && dy === 0) this.camera.clearViewOffset();
+    else this.camera.setViewOffset(W, H, -dx, -dy, W, H);
+    this.camera.updateProjectionMatrix();
+  }
+
   resize(wPx: number, hPx: number) {
+    this.sizePx = { w: Math.max(1, Math.round(wPx)), h: Math.max(1, Math.round(hPx)) };
+    this.offsetKey = '';
     this.renderer.setSize(wPx, hPx, false);
     this.camera.aspect = wPx / Math.max(1, hPx);
     // keep a realistic ~78° horizontal field of view whatever the window shape
@@ -667,6 +689,7 @@ export class Outside3D {
         this.camera.updateProjectionMatrix();
       }
     }
+    this.applyViewOffset(!cockpit);
     this.aircraft.group.visible = !cockpit;
     const eye = this.camera.position;
     const camAltFt = eye.y / FT;

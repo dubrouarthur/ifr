@@ -171,3 +171,30 @@ describe("step buttons: hold to repeat", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------- shell CSS contracts (X03, X18, pedestal)
+describe("shell layout rules", () => {
+  const css = (f: string) => readFileSync(resolve(__dirname, "../src/styles", f), "utf8");
+  const all = ["ui-shell.css", "touch.css", "ui-pedestal.css", "ui-viewdock.css", "hotfix.css"].map(css).join("\n") + readFileSync(resolve(__dirname, "../src/styles.css"), "utf8");
+
+  it("Instruments has four named rows, so a hidden MCP never squashes the autopilot bar", () => {
+    expect(css("ui-shell.css")).toMatch(/\.cockpit\.no-otw \{\s*grid-template-rows: auto auto auto minmax\(0, 1fr\)/);
+    expect(css("hotfix.css")).toMatch(/\.cockpit > \.afcs \{ grid-area: afcs; \}/);
+    expect(readFileSync(resolve(__dirname, "../src/styles.css"), "utf8")).toContain("grid-template-areas: 'otw' 'mcp' 'afcs' 'panel'");
+  });
+
+  it("touch: 44 px softkeys, autopilot keys, view dock and pedestal controls", () => {
+    expect(css("touch.css")).toMatch(/body\.touch \.softrow button \{\s*height: 44px/);
+    expect(css("touch.css")).toMatch(/body\.touch \.afcs \.bkey,\s*html body\.touch \.afcs \.afcs-inc,\s*html body\.touch \.afcs \.afcs-val \{\s*height: 44px/);
+    expect(css("ui-viewdock.css")).toMatch(/body\.touch \.view-dock \{\s*--vd-h: 44px/);
+    expect(css("ui-pedestal.css")).toMatch(/html body\.touch \.footer\.pedestal \{\s*--pd-row: 52px;\s*--pd-ctl: 44px/);
+  });
+
+  it("the old pedestal rules are gone (one pedestal stylesheet)", () => {
+    expect(all).not.toMatch(/\.ped-g\b|\.ped-t\b|\.flap-sel|\.chrono-b\b|\.ped-joy|\.brake-light|\.trim-wheel|\.lever-box|\.tb-handle/);
+  });
+
+  it("the auto-hidden top bar overlays the situation bar instead of pushing it down", () => {
+    expect(all).not.toMatch(/chrome-auto:not\(\.chrome-hidden\) \{\s*--sb-top/);
+  });
+});

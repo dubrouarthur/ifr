@@ -2,13 +2,15 @@
 import { h, clear, fmtTime, store } from './dom';
 import { Modal, saveFlightRecord } from './modals';
 import { EXERCISES, PATHS, STAGES, exercise, type Path } from '../train/curriculum';
-import { LessonRun, type Exercise, type LessonResult } from '../train/engine';
+import { LessonRun, withSeed, newRunSeed, type Exercise, type LessonResult } from '../train/engine';
 import { holdDiagramSvg } from '../train/diagram';
 import { holdEntry, clearanceText, type Turn } from '../nav/holding';
 import { approachPlate } from '../plates/plates';
 import { findApproach } from '../nav/data';
 import { svgIcon, I } from './icons';
-import type { Sim } from '../sim/sim';
+import { confirmAction } from './confirm';
+import { history } from './history';
+import { Sim } from '../sim/sim';
 
 export interface Progress {
   passed: boolean;
@@ -20,7 +22,9 @@ const PKEY = 'ifr.progress.v1';
 export const progress = {
   all: () => store.get<Record<string, Progress>>(PKEY, {}),
   get: (id: string) => progress.all()[id],
+  /** one graded attempt (an exercise ended early is not an attempt: nothing is recorded) */
   record(id: string, r: LessonResult) {
+    if (r.graded === false || r.score === null) return;
     const all = progress.all();
     const p = all[id] ?? { passed: false, best: 0, attempts: 0, last: '' };
     p.attempts++;
@@ -120,24 +124,106 @@ export class LearnModal extends Modal {
       }
     }
     if (passedCount || Object.keys(all).length)
-      this.body.append(h('div', { class: 'learn-reset' }, h('button', { class: 'btn link quiet', onclick: () => { if (confirm('Reset all exercise progress in this browser? Passed exercises and best scores are deleted.')) { progress.reset(); this.render(); } } }, 'Reset progress')));
+      this.body.append(h('div', { class: 'learn-reset' }, h('button', { class: 'btn link quiet', onclick: (e: Event) => void this.askReset(e.currentTarget as HTMLElement) }, 'Reset progress')));
+  }
+  private async askReset(anchor: HTMLElement) {
+    const ok = await confirmAction({
+      title: 'Reset exercise progress?',
+      body: 'Passed exercises, attempts and best scores in this browser are deleted. Your training records are kept.',
+      confirmLabel: 'Reset progress',
+      destructive: true,
+      anchor,
+    });
+    if (!ok) return;
+    progress.reset();
+    if (this.isOpen) this.render();
   }
 }
 
 // ----------------------------------------------------------------- briefing
+export interface BriefingOptions {
+  /** the exercise flying now (Restart): it stays as it is behind the briefing, and nothing is reset until Start */
+  current?: LessonRun | null;
+  /** the briefing closed without Start: Cancel, ×, Esc, a backdrop tap or another window opening */
+  onCancel?: () => void;
+}
+
+/**
+ * The briefing of an exercise, opened before it starts.
+ *
+ *   briefing.show(ex)                                    first start: the sim is set up at once (paused at the
+ *                                                        briefing position) and Start runs it
+ *   briefing.show(ex, { current: lesson, onCancel })     Restart: the running exercise is kept until Start; Cancel
+ *                                                        leaves it flying as it was (pause state restored) and calls
+ *                                                        onCancel; Start builds a new run with the same random
+ *                                                        draws as the one briefed and hands it to onStart
+ */
 export class BriefingModal extends Modal {
   run: LessonRun | null = null;
   private answered: number | null = null;
+  private opts: BriefingOptions = {};
+  /** Restart preview: the seed Start replays on the live sim (null: the run is already set up on it) */
+  private seed: number | null = null;
+  private wasPaused = false;
+  private starting = false;
+  /** set-up of a previewed run (built once, reused) */
+  private static scratch: Sim | null = null;
   constructor(private sim: Sim, private onStart: (run: LessonRun) => void, private onPlate: (id: string) => void) {
     super('Exercise briefing', 'md');
   }
-  show(ex: Exercise) {
-    this.sim.paused = true;
-    this.run = new LessonRun(ex, this.sim);
-    this.sim.rec.lesson = { id: ex.id, title: ex.title };
+  /** true while the briefing previews a restart: the sim still holds the exercise that was flying */
+  get previewing() {
+    return this.isOpen && this.seed !== null;
+  }
+  show(ex: Exercise, opts: BriefingOptions = {}) {
+    if (this.isOpen) this.close(); // a briefing already open is cancelled first
+    this.opts = opts;
     this.answered = null;
+    this.starting = false;
+    this.wasPaused = this.sim.paused;
+    this.sim.paused = true;
+    const cur = opts.current;
+    if (cur && !cur.finished && cur.sim === this.sim) {
+      this.seed = newRunSeed();
+      BriefingModal.scratch ??= new Sim();
+      const scratch = BriefingModal.scratch;
+      this.run = withSeed(this.seed, () => new LessonRun(ex, scratch));
+    } else {
+      this.seed = null;
+      this.run = new LessonRun(ex, this.sim);
+      this.sim.rec.lesson = { id: ex.id, title: ex.title };
+    }
     this.render();
     this.open();
+  }
+  private start() {
+    let run = this.run!;
+    if (this.seed !== null) {
+      const seed = this.seed;
+      const ex = run.ex;
+      run = withSeed(seed, () => new LessonRun(ex, this.sim));
+      this.sim.rec.lesson = { id: ex.id, title: ex.title };
+      this.run = run;
+      this.seed = null;
+    }
+    this.starting = true;
+    this.close();
+    this.starting = false;
+    this.opts = {};
+    this.onStart(run);
+  }
+  close() {
+    const wasOpen = this.isOpen;
+    super.close();
+    if (!wasOpen || this.starting) return;
+    // closed without Start: a restart preview leaves the running exercise as it was
+    if (this.seed !== null) {
+      this.sim.paused = this.wasPaused;
+      this.seed = null;
+    }
+    const cb = this.opts.onCancel;
+    this.opts = {};
+    cb?.();
   }
   render() {
     const run = this.run!;
@@ -187,36 +273,70 @@ export class BriefingModal extends Modal {
       this.body.append(h('div', { class: 'diagram', html: holdDiagramSvg(run.rt.hold.inbound, run.rt.hold.turn, run.rt.hold.fix.ident) }));
     }
     const needQuiz = !!q && this.answered === null;
+    const restart = this.seed !== null;
     this.foot.append(
-      h('span', { class: 'muted', style: 'flex:1;align-self:center;font-size:12.5px' }, needQuiz ? 'Answer the knowledge check to start.' : 'The simulation starts paused at the briefing position.'),
-      h('button', { class: 'btn', onclick: () => this.close() }, 'Cancel'),
-      h('button', { class: 'btn primary', disabled: needQuiz, onclick: () => { this.close(); this.onStart(run); } }, 'Start exercise'),
+      h('span', { class: 'muted', style: 'flex:1;align-self:center;font-size:12.5px' }, needQuiz ? 'Answer the knowledge check to start.' : restart ? 'Keep flying returns to your exercise as it was. Restart flies it again from step 1.' : 'The simulation starts paused at the briefing position.'),
+      h('button', { class: 'btn', onclick: () => this.close() }, restart ? 'Keep flying' : 'Cancel'),
+      h('button', { class: 'btn primary', disabled: needQuiz, onclick: () => this.start() }, restart ? 'Restart exercise' : 'Start exercise'),
     );
   }
 }
 
 // ----------------------------------------------------------------- result
+/** a result with a score (an exercise ended early is not graded; results saved before the field existed are) */
+export const isGraded = (r: LessonResult) => r.graded !== false && r.score !== null;
+/** the step was flown, at least in part (the steps after the one the exercise stopped on were never reached) */
+const stepReached = (run: LessonRun, i: number) => run.finished?.steps[i]?.done || i <= run.idx;
+
 export class LessonResultModal extends Modal {
   constructor(private onRetry: (ex: Exercise) => void, private onNext: (ex: Exercise) => void, private onDebrief: () => void) {
     super('Exercise result', 'md');
   }
   show(run: LessonRun, path: Path | null) {
     const r = run.finished!;
+    const graded = isGraded(r);
+    // a graded attempt counts in the progress (attempts, best score); an exercise ended early does not
     progress.record(run.ex.id, r);
-    // the attempt goes into the training records (with the exercise and its score)
-    run.sim.rec.lesson = { id: run.ex.id, title: run.ex.title, score: r.score, passed: r.passed };
-    saveFlightRecord(run.sim);
+    // the flight goes into the training records: with the exercise and its score, or marked not graded
+    run.sim.rec.lesson = graded ? { id: run.ex.id, title: run.ex.title, score: r.score!, passed: r.passed } : { id: run.ex.id, title: run.ex.title };
+    const rec = saveFlightRecord(run.sim);
+    if (rec && !graded) history.upsert({ ...rec, graded: false });
     clear(this.body);
     clear(this.foot);
+    const flown = r.steps.filter((_, i) => stepReached(run, i)).length;
     this.body.append(
-      h('div', { class: 'grade-row' },
-        h('div', { class: `grade ${r.passed ? 'A' : 'F'}` }, r.passed ? '✓' : '✗', h('small', {}, `${r.score}/100`)),
-        h('div', {}, h('h2', { style: 'margin:0 0 4px' }, `${r.passed ? 'Passed' : 'Not yet'} — ${run.ex.title}`), h('p', { class: 'muted' }, `${r.reason} · ${fmtTime(r.durationSec)}`)),
-      ),
+      graded
+        ? h('div', { class: 'grade-row' },
+            h('div', { class: `grade ${r.passed ? 'A' : 'F'}` }, r.passed ? '✓' : '✗', h('small', {}, `${r.score}/100`)),
+            h('div', {}, h('h2', { style: 'margin:0 0 4px' }, `${r.passed ? 'Passed' : 'Not yet'} — ${run.ex.title}`), h('p', { class: 'muted' }, `${r.reason} · ${fmtTime(r.durationSec)}`)),
+          )
+        : h('div', { class: 'grade-row' },
+            h('div', { class: 'grade none', 'aria-label': 'Not graded' }, '—', h('small', {}, 'Not graded')),
+            h('div', {},
+              h('h2', { style: 'margin:0 0 4px' }, `Ended early — ${run.ex.title}`),
+              h('p', { class: 'muted' }, `${flown} of ${r.steps.length} step${r.steps.length === 1 ? '' : 's'} flown · ${fmtTime(r.durationSec)}. An exercise you end before it is complete has no score and does not count as an attempt.`),
+            ),
+          ),
       h('table', { class: 'items res-steps' },
         h('tr', {}, h('th', {}, 'Step'), h('th', {}, 'Done'), h('th', { class: 'num' }, 'Out of tolerance'), h('th', {}, 'First deviation')),
-        ...r.steps.map((s) => h('tr', {}, h('td', {}, s.text), h('td', { class: s.done ? 'done' : 'na' }, s.done ? svgIcon(I.check, 15) : 'Not completed'), h('td', { class: `pen${s.violationSec < 1 ? ' zero' : ''}` }, s.violationSec < 1 ? '0 s' : `${Math.round(s.violationSec)} s`), h('td', { class: 'muted' }, s.worst ?? '')))),
+        ...r.steps.map((s, i) => {
+          const reached = stepReached(run, i);
+          const sec = Math.round(s.violationSec);
+          // green "0 s" only for a step flown to the end within tolerance; "—" for a step never reached
+          const pen = !reached ? h('td', { class: 'num na' }, '—') : h('td', { class: `pen${sec < 1 ? (s.done ? ' zero' : ' na') : ''}` }, s.violationSec <= 0 ? '0 s' : sec < 1 ? '<1 s' : `${sec} s`);
+          return h('tr', {}, h('td', {}, s.text), h('td', { class: s.done ? 'done' : 'na' }, s.done ? svgIcon(I.check, 15) : reached ? 'Not completed' : 'Not flown'), pen, h('td', { class: 'muted' }, s.worst ?? ''));
+        })),
     );
+    if (!graded) {
+      this.foot.append(
+        h('button', { class: 'btn', onclick: () => { this.close(); this.onDebrief(); } }, 'Full debrief'),
+        h('span', { style: 'flex:1' }),
+        h('button', { class: 'btn', onclick: () => this.close() }, 'Close'),
+        h('button', { class: 'btn primary', onclick: () => { this.close(); this.onRetry(run.ex); } }, 'Retry'),
+      );
+      this.open();
+      return;
+    }
     if (r.holdReport) this.body.append(h('div', { class: 'section-t' }, 'Holding'), h('table', { class: 'items acs-table' }, ...r.holdReport.map((i) => h('tr', { class: i.ok === null ? 'N/A' : i.ok ? 'PASS' : 'FAIL' }, h('td', {}, i.ok === null ? '—' : i.ok ? 'PASS' : 'FAIL'), h('td', {}, i.label), h('td', {}, i.value)))));
     if (run.rt.hold && run.holdEval?.correctEntry) this.body.append(h('div', { class: 'diagram', html: holdDiagramSvg(run.rt.hold.inbound, run.rt.hold.turn, run.rt.hold.fix.ident, run.holdEval.arrivalCourse) }));
     if (r.acs) this.body.append(h('div', { class: 'section-t' }, `ACS — ${r.acs.result}`), h('table', { class: 'items acs-table' }, ...r.acs.items.map((i) => h('tr', { class: i.result }, h('td', {}, i.result), h('td', {}, i.task), h('td', { class: 'muted' }, i.standard), h('td', {}, i.actual)))));

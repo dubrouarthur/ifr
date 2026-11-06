@@ -13,6 +13,79 @@ export interface SetupItem {
   detail?: string;
   /** satisfied right now (null = information, nothing to check) */
   ok: boolean | null;
+  /** one-tap help: sets the item the way a pilot would (absent in a checkride, a test, or when nothing can be set) */
+  action?: SetupAction;
+}
+
+export interface SetupAction {
+  /** button text, one verb: "Tune", "Set", "Select", "Load" */
+  label: string;
+  /** applies the setting and logs it ("Set up with help: …") so the debrief can say so */
+  run(sim: Sim): void;
+}
+
+/** one-tap setup help is off in a checkride and in a procedure test (the shell sets the test case) */
+let helpOff = false;
+export function setSetupHelp(on: boolean) {
+  helpOff = !on;
+}
+export function setupHelpAllowed(sim: Sim): boolean {
+  return !helpOff && sim.assess.mode !== "checkride";
+}
+
+/** while "Set all remaining" runs, the single actions do not log one line each */
+let quiet = false;
+const helped = (sim: Sim, what: string) => {
+  if (!quiet) sim.rec.log(sim.time, "info", `Set up with help: ${what}`);
+};
+/** builds the action of an item, or nothing when help is not allowed */
+function act(
+  sim: Sim,
+  label: string,
+  what: string,
+  apply: (sim: Sim) => void,
+): SetupAction | undefined {
+  if (!setupHelpAllowed(sim)) return undefined;
+  return {
+    label,
+    run(s: Sim) {
+      apply(s);
+      s.updateAvionics(0);
+      helped(s, what);
+    },
+  };
+}
+
+/** a pilot tunes the standby frequency, then swaps it into active (the old active stays in standby) */
+export function tuneRadio(sim: Sim, radio: "nav1" | "nav2" | "adf", freq: number) {
+  const r = sim.av[radio];
+  if (Math.abs(r.active - freq) < 0.006) return;
+  r.standby = freq;
+  const a = r.active;
+  r.active = r.standby;
+  r.standby = a;
+}
+const tune = (sim: Sim, radio: "nav1" | "nav2" | "adf", freq: number, what: string) =>
+  act(sim, "Tune", what, (s) => tuneRadio(s, radio, freq));
+const course = (sim: Sim, crs: number, what: string) =>
+  act(sim, "Set", what, (s) => {
+    s.av.obs1 = Math.round(((crs % 360) + 360) % 360) || 360;
+  });
+const cdi = (sim: Sim, src: "NAV1" | "GPS", what: string) =>
+  act(sim, "Select", what, (s) => s.setCdi(src));
+
+/** "Set all remaining": runs every to-do item that has an action, logs one line; returns how many it set */
+export function setAllRemaining(sim: Sim, items: SetupItem[]): number {
+  const todo = items.filter((i) => i.ok === false && i.action);
+  if (!todo.length) return 0;
+  quiet = true;
+  try {
+    for (const i of todo) i.action!.run(sim);
+  } finally {
+    quiet = false;
+  }
+  helped(sim, todo.map((i) => i.label).join(", "));
+  return todo.length;
 }
 
 const pad3 = (n: number) =>
@@ -51,6 +124,7 @@ function adfItems(sim: Sim, freq: number, ident: string): SetupItem[] {
       detail:
         "Tune the NDB in the ADF and identify it (Morse) before using the needle.",
       ok: Math.abs(sim.av.adf.active - freq) < 1 && sim.adf.valid,
+      action: tune(sim, "adf", freq, `ADF ${freq.toFixed(0)} (${ident})`),
     },
   ];
   if (panel === "glass")
@@ -59,6 +133,9 @@ function adfItems(sim: Sim, freq: number, ident: string): SetupItem[] {
       detail:
         "PFD softkey BRG1 until the pointer box reads ADF: the cyan needle then points to the NDB (head = QDM to the fix).",
       ok: sim.av.bearing1 === "ADF" || sim.av.bearing2 === "ADF",
+      action: act(sim, "Set", "BRG1 on ADF", (s) => {
+        s.av.bearing1 = "ADF";
+      }),
     });
   return items;
 }
@@ -98,17 +175,20 @@ export function holdSetup(sim: Sim, def: HoldDef): SetupItem[] {
       label: `NAV1 ${src.freq!.toFixed(2)} (${def.fix.ident})`,
       detail: "Tune the holding VOR in NAV1 and identify it (Morse).",
       ok: freqEq(av.nav1.active, src.freq!) && sim.nav1.valid,
+      action: tune(sim, "nav1", src.freq!, `NAV1 ${src.freq!.toFixed(2)} (${def.fix.ident})`),
     });
     items.push({
       label: "CDI on NAV1",
       detail: "Raw data: the course needle must show the VOR, not the GPS.",
       ok: av.cdi === "NAV1",
+      action: cdi(sim, "NAV1", "CDI on NAV1"),
     });
     items.push({
       label: `CRS ${pad3(def.inbound)}°`,
       detail:
         "Set the OBS/CRS to the inbound course: a centred needle TO the fix means you are on the inbound leg.",
       ok: angDiff(av.obs1, def.inbound) <= 2,
+      action: course(sim, def.inbound, `CRS ${pad3(def.inbound)}°`),
     });
   } else if (src.kind === "NDB") {
     // the NDB is the fix: the bearing pointer is the primary reference (QDM), the CDI gives the inbound course
@@ -122,12 +202,23 @@ export function holdSetup(sim: Sim, def: HoldDef): SetupItem[] {
         detail:
           "GPS overlay: the hold at the NDB in the flight plan (FPL → hold, or D→ the fix then HOLD) draws the racetrack and sequences it.",
         ok: gpsHold,
+        action: act(sim, "Load", `GPS hold at ${def.fix.ident}`, (s) =>
+          s.fp.setHold(
+            { ident: def.fix.ident, lat: def.fix.lat, lon: def.fix.lon },
+            def.inbound,
+            def.turn,
+            def.legMin,
+            s.ac.s,
+            def.altFt,
+          ),
+        ),
       });
       items.push({
         label: "CDI on GPS",
         detail:
           "The course needle shows the GPS desired track of each leg; cross-check it with the ADF needle.",
         ok: av.cdi === "GPS",
+        action: cdi(sim, "GPS", "CDI on GPS"),
       });
     } else {
       items.push({
@@ -135,6 +226,7 @@ export function holdSetup(sim: Sim, def: HoldDef): SetupItem[] {
         detail:
           "Set the course arrow to the inbound course: the ADF needle on the arrow head means you are on the inbound leg.",
         ok: angDiff(av.obs1, def.inbound) <= 2,
+        action: course(sim, def.inbound, `CRS ${pad3(def.inbound)}°`),
       });
     }
   } else {
@@ -146,11 +238,22 @@ export function holdSetup(sim: Sim, def: HoldDef): SetupItem[] {
       detail:
         "FPL → hold at the fix (or Direct-To the fix then HOLD) so the GPS draws the racetrack and sequences.",
       ok: gpsHold,
+      action: act(sim, "Load", `GPS hold at ${def.fix.ident}`, (s) =>
+        s.fp.setHold(
+          { ident: def.fix.ident, lat: def.fix.lat, lon: def.fix.lon },
+          def.inbound,
+          def.turn,
+          def.legMin,
+          s.ac.s,
+          def.altFt,
+        ),
+      ),
     });
     items.push({
       label: "CDI on GPS",
       detail: "The GPS gives the desired track (DTK) of every leg of the hold.",
       ok: av.cdi === "GPS",
+      action: cdi(sim, "GPS", "CDI on GPS"),
     });
   }
   items.push({
@@ -158,6 +261,9 @@ export function holdSetup(sim: Sim, def: HoldDef): SetupItem[] {
     detail:
       "Set the altitude bug; be level at the holding altitude before the fix.",
     ok: Math.abs(sim.ap.altSel - def.altFt) < 50,
+    action: act(sim, "Set", `ALT ${def.altFt} ft`, (s) => {
+      s.ap.altSel = def.altFt;
+    }),
   });
   items.push({
     label: "Slow to holding speed (≤ 90 KIAS)",
@@ -201,13 +307,21 @@ export function approachSetup(sim: Sim, approachId: string): SetupItem[] {
       detail:
         "Load the approach in the flight plan (PROC), with the right transition, and activate it.",
       ok: sim.fp.approachId === ap.id,
+      action: act(sim, "Load", `GPS ${ap.name} loaded`, (s) =>
+        s.loadApproach(ap.id, null, "load"),
+      ),
     });
-    items.push({ label: "CDI on GPS", ok: av.cdi === "GPS" });
+    items.push({
+      label: "CDI on GPS",
+      ok: av.cdi === "GPS",
+      action: cdi(sim, "GPS", "CDI on GPS"),
+    });
   } else if (nav && nav.type !== "NDB") {
     items.push({
       label: `NAV1 ${nav.freq.toFixed(2)} (${nav.ident})`,
       detail: "Tune and identify the localizer / VOR of the final approach.",
       ok: freqEq(av.nav1.active, nav.freq) && sim.nav1.valid,
+      action: tune(sim, "nav1", nav.freq, `NAV1 ${nav.freq.toFixed(2)} (${nav.ident})`),
     });
     items.push({
       label: `CRS ${pad3(crs)}°`,
@@ -216,11 +330,13 @@ export function approachSetup(sim: Sim, approachId: string): SetupItem[] {
           ? "Back course: set the FRONT course (the HSI then reads correctly)."
           : "Set the final approach course.",
       ok: angDiff(av.obs1, crs) <= 2,
+      action: course(sim, crs, `CRS ${pad3(crs)}°`),
     });
     items.push({
       label: "CDI on NAV1 (LOC) before the final",
       detail: "Switch from GPS to LOC/VOR for the final approach segment.",
       ok: av.cdi === "NAV1",
+      action: cdi(sim, "NAV1", "CDI on NAV1"),
     });
   } else if (nav) {
     items.push(...adfItems(sim, nav.freq, nav.ident));
@@ -232,11 +348,17 @@ export function approachSetup(sim: Sim, approachId: string): SetupItem[] {
       label: `Minimums ${m.da ? "DA" : "MDA"} ${mins} ft`,
       detail: `${m.label} — set the baro minimums bug.`,
       ok: av.minimums !== null && Math.abs(av.minimums - mins) < 20,
+      action: act(sim, "Set", `Minimums ${mins} ft`, (s) => {
+        s.av.minimums = mins;
+      }),
     });
   items.push({
     label: `Altimeter ${sim.weather.qnh.toFixed(2)}`,
     detail: "Set the current altimeter setting (ATIS).",
     ok: Math.abs(av.baro - sim.weather.qnh) < 0.015,
+    action: act(sim, "Set", `Altimeter ${sim.weather.qnh.toFixed(2)}`, (s) => {
+      s.av.baro = Math.round(s.weather.qnh * 100) / 100;
+    }),
   });
   const maAlt = ap.missed[ap.missed.length - 1]?.altMin;
   if (maAlt)
@@ -250,7 +372,7 @@ export function approachSetup(sim: Sim, approachId: string): SetupItem[] {
 }
 
 /** setup checklist for tracking to / from a VOR on a course */
-export function vorSetup(sim: Sim, ident: string, course: number): SetupItem[] {
+export function vorSetup(sim: Sim, ident: string, crsDeg: number): SetupItem[] {
   const f = findFix(ident);
   const nav = NAVAIDS.find((n) => n.ident === ident);
   if (!f || !nav) return [];
@@ -259,13 +381,19 @@ export function vorSetup(sim: Sim, ident: string, course: number): SetupItem[] {
       label: `NAV1 ${nav.freq.toFixed(2)} (${ident})`,
       detail: "Tune and identify.",
       ok: freqEq(sim.av.nav1.active, nav.freq) && sim.nav1.valid,
+      action: tune(sim, "nav1", nav.freq, `NAV1 ${nav.freq.toFixed(2)} (${ident})`),
     },
-    { label: "CDI on NAV1", ok: sim.av.cdi === "NAV1" },
     {
-      label: `CRS ${pad3(course)}°`,
+      label: "CDI on NAV1",
+      ok: sim.av.cdi === "NAV1",
+      action: cdi(sim, "NAV1", "CDI on NAV1"),
+    },
+    {
+      label: `CRS ${pad3(crsDeg)}°`,
       detail:
         "TO flag when the course leads to the station, FROM when it leads away.",
-      ok: angDiff(sim.av.obs1, course) <= 2,
+      ok: angDiff(sim.av.obs1, crsDeg) <= 2,
+      action: course(sim, crsDeg, `CRS ${pad3(crsDeg)}°`),
     },
   ];
 }
