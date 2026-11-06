@@ -2,6 +2,7 @@
 import { destination, DEG, norm360, type LatLon } from '../nav/geo';
 import { density, FT, G, KT, oatC, pressureAltitude, type Weather } from './environment';
 import { WindModel, components, markov, type WindSample } from './wind';
+import { sharedRng, type Rng } from './rng';
 
 export interface Controls {
   elevator: number; // -1 (nose down) .. 1 (nose up)
@@ -256,7 +257,9 @@ export interface FlightData {
 export class Aircraft {
   s: AircraftState;
   data!: FlightData;
-  private windModel = new WindModel();
+  private windModel: WindModel;
+  /** the owning Sim's seeded stream (turbulence, gusts, buffet) */
+  readonly rng: Rng;
   private lastWind: WindSample | null = null;
   private lastPsi = 0;
   private lastAlt = 0;
@@ -303,7 +306,10 @@ export class Aircraft {
   constructor(
     init: Partial<AircraftState> & LatLon,
     private groundElev: (p: LatLon) => number,
+    rng: Rng = sharedRng,
   ) {
+    this.rng = rng;
+    this.windModel = new WindModel(rng);
     this.s = {
       altFt: 3000,
       tas: 100 * KT,
@@ -502,8 +508,8 @@ export class Aircraft {
     if (!s.onGround && (sep || alpha > alphaStall - 2.5 * DEG)) {
       const k = sep ? 1 : Math.min(1, (alpha - alphaStall + 2.5 * DEG) / (2.5 * DEG));
       this.buffet = k;
-      this.bufQ = markov(this.bufQ, dt, 0.05);
-      this.bufP = markov(this.bufP, dt, 0.05);
+      this.bufQ = markov(this.bufQ, dt, 0.05, this.rng);
+      this.bufP = markov(this.bufP, dt, 0.05, this.rng);
       s.q += 0.35 * k * this.bufQ * dt;
       s.p += 0.15 * k * this.bufP * dt;
     } else this.buffet = 0;

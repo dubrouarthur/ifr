@@ -12,7 +12,9 @@ export const STEAM_W = 1024;
 export const STEAM_H = 768;
 const D = Math.PI / 180;
 
-interface SteamState {
+/** Instrument memory of one steam panel (gyro freeze, turn-coordinator spin, wet compass, RMI card, annunciator
+ *  flash timers). Every panel owns one: two six-packs on a page never share gauge memory. */
+export interface SteamState {
   frozenHdg: number;
   frozenPitch: number;
   frozenRoll: number;
@@ -22,8 +24,12 @@ interface SteamState {
   tcSpin: number;
   /** slaved RMI card: stops where it was when its power goes */
   rmiHdg: number;
+  /** when each annunciator lit (s, wall clock): a new light flashes for 10 s, then stays steady (C172S) */
+  litSince: Map<Annunciator, number>;
 }
-const st: SteamState = { frozenHdg: 0, frozenPitch: 0, frozenRoll: 0, compass: 0, tcRate: 0, tcSpin: 1, rmiHdg: NaN };
+export const newSteamState = (): SteamState => ({ frozenHdg: 0, frozenPitch: 0, frozenRoll: 0, compass: 0, tcRate: 0, tcSpin: 1, rmiHdg: NaN, litSince: new Map() });
+/** the cockpit's panel (callers that pass no state) */
+const defaultSteam = newSteamState();
 const nowS = () => (typeof performance !== 'undefined' ? performance.now() : 0) / 1000;
 
 function panelBg(ctx: CanvasRenderingContext2D, w: number, h: number) {
@@ -38,21 +44,19 @@ function panelBg(ctx: CanvasRenderingContext2D, w: number, h: number) {
 }
 
 /** Draw the display, then the cabin smoke veil over it (smokeHaze: electrical or engine fire) */
-export function drawSixPack(ctx: CanvasRenderingContext2D, sim: Sim, dt: number) {
-  drawSixPackBody(ctx, sim, dt);
+export function drawSixPack(ctx: CanvasRenderingContext2D, sim: Sim, dt: number, st: SteamState = defaultSteam) {
+  drawSixPackBody(ctx, sim, dt, st);
   smokeHaze(ctx, sim, STEAM_W, STEAM_H, (typeof performance !== 'undefined' ? performance.now() : 0) / 1000);
 }
 
 // ------------------------------------------------------------------ six pack
-function drawSixPackBody(ctx: CanvasRenderingContext2D, sim: Sim, dt: number) {
+/** Advance the six-pack's gyros by dt (s): vacuum gyros, the 'ahrs' tumble, the turn coordinator's spin. */
+function stepSixPackGyros(st: SteamState, sim: Sim, dt: number) {
   const d = sim.ac.data;
-  const f = sim.failures;
-  ctx.clearRect(0, 0, STEAM_W, STEAM_H);
-  panelBg(ctx, STEAM_W, STEAM_H);
   // the attitude indicator and the directional gyro are vacuum-driven: after a vacuum failure they drift, then
   // topple (sim.sys.gyro). The legacy 'ahrs' failure keeps its old steam meaning (gyros tumble / freeze).
   const g = vacuumGyro(sim);
-  if (!f.ahrs) {
+  if (!sim.failures.ahrs) {
     st.frozenHdg = g.hdgDeg;
     st.frozenPitch = g.pitchDeg;
     st.frozenRoll = g.rollDeg;
@@ -65,11 +69,29 @@ function drawSixPackBody(ctx: CanvasRenderingContext2D, sim: Sim, dt: number) {
   if (dt > 0) st.tcSpin = tcOn ? Math.min(1, st.tcSpin + dt / 4) : Math.max(0, st.tcSpin - dt / 20);
   else if (tcOn) st.tcSpin = 1;
   st.tcRate = d.turnRateDps * st.tcSpin;
+}
+/** the RMI card follows the slaved compass while it has power */
+function stepRmiCard(st: SteamState, sim: Sim) {
+  if (hasPower(sim, 'adf') || hasPower(sim, 'nav2') || !Number.isFinite(st.rmiHdg)) st.rmiHdg = sim.ac.data.hdgTrue;
+}
+/** Advance a steam panel's instrument memory by dt (s) without drawing (a stage that draws single gauges). */
+export function stepSteamState(st: SteamState, sim: Sim, dt: number) {
+  stepSixPackGyros(st, sim, dt);
+  stepRmiCard(st, sim);
+}
+
+function drawSixPackBody(ctx: CanvasRenderingContext2D, sim: Sim, dt: number, st: SteamState) {
+  const d = sim.ac.data;
+  const f = sim.failures;
+  ctx.clearRect(0, 0, STEAM_W, STEAM_H);
+  panelBg(ctx, STEAM_W, STEAM_H);
+  stepSixPackGyros(st, sim, dt);
+  const tcOn = hasPower(sim, 'turnCoord');
   const air = airDataShown(sim);
   const R = 146;
   const cols = [176, 512, 848];
   const rows = [236, 578];
-  topStrip(ctx, sim, dt);
+  topStrip(ctx, sim, dt, st);
   // a rough engine shakes the panel a little
   const sh = panelShake(sim, nowS());
   ctx.save();
@@ -84,7 +106,7 @@ function drawSixPackBody(ctx: CanvasRenderingContext2D, sim: Sim, dt: number) {
   bottomStrip(ctx, sim);
 }
 
-function topStrip(ctx: CanvasRenderingContext2D, sim: Sim, dt: number) {
+function topStrip(ctx: CanvasRenderingContext2D, sim: Sim, dt: number, st: SteamState) {
   const d = sim.ac.data;
   ctx.fillStyle = '#121314';
   ctx.fillRect(0, 0, STEAM_W, 56);
@@ -106,7 +128,7 @@ function topStrip(ctx: CanvasRenderingContext2D, sim: Sim, dt: number) {
   ctx.fillRect(176, 14, 70, 28);
   gtext(ctx, 'STALL', 211, 29, 14, stall ? '#000' : '#6b6e70', 'center', 800);
   // C172S annunciator panel: red warnings, amber cautions, lit from the systems model (dark without power)
-  steamAnnunciators(ctx, sim, 606, 10, 410, 36);
+  steamAnnunciators(ctx, sim, 606, 10, 410, 36, st.litSince);
   // wet compass
   let diff = d.hdgTrue - st.compass;
   if (diff > 180) diff -= 360;
@@ -143,10 +165,7 @@ export const STEAM_ANNUNCIATORS: { label: string; ann: Annunciator; color: 'red'
   { label: 'L LOW FUEL', ann: 'LOW FUEL L', color: 'amber' },
   { label: 'R LOW FUEL', ann: 'LOW FUEL R', color: 'amber' },
 ];
-/** when each annunciator lit (s, wall clock): a new light flashes for 10 s, then stays steady (C172S) */
-const litSince = new Map<Annunciator, number>();
-
-function steamAnnunciators(ctx: CanvasRenderingContext2D, sim: Sim, x: number, y: number, w: number, h: number) {
+function steamAnnunciators(ctx: CanvasRenderingContext2D, sim: Sim, x: number, y: number, w: number, h: number, litSince: Map<Annunciator, number>) {
   ctx.fillStyle = '#0b0c0d';
   ctx.fillRect(x, y, w, h);
   const n = STEAM_ANNUNCIATORS.length;
@@ -478,12 +497,12 @@ const LED_NAV = '#6cff8a';
 const LED_DIM = '#b8823c';
 
 /** Draw the display, then the cabin smoke veil over it (smokeHaze: electrical or engine fire) */
-export function drawStack(ctx: CanvasRenderingContext2D, sim: Sim) {
-  drawStackBody(ctx, sim);
+export function drawStack(ctx: CanvasRenderingContext2D, sim: Sim, st: SteamState = defaultSteam) {
+  drawStackBody(ctx, sim, st);
   smokeHaze(ctx, sim, STEAM_W, STEAM_H, (typeof performance !== 'undefined' ? performance.now() : 0) / 1000);
 }
 
-function drawStackBody(ctx: CanvasRenderingContext2D, sim: Sim) {
+function drawStackBody(ctx: CanvasRenderingContext2D, sim: Sim, st: SteamState) {
   ctx.clearRect(0, 0, STEAM_W, STEAM_H);
   panelBg(ctx, STEAM_W, STEAM_H);
   const d = sim.ac.data;
@@ -491,7 +510,7 @@ function drawStackBody(ctx: CanvasRenderingContext2D, sim: Sim) {
   ctx.save();
   ctx.translate(sh.dx, sh.dy);
   // the RMI card is slaved to a remote compass (electric): it stops where it was without power
-  if (hasPower(sim, 'adf') || hasPower(sim, 'nav2') || !Number.isFinite(st.rmiHdg)) st.rmiHdg = d.hdgTrue;
+  stepRmiCard(st, sim);
   cdiHead(ctx, sim, 196, 210, 150);
   rmi(ctx, sim, 196, 560, 150, st.rmiHdg);
   const x = 400;
@@ -857,3 +876,45 @@ function rmi(ctx: CanvasRenderingContext2D, sim: Sim, cx: number, cy: number, r:
 }
 
 
+
+// ------------------------------------------------------------------ single gauges (course stage, crops)
+export type SteamGaugeKind = 'asi' | 'ai' | 'alt' | 'tc' | 'hsi' | 'vsi' | 'cdi' | 'rmi';
+/** Where each gauge sits on its panel (logical 1024 × 768): six-pack (drawSixPack) or stack (drawStack). */
+export const STEAM_GAUGE_LAYOUT: Record<SteamGaugeKind, { panel: 'six' | 'stack'; cx: number; cy: number; r: number }> = {
+  asi: { panel: 'six', cx: 176, cy: 236, r: 146 },
+  ai: { panel: 'six', cx: 512, cy: 236, r: 146 },
+  alt: { panel: 'six', cx: 848, cy: 236, r: 146 },
+  tc: { panel: 'six', cx: 176, cy: 578, r: 146 },
+  hsi: { panel: 'six', cx: 512, cy: 578, r: 146 },
+  vsi: { panel: 'six', cx: 848, cy: 578, r: 146 },
+  cdi: { panel: 'stack', cx: 196, cy: 210, r: 150 },
+  rmi: { panel: 'stack', cx: 196, cy: 560, r: 150 },
+};
+
+/**
+ * Draw one steam gauge alone, centred at (cx, cy) with radius r, reading the same inputs as the panel
+ * (failures, air data, vacuum gyros, power). The gauge memory comes from `st`: call stepSteamState(st, sim, dt)
+ * once per frame first (a frozen stage calls it with dt = 0). Nothing else on the panel is drawn.
+ */
+export function drawSteamGauge(ctx: CanvasRenderingContext2D, sim: Sim, kind: SteamGaugeKind, cx: number, cy: number, r: number, st: SteamState = defaultSteam) {
+  const f = sim.failures;
+  const air = airDataShown(sim);
+  switch (kind) {
+    case 'asi':
+      return asi(ctx, cx, cy, r, f.airData ? 0 : air.iasKt);
+    case 'ai':
+      return ai(ctx, cx, cy, r, st.frozenPitch, st.frozenRoll, f.ahrs);
+    case 'alt':
+      return alt(ctx, cx, cy, r, f.airData ? sim.ac.s.altFt - 500 : air.altFt, sim.av.baro);
+    case 'tc':
+      return tc(ctx, cx, cy, r, st.tcRate, sim.ac.data.slip, !hasPower(sim, 'turnCoord'));
+    case 'hsi':
+      return hsi(ctx, sim, cx, cy, r, st.frozenHdg, f.ahrs);
+    case 'vsi':
+      return vsi(ctx, cx, cy, r, f.airData ? 0 : air.vsFpm);
+    case 'cdi':
+      return cdiHead(ctx, sim, cx, cy, r);
+    case 'rmi':
+      return rmi(ctx, sim, cx, cy, r, Number.isFinite(st.rmiHdg) ? st.rmiHdg : sim.ac.data.hdgTrue);
+  }
+}

@@ -32,9 +32,9 @@ export function secondaryTextScale(cssWidth: number, logicalW = PFD_W): number {
   return k < 0.55 ? 1.25 : 1;
 }
 /** Set the secondary-text scale from the canvas being drawn (PFD and MFD call this). */
-export function setTextScaleFor(ctx: CanvasRenderingContext2D, logicalW = PFD_W) {
+export function setTextScaleFor(ctx: CanvasRenderingContext2D, logicalW = PFD_W, override?: number) {
   const c = ctx.canvas as HTMLCanvasElement | undefined;
-  SEC = secondaryTextScale(c && 'clientWidth' in c ? c.clientWidth : 0, logicalW);
+  SEC = override ?? secondaryTextScale(c && 'clientWidth' in c ? c.clientWidth : 0, logicalW);
 }
 /** Font size of a secondary label: scaled up on small screens, never below 15 logical px then. */
 export const fs = (n: number) => (SEC > 1 ? Math.max(15, n * SEC) : n);
@@ -179,6 +179,10 @@ export interface PfdState {
   altTrendOn: boolean;
   /** annunciations the pilot has acknowledged (ALERTS / WARNING / CAUTION softkey, or a tap on the window) */
   ackAnn: string[];
+  /** standby magnetic compass shown under an AHRS failure (lags the heading; per display) */
+  compassHdg: number;
+  /** secondary-text scale override for this display (unset: from the canvas's CSS width, see setTextScaleFor) */
+  textScale?: number;
 }
 
 export const newPfdState = (): PfdState => ({
@@ -201,6 +205,7 @@ export const newPfdState = (): PfdState => ({
   trendOn: false,
   altTrendOn: false,
   ackAnn: [],
+  compassHdg: 0,
 });
 
 const fin = (v: number, dflt = 0) => (Number.isFinite(v) ? v : dflt);
@@ -338,7 +343,7 @@ export function drawPfd(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState, d
 }
 
 function drawPfdBody(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState, dt: number) {
-  setTextScaleFor(ctx, PFD_W);
+  setTextScaleFor(ctx, PFD_W, st.textScale);
   st.flash += dt;
   bindPfdPointer(ctx.canvas, st, sim);
   // no power on the essential bus: the PFD is dark (black glass); it boots again with the power
@@ -1337,7 +1342,6 @@ function redX(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h:
   }
 }
 
-let compassHdg = 0;
 const CAS_X = 898;
 const CAS_W = 120;
 const CAS_Y = 436;
@@ -1379,15 +1383,15 @@ function drawFailures(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState, cas
     // HSI red X + magnetic compass with lag (northerly turning errors are left to the pilot!)
     redX(ctx, HX - 150, HY - 165, 300, 300, 'HDG FAIL');
     if (Number.isFinite(d.hdgTrue)) {
-      let diff = d.hdgTrue - compassHdg;
+      let diff = d.hdgTrue - st.compassHdg;
       if (diff > 180) diff -= 360;
       if (diff < -180) diff += 360;
-      compassHdg = (compassHdg + diff * Math.min(1, 0.05 + Math.abs(Math.cos(d.hdgTrue * DEG)) * 0.08) + 360) % 360;
+      st.compassHdg = (st.compassHdg + diff * Math.min(1, 0.05 + Math.abs(Math.cos(d.hdgTrue * DEG)) * 0.08) + 360) % 360;
     }
-    if (!Number.isFinite(compassHdg)) compassHdg = 0;
+    if (!Number.isFinite(st.compassHdg)) st.compassHdg = 0;
     cbox(ctx, HX - 66, 690, 132, 36, '#111', C.gray);
-    text(ctx, `COMPASS ${pad3(compassHdg)}`, HX, 708, C.white, fs(15), 'center', 700);
-  } else compassHdg = fin(d.hdgTrue);
+    text(ctx, `COMPASS ${pad3(st.compassHdg)}`, HX, 708, C.white, fs(15), 'center', 700);
+  } else st.compassHdg = fin(d.hdgTrue);
   if (f.airData || adcBad) {
     redX(ctx, IAS_X, TAPE_TOP, IAS_W, TAPE_BOT - TAPE_TOP);
     redX(ctx, ALT_X, TAPE_TOP, ALT_W, TAPE_BOT - TAPE_TOP);

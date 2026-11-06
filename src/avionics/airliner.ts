@@ -87,22 +87,41 @@ function drum(ctx: CanvasRenderingContext2D, label: (k: number) => string, frac:
   ctx.restore();
 }
 
-// mode-change highlight (Boeing draws a box around a new FMA mode for 10 s)
-const fmaPrev = ["", "", ""];
-const fmaSince = [0, 0, 0];
-// speed trend (10-s prediction from the filtered acceleration)
-const trend = { t: -1, ias: 0, acc: 0 };
+/** Memory of one airliner PFD: every display owns one, so two PFDs on a page never share it. */
+export interface AirlinerState {
+  /** mode-change highlight (Boeing draws a box around a new FMA mode for 10 s) */
+  fmaPrev: string[];
+  fmaSince: number[];
+  /** speed trend (10-s prediction from the filtered acceleration) */
+  trend: { t: number; ias: number; acc: number };
+}
+export const newAirlinerState = (): AirlinerState => ({
+  fmaPrev: ["", "", ""],
+  fmaSince: [0, 0, 0],
+  trend: { t: -1, ias: 0, acc: 0 },
+});
+/** the cockpit's display (callers that pass no state) */
+const defaultAirliner = newAirlinerState();
 
 /** Draw the display, then the cabin smoke veil over it (smokeHaze: electrical or engine fire) */
-export function drawAirlinerPfd(ctx: CanvasRenderingContext2D, sim: Sim) {
-  drawAirlinerPfdBody(ctx, sim);
+export function drawAirlinerPfd(
+  ctx: CanvasRenderingContext2D,
+  sim: Sim,
+  st: AirlinerState = defaultAirliner,
+) {
+  drawAirlinerPfdBody(ctx, sim, st);
   smokeHaze(ctx, sim, AL_W, AL_H, (typeof performance !== 'undefined' ? performance.now() : 0) / 1000);
 }
 
 // ------------------------------------------------------------------ PFD
 // Layout (logical 1024 × 768): speed tape 58–176, ADI 258–690, LOC/GS scales, altitude tape 744–876,
 // VSI 890–980, FMA on top, heading rose at the bottom.
-function drawAirlinerPfdBody(ctx: CanvasRenderingContext2D, sim: Sim) {
+function drawAirlinerPfdBody(
+  ctx: CanvasRenderingContext2D,
+  sim: Sim,
+  st: AirlinerState,
+) {
+  const trend = st.trend;
   const d = sim.ac.data;
   // no power: a dark display
   if (!hasPower(sim, "pfd")) {
@@ -368,8 +387,8 @@ function drawAirlinerPfdBody(ctx: CanvasRenderingContext2D, sim: Sim) {
     box(ctx, cx - 50, cy + 80, 100, 26, "#000", C.red);
     text(ctx, "STALL", cx, cy + 93, C.red, 18, "center", 700);
   }
-  drawFma(ctx, sim, cx);
-  drawSpeedTape(ctx, sim, 58, cy);
+  drawFma(ctx, sim, cx, st);
+  drawSpeedTape(ctx, sim, 58, cy, st.trend.acc);
   drawAltTape(ctx, sim, 744, cy);
   drawVsiAl(ctx, sim, air.vsFpm, 890, cy);
   drawHdgArc(ctx, sim, cx, 668);
@@ -384,7 +403,13 @@ function drawAirlinerPfdBody(ctx: CanvasRenderingContext2D, sim: Sim) {
   }
 }
 
-function drawFma(ctx: CanvasRenderingContext2D, sim: Sim, cx: number) {
+function drawFma(
+  ctx: CanvasRenderingContext2D,
+  sim: Sim,
+  cx: number,
+  st: AirlinerState,
+) {
+  const { fmaPrev, fmaSince } = st;
   const ap = sim.ap;
   const d = sim.ac.data;
   const x0 = cx - 300;
@@ -456,6 +481,7 @@ function drawSpeedTape(
   sim: Sim,
   x: number,
   cy: number,
+  trendAcc: number,
 ) {
   const d = sim.ac.data;
   // the tape reads the pitot-static system (an iced or blocked pitot shows on it)
@@ -502,7 +528,7 @@ function drawSpeedTape(
     ctx.strokeRect(bx - 7, yOf(vs * 1.3), 5, yOf(vs) - yOf(vs * 1.3));
   }
   // speed trend vector: where the speed will be in 10 s
-  const tr = trend.acc * 10;
+  const tr = trendAcc * 10;
   if (Math.abs(tr) > 2 && iasKt > 30) {
     const yt = clamp(yOf(iasKt + tr), top + 4, top + h - 4);
     const xt = bx - 26;

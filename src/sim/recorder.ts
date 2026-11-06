@@ -1,6 +1,7 @@
 // Flight recorder and debrief scoring.
-import type { Sim } from './sim';
-import { AIRFRAME } from './aircraft';
+import type { Avionics, Sim } from './sim';
+import { AIRFRAME, type AircraftState } from './aircraft';
+import type { Autopilot } from '../avionics/autopilot';
 import { alongTrackNm, crossTrackNm, distanceNm, FT_PER_NM, type LatLon } from '../nav/geo';
 import { runway as getRunway, AIRPORTS } from '../nav/data';
 import type { Approach, Runway } from '../nav/types';
@@ -47,6 +48,117 @@ export interface Touchdown {
   bankDeg: number;
 }
 
+// ---------------------------------------------------------------- keyframes and event track (Ground school clips, R3)
+/** 1 Hz exact keyframe: the raw aircraft state and avionics (an exact take-over point for clips and the debrief) */
+export interface RecKey {
+  t: number;
+  ac: AircraftState;
+  av: Avionics;
+}
+/** a discrete change between frames: avionics fields (patch = the changed fields), autopilot modes and bugs (patch =
+ *  the full ApSnapshot), flight-plan sequencing (patch = the full PlanSnapshot) or failures (patch = the changed keys) */
+export interface RecTrackEvent {
+  t: number;
+  k: 'av' | 'ap' | 'plan' | 'failure';
+  patch: unknown;
+}
+/** the autopilot's public modes and bugs (the SimScene `ap` shape). `armed` lists the armed lateral mode, ALTS, GS, GP
+ *  and APR (approach mode) */
+export interface ApSnapshot {
+  engaged: boolean;
+  fd: boolean;
+  lat: string;
+  vert: string;
+  armed: string[];
+  hdg: number;
+  alt: number;
+  vs: number;
+  ias: number;
+}
+/** where the flight plan is sequenced (no geometry: the plan itself is rebuilt from idents) */
+export interface PlanSnapshot {
+  approachId: string | null;
+  active: number;
+  approachActive: boolean;
+  missedActive: boolean;
+  vtf: boolean;
+  holdActive: boolean;
+  /** number of waypoints (a Direct-To insertion or a VTF changes it) */
+  n: number;
+  /** ident of the active waypoint */
+  to: string;
+}
+
+export function apSnapshot(ap: Autopilot): ApSnapshot {
+  const armed: string[] = [];
+  if (ap.latArmed) armed.push(ap.latArmed);
+  if (ap.vertArmed.alts) armed.push('ALTS');
+  if (ap.vertArmed.gs) armed.push('GS');
+  if (ap.vertArmed.gp) armed.push('GP');
+  if (ap.apprMode) armed.push('APR');
+  return { engaged: ap.ap, fd: ap.fd, lat: ap.lat, vert: ap.vert, armed, hdg: ap.hdgBug, alt: ap.altSel, vs: ap.vsSel, ias: ap.iasSel };
+}
+
+function apSame(a: ApSnapshot, ap: Autopilot): boolean {
+  if (a.engaged !== ap.ap || a.fd !== ap.fd || a.lat !== ap.lat || a.vert !== ap.vert) return false;
+  if (a.hdg !== ap.hdgBug || a.alt !== ap.altSel || a.vs !== ap.vsSel || a.ias !== ap.iasSel) return false;
+  const n = (ap.latArmed ? 1 : 0) + (ap.vertArmed.alts ? 1 : 0) + (ap.vertArmed.gs ? 1 : 0) + (ap.vertArmed.gp ? 1 : 0) + (ap.apprMode ? 1 : 0);
+  if (n !== a.armed.length) return false;
+  let i = 0;
+  if (ap.latArmed && a.armed[i++] !== ap.latArmed) return false;
+  if (ap.vertArmed.alts && a.armed[i++] !== 'ALTS') return false;
+  if (ap.vertArmed.gs && a.armed[i++] !== 'GS') return false;
+  if (ap.vertArmed.gp && a.armed[i++] !== 'GP') return false;
+  if (ap.apprMode && a.armed[i++] !== 'APR') return false;
+  return true;
+}
+
+export function planSnapshot(sim: Sim): PlanSnapshot {
+  const fp = sim.fp;
+  return {
+    approachId: fp.approachId,
+    active: fp.active,
+    approachActive: fp.approachActive,
+    missedActive: fp.missedActive,
+    vtf: fp.vtf,
+    holdActive: fp.holdActive,
+    n: fp.wpts.length,
+    to: fp.wpts[fp.active]?.ident ?? '',
+  };
+}
+
+function planSame(a: PlanSnapshot, sim: Sim): boolean {
+  const fp = sim.fp;
+  return a.approachId === fp.approachId && a.active === fp.active && a.approachActive === fp.approachActive && a.missedActive === fp.missedActive && a.vtf === fp.vtf && a.holdActive === fp.holdActive && a.n === fp.wpts.length && a.to === (fp.wpts[fp.active]?.ident ?? '');
+}
+
+/** a deep copy of the avionics (radios are the only nested objects) */
+export function cloneAvionics(av: Avionics): Avionics {
+  return { ...av, nav1: { ...av.nav1 }, nav2: { ...av.nav2 }, com1: { ...av.com1 }, com2: { ...av.com2 }, adf: { ...av.adf } };
+}
+
+const RADIOS = ['nav1', 'nav2', 'com1', 'com2', 'adf'] as const;
+/** the avionics fields that differ (radios compared by value), as copies; null when nothing changed */
+export function diffAvionics(prev: Avionics, next: Avionics): Partial<Avionics> | null {
+  let out: Partial<Avionics> | null = null;
+  for (const key in next) {
+    const k = key as keyof Avionics;
+    const a = prev[k];
+    const b = next[k];
+    if ((RADIOS as readonly string[]).includes(k)) {
+      const ra = a as Avionics['nav1'];
+      const rb = b as Avionics['nav1'];
+      if (ra && rb && ra.active === rb.active && ra.standby === rb.standby) continue;
+      (out ??= {} as Partial<Avionics>)[k] = { ...rb } as never;
+    } else if (a !== b) (out ??= {} as Partial<Avionics>)[k] = b as never;
+  }
+  return out;
+}
+
+/** keyframes kept (1 Hz): one hour of flight, ≈ 1.5 KB each */
+const MAX_KEYS = 3600;
+const MAX_TRACK = 6000;
+
 const DT = 0.5;
 
 export class Recorder {
@@ -87,6 +199,12 @@ export class Recorder {
   private stallActive = false;
   /** Live coaching callback (toast) */
   onEvent?: (e: FlightEvent) => void;
+  /** 1 Hz exact keyframes (raw AircraftState + avionics), next to the 2 Hz samples */
+  keys: RecKey[] = [];
+  /** avionics / autopilot / flight-plan / failure changes, at the frame they happened */
+  track: RecTrackEvent[] = [];
+  private keyAcc = 0;
+  private base: { av: Avionics; ap: ApSnapshot; plan: PlanSnapshot; failures: Record<string, boolean> } | null = null;
 
   reset() {
     this.samples = [];
@@ -107,6 +225,10 @@ export class Recorder {
     this.actions = [];
     this.startedAt = Date.now();
     this.lesson = null;
+    this.keys = [];
+    this.track = [];
+    this.keyAcc = 0;
+    this.base = null;
   }
 
   start(sim: Sim) {
@@ -117,6 +239,80 @@ export class Recorder {
     this.student = sim.assess.student;
     this.handFlown = sim.assess.handFlown;
     this.log(sim.time, 'info', `${this.mode === 'checkride' ? 'CHECKRIDE' : 'Training'}: ${sim.scenario?.id === 'lesson' ? 'exercise' : sim.scenario?.name ?? 'free flight'}${this.student ? ' — ' + this.student : ''}`);
+    this.resyncTrack(sim);
+    this.pushKey(sim);
+  }
+
+  /**
+   * The sim was set up from outside after start() (a SimScene applied, a take-over from a clip): adopt its current
+   * state as the reference without logging anything (no 'Autopilot engaged' at t 0, no event-track entries), and
+   * take a keyframe now. The flight record itself is kept.
+   */
+  resync(sim: Sim) {
+    this.wasOnGround = sim.ac.s.onGround;
+    this.lastAp = sim.ap.ap;
+    this.lastLat = sim.ap.engaged ? sim.ap.lat : this.lastLat;
+    this.lastVert = sim.ap.engaged ? sim.ap.vert : this.lastVert;
+    this.lastActive = sim.fp.out.valid ? sim.fp.out.toIdent : '';
+    this.resyncTrack(sim);
+    const last = this.keys[this.keys.length - 1];
+    if (last && last.t >= sim.time) this.keys.pop();
+    this.pushKey(sim);
+    this.keyAcc = 0;
+  }
+
+  /** adopt the current state as the track's reference, and write it as the track's baseline (a full autopilot and
+   *  plan snapshot, the failures that are on) so a player can fold the state at any time from the track alone */
+  private resyncTrack(sim: Sim) {
+    this.base = { av: cloneAvionics(sim.av), ap: apSnapshot(sim.ap), plan: planSnapshot(sim), failures: { ...sim.failures } };
+    const t = sim.time;
+    // a baseline replaces an earlier one written at the same instant (start() then a scene applied)
+    while (this.track.length && this.track[this.track.length - 1].t === t && this.track[this.track.length - 1].k !== 'av') this.track.pop();
+    this.pushTrack({ t, k: 'ap', patch: { ...this.base.ap, armed: [...this.base.ap.armed] } });
+    this.pushTrack({ t, k: 'plan', patch: { ...this.base.plan } });
+    const all: Record<string, boolean> = {};
+    const f = sim.failures as unknown as Record<string, boolean>;
+    for (const k in f) all[k] = !!f[k];
+    this.pushTrack({ t, k: 'failure', patch: all });
+  }
+
+  private pushKey(sim: Sim) {
+    if (!sim.ac) return;
+    this.keys.push({ t: sim.time, ac: { ...sim.ac.s }, av: cloneAvionics(sim.av) });
+    if (this.keys.length > MAX_KEYS) this.keys.splice(0, 300);
+  }
+
+  private pushTrack(e: RecTrackEvent) {
+    this.track.push(e);
+    if (this.track.length > MAX_TRACK) this.track.splice(0, 500);
+  }
+
+  /** every frame: diff the avionics, autopilot, plan sequencing and failures against the last frame (no allocation
+   *  unless something changed) */
+  private trackTick(sim: Sim) {
+    const b = this.base;
+    if (!b) return this.resyncTrack(sim);
+    const t = sim.time;
+    const av = diffAvionics(b.av, sim.av);
+    if (av) {
+      this.pushTrack({ t, k: 'av', patch: av });
+      b.av = cloneAvionics(sim.av);
+    }
+    if (!apSame(b.ap, sim.ap)) {
+      b.ap = apSnapshot(sim.ap);
+      this.pushTrack({ t, k: 'ap', patch: { ...b.ap, armed: [...b.ap.armed] } });
+    }
+    if (!planSame(b.plan, sim)) {
+      b.plan = planSnapshot(sim);
+      this.pushTrack({ t, k: 'plan', patch: { ...b.plan } });
+    }
+    let fail: Record<string, boolean> | null = null;
+    const f = sim.failures as unknown as Record<string, boolean>;
+    for (const k in f) if (!!f[k] !== !!b.failures[k]) (fail ??= {})[k] = !!f[k];
+    if (fail) {
+      Object.assign(b.failures, fail);
+      this.pushTrack({ t, k: 'failure', patch: fail });
+    }
   }
 
   log(t: number, kind: FlightEvent['kind'], text: string, fr?: string) {
@@ -284,6 +480,12 @@ export class Recorder {
       });
       if (this.samples.length > 20000) this.samples.splice(0, 1000);
     }
+    this.keyAcc += dt;
+    if (this.keyAcc >= 1) {
+      this.keyAcc %= 1;
+      this.pushKey(sim);
+    }
+    this.trackTick(sim);
   }
 
   /** Lateral deviation in dots (2 dots = full scale) from the CDI source, null when invalid. */

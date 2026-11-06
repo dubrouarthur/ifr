@@ -1,5 +1,5 @@
 // The simulation world: aircraft + weather + avionics state.
-import { seedSim } from './rng';
+import { SimRng } from './rng';
 import { Aircraft, neutralControls, type Controls } from './aircraft';
 import { defaultWeather, KT, type Weather } from './environment';
 import { Autopilot, type CdiSource, type NavInputs } from '../avionics/autopilot';
@@ -190,12 +190,23 @@ export class Sim {
   private lastRoll = 0;
   events: string[] = [];
 
+  /** this Sim's own seeded stream (turbulence, gusts, buffet): independent of any other Sim on the page */
+  readonly rng = new SimRng();
+  /** the seed the stream was last started from (load() uses the scenario id) */
+  seedValue: number | string = '';
+
   constructor(sc?: Scenario) {
     this.load(sc ?? SCENARIOS[1]);
   }
 
+  /** Restart this Sim's random stream: the same seed gives the same turbulence and gusts from here on. */
+  seed(seed: number | string): void {
+    this.seedValue = seed;
+    this.rng.seed(seed);
+  }
+
   load(sc: Scenario) {
-    seedSim(sc.id);
+    this.seed(sc.id);
     this.scenario = sc;
     this.ap = new Autopilot();
     this.fp = new FlightPlan();
@@ -221,6 +232,7 @@ export class Sim {
         theta: sc.onGround ? 0 : 1 * DEG,
       },
       groundElevation,
+      this.rng,
     );
     this.ac.onRunwayCheck = onRunway;
     if (sc.onGround) {
@@ -392,6 +404,7 @@ export class Sim {
     this.ac = new Aircraft(
       { lat: pos.lat, lon: pos.lon, altFt: onGround ? groundElevation(pos) : alt, psi: hdg * DEG, tas: onGround ? 0 : 90 * KT * (1 + alt / 1000 * 0.015), onGround, theta: onGround ? 0 : 1.5 * DEG },
       groundElevation,
+      this.rng,
     );
     this.ac.onRunwayCheck = onRunway;
     this.ac.s.fuelGal = fuel; // the fuel on board stays on board

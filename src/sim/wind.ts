@@ -1,7 +1,7 @@
 // Wind & turbulence model: winds aloft by layer with veering, surface boundary layer,
 // gust surges with direction swing, Dryden turbulence (MIL-F-8785C spectra, low-frequency and smooth),
 // mechanical turbulence near the ground.
-import { simRandom } from './rng';
+import { sharedRng, type Rng } from './rng';
 import { DEG } from '../nav/geo';
 
 export const KT = 0.514444;
@@ -84,18 +84,18 @@ export function steadyWind(w: WindInputs, altMsl: number, agl: number): { e: num
   return { e, n, dir: r.dir, kt: r.kt };
 }
 
-/** Gaussian random (Box–Muller) */
-function gauss() {
+/** Gaussian random (Box–Muller) from a seeded stream */
+function gauss(rng: Rng) {
   let u = 0;
-  while (u === 0) u = simRandom();
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * simRandom());
+  while (u === 0) u = rng.next();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rng.next());
 }
 
 /** Unit-variance first-order Gauss–Markov process with correlation time T, exact discretisation:
  *  the statistics do not depend on the step size. */
-export function markov(x: number, dt: number, T: number): number {
+export function markov(x: number, dt: number, T: number, rng: Rng = sharedRng): number {
   const a = Math.exp(-dt / Math.max(1e-3, T));
-  return x * a + Math.sqrt(1 - a * a) * gauss();
+  return x * a + Math.sqrt(1 - a * a) * gauss(rng);
 }
 /** First-order low-pass y -> x with time constant T, exact discretisation. */
 export function lag(y: number, x: number, dt: number, T: number): number {
@@ -145,6 +145,8 @@ export interface WindSample {
  * exactly, so the statistics are independent of the integration step.
  */
 export class WindModel {
+  /** the owning Sim's stream (sim.rng): two Sims never share turbulence */
+  constructor(private rng: Rng = sharedRng) {}
   private gust = 0; // kt
   private gustOut = 0; // kt, smoothed surge
   private gustTarget = 0;
@@ -175,9 +177,9 @@ export class WindModel {
       case 'idle':
         if (gustSpan > 0 && this.gustTimer <= 0) {
           this.gustPhase = 'rise';
-          this.gustTarget = gustSpan * (0.55 + simRandom() * 0.45);
-          this.gustDirSwing = (simRandom() - 0.5) * 30;
-          this.gustTimer = 1.5 + simRandom() * 1.5;
+          this.gustTarget = gustSpan * (0.55 + this.rng.next() * 0.45);
+          this.gustDirSwing = (this.rng.next() - 0.5) * 30;
+          this.gustTimer = 1.5 + this.rng.next() * 1.5;
         }
         this.gust = lag(this.gust, 0, dt, 1 / 0.8);
         break;
@@ -185,20 +187,20 @@ export class WindModel {
         this.gust = lag(this.gust, this.gustTarget, dt, 1 / 2.2);
         if (this.gustTimer <= 0) {
           this.gustPhase = 'hold';
-          this.gustTimer = 1 + simRandom() * 2;
+          this.gustTimer = 1 + this.rng.next() * 2;
         }
         break;
       case 'hold':
         if (this.gustTimer <= 0) {
           this.gustPhase = 'decay';
-          this.gustTimer = 2 + simRandom() * 2;
+          this.gustTimer = 2 + this.rng.next() * 2;
         }
         break;
       case 'decay':
         this.gust = lag(this.gust, 0, dt, 1 / 0.9);
         if (this.gustTimer <= 0) {
           this.gustPhase = 'idle';
-          this.gustTimer = 3 + simRandom() * 9;
+          this.gustTimer = 3 + this.rng.next() * 9;
         }
         break;
     }
@@ -222,13 +224,13 @@ export class WindModel {
     const Tw = Lw / V;
     const Tb = (4 * SPAN) / (Math.PI * V); // airframe averaging / Dryden p-gust corner
     // u, v: first-order Dryden (unit-variance Markov), then airframe averaging
-    this.mu = markov(this.mu, dt, Tu);
-    this.mv = markov(this.mv, dt, Tu);
+    this.mu = markov(this.mu, dt, Tu, this.rng);
+    this.mv = markov(this.mv, dt, Tu, this.rng);
     this.u = lag(this.u, sigU * this.mu, dt, Tb);
     this.v = lag(this.v, sigU * this.mv, dt, Tb);
     // w: second-order Dryden (1 + √3 Tw s)/(1 + Tw s)²: mw2 = white/(1 + Tw s)², mw2 + √3 Tw ṁw2 has
     // variance 2 when mw1 is a unit Markov process, hence the 1/√2
-    this.mw1 = markov(this.mw1, dt, Tw);
+    this.mw1 = markov(this.mw1, dt, Tw, this.rng);
     this.mw2 = lag(this.mw2, this.mw1, dt, Tw);
     const wRaw = (this.mw2 + Math.sqrt(3) * (this.mw1 - this.mw2)) / Math.SQRT2;
     this.wPrev = this.w;
@@ -237,7 +239,7 @@ export class WindModel {
     // (variance 1/2 after the second stage, hence √2); σp = σw √(0.8 π² (π/4b)^⅓ / (8 b Lw^⅔))
     // (eddies smaller than the span cannot roll the wing: Lw is floored at 2 b for p_g)
     const sigP = sigW * Math.sqrt((0.8 * Math.PI * Math.PI * Math.cbrt(Math.PI / (4 * SPAN))) / (8 * SPAN * Math.pow(Math.max(Lw, 2 * SPAN), 2 / 3)));
-    this.mp1 = markov(this.mp1, dt, Tb);
+    this.mp1 = markov(this.mp1, dt, Tb, this.rng);
     this.mp2 = lag(this.mp2, this.mp1, dt, Tb);
     const p = sigP * Math.SQRT2 * this.mp2;
     // q_g: the tail meets the vertical gust after the wing (q_g = −ẇ_g / V), smoothed like the rest
