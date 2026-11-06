@@ -747,7 +747,7 @@
 
 /* builder fields: a tidy grid, inputs fill their cell */
 .modal.cbx .cbx-name { height: 36px; border: 0; background: transparent; box-shadow: none; padding: 0; }
-.modal.cbx .cbx-leg-b .cb-row, .modal.cbx .cbx-set .cb-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; align-items: end; }
+.modal.cbx .cbx-leg-b .cb-row, .modal.cbx .cbx-set .cb-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px 12px; align-items: end; }
 .modal.cbx .cbx-set .cbx-failrow { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 76px 28px; }
 .modal.cbx .cb-f { min-width: 0; }
 .modal.cbx .cb-f input, .modal.cbx .cb-f select { width: 100%; min-width: 0; max-width: none; }
@@ -939,9 +939,9 @@ body .modal.fs .fs-tog.on { border-color: rgb(var(--accent-rgb) / 0.4); backgrou
 .fb-addproc b { font-weight: 700; }
 .fb-addproc small { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cbx-leg.sid::before, .cbx-leg.star::before { background: var(--accent); }
-.cbx-leg.atc::before { background: #344054; }
+.cbx-leg.is-atc::before { background: #344054; }
 .cbx-leg.sid .cbx-ic, .cbx-leg.star .cbx-ic { color: var(--accent); }
-.cbx-leg.atc .cbx-kind { color: #344054; }
+.cbx-leg.is-atc .cbx-kind { color: #344054; }
 .modal.fb .cbx-add { margin: 0; padding: 0; border: 0; background: none; }
 .modal.fb .cbx-add-b { gap: 6px; }
 /* route string */
