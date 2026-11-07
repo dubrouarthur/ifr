@@ -1,18 +1,15 @@
 import { h, clear, fmtTime, store } from './dom';
 import { svgIcon, I } from './icons';
-import { RouteMap, MAP_COL } from './routeMap';
-import type { Circuit, CircuitLeg } from '../train/circuits';
 import type { ProcAttempt } from './history';
 import { SCENARIOS, type Scenario, type Sim, type AssessSettings } from '../sim/sim';
 import type { Weather } from '../sim/environment';
-import { APPROACHES, FIXES, runway, findFix, groundElevation } from '../nav/data';
+import { APPROACHES, FIXES } from '../nav/data';
 import { approachPlate } from '../plates/plates';
-import { computeDebrief, evaluateAcs, type Recorder, type ScoreItem } from '../sim/recorder';
+import { computeDebrief, evaluateAcs } from '../sim/recorder';
 import { history } from './history';
 import { webhookCfg, postWebhook } from '../connect/webhook';
-import { trackGpx, trackKml, download } from '../connect/exports';
 import { AXIS_LABELS, BUTTON_LABELS, AxisDetector, type AxisName, type ButtonAction, type InputManager } from '../sim/input';
-import { alongTrackNm, destination, distanceNm, FT_PER_NM, type LatLon } from '../nav/geo';
+import { distanceNm } from '../nav/geo';
 import type { Lang, ProcedureResult } from '../train/procedureTypes';
 import { FAILURE_LABELS_EN, FAILURE_LABELS_FR } from '../sim/systemsTypes';
 
@@ -391,7 +388,10 @@ export function flightRecord(sim: Sim, db = computeDebrief(sim.rec, sim.av.minim
   const rec = sim.rec;
   const ls = rec.lesson;
   const lessonScored = !!ls && ls.score !== undefined;
-  const score = lessonScored ? ls!.score! : db.score;
+  // an exercise ended early (no score on its record) is not graded: no score goes to the records or the school
+  // webhook, whatever the approach grader would have said about the same flight
+  const lessonUngraded = !!ls && !lessonScored;
+  const score = lessonScored ? ls!.score! : lessonUngraded ? 0 : db.score;
   const letter = (v: number) => (v >= 90 ? 'A' : v >= 80 ? 'B' : v >= 70 ? 'C' : v >= 60 ? 'D' : 'F');
   return {
     id: String(rec.startedAt),
@@ -401,8 +401,8 @@ export function flightRecord(sim: Sim, db = computeDebrief(sim.rec, sim.av.minim
     approach: db.approachName ?? '',
     mode: rec.mode,
     score,
-    grade: lessonScored ? letter(score) : db.grade,
-    graded: lessonScored || db.graded,
+    grade: lessonScored ? letter(score) : lessonUngraded ? '—' : db.grade,
+    graded: lessonUngraded ? false : lessonScored || db.graded,
     acs: acs.result,
     failedTasks: acs.items.filter((i) => i.result === 'FAIL').map((i) => i.task),
     failures: rec.failuresInjected,
@@ -435,330 +435,8 @@ export function saveFlightRecord(sim: Sim): ProcAttempt | null {
   return a;
 }
 
-const DBF = { ink: '#1d2833', proc: MAP_COL.approach, missed: '#9a5b00', mins: '#b42318', good: '#13804b', grid: '#d0d5dd', axis: '#667085' } as const;
-
-export class DebriefModal extends Modal {
-  onReplay?: () => void;
-  private map: RouteMap | null = null;
-  private ro: ResizeObserver | null = null;
-  private menu: HTMLElement | null = null;
-  constructor(private sim: Sim, private onAgain: () => void, private onNew: () => void) {
-    super('Flight debrief');
-    this.box.classList.add('dbf');
-    this.onClose = () => this.teardown();
-  }
-  open() {
-    this.render();
-    super.open();
-  }
-  private teardown() {
-    this.map?.destroy();
-    this.map = null;
-    this.ro?.disconnect();
-    this.ro = null;
-  }
-  render() {
-    this.teardown();
-    clear(this.body);
-    clear(this.foot);
-    const rec = this.sim.rec;
-    const db = computeDebrief(rec, this.sim.av.minimums);
-    const acs = evaluateAcs(rec);
-    saveFlightRecord(this.sim);
-    // persist the best graded score of a built-in scenario
-    const sc = this.sim.scenario;
-    if (sc && sc.id !== 'lesson' && db.graded) {
-      const best = store.get<Record<string, { score: number; grade: string }>>('ifr.best', {});
-      if (!best[sc.id] || best[sc.id].score < db.score) {
-        best[sc.id] = { score: db.score, grade: db.grade };
-        store.set('ifr.best', best);
-      }
-    }
-    const title = rec.lesson?.title ?? (sc?.id === 'lesson' ? 'Exercise' : sc?.name ?? 'Free flight');
-    this.body.append(
-      h('div', { class: 'report-head' }, h('h2', { style: 'margin:0' }, `IFR Trainer — ${rec.mode === 'checkride' ? 'Checkride report' : 'Training debrief'}`), h('div', {}, `Student: ${rec.student || '—'} · ${new Date().toLocaleString()} · ${title}`)),
-    );
-    const sub = [rec.mode === 'checkride' ? 'Checkride' : 'Training', rec.student, title, db.approachName, `${fmtTime(db.durationSec)} flight time`].filter(Boolean).join(' · ');
-    const penCell = (i: ScoreItem) =>
-      i.na ? h('td', { class: 'pen na', title: 'Not flown' }, '—') : h('td', { class: `pen${i.penalty === 0 ? ' zero' : ''}` }, i.penalty === 0 ? svgIcon(I.check, 15) : `−${Math.round(i.penalty)}`);
-    this.body.append(
-      h('div', { class: 'grade-row dbf-sum' },
-        db.graded
-          ? h('div', { class: `grade ${db.grade}`, 'aria-label': `Grade ${db.grade}, ${db.score} out of 100` }, db.grade, h('small', {}, `${db.score}/100`))
-          : h('div', { class: 'grade none', 'aria-label': 'Not graded' }, '—', h('small', {}, 'not graded')),
-        h('div', {},
-          h('h2', { class: 'dbf-headline' }, db.headline),
-          h('div', { class: 'dbf-sub' }, sub),
-          db.graded
-            ? null
-            : h('p', { class: 'dbf-hint' }, rec.lesson || sc?.id === 'lesson'
-              ? 'This debrief grades approaches, landings and missed approaches. The exercise itself is graded against its own standards in the exercise result.'
-              : 'Grades start once you fly the final approach segment, land or fly a missed approach. Keep flying, or start a new flight.'),
-          db.items.length === 0 ? null : h('table', { class: 'items dbf-items' }, ...db.items.map((i) => h('tr', { class: i.na ? 'na' : '' }, h('td', {}, h('b', {}, i.label), i.note ? h('div', { class: 'dbf-note' }, i.note) : null), h('td', { class: 'num' }, i.value), penCell(i)))),
-        ),
-      ),
-    );
-    const procs = flightProcedures.results();
-    if (procs.length) this.body.append(procedureSection(procs));
-    const acsBlock = h('section', { class: 'chartbox dbf-acs' },
-      h('h5', {}, 'FAA Instrument ACS evaluation', h('span', { class: `acs-badge ${acs.result}` }, acs.result === 'INCOMPLETE' ? 'Incomplete' : acs.result)),
-      h('table', { class: 'items acs-table' }, h('tr', {}, ...['Result', 'Task', 'Standard', 'Performance'].map((t) => h('th', {}, t))), ...acs.items.map((i) => h('tr', { class: i.result }, h('td', { class: 'res' }, i.result === 'N/A' ? '—' : i.result), h('td', {}, i.task), h('td', { class: 'muted' }, i.standard), h('td', {}, i.actual)))),
-    );
-    if (rec.mode === 'checkride') this.body.append(acsBlock);
-    this.body.append(this.charts(rec));
-    if (rec.mode !== 'checkride') this.body.append(acsBlock);
-    const notes = db.tips.length
-      ? h('ul', { class: 'tips' }, ...db.tips.map((t) => h('li', {}, t)))
-      : h('p', { class: 'muted' }, db.graded ? 'Nothing to add — well flown.' : 'Notes appear once there is enough flight to grade.');
-    this.body.append(
-      h('div', { class: 'charts2' },
-        h('section', { class: 'chartbox' }, h('h5', {}, 'Instructor notes'), notes),
-        h('section', { class: 'chartbox' }, h('h5', {}, 'Timeline'), h('div', { class: 'timeline' }, ...rec.events.map((e) => h('div', { class: e.kind }, h('span', { class: 't' }, fmtTime(e.t)), h('span', { class: 'dot' }), h('span', {}, e.text))))),
-      ),
-    );
-    // footer: one export menu, then the next step (Fly again is the primary action)
-    const exp = h('div', { class: 'dbf-menu', role: 'menu' },
-      this.menuItem('Flight data (JSON)', 'Every sample and event', () => this.exportJson()),
-      this.menuItem('GPX track', 'CloudAhoy · ForeFlight · Garmin', () => download(trackGpx(rec.samples, new Date(rec.startedAt).toISOString()), 'ifr_trainer_track.gpx', 'application/gpx+xml'), rec.samples.length < 2),
-      this.menuItem('KML 3D track', 'Google Earth', () => download(trackKml(rec.samples), 'ifr_trainer_track.kml', 'application/vnd.google-earth.kml+xml'), rec.samples.length < 2),
-      this.menuItem('Print or save as PDF', 'The debrief as a report', () => window.print()),
-    );
-    this.menu = exp;
-    const expBtn = h('button', { class: 'btn', 'aria-haspopup': 'menu', 'aria-expanded': 'false', onclick: (e: Event) => { e.stopPropagation(); this.toggleMenu(); } }, 'Export', svgIcon(I.chevUp, 14));
-    this.foot.append(
-      h('div', { class: 'dbf-exp' }, expBtn, exp),
-      h('span', { class: 'grow' }),
-      ...(rec.samples.length >= 10 ? [h('button', { class: 'btn', onclick: () => { this.close(); this.onReplay?.(); }, title: 'Replay the flight with the instruments and the 3D view' }, svgIcon(I.play, 14), 'Replay')] : []),
-      h('button', { class: 'btn ghost', onclick: () => this.close() }, 'Keep flying'),
-      h('button', { class: 'btn', onclick: () => { this.close(); this.onNew(); } }, 'New flight'),
-      h('button', { class: 'btn primary', onclick: () => { this.close(); this.onAgain(); } }, 'Fly again'),
-    );
-    this.box.addEventListener('click', this.closeMenu);
-  }
-  private closeMenu = () => {
-    this.menu?.classList.remove('open');
-    this.foot.querySelector('[aria-haspopup]')?.setAttribute('aria-expanded', 'false');
-  };
-  private toggleMenu() {
-    const open = !this.menu?.classList.contains('open');
-    this.menu?.classList.toggle('open', open);
-    this.foot.querySelector('[aria-haspopup]')?.setAttribute('aria-expanded', String(open));
-  }
-  private menuItem(label: string, hint: string, fn: () => void, disabled = false) {
-    return h('button', { class: 'dbf-mi', role: 'menuitem', disabled, onclick: () => { this.closeMenu(); fn(); } }, h('b', {}, label), h('small', {}, hint));
-  }
-  private exportJson() {
-    const r = this.sim.rec;
-    const blob = new Blob([JSON.stringify({ scenario: this.sim.scenario?.id, events: r.events, touchdown: r.touchdown, samples: r.samples }, null, 1)], { type: 'application/json' });
-    const a = h('a', { href: URL.createObjectURL(blob), download: `ifr-flight-${Date.now()}.json` });
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  }
-
-  /** the plan the flight followed (route + approach), drawn under the flown track */
-  private plan(): Circuit | null {
-    const fp = this.sim.fp;
-    const legs: CircuitLeg[] = [];
-    for (const w of fp.wpts) if (!w.appr && !w.ptPoint && findFix(w.ident)) legs.push({ type: 'fix', ident: w.ident, alt: null });
-    const apId = fp.approachId ?? this.sim.rec.approach?.id ?? null;
-    if (apId) {
-      const ap = APPROACHES.find((a) => a.id === apId);
-      const first = fp.wpts.find((w) => w.appr === 'trans' && !w.ptPoint);
-      const tr = ap?.transitions.find((t) => t.legs[0]?.fix.ident === first?.ident)?.name ?? null;
-      if (ap) legs.push({ type: 'approach', approachId: apId, transition: tr, outcome: this.sim.rec.missedAt !== null ? 'missed' : 'land' });
-    }
-    if (!legs.length) return null;
-    // no start point: the flown track shows where the flight began
-    return { id: 'debrief', name: 'Flown plan', description: '', start: { type: 'runway', airport: '', runway: '', initialAlt: 0 }, legs, weather: {}, failures: [], allowAp: true, mode: 'training', cockpit: null };
-  }
-
-  private charts(rec: Recorder): HTMLElement {
-    const smp = rec.samples;
-    if (smp.length < 10)
-      return h('section', { class: 'chartbox dbf-empty' }, svgIcon(I.route, 22), h('div', {}, h('b', {}, 'No track recorded yet'), h('span', {}, 'The ground track on the map and the vertical profile appear here after a few seconds of flight.')));
-    const near = (t: number) => smp.reduce((b, s) => (Math.abs(s.t - t) < Math.abs(b.t - t) ? s : b), smp[0]);
-    const marks: { p: LatLon; label: string; color?: string }[] = [];
-    if (smp[0]) marks.push({ p: smp[0], label: 'Start', color: '#475467' });
-    if (rec.missedAt !== null) marks.push({ p: near(rec.missedAt), label: 'Missed approach', color: DBF.missed });
-    if (rec.touchdown) marks.push({ p: near(rec.touchdown.t), label: 'Touchdown', color: DBF.good });
-    if (rec.crashed) marks.push({ p: smp[smp.length - 1], label: 'Accident', color: DBF.mins });
-    else if (!rec.touchdown) marks.push({ p: smp[smp.length - 1], label: 'End', color: '#475467' });
-    this.map = new RouteMap(this.plan(), { height: 380, track: smp.map((s) => ({ lat: s.lat, lon: s.lon })), marks });
-    const leg = this.map.el.querySelector('.rm-legend');
-    leg?.prepend(h('span', { class: 'rm-chip' }, h('i', { class: 'l-flown' }), 'Flown track'));
-    const prof = h('div', { class: 'dbf-prof' });
-    const draw = () => {
-      const w = Math.round(prof.getBoundingClientRect().width);
-      if (w > 40 && Number(prof.dataset.w) !== w) {
-        prof.dataset.w = String(w);
-        prof.innerHTML = this.profileSvg(rec, w, 250);
-      }
-    };
-    this.ro = new ResizeObserver(draw);
-    this.ro.observe(prof);
-    const ap = rec.approach;
-    return h('div', { class: 'dbf-charts' },
-      h('section', { class: 'chartbox dbf-map' }, h('h5', {}, 'Ground track'), this.map.el),
-      h('section', { class: 'chartbox' },
-        h('h5', {}, ap ? `Vertical profile — ${ap.airport} ${ap.name}` : 'Altitude profile'),
-        prof,
-        h('div', { class: 'dbf-legend' },
-          h('span', {}, h('i', { class: 'l-flown' }), 'Flown altitude'),
-          ap ? h('span', {}, h('i', { class: 'l-proc' }), ap.gsAngle ? 'Glidepath' : 'Step-down altitudes') : null,
-          ap && this.minsAlt(rec) !== null ? h('span', {}, h('i', { class: 'l-mins' }), this.minsKind(rec)) : null,
-          h('span', {}, h('i', { class: 'l-gnd' }), 'Terrain'),
-        ),
-      ),
-    );
-  }
-  private minsAlt(rec: Recorder): number | null {
-    return rec.minsUsed ?? this.sim.av.minimums;
-  }
-  private minsKind(rec: Recorder): 'DA' | 'MDA' {
-    const ap = rec.approach;
-    return ap?.gsAngle || rec.samples.some((s) => s.phase === 'final' && s.vertDots !== null) ? 'DA' : 'MDA';
-  }
-
-  /** vertical profile: altitude against the distance to the threshold (approach), or against time; light chart */
-  private profileSvg(rec: Recorder, W: number, H: number): string {
-    const ap = rec.approach;
-    const all = rec.samples;
-    const L = 52, R = 16, T = 26, B = 34;
-    const o: string[] = [];
-    const ft = (v: number) => Math.round(v).toLocaleString('en-US');
-    let X: (v: number) => number;
-    let xs: number[]; // x value of each sample
-    let x0: number, x1: number; // domain, left → right
-    let ground: [number, number][] = [];
-    let rw: ReturnType<typeof runway> | null = null;
-    const used = all.filter((s) => s.phase !== 'ground' || all.length < 40);
-    const smp = used.length > 1 ? used : all;
-    if (ap) {
-      rw = runway(ap.airport, ap.runway);
-      const r = rw;
-      const dist = smp.map((s) => -alongTrackNm(r.threshold, r.end, s));
-      const firstFinal = Math.max(...ap.final.map((l) => -alongTrackNm(r.threshold, r.end, l.fix)).filter((d) => d < 30), 4);
-      const flown = dist.filter((_d, i) => smp[i].phase === 'final' || smp[i].phase === 'initial' || smp[i].phase === 'landed' || smp[i].phase === 'missed');
-      const maxD = Math.min(Math.max(firstFinal + 1, ...flown.filter((d) => d < 30), 5), 25);
-      x0 = Math.ceil(maxD);
-      x1 = -1;
-      xs = dist;
-      for (let d = x1; d <= x0; d += x0 / 80) ground.push([d, groundElevation(destination(r.threshold, r.heading + 180, d))]);
-    } else {
-      const t0 = smp[0].t;
-      xs = smp.map((s) => (s.t - t0) / 60);
-      x0 = 0;
-      x1 = Math.max(1, xs[xs.length - 1]);
-      ground = smp.map((s, i) => [xs[i], s.alt - s.agl]);
-    }
-    const inX = (v: number) => (ap ? v <= x0 && v >= x1 : true);
-    const vis = smp.filter((_, i) => inX(xs[i]));
-    const elev = rw ? rw.elevFt : Math.min(...ground.map((g) => g[1]));
-    const mins = this.minsAlt(rec);
-    const tops = [...vis.map((s) => s.alt), ...ground.map((g) => g[1]), elev + 1200];
-    if (ap) for (const l of ap.final) if (l.altMin) tops.push(l.altMin);
-    const lo = Math.max(0, Math.floor((Math.min(elev, ...ground.map((g) => g[1])) - 100) / 500) * 500);
-    const hi = Math.ceil((Math.max(...tops) + 250) / 500) * 500;
-    X = (v: number) => L + ((v - x0) / (x1 - x0)) * (W - L - R);
-    const Y = (a: number) => T + (1 - (a - lo) / (hi - lo)) * (H - T - B);
-    const f = (v: number) => v.toFixed(1);
-    // plot area + grid
-    o.push(`<rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="#f6f8fa"/>`);
-    const step = hi - lo > 5000 ? 1000 : 500;
-    for (let a = lo; a <= hi; a += step) o.push(`<line x1="${L}" x2="${W - R}" y1="${f(Y(a))}" y2="${f(Y(a))}" stroke="${DBF.grid}" stroke-width="1"/><text class="ax" x="${L - 6}" y="${f(Y(a) + 3.5)}" text-anchor="end">${ft(a)}</text>`);
-    const span = Math.abs(x0 - x1);
-    const xstep = span > 16 ? 4 : span > 8 ? 2 : 1;
-    const lo2 = Math.min(x0, x1), hi2 = Math.max(x0, x1);
-    for (let v = Math.ceil(lo2 / xstep) * xstep; v <= hi2; v += xstep) {
-      if (ap && v < 0) continue;
-      o.push(`<line x1="${f(X(v))}" x2="${f(X(v))}" y1="${T}" y2="${H - B}" stroke="${DBF.grid}" stroke-width="1" stroke-dasharray="2 3"/><text class="ax" x="${f(X(v))}" y="${H - B + 14}" text-anchor="middle">${v}</text>`);
-    }
-    o.push(`<text class="ax t" x="${W - R}" y="${H - 4}" text-anchor="end">${ap ? 'NM to threshold' : 'Minutes'}</text><text class="ax t" x="${L - 6}" y="${T - 12}" text-anchor="end">ft MSL</text>`);
-    // terrain
-    if (ground.length > 1) {
-      const g = ground.filter((p) => inX(p[0])).sort((a, b) => X(a[0]) - X(b[0]));
-      if (g.length > 1) o.push(`<polygon points="${f(X(g[0][0]))},${f(Y(lo))} ${g.map((p) => `${f(X(p[0]))},${f(Y(Math.max(lo, p[1])))}`).join(' ')} ${f(X(g[g.length - 1][0]))},${f(Y(lo))}" fill="#e6dfd0" stroke="#b9ab90" stroke-width="1"/>`);
-    }
-    if (ap && rw) {
-      const r = rw;
-      // procedure: glidepath, or the step-down altitudes of the final segment
-      const fixes = ap.final.map((l) => ({ l, d: -alongTrackNm(r.threshold, r.end, l.fix) })).filter((x) => x.d >= -0.05 && x.d <= x0);
-      if (ap.gsAngle) {
-        const tch = r.elevFt + (ap.tch ?? 50);
-        const k = Math.tan((ap.gsAngle * Math.PI) / 180) * FT_PER_NM;
-        const dTop = Math.min(x0, (hi - tch) / k);
-        o.push(`<line x1="${f(X(0))}" y1="${f(Y(tch))}" x2="${f(X(dTop))}" y2="${f(Y(tch + dTop * k))}" stroke="${DBF.proc}" stroke-width="2" stroke-dasharray="7 4"/>`);
-        // the angle label sits midway between the FAF and the threshold (clear of the FAF altitude and cross)
-        const fafD = fixes.find((x) => x.l.role === 'FAF')?.d;
-        const dl = fafD ? fafD * 0.5 : Math.min(dTop * 0.45, x0 * 0.45);
-        o.push(`<text class="lbl" fill="${DBF.proc}" x="${f(X(dl))}" y="${f(Y(tch + dl * k) - 8)}" text-anchor="middle">${ap.type === 'ILS' ? 'GS' : 'GP'} ${ap.gsAngle.toFixed(2)}° · TCH ${ap.tch ?? 50}'</text>`);
-      } else {
-        const st = fixes.filter((x) => x.l.altMin).sort((a, b) => b.d - a.d);
-        let path = '';
-        st.forEach((x, i) => {
-          const nd = st[i + 1]?.d ?? 0;
-          path += `${i ? 'L' : 'M'}${f(X(x.d))},${f(Y(x.l.altMin!))} L${f(X(nd))},${f(Y(x.l.altMin!))} `;
-        });
-        if (path) o.push(`<path d="${path}" fill="none" stroke="${DBF.proc}" stroke-width="2" stroke-dasharray="7 4"/>`);
-      }
-      // fixes: dotted tick, ident and minimum altitude (underlined, Jeppesen style)
-      let lastX = -99;
-      for (const x of fixes.sort((a, b) => b.d - a.d)) {
-        if (x.l.fix.kind === 'runway' || x.d < 0.2) continue;
-        const px = X(x.d);
-        if (px - lastX < 46) continue;
-        lastX = px;
-        o.push(`<line x1="${f(px)}" x2="${f(px)}" y1="${T}" y2="${H - B}" stroke="${DBF.proc}" stroke-width="1" stroke-dasharray="1 3" opacity=".7"/>`);
-        o.push(`<text class="fix" x="${f(px)}" y="${T + 12}" text-anchor="middle">${x.l.role === 'FAF' ? 'FAF ' : ''}${x.l.fix.ident}</text>`);
-        if (x.l.altMin) {
-          const faf = x.l.role === 'FAF';
-          const ay = Y(x.l.altMin);
-          // Jeppesen: Maltese cross at the FAF, minimum altitudes underlined, feet marked with a prime
-          if (faf) o.push(`<path transform="translate(${f(px)},${f(ay)}) scale(0.85)" d="M0,0 L-4,-5 L-1.2,-4 L0,-7 L1.2,-4 L4,-5 Z M0,0 L-5,4 L-4,1.2 L-7,0 L-4,-1.2 L-5,-4 Z M0,0 L4,5 L1.2,4 L0,7 L-1.2,4 L-4,5 Z M0,0 L5,-4 L4,-1.2 L7,0 L4,1.2 L5,4 Z" fill="${DBF.ink}" stroke="#fff" stroke-width="0.8"/>`);
-          const ty = ay - (faf ? 11 : 6);
-          const txt = `${x.l.altMin}'`;
-          const tw = String(x.l.altMin).length * 6.2;
-          o.push(`<text class="alt" x="${f(px)}" y="${f(ty)}" text-anchor="middle">${txt}</text><line x1="${f(px - tw / 2 - 1)}" x2="${f(px + tw / 2 + 2)}" y1="${f(ty + 2.5)}" y2="${f(ty + 2.5)}" stroke="${DBF.ink}" stroke-width="1"/>`);
-        }
-      }
-      // minimums
-      if (mins !== null && mins > lo && mins < hi) {
-        o.push(`<line x1="${L}" x2="${W - R}" y1="${f(Y(mins))}" y2="${f(Y(mins))}" stroke="${DBF.mins}" stroke-width="1.4" stroke-dasharray="5 4"/>`);
-        o.push(`<text class="lbl" fill="${DBF.mins}" x="${L + 6}" y="${f(Y(mins) - 5)}">${this.minsKind(rec)} ${mins}' (${Math.round(mins - r.elevFt)}')</text>`);
-      }
-      // runway
-      const len = Math.max(0.2, Math.min(0.9, distanceNm(r.threshold, r.end)));
-      o.push(`<rect x="${f(X(0))}" y="${f(Y(r.elevFt) - 2.5)}" width="${f(Math.max(6, X(-len) - X(0)))}" height="5" fill="${DBF.ink}"/><text class="fix" x="${f(X(0) + 4)}" y="${f(Y(r.elevFt) + 15)}">RWY ${ap.runway}</text>`);
-    }
-    // flown altitude (white halo, ink line; the missed approach part in amber)
-    const segs: { miss: boolean; pts: string[] }[] = [];
-    smp.forEach((s, i) => {
-      // a reposition (instructor, replay) is a jump, not a flown line
-      if (i && distanceNm(smp[i - 1], s) > 1 && segs.length && segs[segs.length - 1].pts.length) segs.push({ miss: s.phase === 'missed', pts: [] });
-      if (!inX(xs[i])) { if (segs.length && segs[segs.length - 1].pts.length) segs.push({ miss: s.phase === 'missed', pts: [] }); return; }
-      const miss = s.phase === 'missed';
-      const pt = `${f(X(xs[i]))},${f(Y(s.alt))}`;
-      const cur = segs[segs.length - 1];
-      if (!cur || cur.miss !== miss) {
-        const prev = cur?.pts[cur.pts.length - 1];
-        segs.push({ miss, pts: prev ? [prev, pt] : [pt] });
-      } else cur.pts.push(pt);
-    });
-    for (const sg of segs) if (sg.pts.length > 1) o.push(`<polyline points="${sg.pts.join(' ')}" fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round" opacity=".9"/>`);
-    for (const sg of segs) if (sg.pts.length > 1) o.push(`<polyline points="${sg.pts.join(' ')}" fill="none" stroke="${sg.miss ? DBF.missed : DBF.ink}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`);
-    const td = rec.touchdown;
-    if (td) {
-      const i = smp.reduce((b, s, k) => (Math.abs(s.t - td.t) < Math.abs(smp[b].t - td.t) ? k : b), 0);
-      if (inX(xs[i])) o.push(`<circle cx="${f(X(xs[i]))}" cy="${f(Y(smp[i].alt))}" r="4.5" fill="${DBF.good}" stroke="#fff" stroke-width="2"/>`);
-    }
-    if (rec.missedAt !== null) {
-      const i = smp.reduce((b, s, k) => (Math.abs(s.t - rec.missedAt!) < Math.abs(smp[b].t - rec.missedAt!) ? k : b), 0);
-      if (inX(xs[i])) o.push(`<circle cx="${f(X(xs[i]))}" cy="${f(Y(smp[i].alt))}" r="4.5" fill="${DBF.missed}" stroke="#fff" stroke-width="2"/>`);
-    }
-    o.push(`<rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="none" stroke="${DBF.grid}"/>`);
-    return `<svg class="dbf-psvg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Vertical profile of the flight">${o.join('')}</svg>`;
-  }
-}
+// The flight debrief is the full-window replay of src/ui/result/debrief.ts (SPEC debrief §2.4): it grades exercises
+// as well as approaches, with the instructor review and sign-off.
 
 // ----------------------------------------------------------------- help
 export class HelpModal extends Modal {

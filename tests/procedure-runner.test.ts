@@ -436,6 +436,20 @@ describe("training records", () => {
     flightProcedures.results = () => [];
     expect(flightRecord(sim).procedures).toBeUndefined();
   });
+
+  it("an exercise ended early goes to the records (and the school webhook) as not graded, with no score", async () => {
+    const { flightRecord } = await import("../src/ui/modals");
+    const sim = new Sim(SCENARIOS[1]);
+    sim.rec.lesson = { id: "app-loc", title: "LOC RWY 27" };
+    const a = flightRecord(sim);
+    expect(a.graded).toBe(false);
+    expect(a.score).toBe(0);
+    expect(a.grade).toBe("—");
+    sim.rec.lesson = { id: "app-loc", title: "LOC RWY 27", score: 82, passed: true };
+    const b = flightRecord(sim);
+    expect(b.graded).toBe(true);
+    expect(b.score).toBe(82);
+  });
 });
 
 describe("instructor companion (remote)", () => {
