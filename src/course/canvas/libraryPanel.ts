@@ -281,7 +281,7 @@ export class LibraryPanel {
           label: ["EYEBROW", "SURTITRE"],
           eyebrow: ["EYEBROW", "SURTITRE"],
           number: ["318", "318"],
-          quote: ["« Cleared ILS 27 »", "« Autorisé ILS 27 »"],
+          quote: ["“Cleared ILS 27”", "« Autorisé ILS 27 »"],
           mono: ["angle = 60 × off ÷ dist", "angle = 60 × écart ÷ dist"],
           formula: ["angle = 60 × off ÷ dist", "angle = 60 × écart ÷ dist"],
           foot: ["Source · FAA AIM 5-3-8", "Source · FAA AIM 5-3-8"],

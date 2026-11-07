@@ -15,39 +15,47 @@ export const BRAND = {
     en: "The platform for aviation education",
     fr: "La plateforme de l’éducation aéronautique",
   },
-  /** the short form of the tagline, beside the name (intro top bar) */
-  kicker: {
-    en: "Aviation education",
-    fr: "Éducation aéronautique",
-  },
   /** what it brings together, in a few words (the eyebrow over the headline) */
   eyebrow: {
     en: "Slides · Flight simulator",
     fr: "Diapositives · Simulateur de vol",
   },
-  /** the one-paragraph pitch under the tagline: one tool, slides and a simulator; build, teach, fly (no claims the
-   *  product does not back) */
+  /** the one-sentence pitch under the tagline: one tool, slides and a simulator; build, teach, fly (no claims the
+   *  product does not back). FR says "pratiquez-les" ("volez-les" reads first as "steal them") and glues
+   *  "simulateur de vol" with no-break spaces, so a balanced wrap never splits the compound noun. */
   lead: {
-    en: "One tool that unites a flight simulator and beautiful slides: build courses with live instruments, teach them in class, then fly them in the built-in simulator, which also works on its own.",
-    fr: "Un seul outil qui réunit un simulateur de vol et de belles diapositives : créez vos cours avec des instruments en direct, enseignez-les en salle, puis volez-les dans le simulateur intégré, utilisable aussi seul.",
+    en: "Slides and a flight\u00a0simulator in one tool: build your courses, teach them in class, then fly them in the simulator.",
+    fr: "Des diapositives et un simulateur\u00a0de\u00a0vol réunis\u00a0: créez vos cours, enseignez-les en salle, puis pratiquez-les au simulateur.",
   },
   /** who it is for (under the pitch) */
   audience: {
     en: "For aeroclubs and flight schools, from LAPL and PPL to IR and ATPL theory.",
     fr: "Pour les aéroclubs et les écoles de pilotage, du LAPL et du PPL jusqu’à l’IR et la théorie ATPL.",
   },
+  /** who it is for, as people (the start page's first "for whom" line) */
+  who: {
+    en: "Students, instructors, clubs, schools",
+    fr: "Élèves, instructeurs, aéroclubs, écoles",
+  },
+  /** the programmes the course library covers (the start page's second "for whom" line) */
+  programmes: {
+    en: "LAPL · PPL · IR · ATPL theory",
+    fr: "LAPL · PPL · IR · théorie ATPL",
+  },
 } as const;
 
 /** The tagline in a language. */
 export const brandTagline = (lang: Lang): string => BRAND.tagline[lang === "fr" ? "fr" : "en"];
-/** The short tagline beside the name. */
-export const brandKicker = (lang: Lang): string => BRAND.kicker[lang === "fr" ? "fr" : "en"];
 /** The pitch under the tagline. */
 export const brandLead = (lang: Lang): string => BRAND.lead[lang === "fr" ? "fr" : "en"];
 /** The eyebrow over the headline. */
 export const brandEyebrow = (lang: Lang): string => BRAND.eyebrow[lang === "fr" ? "fr" : "en"];
 /** Who it is for. */
 export const brandAudience = (lang: Lang): string => BRAND.audience[lang === "fr" ? "fr" : "en"];
+/** Who it is for, as people (students, instructors, clubs, schools). */
+export const brandWho = (lang: Lang): string => BRAND.who[lang === "fr" ? "fr" : "en"];
+/** The programmes the library covers (LAPL · PPL · IR · ATPL theory). */
+export const brandProgrammes = (lang: Lang): string => BRAND.programmes[lang === "fr" ? "fr" : "en"];
 /** "Page — Wingdeck" (document titles). */
 export const brandTitle = (page?: string): string => (page ? `${page} — ${BRAND.name}` : BRAND.name);
 /** The name-agnostic mark (a compass ring with lubber ticks, the magenta course line, the accent centre dot), as

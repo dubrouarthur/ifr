@@ -1,30 +1,39 @@
-// Full-screen start page shown at launch (intro v2, light "chart room" variant): what the product is (the platform
-// for aviation education), a real course slide played live by our slide player as the hero, the simulator as the
-// engine beside it, the lesson as a flight plan (BUILD → TEACH → BRIEF → FLY → DEBRIEF), the references the courses
-// cite and an honest "not a certified FSTD" line. Paper, fine chart linework, a graduated neatline and one magenta
-// course line; no photo, no gradient, no glow. Everything starts from the Flight Center, so the main action opens it
-// (Enter, Esc or F2 do the same); the second opens its courses. "Don't show again" is kept in localStorage
-// (ifr.intro.skip). The FR / EN toggle switches the UI language and redraws the page.
-import { BRAND, brandAudience, brandEyebrow, brandKicker, brandLead, brandMarkSvg, brandTagline } from "../brand";
+// Full-screen start page shown at launch ("story": one reading order, one object, one action). Left: what it is
+// (the tagline), one sentence (slides plus a simulator; build, teach, fly: the only "story"), who it is for
+// (students, instructors, clubs and schools; the programmes), then one filled button (Commencer) and a quiet text
+// link (Explorer les cours). Right: one screen, one real course slide for a PPL student (the airspeed indicator's
+// arcs) drawn by our slide player. It is a picture: passive (inert), it never moves on by itself. Footer: don't
+// show again, the references the courses cite, "not a certified FSTD".
+// Everything starts from the Flight Center, so the main action opens it (Enter, Esc or F2 do the same); the link
+// opens its courses. While the page is open everything behind it is inert, so Tab stays on the page and no hidden
+// control can be reached. "Don't show again" is kept in localStorage (ifr.intro.skip). The FR / EN toggle switches
+// the UI language and redraws the page. Styles: src/styles/ui-landing.css.
+import {
+  BRAND,
+  brandLead,
+  brandMarkSvg,
+  brandProgrammes,
+  brandTagline,
+  brandWho,
+} from "../brand";
 import { h, store } from "./dom";
 import { svgIcon, I } from "./icons";
 import { lang as uiLang, setLang, onLangChange } from "./i18n";
 import type { DeckStage } from "../course/ui/deckStage";
-import type { ProductSlide } from "../course/samples/productDeck";
 
 export interface IntroHooks {
   /** the single way in: the Flight Center (where every flight, lesson and path starts) */
   enter: () => void;
   /** the Flight Center's courses (every slide deck); hidden when not wired */
   courses?: () => void;
+  /** after the page has closed, whichever way (the app boots what it held back while the page was up) */
+  closed?: () => void;
 }
-
-const AUTO_MS = 6500;
 
 export const INTRO_SKIP_KEY = "ifr.intro.skip";
 
-/** the only picture the page loads: our own rendered PFD (public/img/credits.json: rendered by the app) */
-export const INTRO_SIM_IMG = "/img/glass.jpg";
+/** the slide the screen shows (by id, src/course/samples/productDeck.ts) */
+export const INTRO_SLIDE = "p-asi";
 
 type Lang2 = "fr" | "en";
 type Copy = Record<Lang2, string>;
@@ -33,28 +42,16 @@ type Copy = Record<Lang2, string>;
 export const INTRO_COPY = {
   start: { fr: "Commencer", en: "Start" },
   explore: { fr: "Explorer les cours", en: "Explore courses" },
-  keys: { fr: "ou", en: "or" },
-  enterKey: { fr: "Entrée", en: "Enter" },
-  tabCourse: { fr: "Cours", en: "Course" },
-  tabSim: { fr: "Simulateur", en: "Simulator" },
-  simAlt: {
-    fr: "Le PFD du simulateur intégré",
-    en: "The built-in simulator’s PFD",
-  },
-  fplHead: { fr: "Du cours au vol", en: "From course to flight" },
-  fplNote: { fr: "Une leçon, cinq étapes", en: "One lesson, five legs" },
   skip: { fr: "Ne plus afficher", en: "Don’t show again" },
-  refsLead: {
-    fr: "Références citées dans les cours :",
-    en: "References cited in the courses:",
-  },
+  refsLead: { fr: "Sources des cours\u00a0:", en: "Sources:" },
   note: {
     fr: "Entraînement procédural, non certifié FSTD",
     en: "Procedure trainer, not a certified FSTD",
   },
-  deckLabel: { fr: "Un cours, joué en direct", en: "A course, played live" },
-  prev: { fr: "Diapositive précédente", en: "Previous slide" },
-  next: { fr: "Diapositive suivante", en: "Next slide" },
+  deckLabel: {
+    fr: "Une diapositive de cours : les arcs de l’anémomètre, avec l’instrument du simulateur",
+    en: "A course slide: the airspeed indicator’s arcs, with the simulator’s own instrument",
+  },
   langLabel: { fr: "Langue", en: "Language" },
   startTip: {
     fr: "Ouvrir le Flight Center : cours, leçons, vols et parcours (Entrée)",
@@ -62,57 +59,11 @@ export const INTRO_COPY = {
   },
 } satisfies Record<string, Copy>;
 
-/** the five legs of a lesson, each one a real feature (slides, present mode, cockpit briefing, simulator, debrief) */
-export const INTRO_LEGS: readonly { name: Copy; desc: Copy }[] = [
-  {
-    name: { fr: "Créer", en: "Build" },
-    desc: {
-      fr: "Diapositives avec instruments en direct, calculs et quiz",
-      en: "Slides with live instruments, maths and quizzes",
-    },
-  },
-  {
-    name: { fr: "Enseigner", en: "Teach" },
-    desc: {
-      fr: "Projetées en salle ou suivies à son rythme",
-      en: "Projected in class or followed at one’s own pace",
-    },
-  },
-  {
-    name: { fr: "Briefer", en: "Brief" },
-    desc: {
-      fr: "Le briefing se joue dans le cockpit, avant l’exercice",
-      en: "The briefing plays in the cockpit, before the exercise",
-    },
-  },
-  {
-    name: { fr: "Voler", en: "Fly" },
-    desc: {
-      fr: "Simulateur IFR : ILS, VOR/DME, NDB, RNAV, attentes",
-      en: "IFR simulator: ILS, VOR/DME, NDB, RNAV, holds",
-    },
-  },
-  {
-    name: { fr: "Débriefer", en: "Debrief" },
-    desc: {
-      fr: "Trajectoire rejouée, notée selon les tolérances ACS",
-      en: "Flight path replayed, graded against ACS tolerances",
-    },
-  },
+/** the references the library's courses cite (their slide footers and quiz sources), grouped by authority */
+export const INTRO_REFS: readonly { org: string; docs: string }[] = [
+  { org: "FAA", docs: "PHAK, AIM, IFH, ACS" },
+  { org: "EASA", docs: "Part-FCL, Part-NCO" },
 ];
-
-/** the references the sample courses cite (their slide footers and quiz sources) */
-export const INTRO_REFS: Copy[] = [
-  { fr: "FAA AIM", en: "FAA AIM" },
-  { fr: "Instrument Flying Handbook", en: "Instrument Flying Handbook" },
-  { fr: "ACS instrument", en: "Instrument Rating ACS" },
-  { fr: "EASA Part-NCO", en: "EASA Part-NCO" },
-];
-
-/** "Slide 2 of 5" (the caption under the live slide, under the slide's title) */
-export function introCaption(i: number, n: number, l: Lang2): string {
-  return l === "fr" ? `Diapositive ${i + 1} sur ${n}` : `Slide ${i + 1} of ${n}`;
-}
 
 /** the intro is shown unless the user skipped it, a deep link asks for a flight, or a test browser drives the page
  *  (?intro=1 forces it) */
@@ -132,40 +83,38 @@ export function introWanted(
   return !store.get(INTRO_SKIP_KEY, false);
 }
 
-/** A compass card drawn as fine chart linework (a frame, not an instrument: no needle, no bug). */
-export function roseSvg(): string {
-  const R = 440;
-  let s = `<svg viewBox="-520 -520 1040 1040" aria-hidden="true" focusable="false"><circle r="${R}" class="r-ring"/><circle r="${R - 96}" class="r-in"/>`;
-  for (let a = 0; a < 360; a += 5) {
-    const big = a % 10 === 0;
-    const r1 = R - (big ? 22 : 12);
-    const t = (a * Math.PI) / 180;
-    const f = (v: number) => v.toFixed(1);
-    s += `<line class="${big ? "r-big" : "r-tick"}" x1="${f(Math.sin(t) * R)}" y1="${f(-Math.cos(t) * R)}" x2="${f(Math.sin(t) * r1)}" y2="${f(-Math.cos(t) * r1)}"/>`;
-  }
-  const lab: Record<number, string> = { 0: "N", 90: "E", 180: "S", 270: "W" };
-  for (let a = 0; a < 360; a += 30) {
-    const t = (a * Math.PI) / 180;
-    const x = (Math.sin(t) * (R + 28)).toFixed(1);
-    const y = (-Math.cos(t) * (R + 28)).toFixed(1);
-    s += `<text x="${x}" y="${y}" transform="rotate(${a} ${x} ${y})">${lab[a] ?? String(a / 10)}</text>`;
-  }
-  return s + "</svg>";
+/** the part of an element inertOthers needs (an HTMLElement; a plain object in the tests) */
+export interface InertTarget {
+  inert: boolean;
+}
+/** Makes every child of `parent` but `keep` inert (no focus, no click, hidden from assistive tech: a modal page
+ *  that Tab cannot leave) and returns the undo, which restores only the ones it changed. Pure over its input. */
+export function inertOthers<T extends InertTarget>(
+  children: Iterable<T>,
+  keep: T,
+): () => void {
+  const changed: T[] = [];
+  for (const c of children)
+    if (c !== keep && !c.inert) {
+      c.inert = true;
+      changed.push(c);
+    }
+  return () => {
+    for (const c of changed) c.inert = false;
+  };
 }
 
+const CHEVRON =
+  '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 5l5 5-5 5"/></svg>';
 
 export class Intro {
   el: HTMLElement;
   isOpen = false;
   private onKey = (e: KeyboardEvent) => this.key(e);
   private deck: DeckStage | null = null;
-  private slides: ProductSlide[] = [];
-  private deckSeq = 0;
-  private timer = 0;
-  private auto = true;
-  private bar: HTMLElement | null = null;
+  private seq = 0;
   private offLang: (() => void) | null = null;
-  private resize: ResizeObserver | null = null;
+  private unInert: (() => void) | null = null;
 
   constructor(private hooks: IntroHooks) {
     this.el = h("div", {
@@ -183,6 +132,12 @@ export class Intro {
     this.render();
     if (!this.el.isConnected) document.body.append(this.el);
     document.body.classList.add("intro-open");
+    // a real modal: everything behind the page is inert (Tab never reaches the cockpit, a click never lands there)
+    this.unInert?.();
+    this.unInert = inertOthers(
+      Array.from(document.body.children) as HTMLElement[],
+      this.el,
+    );
     requestAnimationFrame(() => this.el.classList.add("open"));
     window.addEventListener("keydown", this.onKey, true);
     this.offLang = onLangChange(() => {
@@ -202,11 +157,11 @@ export class Intro {
   hide() {
     if (!this.isOpen) return;
     this.isOpen = false;
-    this.stopDeck();
+    this.teardown();
     this.offLang?.();
     this.offLang = null;
-    this.resize?.disconnect();
-    this.resize = null;
+    this.unInert?.();
+    this.unInert = null;
     window.removeEventListener("keydown", this.onKey, true);
     document.body.classList.remove("intro-open");
     this.el.classList.remove("open");
@@ -215,14 +170,16 @@ export class Intro {
       this.el.classList.remove("closing", "ready");
       this.el.remove();
     }, 260);
+    this.hooks.closed?.();
   }
 
-  private go(fn: () => void) {
+  private leave(fn: () => void) {
     this.hide();
     fn();
   }
 
-  /** while the intro is up it owns the keyboard: nothing reaches the cockpit (Tab still moves the focus: its default is kept) */
+  /** while the intro is up it owns the keyboard: nothing reaches the cockpit (Tab, Space and Enter keep their
+   *  default on the page's own controls; everything behind the page is inert) */
   private key(e: KeyboardEvent) {
     const t = e.target as HTMLElement | null;
     const onControl =
@@ -230,13 +187,25 @@ export class Intro {
       t !== document.body &&
       this.el.contains(t) &&
       (t.tagName === "BUTTON" || t.tagName === "INPUT");
-    if (
-      (e.key === "ArrowRight" || e.key === "ArrowLeft") &&
-      this.deck &&
-      !(t && t.tagName === "INPUT")
-    ) {
-      e.preventDefault();
-      this.userMove(e.key === "ArrowRight" ? 1 : -1);
+    // Tab wraps inside the page (the background is inert; this also keeps the focus off the browser's own chrome)
+    if (e.key === "Tab" && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      const f = Array.from(
+        this.el.querySelectorAll<HTMLElement>("button, input"),
+      ).filter((x) => !x.closest("[inert]") && x.offsetParent !== null);
+      if (f.length) {
+        const i = f.indexOf(t as HTMLElement);
+        const to = e.shiftKey
+          ? i <= 0
+            ? f[f.length - 1]
+            : null
+          : i === f.length - 1 || i < 0
+            ? f[0]
+            : null;
+        if (to) {
+          e.preventDefault();
+          to.focus();
+        }
+      }
       e.stopPropagation();
       return;
     }
@@ -246,123 +215,47 @@ export class Intro {
       e.key === "Escape"
     ) {
       e.preventDefault();
-      this.go(this.hooks.enter);
-    }
+      this.leave(this.hooks.enter);
+    } else if (e.key === " " && !onControl) e.preventDefault();
     e.stopPropagation();
   }
 
-  // ---------------------------------------------------------------- the live course slide
-  private stopDeck() {
-    this.deckSeq++;
-    window.clearTimeout(this.timer);
+  private teardown() {
+    this.seq++;
     this.deck?.destroy();
     this.deck = null;
   }
-  private schedule() {
-    window.clearTimeout(this.timer);
-    if (
-      !this.auto ||
-      !this.deck ||
-      matchMedia("(prefers-reduced-motion: reduce)").matches
-    )
-      return;
-    this.timer = window.setTimeout(() => {
-      const d = this.deck;
-      if (!d || !this.isOpen) return;
-      d.go(d.atEnd ? 0 : d.index + 1);
-      this.schedule();
-    }, AUTO_MS);
-  }
-  /** a move by the viewer stops the slideshow (it never moves under their eyes again) */
-  private userMove(dir: 1 | -1 | number, abs = false) {
-    const d = this.deck;
-    if (!d) return;
-    this.auto = false;
-    window.clearTimeout(this.timer);
-    if (abs) d.go(dir);
-    else if (dir > 0) {
-      if (!d.next()) d.go(0);
-    } else d.prev();
-  }
-  private renderBar() {
-    const d = this.deck;
-    const bar = this.bar;
-    if (!bar || !d) return;
-    const l: Lang2 = uiLang() === "fr" ? "fr" : "en";
-    const s = this.slides[d.index];
-    const title = s ? (l === "fr" ? s.title.fr || s.title.en : s.title.en) : "";
-    bar.replaceChildren(
-      h(
-        "button",
-        {
-          class: "intro-nb",
-          type: "button",
-          "aria-label": INTRO_COPY.prev[l],
-          disabled: d.index === 0,
-          onclick: () => this.userMove(-1),
-        },
-        svgIcon(I.arrow, 16),
-      ),
-      h(
-        "button",
-        {
-          class: "intro-nb next",
-          type: "button",
-          "aria-label": INTRO_COPY.next[l],
-          onclick: () => this.userMove(1),
-        },
-        svgIcon(I.arrow, 16),
-      ),
-      d.segments((i) => this.userMove(i, true)),
-      h(
-        "span",
-        { class: "intro-cap-t", "aria-live": "polite" },
-        h("b", {}, title),
-        h("small", { class: "num" }, introCaption(d.index, d.count, l)),
-      ),
-    );
-    // the VOLER leg lights up while the deck shows its simulator slide
-    const flying = !!s && s.id === "p-fly";
-    this.el.querySelector(".intro-wp.is-fly")?.classList.toggle("lit", flying);
-  }
-  private mountDeck(stage: HTMLElement) {
-    this.stopDeck();
-    this.auto = true;
-    const seq = this.deckSeq;
+
+  /** the slide player and the slide load on demand; the screen fades in once the slide is drawn */
+  private mountSlide(host: HTMLElement) {
+    const seq = this.seq;
     const l: Lang2 = uiLang() === "fr" ? "fr" : "en";
     void Promise.all([
       import("../course/ui/deckStage"),
       import("../course/samples/productDeck"),
     ])
       .then(([m, p]) => {
-        if (seq !== this.deckSeq || !this.isOpen) return;
-        // open on the live instrument (the most visual slide); the cover comes back round at the end
-        const all = p.productDeck();
-        this.slides = [...all.slice(1), ...all.slice(0, 1)];
-        this.deck = m.mountDeck(stage, {
+        if (seq !== this.seq || !this.isOpen) return;
+        const s = p.productDeck().find((x) => x.id === INTRO_SLIDE);
+        if (!s) return;
+        this.deck = m.mountDeck(host, {
           lang: l,
-          slides: this.slides,
+          slides: [s],
           theme: "classroom",
           revealAll: true,
-          onChange: () => this.renderBar(),
         });
-        stage.classList.add("ready");
-        this.el.classList.add("ready");
-        this.renderBar();
-        this.schedule();
       })
-      .catch(() => {
-        stage.closest(".intro-screen")?.classList.add("is-off");
-        this.el.classList.add("ready");
+      .catch(() => undefined)
+      .finally(() => {
+        if (seq === this.seq && this.isOpen) this.el.classList.add("ready");
       });
   }
 
   private render() {
-    this.stopDeck();
-    this.resize?.disconnect();
+    this.teardown();
+    this.el.classList.remove("ready");
     const l: Lang2 = uiLang() === "fr" ? "fr" : "en";
     const C = (k: keyof typeof INTRO_COPY) => INTRO_COPY[k][l];
-    const coarse = matchMedia("(pointer: coarse)").matches;
     const skip = h("input", {
       type: "checkbox",
       checked: store.get(INTRO_SKIP_KEY, false),
@@ -374,103 +267,47 @@ export class Intro {
         "button",
         {
           type: "button",
-          class: l === v ? "on" : "",
-          role: "radio",
-          "aria-checked": l === v ? "true" : "false",
+          "aria-pressed": l === v ? "true" : "false",
           lang: v,
           "data-intro-lang": v,
-          onclick: () => setLang(v),
+          onclick: () => {
+            if (v !== l) setLang(v);
+          },
         },
         label,
       );
+
+    // the screen: one course slide, a picture of the product (inert: no tab stop, no click inside it)
     const stage = h("div", {
       class: "intro-stage",
-      role: "group",
-      "aria-label": C("deckLabel"),
+      inert: true,
+      "aria-hidden": "true",
     });
-    this.bar = h("div", { class: "intro-cap" });
-    const slideScreen = h(
+    const screen = h(
       "div",
-      { class: "intro-screen is-slide" },
-      h("span", { class: "intro-tab" }, C("tabCourse")),
+      { class: "intro-screen", role: "img", "aria-label": C("deckLabel") },
       stage,
     );
-    const sim = h("img", {
-      src: INTRO_SIM_IMG,
-      alt: C("simAlt"),
-      decoding: "async",
-      width: 1400,
-      height: 920,
-    });
-    // the PFD fades in once decoded (never a black box while it loads)
-    const shown = () => sim.classList.add("ok");
-    if (sim.complete && sim.naturalWidth) shown();
-    else sim.addEventListener("load", shown, { once: true });
-    const simScreen = h(
-      "figure",
-      { class: "intro-screen is-sim" },
-      h("span", { class: "intro-tab" }, C("tabSim")),
-      sim,
-    );
-    const stack = h("div", { class: "intro-stack" }, slideScreen, simScreen);
-    const legs = h(
-      "ol",
-      { class: "intro-legs" },
-      ...INTRO_LEGS.map((g, i) =>
-        h(
-          "li",
-          { class: `intro-wp${i === 3 ? " is-fly" : ""}`, style: `--i:${i}` },
-          h("span", { class: "intro-dot", "aria-hidden": "true" }),
-          h(
-            "span",
-            { class: "intro-wp-n" },
-            h("span", { class: "num" }, `0${i + 1}`),
-            h("b", {}, g.name[l]),
-          ),
-          h("p", {}, g.desc[l]),
-        ),
-      ),
-    );
+
     this.el.lang = l;
     this.el.replaceChildren(
       h(
         "div",
-        { class: "intro-frame" },
-        h("span", { class: "intro-grad t", "aria-hidden": "true" }),
-        h("span", { class: "intro-grad b", "aria-hidden": "true" }),
-        h("span", { class: "intro-grad l", "aria-hidden": "true" }),
-        h("span", { class: "intro-grad r", "aria-hidden": "true" }),
+        { class: "intro-page" },
         h(
-          "header",
-          { class: "intro-top" },
-          h(
-            "div",
-            { class: "intro-brand" },
-            h("span", { class: "intro-mark", html: brandMarkSvg(30) }),
-            h("b", {}, BRAND.name),
-            h("i", {}, brandKicker(l)),
-          ),
-          h(
-            "div",
-            {
-              class: "intro-lang",
-              role: "radiogroup",
-              "aria-label": C("langLabel"),
-            },
-            langBtn("fr", "FR"),
-            langBtn("en", "EN"),
-          ),
-        ),
-        h(
-          "section",
+          "main",
           { class: "intro-hero" },
           h(
-            "div",
+            "section",
             { class: "intro-txt" },
-            h("div", { class: "intro-eyebrow" }, brandEyebrow(l)),
             h("h1", { id: "intro-title" }, brandTagline(l)),
             h("p", { class: "intro-lead" }, brandLead(l)),
-            h("p", { class: "intro-aud" }, brandAudience(l)),
+            h(
+              "p",
+              { class: "intro-who" },
+              h("b", {}, brandWho(l)),
+              h("span", {}, brandProgrammes(l)),
+            ),
             h(
               "div",
               { class: "intro-acts" },
@@ -479,56 +316,48 @@ export class Intro {
                 {
                   class: "intro-go",
                   type: "button",
-                  onclick: () => this.go(this.hooks.enter),
+                  onclick: () => this.leave(this.hooks.enter),
                   title: C("startTip"),
                 },
-                C("start"),
+                h("span", {}, C("start")),
                 svgIcon(I.arrow, 18),
               ),
               this.hooks.courses
                 ? h(
                     "button",
                     {
-                      class: "intro-alt",
+                      class: "intro-more",
                       type: "button",
-                      onclick: () => this.go(this.hooks.courses!),
+                      onclick: () => this.leave(this.hooks.courses!),
                     },
-                    C("explore"),
+                    h("span", {}, C("explore")),
+                    h("span", { class: "intro-chev", html: CHEVRON }),
                   )
                 : null,
-              // the keyboard hint only where there is a keyboard (not on a touch-only tablet)
-              coarse
-                ? null
-                : h(
-                    "span",
-                    { class: "intro-keys" },
-                    `${C("keys")} `,
-                    h("kbd", {}, C("enterKey")),
-                  ),
             ),
           ),
-          h(
-            "div",
-            { class: "intro-scope" },
-            h("div", {
-              class: "intro-rose",
-              "aria-hidden": "true",
-              html: roseSvg(),
-            }),
-            stack,
-            this.bar,
-          ),
+          h("section", { class: "intro-show" }, screen),
         ),
+        // the top bar comes after the hero in the focus order (Tab reaches "Start" first); the grid draws it on top
         h(
-          "section",
-          { class: "intro-fpl", "aria-labelledby": "intro-fpl-t" },
+          "header",
+          { class: "intro-top" },
           h(
             "div",
-            { class: "intro-fpl-h" },
-            h("span", { id: "intro-fpl-t" }, C("fplHead")),
-            h("em", {}, C("fplNote")),
+            { class: "intro-brand" },
+            h("span", { class: "intro-mark", html: brandMarkSvg(28) }),
+            h("b", {}, BRAND.name),
           ),
-          legs,
+          h(
+            "div",
+            {
+              class: "intro-lang",
+              role: "group",
+              "aria-label": C("langLabel"),
+            },
+            langBtn("fr", "FR"),
+            langBtn("en", "EN"),
+          ),
         ),
         h(
           "footer",
@@ -538,24 +367,15 @@ export class Intro {
             "span",
             { class: "intro-refs" },
             `${C("refsLead")} `,
-            ...INTRO_REFS.flatMap((r, i) => [i ? " · " : "", h("b", {}, r[l])]),
+            ...INTRO_REFS.flatMap((r, i) => [
+              i ? " · " : "",
+              h("b", {}, `${r.org} ${r.docs}`),
+            ]),
           ),
           h("span", { class: "intro-note" }, C("note")),
         ),
       ),
     );
-    // the simulator screen tucks under the slide's bottom-right corner: its top follows the slide's height
-    const scope = stack.parentElement as HTMLElement;
-    this.resize = new ResizeObserver(() => {
-      const hs = slideScreen.getBoundingClientRect().height;
-      const hm = simScreen.getBoundingClientRect().height;
-      if (!hs) return;
-      scope.style.setProperty("--slide-h", `${hs}px`);
-      const capBottom = hs + this.bar!.getBoundingClientRect().height + 14;
-      scope.style.setProperty("--stack-h", `${Math.max(hs * 0.93 + hm, capBottom)}px`);
-    });
-    this.resize.observe(slideScreen);
-    this.resize.observe(simScreen);
-    this.mountDeck(stage);
+    this.mountSlide(stage);
   }
 }

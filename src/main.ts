@@ -303,6 +303,8 @@ setup.toast = (m) => toast(m, 'good');
 /** full-screen start page at launch: its one action opens the Flight Center, the single place every flight starts */
 const intro = new Intro({
   courses: () => fc.openCourses(),
+  // the 3D world was held back while the start page was up (its boot is one long main-thread task)
+  closed: () => bootOutsideWhenIdle(),
   enter: () => {
     fc.open();
     // "Start a flight" is ready: one more Enter plans a flight
@@ -2656,7 +2658,15 @@ setAfcsBar(afcsBar, false);
 new ResizeObserver(fitSoon).observe(afcs);
 // portrait: the outside view grows with the lesson panel
 new ResizeObserver(() => { if (document.body.classList.contains('portrait')) fitSoon(); }).observe(coach);
-requestAnimationFrame(() => setTimeout(() => void initOutside(), 50));
+/** boots the outside view at the next idle moment (never while the start page is up: it would freeze the page) */
+function bootOutsideWhenIdle() {
+  if (outside || outsideLoading || intro.isOpen) return;
+  const ric = (window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+  const go = () => { if (!intro.isOpen) void initOutside(); };
+  if (ric) ric(go, { timeout: 1500 });
+  else setTimeout(go, 200);
+}
+requestAnimationFrame(() => setTimeout(() => { if (!intro.isOpen) void initOutside(); }, 50));
 // keep the bezel controls inside the bezel whatever the window size: ONE scale for every side column of
 // both bezels (PFD and MFD knobs and keys are always the same size), plus a few sizes the CSS lays out with
 /** tablet portrait (and any narrow, tall window): instruments first — the PFD then the MFD, each at its 4:3

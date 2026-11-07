@@ -460,7 +460,8 @@ function paintSide(mode: Mode, mirrorText: boolean): HTMLCanvasElement {
   const c = document.createElement("canvas");
   c.width = SIDE.W;
   c.height = SIDE.H;
-  const g = c.getContext("2d")!;
+  // a CPU canvas: buildAtlas reads its pixels back (a GPU canvas stalls on the readback)
+  const g = c.getContext("2d", { willReadFrequently: true })!;
   const px = (X: number) => ((X - FX0) / (FX1 - FX0)) * SIDE.W;
   const py = (WL: number) =>
     (1 - (WL - SIDE.wl0) / (SIDE.wl1 - SIDE.wl0)) * SIDE.H;
@@ -613,7 +614,7 @@ function buildAtlas(mode: Mode): HTMLCanvasElement {
   const c = document.createElement("canvas");
   c.width = W;
   c.height = H;
-  const g = c.getContext("2d")!;
+  const g = c.getContext("2d", { willReadFrequently: true })!;
   const R = (r: number) => `rgb(${r},${r},${r})`;
   g.fillStyle = mode === "color" ? LIVERY.white : R(92);
   g.fillRect(0, 0, W, H);

@@ -6,6 +6,12 @@
 // at the block's size, exactly as the renderer builds them.
 import { beforeAll, describe, expect, it } from "vitest";
 import { SAMPLES } from "../src/course/samples/index";
+import {
+  HERO_MIN_CSS_PX,
+  HERO_MIN_SCALE,
+  HERO_MIN_TEXT,
+  productDeck,
+} from "../src/course/samples/productDeck";
 import { resolveTheme } from "../src/course/canvas/themes";
 import { LAYOUTS, layoutCanvas } from "../src/course/canvas/layouts";
 import {
@@ -138,6 +144,29 @@ describe("readability guard: every sample slide at 1920 × 1080", () => {
         expect(fails).toEqual([]);
         if (def.id !== "sample-vor") expect(diagrams).toBeGreaterThan(0);
       });
+});
+
+describe("readability guard: the start page's slide, at its smallest hero size (classroom theme)", () => {
+  it("the floor is 12 CSS px at the smallest real hero scale", () => {
+    expect(HERO_MIN_CSS_PX).toBe(12);
+    // 1280 × 720 draws the 1920 canvas 672 px wide (0.35); 1024 × 768 and an iPad mini in portrait, about 640 (0.33)
+    expect(HERO_MIN_SCALE).toBeLessThanOrEqual(672 / 1920);
+    expect(HERO_MIN_SCALE).toBeLessThanOrEqual(640 / 1920);
+    expect(HERO_MIN_TEXT).toBeGreaterThan(34);
+  });
+  for (const lang of LANGS)
+    it(`every text and marker ≥ 12 px at hero scale (${lang})`, () => {
+      const fails = productDeck().flatMap((s) =>
+        slideReadability(s.slide, {
+          theme: resolveTheme("classroom"),
+          lang,
+          minPx: HERO_MIN_TEXT,
+        })
+          .filter((i) => READ_FAILS.has(i.kind))
+          .map((i) => `${s.id}/${i.blockId}: ${readIssueText(i, "en").en}`),
+      );
+      expect(fails).toEqual([]);
+    });
 });
 
 describe("readability guard: every layout template", () => {

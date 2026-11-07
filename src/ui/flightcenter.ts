@@ -3,7 +3,6 @@
 // The full catalogue (every flight by type, search, filters, learning paths, detail pane) sits one click deeper,
 // behind "Browse all flights".
 import { h, clear, store } from "./dom";
-import { brandAudience, brandEyebrow, brandLead, brandTagline } from "../brand";
 import { Modal, WX_PRESETS, type WxPreset } from "./modals";
 import { CATEGORIES, MINE_SUB as MINE, catalog, type CatId, type Item } from "./catalog";
 import { PATHS, type Path } from "../train/curriculum";
@@ -1501,10 +1500,16 @@ export class FlightCenter extends Modal {
       h(
         "div",
         { class: "fc-sh-txt" },
-        h("div", { class: "fc-sh-k" }, brandEyebrow(fr ? "fr" : "en")),
-        h("h1", { id: "fc-sh-t" }, brandTagline(fr ? "fr" : "en")),
-        h("p", {}, brandLead(fr ? "fr" : "en")),
-        h("p", { class: "fc-sh-aud" }, brandAudience(fr ? "fr" : "en")),
+        // a task header, not the pitch again: the start page has just said what the product is
+        h("h1", { id: "fc-sh-t" }, L("What would you like to do?", "Que voulez-vous faire\u00a0?")),
+        h(
+          "p",
+          {},
+          L(
+            "Open a course to teach or revise, build your own, or practise on the simulator on your own.",
+            "Ouvrez un cours pour enseigner ou réviser, créez le vôtre, ou entraînez-vous seul au simulateur.",
+          ),
+        ),
         h(
           "div",
           { class: "fc-sh-acts" },

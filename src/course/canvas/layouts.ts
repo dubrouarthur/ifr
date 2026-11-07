@@ -551,7 +551,7 @@ function templateBlocks(id: SlideLayoutId, o: LayoutOptions): SlideBlock[] {
         ...header(L("Elements of the clearance", "Éléments de la clairance"), title(o, "Read the clearance", "Lire la clairance")),
         T(
           "quote",
-          L("« Hold east of ARD on the 090 radial, maintain 3,000 ft, expect further clearance at 1430. »", "« Attendez à l’est d’ARD sur le radial 090, maintenez 3 000 ft, autorisation ultérieure prévue à 1430. »"),
+          L("“Hold east of ARD on the 090 radial, maintain 3,000 ft, expect further clearance at 1430.”", "« Attendez à l’est d’ARD sur le radial 090, maintenez 3 000 ft, autorisation ultérieure prévue à 1430. »"),
           G.left,
           312,
           1560,

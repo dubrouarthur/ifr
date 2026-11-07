@@ -125,12 +125,19 @@ describe("cockpit briefing deck (generated from the exercise)", () => {
 });
 
 describe("the intro's product deck", () => {
-  it("five slides, every text in both languages, on the canvas", () => {
+  it("one slide for a PPL student (the airspeed indicator's arcs), every text in both languages, on the canvas", () => {
     const d = productDeck();
-    expect(d).toHaveLength(5);
+    expect(d.map((s) => s.id)).toEqual(["p-asi"]);
     for (const s of d) {
       expect(inFrame(s.slide), s.id).toBe(true);
       for (const t of texts(s.slide)) expect(t.text.fr, s.id).toBeTruthy();
+      // drawn at hero size: no small furniture (eyebrow, label, source line), nothing interactive, nothing IFR
+      for (const b of s.slide.blocks) {
+        expect(b.kind, s.id).not.toMatch(/quiz|checklist/);
+        if (b.kind === "text") expect(b.style, b.id).not.toMatch(/eyebrow|label|foot|small|caption/);
+      }
+      expect(JSON.stringify(s.slide)).not.toMatch(/\b(?:IFR|ILS|LOC|HSI|CDI|radial|AIM)\b/);
+      expect(s.slide.blocks.some((b) => b.kind === "instrument" && b.view.kind === "gauge" && b.view.gauge === "asi")).toBe(true);
     }
   });
 });
