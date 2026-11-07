@@ -23,18 +23,19 @@ import {
   simView,
   pickProcedure,
   baseId,
+  type ProcSimView,
   type ProcedureRunner,
+  procedureForCockpit,
 } from "../train/procedures";
+import { envelopeFor, splitChallenge } from "../train/procedureFlow";
 import { effectiveProcedures } from "../train/procedureStore";
-import {
-  CATEGORY_LABELS,
-  CATEGORY_ORDER,
-  DISCLAIMER,
-} from "../train/procedureLibrary";
+import { CATEGORY_LABELS, DISCLAIMER } from "../train/procedureLibrary";
 import { checkDef } from "../train/procedureChecks";
 import type {
   DrillMode,
   Lang,
+  ProcCategory,
+  ProcItem,
   Procedure,
   ProcedureResult,
   ProcedureRunState,
@@ -64,6 +65,16 @@ registerStrings("fr", {
 const FKEYS = Object.keys(FAILURE_LABELS_EN) as FailureKey[];
 export const failureText = (k: FailureKey, l: Lang) =>
   l === "fr" ? FAILURE_LABELS_FR[k] : FAILURE_LABELS_EN[k];
+/** what the pilot SEES of a failure, for the card: a starved or pump-less engine is an engine that quits — its cause
+ *  is what the restart flow finds (FAA-H-8083-3C ch.18: fuel mismanagement is the commonest cause of a power loss) */
+const SYMPTOM: Partial<Record<FailureKey, FailureKey>> = {
+  fuelStarvation: "engine",
+  fuelPump: "engine",
+};
+const symptomText = (k: FailureKey, l: Lang) => failureText(SYMPTOM[k] ?? k, l);
+/** a response too long for the right-hand column ("a field within gliding distance, into wind…") goes on its own
+ *  line under the challenge, as a QRH prints a conditional */
+const LONG_RESPONSE = 26;
 /** words of the card in the procedure's own language */
 const W = {
   en: {
@@ -74,7 +85,8 @@ const W = {
     done: "Done",
     check: "Check",
     checked: "Checked",
-    complete: "Procedure complete",
+    complete: "Checklist complete",
+    noGlide: "Restarted — best glide not flown",
     incomplete: "Procedure stopped",
     results: "Graded in the debrief",
     fold: "Fold the emergency card",
@@ -84,14 +96,34 @@ const W = {
     late: "late",
     optional: "optional",
     qrh: "Emergency checklists",
-    qrhHint: "Pick the checklist for what you see. Opening it is recorded.",
+    qrhHint: "Pick the checklist for what you see. Memory items stay hidden.",
     back: "All checklists",
     close: "Close",
     time: "Exercise time",
     other: "other procedure",
     others: "other procedures",
     next: "Next",
-    callout: "Say it, then tap Done",
+    callout: "Say it, then tap Done (Enter)",
+    aviate: "FLY",
+    alt: "altitude",
+    drag: "Drag to move · double-click to put it back",
+    doneTag: "DONE",
+    stopTag: "STOPPED",
+    watching: "Keep flying: the flight is graded until it ends",
+    within: "within",
+    memDone: "done",
+    items: "items",
+    item: "item",
+    set: "set",
+    followUp: "not resolved",
+    checklistBtn: "Checklist",
+    memItem: "Memory item",
+    reveal: "Show",
+    revealTip:
+      "Show this memory item (recorded: it no longer counts as done from memory)",
+    memHidden: "from memory",
+    na: "N/A",
+    naTip: "No longer applicable: the engine runs again",
   },
   fr: {
     emergency: "URGENCE",
@@ -101,7 +133,8 @@ const W = {
     done: "Fait",
     check: "Vérifier",
     checked: "Vérifié",
-    complete: "Procédure terminée",
+    complete: "Check-list terminée",
+    noGlide: "Moteur reparti — plané non tenu",
     incomplete: "Procédure arrêtée",
     results: "Évaluée dans le débriefing",
     fold: "Replier la carte d’urgence",
@@ -112,14 +145,34 @@ const W = {
     optional: "facultatif",
     qrh: "Check-lists d’urgence",
     qrhHint:
-      "Choisissez la check-list de ce que vous constatez. L’ouverture est enregistrée.",
+      "Choisissez la check-list de ce que vous voyez. Les réflexes restent masqués.",
     back: "Toutes les check-lists",
     close: "Fermer",
     time: "Temps de l’exercice",
     other: "autre procédure",
     others: "autres procédures",
-    next: "Suivante",
-    callout: "Annoncez-le, puis touchez Fait",
+    next: "Suivant",
+    callout: "Annoncez-le, puis touchez Fait (Entrée)",
+    aviate: "PILOTER",
+    alt: "altitude",
+    drag: "Glisser pour déplacer · double-clic pour la remettre en place",
+    doneTag: "FAIT",
+    stopTag: "ARRÊTÉE",
+    watching: "Continuez à piloter : le vol est noté jusqu’à la fin",
+    within: "reste",
+    memDone: "faites",
+    items: "points",
+    item: "point",
+    set: "en place",
+    followUp: "non résolue",
+    checklistBtn: "Check-list",
+    memItem: "Action réflexe",
+    reveal: "Voir",
+    revealTip:
+      "Afficher cette action réflexe (enregistré : elle ne compte plus comme faite de mémoire)",
+    memHidden: "de mémoire",
+    na: "Sans objet",
+    naTip: "Sans objet : le moteur tourne à nouveau",
   },
 } as const;
 
@@ -172,7 +225,8 @@ export function remoteProcStates(
       late: i.late,
       due: i.due === null ? null : Math.round(i.due * 10) / 10,
       manual: !!i.manual,
-      optional: !!i.optional,
+      // not applicable any more (restart worked): nothing left to confirm
+      optional: !!i.optional || !!i.notApplicable,
       ready: !!i.ready,
       atS:
         i.atS === undefined || i.atS === null
@@ -198,8 +252,11 @@ export interface ProcControllerOpts {
   lesson: () => LessonRun | null;
   /** the effective procedure list (default: club + library) */
   procedures?: () => Procedure[];
-  /** a runner started (the shell shows the card / the systems panel) */
+  /** a runner started (graded from now; nothing is shown before its first cue) */
   onStart?: (r: ProcedureRunner) => void;
+  /** the first symptom of a runner's failure became perceptible: the training card opens (the shell may open the
+   *  switch panel then — never at the injection, which would announce the failure) */
+  onCue?: (r: ProcedureRunner) => void;
 }
 
 export class ProcedureController {
@@ -397,7 +454,19 @@ export class ProcedureController {
     let fin = 0;
     for (const s of this.sessions) {
       s.update(view);
-      fin += s.runners.filter((r) => r.finished).length;
+      fin +=
+        s.runners.filter((r) => r.finished).length +
+        s.runners.filter((r) => r.stopped).length;
+      for (const r of s.runners)
+        if (r.cueS !== null && !this.cueSeen.has(r)) {
+          this.cueSeen.add(r);
+          this.version++;
+          try {
+            this.o.onCue?.(r);
+          } catch (e) {
+            console.error("onCue", e);
+          }
+        }
     }
     if (fin !== this.finSeen) {
       this.finSeen = fin;
@@ -405,6 +474,7 @@ export class ProcedureController {
     }
   }
   private finSeen = 0;
+  private cueSeen = new WeakSet<ProcedureRunner>();
 
   // ---------------------------------------------------------------- student / instructor actions
   runners(): ProcedureRunner[] {
@@ -416,17 +486,54 @@ export class ProcedureController {
     for (let i = rs.length - 1; i >= 0; i--) if (!rs[i].finished) return rs[i];
     return rs[rs.length - 1] ?? null;
   }
-  openChecklist() {
-    const r = this.active();
+  /** the training card's checklist was opened (recorded; it never costs anything in training) */
+  openChecklist(r: ProcedureRunner | null = this.active()) {
     if (r && !r.finished) r.openChecklist();
     this.version++;
   }
-  /** the test-mode checklist index was opened: every running procedure records it */
+  /** the test-mode checklist index was opened (recorded for the flight; the memory items stay hidden in it) */
   openQrh() {
     if (this.qrhOpenedAt === null)
       this.qrhOpenedAt = this.o.sim.time - this.flightT0;
-    for (const r of this.runners()) if (!r.finished) r.openChecklist();
     this.version++;
+  }
+  /** the procedures still graded that a checklist picked in the index answers: the same procedure (any language,
+   *  a club copy) or a variant of the same family (G1000 / classic panel). Two failures at once: every one that
+   *  matches, not only the latest. */
+  matching(p: Procedure): ProcedureRunner[] {
+    const key = (x: Procedure) => baseId(x.basedOn ?? x.id);
+    const fam = (x: Procedure) => x.group ?? key(x);
+    return this.runners().filter(
+      (r) =>
+        !r.stopped &&
+        (key(r.procedure) === key(p) || fam(r.procedure) === fam(p)),
+    );
+  }
+  /** test: the pilot picked a checklist in the index — the procedures it answers record when (the diagnosis) */
+  pickChecklist(p: Procedure) {
+    for (const r of this.matching(p)) r.openChecklist();
+    this.version++;
+  }
+  /** test: Done on a picked checklist goes to every running procedure that has the item */
+  confirmOn(p: Procedure, itemId: string): boolean {
+    let any = false;
+    for (const r of this.matching(p))
+      if (r.confirm(itemId, "student")) any = true;
+    this.version++;
+    return any;
+  }
+  /** test: a hidden memory item revealed on a picked checklist (recorded on every procedure that has it) */
+  revealOn(p: Procedure, itemId: string) {
+    for (const r of this.matching(p)) r.reveal(itemId);
+    this.version++;
+  }
+  /** the aircraft now, as the checks read it (closed-loop items of a picked checklist) */
+  liveView(): ProcSimView | null {
+    try {
+      return simView(this.o.sim);
+    } catch {
+      return null;
+    }
   }
   confirm(
     itemId: string,
@@ -457,6 +564,14 @@ export class ProcedureController {
   // ---------------------------------------------------------------- 'Expect procedure' picker
   list(): Procedure[] {
     return this.o.procedures ? this.o.procedures() : effectiveProcedures();
+  }
+  /** the checklists of the cockpit flown, worded for it (the classic panel never reads 'AVIONICS BUS 1'; the
+   *  G1000 variant of a checklist is not offered on the classic panel and the reverse) */
+  cockpitList(): Procedure[] {
+    const cp = this.o.sim.cockpit ?? "g1000";
+    return this.list()
+      .filter((p) => !p.when?.cockpit?.length || p.when.cockpit.includes(cp))
+      .map((p) => procedureForCockpit(p, cp));
   }
   /** procedures that answer a failure (club first, then the library in the UI language, then the other one) */
   choices(key: FailureKey): ProcChoice[] {
@@ -527,7 +642,7 @@ function tick(): SVGSVGElement {
   return s;
 }
 
-/** short targets line, e.g. "Hold 68 kt (63–73) · bank ≤ 30°" */
+/** short targets line, e.g. "Hold 68 kt (63–73) · bank ≤ 30°" (editor preview, library cards) */
 export function targetsText(p: Procedure): string | null {
   const w = W[p.lang === "fr" ? "fr" : "en"];
   const tg: string[] = [];
@@ -540,6 +655,31 @@ export function targetsText(p: Procedure): string | null {
   return tg.length ? tg.join(" · ") : null;
 }
 
+/** the Aviate line of the card: what to hold while running the procedure (the envelope it is graded on) */
+function aviateText(p: Procedure, L: Lang): string {
+  const env = envelopeFor(p);
+  const w = W[L];
+  const parts: string[] = [];
+  if (env.iasKt) parts.push(`${env.iasKt[0]}–${env.iasKt[1]} KIAS`);
+  parts.push(`${w.bank} ≤ ${env.maxBankDeg}°`);
+  if (env.altTolFt !== undefined) parts.push(`${w.alt} ±${env.altTolFt} ft`);
+  return parts.join(" · ");
+}
+
+/** QRH index order: fire and smoke first (a real QRH / POH section 3 index puts them where the hand falls) */
+const QRH_ORDER: ProcCategory[] = [
+  "fire",
+  "engine",
+  "electrical",
+  "instruments",
+  "avionics",
+  "comms",
+  "flight",
+  "other",
+];
+
+type RowState = ProcedureRunState["items"][number];
+
 export class ProcedurePanel {
   el: HTMLElement;
   private card = h("div", { class: "pv-card procp-card" });
@@ -547,13 +687,17 @@ export class ProcedurePanel {
   private live: ((st: ProcedureRunState | null) => void)[] = [];
   private folded = false;
   private foldedFor = "";
-  /** training: the remaining items are shown (the student opened the checklist) */
+  /** training: the read-and-do list is shown (opened by the pilot, or once the memory items are done) */
   private showList = false;
-  /** test: the checklist index is open, and the procedure picked in it */
+  /** training: the procedure tab picked when several run at once (procedure id), null = the latest */
+  private tab: string | null = null;
+  /** test: the checklist index is open, the group and the procedure picked in it */
   private qrhOpen = false;
+  private qrhGroup: ProcCategory | null = null;
   private qrhPick: string | null = null;
-  /** confirmations on a procedure that is not the one being graded (test index): local ticks only */
+  /** test: taps on a checklist nobody grades (the pilot picked another one): ticks kept for place-keeping */
   private localDone = new Set<string>();
+  private localShown = new Set<string>();
   private finishedAt = new Map<ProcedureRunner, number>();
   private shownRunner: ProcedureRunner | null = null;
   constructor(private ctrl: ProcedureController) {
@@ -576,19 +720,38 @@ export class ProcedurePanel {
   /** drag the card by its header (not by its buttons); a double-click on the header puts it back */
   private wireDrag() {
     const el = this.el;
-    let start: { px: number; py: number; x: number; y: number; id: number } | null = null;
+    let start: {
+      px: number;
+      py: number;
+      x: number;
+      y: number;
+      id: number;
+    } | null = null;
     el.addEventListener("pointerdown", (e) => {
       const head = (e.target as HTMLElement).closest(".pv-top");
-      if (!head || (e.target as HTMLElement).closest("button, a, input, select")) return;
+      if (
+        !head ||
+        (e.target as HTMLElement).closest("button, a, input, select")
+      )
+        return;
       const r = el.getBoundingClientRect();
-      start = { px: e.clientX, py: e.clientY, x: r.left, y: r.top, id: e.pointerId };
+      start = {
+        px: e.clientX,
+        py: e.clientY,
+        x: r.left,
+        y: r.top,
+        id: e.pointerId,
+      };
       head.setPointerCapture?.(e.pointerId);
       el.classList.add("dragging");
       e.preventDefault();
     });
     el.addEventListener("pointermove", (e) => {
       if (!start || e.pointerId !== start.id) return;
-      this.place({ x: start.x + e.clientX - start.px, y: start.y + e.clientY - start.py });
+      this.place({
+        x: start.x + e.clientX - start.px,
+        y: start.y + e.clientY - start.py,
+      });
     });
     const end = (e: PointerEvent) => {
       if (!start || e.pointerId !== start.id) return;
@@ -599,7 +762,11 @@ export class ProcedurePanel {
     el.addEventListener("pointerup", end);
     el.addEventListener("pointercancel", end);
     el.addEventListener("dblclick", (e) => {
-      if (!(e.target as HTMLElement).closest(".pv-top") || (e.target as HTMLElement).closest("button")) return;
+      if (
+        !(e.target as HTMLElement).closest(".pv-top") ||
+        (e.target as HTMLElement).closest("button")
+      )
+        return;
       this.pos = null;
       writePos(null);
       this.applyPos();
@@ -613,7 +780,9 @@ export class ProcedurePanel {
     const h = Math.min(r.height || 200, window.innerHeight - 16);
     this.pos = {
       x: Math.round(Math.max(8, Math.min(window.innerWidth - w - 8, p.x))),
-      y: Math.round(Math.max(8, Math.min(window.innerHeight - Math.min(h, 120) - 8, p.y))),
+      y: Math.round(
+        Math.max(8, Math.min(window.innerHeight - Math.min(h, 120) - 8, p.y)),
+      ),
     };
     this.applyPos();
   }
@@ -623,7 +792,10 @@ export class ProcedurePanel {
     if (this.pos) {
       el.style.left = `${this.pos.x}px`;
       el.style.top = `${this.pos.y}px`;
-      el.style.setProperty("--procp-mh-moved", `${Math.max(160, window.innerHeight - this.pos.y - 8)}px`);
+      el.style.setProperty(
+        "--procp-mh-moved",
+        `${Math.max(160, window.innerHeight - this.pos.y - 8)}px`,
+      );
     } else {
       el.style.removeProperty("left");
       el.style.removeProperty("top");
@@ -635,52 +807,84 @@ export class ProcedurePanel {
   }
   /** Shift+C: open the checklist (training) / the checklist index (test); again: fold it */
   toggleChecklist() {
-    const r = this.ctrl.active();
+    const r = this.shown();
     if (this.mode() === "test") {
       this.qrhOpen = !this.qrhOpen;
       if (this.qrhOpen) this.ctrl.openQrh();
       this.qrhPick = null;
+      this.qrhGroup = null;
     } else if (r) {
       if (this.folded) this.folded = false;
-      else if (!r.checklistOpen) this.openList(r);
-      else this.showList = !this.showList;
+      else if (!this.showList) this.openList(r);
+      else this.folded = true;
     }
     this.sig = "";
     this.update(true);
   }
+  /** Enter: confirm the item to do now when it is a callout (training card) */
+  confirmCurrent(): boolean {
+    const r = this.shown();
+    if (!r || this.mode() !== "training" || this.folded || r.finished)
+      return false;
+    const cur = r.state().items.find((i) => i.current);
+    if (!cur || !cur.manual) return false;
+    const ok = this.ctrl.confirm(cur.id, "student", r.procedure.id);
+    this.update(true);
+    return ok;
+  }
   private openList(r: ProcedureRunner) {
     this.showList = true;
-    if (!r.finished) this.ctrl.openChecklist();
+    if (!r.finished) this.ctrl.openChecklist(r);
   }
   private mode(): DrillMode | null {
-    const r = this.ctrl.active();
+    const r = this.shown();
     if (r && !r.finished) return r.mode;
     if (this.ctrl.testFlight()) return "test";
     return r ? r.mode : null;
   }
+  /** training: the procedures whose first symptom is perceptible (the card never opens before the cue) */
+  private cued(): ProcedureRunner[] {
+    return this.ctrl.runners().filter((r) => r.cueS !== null || r.stopped);
+  }
+  /** the runner the card shows: the tab picked, else the latest one still running, else the latest one */
+  private shown(): ProcedureRunner | null {
+    const rs = this.cued();
+    const test = rs.find((r) => r.mode === "test" && !r.finished);
+    if (test) return test;
+    const picked = this.tab
+      ? rs.find((r) => r.procedure.id === this.tab && !r.stopped)
+      : null;
+    if (picked) return picked;
+    for (let i = rs.length - 1; i >= 0; i--) if (!rs[i].finished) return rs[i];
+    return rs[rs.length - 1] ?? null;
+  }
 
-  /** a few times a second: rebuild on a structural change only, timers and bars update in place */
+  /** a few times a second: rebuild on a structural change only, timers update in place */
   update(force = false) {
-    const r = this.ctrl.active();
+    const r = this.shown();
     const mode = this.mode();
     if (r !== this.shownRunner) {
       this.shownRunner = r;
       this.bodyScroll = 0;
       this.showList = !!r?.checklistOpen;
-      this.localDone.clear();
       if (r && this.foldedFor !== r.procedure.id) this.folded = false;
     }
     if (r?.finished && !this.finishedAt.has(r))
       this.finishedAt.set(r, this.ctrl.simTime());
-    // a finished procedure stays on screen for 12 s of flight (its last state; a paused flight keeps it), then the
-    // card folds away
-    const stale =
-      !!r?.finished &&
-      this.ctrl.simTime() - (this.finishedAt.get(r) ?? 0) > 12;
+    // a finished procedure stays open 12 s of flight (its last state; a paused flight keeps it), then folds to its
+    // one-line bar: the pilot can open it again to review it
+    if (
+      r?.finished &&
+      mode === "training" &&
+      !this.folded &&
+      this.foldedFor !== `auto:${r.procedure.id}` &&
+      this.ctrl.simTime() - (this.finishedAt.get(r) ?? 0) > 12
+    ) {
+      this.folded = true;
+      this.foldedFor = `auto:${r.procedure.id}`;
+    }
     const show =
-      mode === "test"
-        ? this.ctrl.testFlight() || (!!r && !r.finished)
-        : !!r && !stale;
+      mode === "test" ? this.ctrl.testFlight() || (!!r && !r.finished) : !!r;
     if (this.el.hidden === show) this.el.hidden = !show;
     document.body.classList.toggle(
       "procp-on",
@@ -698,10 +902,11 @@ export class ProcedurePanel {
 
   // ---------------------------------------------------------------- training: the emergency card
   private trainSig(r: ProcedureRunner, st: ProcedureRunState) {
-    const others = this.ctrl
-      .runners()
-      .filter((x) => !x.finished && x !== r).length;
-    return `T|${st.procedureId}|${st.finished}|${this.folded}|${this.showList}|${st.checklistOpen}|${others}|${st.items.map((i) => `${+i.done}${+i.late}${+!!i.ready}${i.due === null ? "-" : "d"}`).join("")}`;
+    const others = this.cued()
+      .filter((x) => !x.finished && x !== r)
+      .map((x) => x.procedure.id)
+      .join(",");
+    return `T|${st.procedureId}|${st.finished}|${st.stopped}|${st.outcome}|${this.folded}|${this.showList}|${others}|${uiLang()}|${st.items.map((i) => `${+i.done}${+i.late}${+!!i.ready}${+!!i.current}`).join("")}`;
   }
   private render(
     mode: DrillMode,
@@ -713,21 +918,56 @@ export class ProcedurePanel {
     this.card.className = `pv-card procp-card ${mode}`;
     this.el.classList.toggle("test", mode === "test");
     this.el.classList.toggle("folded", this.folded && mode === "training");
+    // a short dock (laptop outside view, iPad): tighter rows so the item to do now and the next one stay in view
+    const mh = parseFloat(getComputedStyle(this.el).maxHeight);
+    this.el.classList.toggle("compact", Number.isFinite(mh) && mh < 320);
     if (mode === "test") return this.renderTest(r);
     if (!r || !st) return;
+    this.renderTraining(r, st);
+  }
+
+  /** seconds on the card's clock: since the first cue of the emergency (a follow-up keeps the clock of the
+   *  procedure it follows: one emergency, one clock) */
+  private clockS(r: ProcedureRunner): number {
+    let root = r;
+    for (let k = 0; k < 4 && root.followUpOf; k++) {
+      const prev = this.ctrl
+        .runners()
+        .find(
+          (x) =>
+            x.procedure.id === root.followUpOf && x.failure === root.failure,
+        );
+      if (!prev) break;
+      root = prev;
+    }
+    const cue = root.cueS ?? 0;
+    // the checklist is complete (or stopped): the clock stops on the time it took
+    const end =
+      r.completedS !== null
+        ? r.failedAtS + r.completedS
+        : r.stopped
+          ? r.failedAtS + r.elapsedS
+          : this.ctrl.simTime();
+    return Math.max(0, end - root.failedAtS - cue);
+  }
+
+  private renderTraining(r: ProcedureRunner, st: ProcedureRunState) {
     const p = r.procedure;
     const L: Lang = p.lang === "fr" ? "fr" : "en";
     const w = W[L];
-    const done = st.items.filter((i) => i.done).length;
     const fin = !!st.finished;
     const outcome = r.outcome;
+    // a restart without the best glide is not a clean finish: the card says so (amber), not 'Checklist complete'
+    const noGlide = !!st.restartNoGlide;
+    const good = (outcome === "completed" || outcome === "landed") && !noGlide;
+    const finText = noGlide ? w.noGlide : w.complete;
     const time = h("span", {
       class: "pv-time",
       role: "timer",
       "aria-label": w.time,
     });
     this.live.push(() => {
-      const v = mmss(r.elapsedS);
+      const v = mmss(this.clockS(r));
       if (time.textContent !== v) time.textContent = v;
     });
     const foldBtn = h(
@@ -745,27 +985,56 @@ export class ProcedurePanel {
           this.update(true);
         },
       },
-      svgIcon(this.folded ? I.chevUp : I.chevDown, 16),
+      svgIcon(this.folded ? I.chevUp : I.chevDown, 18),
     );
+    const cur = st.items.find((i) => i.current);
     const top = h(
       "div",
       {
-        class: `pv-top${fin ? (outcome === "completed" || outcome === "landed" ? " ok" : " stop") : ""}`,
-        title: "Drag to move · double-click to put it back",
+        class: `pv-top${fin ? (good ? " ok" : noGlide ? " warn" : " stop") : ""}`,
+        title: w.drag,
       },
       h(
         "span",
         { class: "pv-tag" },
         fin
-          ? outcome === "completed" || outcome === "landed"
-            ? "OK"
-            : "—"
+          ? noGlide
+            ? w.doneTag
+            : st.stopped
+              ? good
+                ? w.doneTag
+                : w.stopTag
+              : w.doneTag
           : w.emergency,
       ),
-      h("b", { class: "pv-fail" }, failureText(r.failure, L)),
-      this.folded
-        ? h("span", { class: "procp-count" }, `${done}/${st.items.length}`)
-        : null,
+      h(
+        "div",
+        { class: "qc-head" },
+        h("b", { class: "pv-fail" }, symptomText(r.failure, L)),
+        this.folded
+          ? h(
+              "small",
+              { class: "qc-next" },
+              fin
+                ? noGlide
+                  ? w.noGlide
+                  : st.stopped
+                    ? good
+                      ? w.complete
+                      : w.incomplete
+                    : w.watching
+                : cur
+                  ? `${w.next}: ${cur.text}`
+                  : "",
+            )
+          : // a short dock scrolls the title away: what to fly stays in the header (Aviate first)
+            h(
+              "small",
+              { class: "qc-sub" },
+              h("b", {}, w.aviate),
+              ` ${aviateText(p, L)}`,
+            ),
+      ),
       time,
       foldBtn,
     );
@@ -773,93 +1042,125 @@ export class ProcedurePanel {
     if (this.folded) return;
     const body = h("div", { class: "procp-body" });
     this.card.append(body);
-    body.append(h("div", { class: "pv-title" }, p.title));
-    const tg = targetsText(p);
-    if (tg && !fin) body.append(h("div", { class: "pv-targets" }, tg));
-    if (fin)
+
+    // several emergencies at once: one tab each, the latest first chosen; nothing is ever hidden
+    const running = this.cued().filter((x) => !x.stopped || x === r);
+    body.classList.toggle("tabbed", running.length > 1);
+    if (running.length > 1)
       body.append(
         h(
           "div",
-          {
-            class: `procp-fin ${outcome === "completed" || outcome === "landed" ? "ok" : "stop"}`,
-          },
-          tick(),
-          h(
-            "div",
-            {},
+          { class: "qc-tabs", role: "tablist" },
+          ...running.map((x) =>
             h(
-              "b",
-              {},
-              outcome === "completed" || outcome === "landed"
-                ? w.complete
-                : w.incomplete,
+              "button",
+              {
+                type: "button",
+                role: "tab",
+                class: `qc-tab${x === r ? " on" : ""}${x.finished ? " fin" : ""}`,
+                "aria-selected": String(x === r),
+                onclick: () => {
+                  this.tab = x.procedure.id;
+                  this.sig = "";
+                  this.update(true);
+                },
+              },
+              x.finished
+                ? tick()
+                : h("i", { class: "qc-dot", "aria-hidden": "true" }),
+              symptomText(x.failure, L),
             ),
-            h("small", {}, w.results),
           ),
         ),
       );
-    const others = this.ctrl
-      .runners()
-      .filter((x) => !x.finished && x !== r).length;
-    if (others)
-      body.append(
-        h(
-          "div",
-          { class: "procp-others" },
-          `+${others} ${others > 1 ? w.others : w.other}`,
-        ),
-      );
+
+    body.append(h("div", { class: "qc-title" }, p.title));
+    if (r.followUpOf) {
+      const prev = this.ctrl
+        .runners()
+        .find((x) => x.procedure.id === r.followUpOf);
+      if (prev)
+        body.append(
+          h(
+            "div",
+            { class: "qc-follow" },
+            `${prev.procedure.title} ▸ ${w.followUp}`,
+          ),
+        );
+    }
+    body.append(
+      h(
+        "div",
+        { class: "qc-aviate" },
+        h("span", { class: "qc-aviate-k" }, w.aviate),
+        h("span", {}, aviateText(p, L)),
+      ),
+    );
+
     const itemsBy = new Map(p.items.map((it) => [it.id, it]));
     const mem = st.items.filter((i) => i.memory);
     const rest = st.items.filter((i) => !i.memory);
-    // the first item still to do in list order: highlighted (the flow goes top to bottom)
-    const next = st.items.find((i) => !i.done && !i.optional && !i.ready);
-    const row = (x: ProcedureRunState["items"][number], n: number | null) => {
+    const memDone = mem.every((i) => i.done || i.optional);
+    const cueS = st.cueS ?? 0;
+    const row = (x: RowState, n: number) => {
       const it = itemsBy.get(x.id);
-      const limit = it?.withinS;
+      const isCur = !!x.current && !fin;
       const cls = [
-        "pv-it",
+        "qc-row",
         x.done ? "done" : "",
         x.late ? "late" : "",
         x.ready && !x.done ? "ready" : "",
         x.optional ? "opt" : "",
-        x === next && !fin ? "next" : "",
-        !x.done && fin && !x.optional ? "missed" : "",
+        isCur ? "cur" : "",
+        x.notFlown ||
+        (!x.done && fin && st.stopped && !x.optional && !x.notApplicable)
+          ? "missed"
+          : "",
+        x.notApplicable ? "na" : "",
+        x.manual ? "manual" : "",
       ]
         .filter(Boolean)
         .join(" ");
-      const box = h(
+      const [ch, rs] = splitChallenge(x.text);
+      const glyph = h(
         "span",
-        { class: "pv-box", "aria-hidden": "true" },
-        x.done ? tick() : n !== null ? String(n) : null,
+        { class: "qc-glyph", "aria-hidden": "true" },
+        x.done ? tick() : String(n),
       );
-      const tx = h(
+      const main = h(
         "div",
-        { class: "pv-tx" },
-        h("span", { class: "pv-t" }, x.text),
+        { class: "qc-main" },
+        h(
+          "div",
+          { class: `qc-line${rs && rs.length > LONG_RESPONSE ? " long" : ""}` },
+          h("span", { class: "qc-ch" }, ch),
+          rs ? h("span", { class: "qc-dots", "aria-hidden": "true" }) : null,
+          rs ? h("span", { class: "qc-rs" }, rs) : null,
+        ),
       );
-      if (x.note && !x.done && (x.memory ? this.showList : true))
-        tx.append(h("small", { class: "pv-note" }, x.note));
-      // the callout hint on the item to do now only (one line, not on every Done item)
-      if (x.manual && !x.done && !fin && x === next)
-        tx.append(h("small", { class: "pv-note procp-callout" }, w.callout));
+      // the why / how, on the item to do now only: one line to read, not a wall of notes
+      if (isCur && x.note)
+        main.append(h("small", { class: "qc-note" }, x.note));
+      if (isCur && x.manual)
+        main.append(h("small", { class: "qc-note qc-callout" }, w.callout));
       let right: HTMLElement | null = null;
       if (x.done)
         right = h(
           "span",
-          { class: "procp-at" },
-          x.atS !== null && x.atS !== undefined ? `${Math.round(x.atS)} s` : "",
+          { class: `qc-at${x.late ? " late" : ""}` },
+          x.atS !== null && x.atS !== undefined
+            ? mmss(Math.max(0, x.atS - cueS))
+            : "",
         );
-      // already in place at the failure: ticked by itself when the flow moves past it (no button: tapping it
-      // early would credit a 'reset' item before its OFF step)
-      else if (!fin && x.ready && !x.manual)
-        right = h("span", { class: "procp-ready" }, w.check);
+      else if (x.notApplicable)
+        right = h("span", { class: "qc-opt", title: w.naTip }, w.na);
       else if (!fin && x.manual)
         right = h(
           "button",
           {
             type: "button",
-            class: `pv-done${x.ready ? " ready" : ""}`,
+            class: "qc-done",
+            "aria-label": `${w.done}: ${x.text}`,
             onclick: () => {
               this.ctrl.confirm(x.id, "student", p.id);
               this.update(true);
@@ -867,105 +1168,135 @@ export class ProcedurePanel {
           },
           w.done,
         );
-      else if (!fin && x.due !== null && limit) {
-        const bar = h("i", {});
-        const due = h("span", { class: "pv-due" });
-        tx.append(h("span", { class: "pv-bar" }, bar));
-        right = due;
-        const id = x.id;
-        this.live.push((now) => {
-          const cur = now?.items.find((i) => i.id === id);
-          const d = cur?.due ?? null;
-          const frac = d === null ? 0 : Math.max(0, Math.min(1, d / limit));
-          const wv = `${(frac * 100).toFixed(1)}%`;
-          if (bar.style.width !== wv) bar.style.width = wv;
-          const txt = d === null ? "" : d > 0 ? `${Math.ceil(d)} s` : w.late;
-          if (due.textContent !== txt) due.textContent = txt;
-          due.classList.toggle("over", d !== null && d <= 0);
-        });
-      } else if (x.optional) right = h("span", { class: "pv-opt" }, w.optional);
-      return h("li", { class: cls }, box, tx, right);
+      // already in position at the failure: ticked by itself when the flow moves past it (no button: tapping it
+      // early would credit a 'reset' item before its OFF step)
+      else if (!fin && x.ready) right = h("span", { class: "qc-set" }, w.set);
+      else if (x.optional) right = h("span", { class: "qc-opt" }, w.optional);
+      else if (x.late && !fin) right = h("span", { class: "qc-late" }, w.late);
+      const li = h("li", { class: cls }, glyph, main, right);
+      if (it?.memory) li.dataset.m = "1";
+      return li;
     };
-    if (mem.length)
+
+    let n = 0;
+    if (mem.length) {
+      const timer = h("span", { class: "qc-timer", role: "timer" });
+      this.live.push((now) => {
+        const c = now?.items.find((i) => i.current && i.memory);
+        let txt = "";
+        let cls = "qc-timer";
+        if (c && c.due !== null && !fin) {
+          txt = c.due > 0 ? `${w.within} ${mmss(Math.ceil(c.due))}` : w.late;
+          cls += c.due <= 0 ? " over" : c.due <= 5 ? " soon" : "";
+        } else if (!fin && memDone) txt = w.memDone;
+        if (timer.textContent !== txt) timer.textContent = txt;
+        if (timer.className !== cls) timer.className = cls;
+      });
       body.append(
-        h("div", { class: "pv-sec" }, w.memory),
-        h("ul", { class: "pv-list mem" }, ...mem.map((x) => row(x, null))),
+        h(
+          "section",
+          { class: `qc-mem${memDone ? " ok" : ""}` },
+          h("div", { class: "qc-sec" }, h("span", {}, w.memory), timer),
+          h("ol", { class: "qc-list" }, ...mem.map((x) => row(x, ++n))),
+        ),
       );
+    }
     if (rest.length) {
-      if (mem.length && !this.showList && !fin)
+      const doneN = rest.filter((i) => i.done).length;
+      const reqN = rest.filter((i) => !i.optional).length;
+      const open = this.showList || memDone || !mem.length || fin;
+      if (!open)
         body.append(
           h(
             "button",
             {
               type: "button",
-              class: "pv-open",
+              class: "qc-open",
               onclick: () => {
                 this.openList(r);
                 this.sig = "";
                 this.update(true);
               },
             },
-            w.open,
+            h(
+              "span",
+              {},
+              `${w.checklist} · ${rest.length} ${rest.length > 1 ? w.items : w.item}`,
+            ),
             h("kbd", { class: "procp-kbd" }, "Shift+C"),
           ),
         );
       else {
-        let n = 0;
+        const base = n;
         body.append(
           h(
-            "div",
-            { class: "pv-sec" },
-            w.checklist,
-            mem.length && !fin
-              ? h(
-                  "button",
-                  {
-                    type: "button",
-                    class: "pv-fold",
-                    "aria-label": w.fold,
-                    onclick: () => {
-                      this.showList = false;
-                      this.sig = "";
-                      this.update(true);
-                    },
-                  },
-                  svgIcon(I.chevUp, 14),
-                )
-              : null,
-          ),
-          h(
-            "ol",
-            { class: "pv-list" },
-            ...rest.map((x) => row(x, ++n + mem.length)),
+            "section",
+            { class: "qc-chk" },
+            h(
+              "div",
+              { class: "qc-sec" },
+              h("span", {}, w.checklist),
+              h(
+                "span",
+                { class: "qc-count" },
+                `${Math.min(doneN, reqN)}/${reqN}`,
+              ),
+            ),
+            h(
+              "ol",
+              { class: "qc-list" },
+              ...rest.map((x, k) => row(x, base + k + 1)),
+            ),
           ),
         );
       }
     }
+    if (fin)
+      body.insertBefore(
+        h(
+          "div",
+          { class: `qc-fin ${good ? "ok" : noGlide ? "warn" : "stop"}` },
+          noGlide ? svgIcon(I.warning, 18) : tick(),
+          h(
+            "div",
+            {},
+            h(
+              "b",
+              {},
+              noGlide
+                ? finText
+                : st.stopped
+                  ? good
+                    ? w.complete
+                    : w.incomplete
+                  : w.complete,
+            ),
+            h("small", {}, st.stopped ? w.results : w.watching),
+          ),
+        ),
+        // above the list: once it is done, what matters is the line that says so (and to keep flying)
+        body.querySelector(".qc-mem, .qc-chk, .qc-open"),
+      );
     body.append(
       h(
         "div",
-        { class: "pv-foot" },
+        { class: "qc-foot" },
         p.ref ? h("span", {}, p.ref) : null,
         h("span", {}, p.disclaimer ?? DISCLAIMER[L]),
       ),
     );
     // the card is rebuilt on every tick of an item: keep the reading position, and bring the item to do now into
-    // view when it is below (or above) the visible part — a long checklist never hides the next step
+    // view — a long checklist never hides the next step
     body.scrollTop = this.bodyScroll;
     body.addEventListener("scroll", () => (this.bodyScroll = body.scrollTop), {
       passive: true,
     });
-    const target =
-      (this.showList
-        ? body.querySelector<HTMLElement>(
-            ".pv-list:not(.mem) .pv-it:not(.done):not(.opt):not(.ready)",
-          )
-        : null) ?? body.querySelector<HTMLElement>(".pv-it.next");
+    const target = body.querySelector<HTMLElement>(".qc-row.cur");
     if (target && !fin) {
       const br = body.getBoundingClientRect();
       const tr = target.getBoundingClientRect();
       if (br.height > 0 && (tr.bottom > br.bottom - 4 || tr.top < br.top)) {
-        body.scrollTop += tr.top - br.top - Math.min(48, br.height / 4);
+        body.scrollTop += tr.top - br.top - Math.min(64, br.height / 4);
         this.bodyScroll = body.scrollTop;
       }
     }
@@ -974,14 +1305,39 @@ export class ProcedurePanel {
 
   // ---------------------------------------------------------------- test: the discreet button + checklist index
   private testSig(st: ProcedureRunState | null) {
-    return `X|${this.qrhOpen}|${this.qrhPick}|${st?.procedureId ?? ""}|${[...this.localDone].join(",")}|${
-      st?.items
-        .filter((i) => i.manual && i.done)
-        .map((i) => i.id)
-        .join(",") ?? ""
-    }`;
+    // closed-loop items of the picked checklist tick as the aircraft is: their live state is part of the picture
+    const pick = this.qrhPick
+      ? this.ctrl.list().find((p) => p.id === this.qrhPick)
+      : null;
+    let live = "";
+    if (pick) {
+      const view = this.ctrl.liveView();
+      live = pick.items
+        .map((it) => (this.sensedNow(it, view) ? "1" : "0"))
+        .join("");
+      const gs = this.ctrl.matching(pick).map((r) => r.state());
+      live += `|${gs.map((s) => s.items.map((i) => `${+i.done}${+!!i.revealed}`).join("")).join("/")}`;
+    }
+    return `X|${uiLang()}|${this.qrhOpen}|${this.qrhGroup}|${this.qrhPick}|${st?.procedureId ?? ""}|${[...this.localDone].join(",")}|${[...this.localShown].join(",")}|${live}`;
+  }
+  private sensedNow(it: ProcItem, view: ProcSimView | null): boolean {
+    if (
+      !view ||
+      !it.check ||
+      it.check.id === "manual" ||
+      it.check.id === "landed"
+    )
+      return false;
+    const d = checkDef(it.check);
+    if (!d) return false;
+    try {
+      return d.evaluate(view, it.check.p, { failedAtS: view.t, elapsedS: 0 });
+    } catch {
+      return false;
+    }
   }
   private renderTest(r: ProcedureRunner | null) {
+    void r;
     const L: Lang = uiLang();
     const w = W[L];
     const time = h("span", {
@@ -999,149 +1355,283 @@ export class ProcedurePanel {
         type: "button",
         class: `pv-cl${this.qrhOpen ? " on" : ""}`,
         "aria-expanded": String(this.qrhOpen),
-        title: `${L === "fr" ? "Check-list" : "Checklist"} (Shift+C)`,
+        title: `${w.checklistBtn} (Shift+C)`,
         onclick: () => this.toggleChecklist(),
       },
-      svgIcon(I.clipboard, 16),
-      L === "fr" ? "Check-list" : "Checklist",
+      svgIcon(I.clipboard, 18),
+      w.checklistBtn,
     );
-    this.card.append(h("div", { class: "pv-test" }, btn, time));
+    // a short dock (iPad landscape, laptop outside view): the open index has no room for a bar of its own — the
+    // Checklist toggle and the clock ride in the index header, the rows get the height
+    const compact = this.el.classList.contains("compact") && this.qrhOpen;
+    if (compact) {
+      btn.classList.add("icon");
+      btn.setAttribute("aria-label", `${w.checklistBtn} · ${w.close}`);
+      btn.lastChild?.remove();
+    }
+    const hx = compact ? h("div", { class: "qc-hx" }, time, btn) : null;
+    this.card.classList.toggle("qrh-compact", compact);
+    if (!compact) this.card.append(h("div", { class: "pv-test" }, btn, time));
     if (!this.qrhOpen) return;
     const list = this.ctrl
-      .list()
+      .cockpitList()
       .filter((p) => p.lang === L && p.failures.length);
     const box = h("div", { class: "procp-qrh" });
     this.card.append(box);
     const pick = this.qrhPick
       ? (list.find((p) => p.id === this.qrhPick) ?? null)
       : null;
-    if (!pick) {
+    const back = (label: string, to: () => void) =>
+      h(
+        "button",
+        {
+          type: "button",
+          class: "procp-back",
+          onclick: () => {
+            to();
+            this.sig = "";
+            this.update(true);
+          },
+        },
+        svgIcon(I.chevDown, 16),
+        label,
+      );
+    if (!pick && !this.qrhGroup) {
+      // level 1: the groups, as big tiles (G1000 CHKLIST: groups first, then the checklists)
       box.append(
         h(
           "div",
           { class: "procp-qrh-h" },
           h("b", {}, w.qrh),
-          h("small", {}, w.qrhHint),
+          compact ? hx : h("small", {}, w.qrhHint),
+        ),
+      );
+      const grid = h("div", { class: "qc-groups" });
+      for (const cat of QRH_ORDER) {
+        const ps = list.filter((p) => p.category === cat);
+        if (!ps.length) continue;
+        grid.append(
+          h(
+            "button",
+            {
+              type: "button",
+              class: `qc-group${cat === "fire" ? " fire" : ""}`,
+              onclick: () => {
+                this.qrhGroup = cat;
+                this.sig = "";
+                this.update(true);
+              },
+            },
+            h("b", {}, CATEGORY_LABELS[cat][L]),
+            h("small", {}, String(ps.length)),
+          ),
+        );
+      }
+      box.append(h("div", { class: "procp-qrh-list" }, grid));
+      return;
+    }
+    if (!pick) {
+      // level 2: the checklists of the group
+      const ps = list.filter((p) => p.category === this.qrhGroup);
+      box.append(
+        h(
+          "div",
+          { class: "procp-qrh-h" },
+          back(w.back, () => (this.qrhGroup = null)),
+          h("b", {}, CATEGORY_LABELS[this.qrhGroup!][L]),
+          hx,
         ),
       );
       const scroll = h("div", { class: "procp-qrh-list" });
-      for (const cat of CATEGORY_ORDER) {
-        const ps = list.filter((p) => p.category === cat);
-        if (!ps.length) continue;
+      for (const p of ps)
         scroll.append(
-          h("div", { class: "pv-sec" }, CATEGORY_LABELS[cat][L].toUpperCase()),
-        );
-        for (const p of ps)
-          scroll.append(
-            h(
-              "button",
-              {
-                type: "button",
-                class: "procp-qrh-it",
-                onclick: () => {
-                  this.qrhPick = p.id;
-                  this.sig = "";
-                  this.update(true);
-                },
+          h(
+            "button",
+            {
+              type: "button",
+              class: "procp-qrh-it",
+              onclick: () => {
+                this.qrhPick = p.id;
+                this.ctrl.pickChecklist(p);
+                this.sig = "";
+                this.update(true);
               },
-              h("span", {}, p.title),
-              svgIcon(I.arrow, 14),
-            ),
-          );
-      }
+            },
+            h("span", {}, p.title),
+            svgIcon(I.arrow, 16),
+          ),
+        );
       box.append(scroll);
       return;
     }
-    // the picked checklist: plain, like paper — no ticks, no timers; Done buttons only for the callouts the
-    // student says (they appear on every checklist, so they give nothing away)
-    const graded =
-      r &&
-      !r.finished &&
-      (r.procedure.id === pick.id || baseId(r.procedure.id) === baseId(pick.id))
-        ? r
-        : null;
-    const st = graded?.state() ?? null;
+    // level 3: the picked checklist. Memory items stay hidden until done or revealed (a recorded hint): reading
+    // them here would not be recalling them. Closed-loop items tick as the aircraft is; callouts take Done.
+    const graded = this.ctrl.matching(pick);
+    const states = graded.map((g) => g.state());
+    const doneIn = (id: string) =>
+      states.some((s) => s.items.some((i) => i.id === id && i.done)) ||
+      this.localDone.has(`${pick.id}|${id}`);
+    const shownIn = (id: string) =>
+      states.some((s) =>
+        s.items.some((i) => i.id === id && (i.revealed || i.done)),
+      ) || this.localShown.has(`${pick.id}|${id}`);
+    const view = this.ctrl.liveView();
     box.append(
       h(
         "div",
         { class: "procp-qrh-h" },
-        h(
+        back(CATEGORY_LABELS[pick.category][L], () => {
+          this.qrhGroup = pick.category;
+          this.qrhPick = null;
+        }),
+        h("b", {}, pick.title),
+        hx,
+      ),
+    );
+    box.append(
+      h(
+        "div",
+        { class: "qc-aviate" },
+        h("span", { class: "qc-aviate-k" }, w.aviate),
+        h("span", {}, aviateText(pick, L)),
+      ),
+    );
+    const manual = (it: ProcItem) =>
+      !it.check || it.check.id === "manual" || !checkDef(it.check);
+    let curFound = false;
+    const row = (it: ProcItem, n: number) => {
+      const done = doneIn(it.id) || (!manual(it) && this.sensedNow(it, view));
+      const hidden = it.memory && !shownIn(it.id) && !doneIn(it.id);
+      const isCur = !curFound && !done && !it.optional;
+      if (isCur) curFound = true;
+      const [ch, rs] = splitChallenge(it.text);
+      const cls = [
+        "qc-row",
+        done ? "done" : "",
+        isCur ? "cur" : "",
+        it.optional ? "opt" : "",
+        hidden ? "hidden" : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      const line = hidden
+        ? h(
+            "div",
+            { class: "qc-line" },
+            h("span", { class: "qc-ch qc-slot" }, `${w.memItem} ${n}`),
+          )
+        : h(
+            "div",
+            {
+              class: `qc-line${rs && rs.length > LONG_RESPONSE ? " long" : ""}`,
+            },
+            h("span", { class: "qc-ch" }, ch),
+            rs ? h("span", { class: "qc-dots", "aria-hidden": "true" }) : null,
+            rs ? h("span", { class: "qc-rs" }, rs) : null,
+          );
+      let right: HTMLElement | null = null;
+      if (hidden)
+        right = h(
           "button",
           {
             type: "button",
-            class: "procp-back",
+            class: "qc-reveal",
+            title: w.revealTip,
             onclick: () => {
-              this.qrhPick = null;
+              this.ctrl.revealOn(pick, it.id);
+              this.localShown.add(`${pick.id}|${it.id}`);
               this.sig = "";
               this.update(true);
             },
           },
-          svgIcon(I.chevDown, 14),
-          w.back,
-        ),
-        h("b", {}, pick.title),
-      ),
-    );
-    const tg = targetsText(pick);
-    if (tg) box.append(h("div", { class: "pv-targets" }, tg));
-    const manual = (it: Procedure["items"][number]) =>
-      !it.check || it.check.id === "manual" || !checkDef(it.check);
-    const mem = pick.items.filter((i) => i.memory);
-    const rest = pick.items.filter((i) => !i.memory);
-    const row = (it: Procedure["items"][number], n: number) => {
-      const conf =
-        st?.items.find((x) => x.id === it.id && x.manual)?.done ||
-        this.localDone.has(`${pick.id}|${it.id}`);
+          svgIcon(I.eye, 16),
+          w.reveal,
+        );
+      else if (manual(it) && !done)
+        right = h(
+          "button",
+          {
+            type: "button",
+            class: "qc-done",
+            "aria-label": `${w.done}: ${it.text}`,
+            onclick: () => {
+              // every procedure running that has this checklist gets the confirmation (two failures at once)
+              this.ctrl.confirmOn(pick, it.id);
+              this.localDone.add(`${pick.id}|${it.id}`);
+              this.sig = "";
+              this.update(true);
+            },
+          },
+          w.done,
+        );
+      else if (it.optional && !done)
+        right = h("span", { class: "qc-opt" }, w.optional);
       return h(
         "li",
-        { class: `pv-it${it.optional ? " opt" : ""}` },
-        h("span", { class: "pv-box", "aria-hidden": "true" }, String(n)),
-        h("div", { class: "pv-tx" }, h("span", { class: "pv-t" }, it.text)),
-        manual(it)
-          ? h(
-              "button",
-              {
-                type: "button",
-                class: `pv-done${conf ? " on" : ""}`,
-                "aria-pressed": String(!!conf),
-                disabled: !!conf,
-                onclick: () => {
-                  if (graded)
-                    this.ctrl.confirm(it.id, "student", graded.procedure.id);
-                  this.localDone.add(`${pick.id}|${it.id}`);
-                  this.sig = "";
-                  this.update(true);
-                },
-              },
-              w.done,
-            )
-          : it.optional
-            ? h("span", { class: "pv-opt" }, w.optional)
-            : null,
+        { class: cls },
+        h(
+          "span",
+          { class: "qc-glyph", "aria-hidden": "true" },
+          done ? tick() : String(n),
+        ),
+        h("div", { class: "qc-main" }, line),
+        right,
       );
     };
     let n = 0;
     const scroll = h("div", { class: "procp-qrh-list" });
+    const mem = pick.items.filter((i) => i.memory);
+    const rest = pick.items.filter((i) => !i.memory);
     if (mem.length)
       scroll.append(
-        h("div", { class: "pv-sec" }, w.memory),
-        h("ol", { class: "pv-list mem" }, ...mem.map((it) => row(it, ++n))),
+        h(
+          "section",
+          { class: "qc-mem" },
+          h(
+            "div",
+            { class: "qc-sec" },
+            h("span", {}, w.memory),
+            h("span", { class: "qc-timer" }, w.memHidden),
+          ),
+          h("ol", { class: "qc-list" }, ...mem.map((it) => row(it, ++n))),
+        ),
       );
     if (rest.length)
       scroll.append(
-        h("div", { class: "pv-sec" }, w.checklist),
-        h("ol", { class: "pv-list" }, ...rest.map((it) => row(it, ++n))),
+        h(
+          "section",
+          { class: "qc-chk" },
+          h("div", { class: "qc-sec" }, h("span", {}, w.checklist)),
+          h("ol", { class: "qc-list" }, ...rest.map((it) => row(it, ++n))),
+        ),
       );
     scroll.append(
       h(
         "div",
-        { class: "pv-foot" },
+        { class: "qc-foot" },
         pick.ref ? h("span", {}, pick.ref) : null,
         h("span", {}, pick.disclaimer ?? DISCLAIMER[L]),
       ),
     );
     box.append(scroll);
+    // keep the reading position across rebuilds, and bring the item to do now into view (place-keeping)
+    scroll.scrollTop = this.qrhScroll.get(pick.id) ?? 0;
+    scroll.addEventListener(
+      "scroll",
+      () => this.qrhScroll.set(pick.id, scroll.scrollTop),
+      { passive: true },
+    );
+    const cur = scroll.querySelector<HTMLElement>(".qc-row.cur");
+    if (cur) {
+      const br = scroll.getBoundingClientRect();
+      const tr = cur.getBoundingClientRect();
+      if (br.height > 0 && (tr.bottom > br.bottom - 4 || tr.top < br.top)) {
+        scroll.scrollTop += tr.top - br.top - Math.min(48, br.height / 4);
+        this.qrhScroll.set(pick.id, scroll.scrollTop);
+      }
+    }
   }
+  private qrhScroll = new Map<string, number>();
 }
 
 /** plain words for a failure in the UI language (instructor drawer, toasts) */
@@ -1152,7 +1642,9 @@ const POS_KEY = "ifr.procp.pos";
 function readPos(): { x: number; y: number } | null {
   try {
     const v = JSON.parse(localStorage.getItem(POS_KEY) ?? "null");
-    return v && Number.isFinite(v.x) && Number.isFinite(v.y) ? { x: v.x, y: v.y } : null;
+    return v && Number.isFinite(v.x) && Number.isFinite(v.y)
+      ? { x: v.x, y: v.y }
+      : null;
   } catch {
     return null;
   }

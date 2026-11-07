@@ -36,7 +36,12 @@ import {
 } from "./circuits";
 import type { DrillMode, Lang, Procedure } from "./procedureTypes";
 import { effectiveProcedures } from "./procedureStore";
-import { fakeView, pickProcedure } from "./procedures";
+import {
+  airspaceRegion,
+  fakeView,
+  pickProcedure,
+  type ProcSimView,
+} from "./procedures";
 import { lang as uiLang } from "../ui/i18n";
 
 export type { DrillPhase };
@@ -425,7 +430,8 @@ export function defaultTrigger(
   phase: DrillPhase | undefined,
   key?: FailureKey,
 ): Pick<CircuitFailure, "trigger" | "at" | "dir" | "window"> {
-  const engine = key === "engine" || key === "enginePartial";
+  const engine =
+    key === "engine" || key === "enginePartial" || key === "fuelStarvation";
   switch (phase) {
     case "lineup":
       return engine
@@ -467,7 +473,18 @@ export function heightTrigger(
 export function phaseView(
   c: Circuit,
   f: Pick<CircuitFailure, "trigger" | "at" | "dir">,
-) {
+): ProcSimView {
+  // the cockpit and the airspace of the drill pick the variant (G1000 / classic panel, FAA / ICAO lost comms)
+  return {
+    ...phaseViewAt(c, f),
+    cockpit: c.cockpit ?? "g1000",
+    region: airspaceRegion(drillAirport(c)),
+  };
+}
+function phaseViewAt(
+  c: Circuit,
+  f: Pick<CircuitFailure, "trigger" | "at" | "dir">,
+): ProcSimView {
   const phase = c.drill?.phase;
   if (f.trigger === "altAgl")
     return fakeView({ onGround: false, aglFt: f.at, iasKt: 70 });
@@ -581,11 +598,17 @@ export function groupKeys(
       : (FAILURE_GROUPS.find((g) => g.id === group)?.keys ?? []);
   // total engine failure and the instruments of the G1000 stay out of a random club test
   const answered = new Set(effectiveProcedures().flatMap((p) => p.failures));
+  // fuel starvation is a pre-flight set-up (selector left on a nearly empty tank, LOW FUEL lit from the start): a
+  // random draw would show itself before it happens — it stays a named drill
   return keys.filter(
     (k) =>
       answered.has(k) &&
+      k !== "fuelStarvation" &&
       (group !== "any" ||
-        (k !== "engine" && k !== "ahrs" && k !== "airData" && k !== "door")),
+        (k !== "engine" &&
+          k !== "ahrs" &&
+          k !== "airData" &&
+          k !== "door")),
   );
 }
 
@@ -614,14 +637,39 @@ export const DRILL_TEMPLATES: DrillTemplate[] = [
     ],
   },
   {
+    // the commonest cause of a power loss is fuel mismanagement (FAA-H-8083-3C ch.18): the selector was left on a
+    // tank that runs dry. The POH restart flow (selector BOTH, fuel pump ON…) cures it — a student who flies the
+    // flow sees the engine come back; one who does not gets the forced landing.
     id: "d-engine-cruise",
+    name: L(
+      "Arrêt moteur en croisière : redémarrage ou atterrissage en campagne",
+      "Engine stoppage in cruise: restart or forced landing",
+    ),
+    desc: L(
+      "Plané à 68 kt et la séquence de redémarrage : bien faite, le moteur repart ; sinon, atterrissage en campagne.",
+      "Best glide 68 KIAS and the restart flow: flown right, the engine comes back; if not, a forced landing in a field.",
+    ),
+    phase: "cruise",
+    wx: "vmc",
+    mode: "training",
+    failures: [
+      {
+        key: "fuelStarvation",
+        trigger: "time",
+        at: 2,
+        expect: "c172.engineFailure",
+      },
+    ],
+  },
+  {
+    id: "d-forced-landing",
     name: L(
       "Panne moteur en croisière + atterrissage en campagne",
       "Engine failure in cruise + forced landing",
     ),
     desc: L(
-      "Plané à 68 kt, tentative de redémarrage, puis atterrissage en campagne.",
-      "Best glide 68 KIAS, restart attempt, then a forced landing in a field.",
+      "Panne mécanique : le redémarrage échoue. Plané à 68 kt, MAYDAY, atterrissage en campagne.",
+      "Mechanical failure: the restart fails. Best glide 68 KIAS, MAYDAY, a forced landing in a field.",
     ),
     phase: "cruise",
     wx: "vmc",
@@ -648,8 +696,8 @@ export const DRILL_TEMPLATES: DrillTemplate[] = [
     id: "d-elec-fire",
     name: L("Feu électrique", "Electrical fire"),
     desc: L(
-      "Fumée en cabine : masters coupés, aérations fermées, extincteur ; aérer une fois le feu éteint, puis ne remettre que l’indispensable.",
-      "Smoke in the cabin: masters off, vents closed, extinguisher; ventilate once the fire is out, then restore only what is needed.",
+      "Fumée en cabine : STBY BATT et général coupés, aérations fermées, extincteur ; feu éteint, aérer puis remettre l’électricité barre par barre et laisser la fautive coupée.",
+      "Smoke in the cabin: STBY BATT and master off, vents closed, extinguisher; once the fire is out, ventilate, then restore the power one bus at a time and leave the faulty one off.",
     ),
     phase: "cruise",
     wx: "vmc",
@@ -667,8 +715,8 @@ export const DRILL_TEMPLATES: DrillTemplate[] = [
     id: "d-alternator-imc",
     name: L("Panne d’alternateur en IMC", "Alternator failure in IMC"),
     desc: L(
-      "LOW VOLTS en nuage : délestage, réarmement, puis l’approche sur batterie.",
-      "LOW VOLTS in cloud: load shedding, reset, then the approach on the battery.",
+      "LOW VOLTS en nuage : réarmement de l’alternateur seul (G1000), délestage, puis l’approche sur batterie.",
+      "LOW VOLTS in cloud: an ALT-only reset (G1000), load shedding, then the approach on the battery.",
     ),
     phase: "cruise",
     wx: "imc",
@@ -700,15 +748,15 @@ export const DRILL_TEMPLATES: DrillTemplate[] = [
     id: "d-pitot-icing",
     name: L("Givrage pitot", "Pitot icing"),
     desc: L(
-      "En nuage, température négative : l’anémomètre chute. Réchauffage pitot, assiette et puissance.",
-      "In cloud below freezing: the airspeed falls. Pitot heat on, fly attitude and power.",
+      "En nuage, température proche de zéro : l’anémomètre chute. Réchauffage pitot, sortir du givrage, assiette et puissance.",
+      "In cloud near freezing: the airspeed falls. Pitot heat on, get out of the icing, fly attitude and power.",
     ),
     phase: "cruise",
     wx: "imc",
     mode: "training",
     oatC: 4,
     failures: [
-      { key: "pitotIcing", trigger: "time", at: 2, expect: "c172.pitot" },
+      { key: "pitotIcing", trigger: "time", at: 2, expect: "c172.icing" },
     ],
   },
   {
@@ -729,8 +777,8 @@ export const DRILL_TEMPLATES: DrillTemplate[] = [
     id: "d-lostcomms",
     name: L("Panne radio en IFR", "Lost communications in IFR"),
     desc: L(
-      "Plus de radio : transpondeur 7600, route et altitude selon la règle, puis l’approche.",
-      "No radio: squawk 7600, route and altitude by the rule, then the approach.",
+      "Plus de radio : transpondeur 7600, route et altitude selon la règle de l’espace aérien (FAA 91.185 ou SERA.14083), puis l’approche.",
+      "No radio: squawk 7600, route and altitude by the rule of the airspace (FAA 91.185 or SERA.14083), then the approach.",
     ),
     phase: "cruise",
     wx: "imc",

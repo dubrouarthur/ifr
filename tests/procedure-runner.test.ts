@@ -137,6 +137,10 @@ describe("drill failure → procedure", () => {
     fly(2);
     ctrl.openQrh();
     expect(ctrl.qrhOpenedAt).not.toBeNull();
+    // opening the index gives nothing away and costs nothing: the memory items stay hidden in it
+    expect(r.checklistOpen).toBe(false);
+    // picking the checklist that answers the failure is the diagnosis: recorded on the procedure
+    ctrl.pickChecklist(r.procedure);
     expect(r.checklistOpen).toBe(true);
     fly(1);
     const res = r.result();
@@ -241,7 +245,8 @@ describe("instructor failures outside a drill", () => {
   it("the instructor confirms a callout item", async () => {
     const { ctrl, fly } = await free();
     ctrl.setGrade(true);
-    ctrl.fire("engineFire");
+    // the electrical fire has callouts (vents closed, all switches OFF); the engine fire is all switches
+    ctrl.fire("electricalFire");
     fly(0.5);
     const st = ctrl.states()[0];
     const callout = st.items.find((i) => i.manual && !i.done);
@@ -441,7 +446,7 @@ describe("instructor companion (remote)", () => {
     ctrl.reset();
     ctrl.setGrade(true);
     ctrl.setFreeMode("training");
-    ctrl.fire("engineFire");
+    ctrl.fire("electricalFire");
     for (let t = 0; t < 2; t += DT) {
       sim.step(DT);
       ctrl.tick(DT);
@@ -449,7 +454,7 @@ describe("instructor companion (remote)", () => {
     const rs = remoteProcStates(ctrl.states());
     expect(rs.length).toBe(1);
     expect(rs[0]).toMatchObject({
-      failure: "engineFire",
+      failure: "electricalFire",
       mode: "training",
       finished: false,
     });
@@ -458,7 +463,7 @@ describe("instructor companion (remote)", () => {
     expect(rs[0].items.some((i) => i.manual)).toBe(true);
     expect(JSON.parse(JSON.stringify(rs))).toEqual(rs);
     // what the phone shows changes with what the student does
-    sim.setSwitch("mixture", 0);
+    sim.setSwitch("stbyBatt", false);
     for (let t = 0; t < 1; t += DT) {
       sim.step(DT);
       ctrl.tick(DT);

@@ -1,8 +1,10 @@
 /* =================================================================== procedures mode in flight (src/ui/procedurePanel.ts)
-   The emergency card reuses the editor preview's look (.pv-* in procedures.css, "exactly as the student sees it")
-   and adds the live states: ticks, late, countdown bars, the item to do next, Done buttons. It is anchored inside the
-   right-hand display (--procp-* set by main.ts fitSides): it never covers the attitude indicator. Rules are scoped
-   under .procp so they win over procedures.css (which loads after this file). */
+   The emergency card reads like a G1000 CHKLIST page or a paper QRH: challenge on the left, RESPONSE on the right
+   with a dotted leader; one cyan cursor on the item to do now; green ticks for done items (sensed ones tick by
+   themselves, callouts take a 44 px Done); memory items first, in a box, as the POH prints them. One clock (since
+   the first symptom), one memory-flow countdown. Red only in the header. It is anchored by main.ts fitSides
+   (--procp-*) where it covers no instrument, and the pilot can drag it by its header (.pv-top). Rules are scoped
+   under .procp so they win over the editor preview's .pv-* (procedures.css loads after this file). */
 
 .procp {
   position: fixed;
@@ -30,236 +32,485 @@ body.ios-open .procp {
   flex-direction: column;
   min-height: 0;
   max-height: 100%;
+  border: 1px solid #3a2a2d;
+  border-radius: 12px;
+  background: rgba(13, 16, 20, 0.97);
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
-  border-color: #4a1c22;
-  background: rgba(14, 18, 23, 0.97);
+  color: var(--ck-text);
+  font-size: 15px;
 }
 .procp .procp-body {
   overflow-y: auto;
   min-height: 0;
   overscroll-behavior: contain;
   scrollbar-width: thin;
+  padding-bottom: 4px;
 }
+
+/* ---- header: the only red on the card */
 .procp .pv-top {
   flex: none;
-  padding: 8px 8px 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 12px;
+  background: #33100f;
+  border-bottom: 1px solid #521c1e;
+}
+.procp .pv-tag {
+  flex: none;
+  font: 800 11px var(--font);
+  letter-spacing: 0.8px;
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: var(--ck-bad);
+  color: #fff;
+}
+.procp .qc-head {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 .procp .pv-fail {
+  font-size: 15px;
+  color: #ffe1df;
   white-space: normal;
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
+.procp .qc-next {
+  color: #f1c4c1;
+  font-size: 12.5px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.procp .pv-time {
+  flex: none;
+  font: 700 17px var(--font-cond);
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
 .procp .pv-top.ok {
-  background: #0f2a1e;
+  background: #0f261b;
   border-bottom-color: #1d4a35;
 }
 .procp .pv-top.ok .pv-tag {
   background: var(--ck-good);
   color: #04140c;
 }
-.procp .pv-top.ok .pv-fail {
+.procp .pv-top.ok .pv-fail,
+.procp .pv-top.ok .qc-next {
   color: #d5f5e3;
 }
 .procp .pv-top.stop {
-  background: #1d2228;
+  background: #1c2127;
   border-bottom-color: var(--ck-line);
 }
 .procp .pv-top.stop .pv-tag {
   background: var(--ck-line-hi);
 }
-.procp .pv-top.stop .pv-fail {
+.procp .pv-top.stop .pv-fail,
+.procp .pv-top.stop .qc-next {
   color: var(--ck-text);
 }
 .procp .procp-fold {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   flex: none;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent;
   color: #f3c9cc;
   cursor: pointer;
 }
+.procp .pv-top.ok .procp-fold,
+.procp .pv-top.stop .procp-fold {
+  color: var(--ck-text);
+}
 .procp .procp-fold:hover,
 .procp .procp-fold:focus-visible {
-  background: rgba(255, 255, 255, 0.08);
-}
-.procp .procp-count {
-  font: 700 13px var(--font-cond);
-  color: #f3c9cc;
-  font-variant-numeric: tabular-nums;
-}
-.procp.folded .procp-card {
-  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.09);
 }
 .procp.folded .pv-top {
   border-bottom: 0;
+  border-radius: 11px;
 }
-.procp .pv-title {
-  padding-top: 10px;
+
+/* ---- tabs (several emergencies at once) */
+.procp .qc-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
-.procp .procp-fin {
+.procp .qc-tab {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--ck-line-hi);
+  border-radius: 18px;
+  background: transparent;
+  color: var(--ck-muted);
+  font: 600 13px var(--font);
+  cursor: pointer;
+}
+.procp .qc-tab.on {
+  border-color: var(--ck-accent);
+  color: var(--ck-text);
+  background: rgba(0, 228, 255, 0.08);
+}
+.procp .qc-tab.fin svg {
+  color: var(--ck-good);
+}
+.procp .qc-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ck-warn);
+}
+
+/* ---- title, aviate line */
+.procp .qc-title {
+  padding: 10px 14px 0;
+  font-weight: 700;
+  font-size: 15.5px;
+  line-height: 1.3;
+}
+.procp .qc-follow {
+  margin: 4px 14px 0;
+  color: var(--ck-warn);
+  font: 600 12.5px var(--font);
+}
+.procp .qc-aviate {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 6px 14px 0;
+  color: var(--ck-text);
+  font: 600 14px var(--font-cond);
+  letter-spacing: 0.2px;
+  font-variant-numeric: tabular-nums;
+}
+.procp .qc-aviate-k {
+  flex: none;
+  font: 800 11px var(--font);
+  letter-spacing: 0.9px;
+  color: var(--ck-accent);
+}
+
+/* ---- sections */
+.procp .qc-mem {
+  margin: 10px 10px 0;
+  border: 1.5px solid var(--ck-line-hi);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.025);
+}
+.procp .qc-mem.ok {
+  border-color: #26553c;
+}
+.procp .qc-chk {
+  margin: 8px 10px 0;
+}
+.procp .qc-sec {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 10px 2px;
+  font: 800 11.5px var(--font);
+  letter-spacing: 0.9px;
+  color: var(--ck-muted);
+}
+.procp .qc-timer,
+.procp .qc-count {
+  font: 700 13px var(--font-cond);
+  letter-spacing: 0.2px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ck-muted);
+  text-transform: none;
+}
+.procp .qc-timer.soon {
+  color: var(--ck-warn);
+}
+.procp .qc-timer.over {
+  color: var(--ck-warn);
+}
+.procp .qc-mem.ok .qc-timer {
+  color: var(--ck-good);
+}
+.procp .qc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 4px 4px;
+}
+
+/* ---- one row: [glyph] challenge ······ RESPONSE [right] */
+.procp .qc-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 10px 14px 0;
+  min-height: 44px;
+  padding: 6px 6px 6px 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0;
+}
+.procp .qc-list .qc-row:first-child {
+  border-top: 0;
+}
+.procp .qc-glyph {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid var(--ck-line-hi);
+  border-radius: 6px;
+  color: var(--ck-muted);
+  font: 700 12px var(--font);
+}
+.procp .qc-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.procp .qc-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 6px;
+  line-height: 1.3;
+}
+.procp .qc-ch {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-weight: 500;
+  color: var(--ck-text);
+  overflow-wrap: anywhere;
+}
+.procp .qc-dots {
+  flex: 1 1 14px;
+  min-width: 14px;
+  align-self: flex-end;
+  margin-bottom: 5px;
+  border-bottom: 1.5px dotted rgba(255, 255, 255, 0.22);
+}
+.procp .qc-rs {
+  flex: 0 1 auto;
+  max-width: 100%;
+  margin-left: auto;
+  text-align: right;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: #fff;
+  overflow-wrap: anywhere;
+}
+.procp .qc-note {
+  color: var(--ck-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.procp .qc-callout {
+  color: var(--ck-accent);
+}
+.procp .qc-slot {
+  color: var(--ck-muted);
+  font-style: italic;
+}
+
+/* current item: the cyan cursor (G1000 CHKLIST) */
+.procp .qc-row.cur {
+  background: rgba(0, 228, 255, 0.07);
+  border-radius: 7px;
+  border-top-color: transparent;
+  box-shadow: inset 3px 0 0 var(--ck-accent);
+}
+.procp .qc-row.cur + .qc-row {
+  border-top-color: transparent;
+}
+.procp .qc-row.cur .qc-glyph {
+  border-color: var(--ck-accent);
+  color: var(--ck-accent);
+}
+/* done: green tick, the line dims */
+.procp .qc-row.done .qc-glyph {
+  border-color: var(--ck-good);
+  background: var(--ck-good);
+  color: #04140c;
+}
+.procp .qc-row.done .qc-ch,
+.procp .qc-row.done .qc-rs {
+  color: #8fa0ae;
+}
+.procp .qc-row.done.late .qc-glyph {
+  border-color: var(--ck-warn);
+  background: var(--ck-warn);
+}
+/* already in position at the failure: a dashed box, ticked when the flow moves past it */
+.procp .qc-row.ready .qc-glyph {
+  border-style: dashed;
+  border-color: var(--ck-accent);
+}
+.procp .qc-row.opt .qc-ch,
+.procp .qc-row.opt .qc-rs {
+  color: var(--ck-muted);
+}
+.procp .qc-row.missed .qc-glyph {
+  border-color: var(--ck-bad);
+  color: var(--ck-bad);
+}
+.procp .qc-at {
+  flex: none;
+  color: var(--ck-muted);
+  font: 600 12.5px var(--font-cond);
+  font-variant-numeric: tabular-nums;
+}
+.procp .qc-at.late,
+.procp .qc-late {
+  flex: none;
+  color: var(--ck-warn);
+  font: 700 12.5px var(--font-cond);
+}
+.procp .qc-set,
+.procp .qc-opt {
+  flex: none;
+  color: var(--ck-muted);
+  font: 600 12px var(--font);
+}
+.procp .qc-set {
+  color: #7fd8e6;
+}
+.procp .qc-done,
+.procp .qc-reveal {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 72px;
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--ck-accent);
+  border-radius: 8px;
+  background: rgba(0, 228, 255, 0.1);
+  color: var(--ck-text);
+  font: 700 13.5px var(--font);
+  cursor: pointer;
+}
+.procp .qc-reveal {
+  border-color: var(--ck-line-hi);
+  background: transparent;
+  color: var(--ck-muted);
+  font-weight: 600;
+}
+.procp .qc-done:hover,
+.procp .qc-done:focus-visible {
+  background: rgba(0, 228, 255, 0.2);
+}
+.procp .qc-reveal:hover,
+.procp .qc-reveal:focus-visible {
+  color: var(--ck-text);
+  border-color: var(--ck-muted);
+}
+.procp .qc-done:active {
+  transform: translateY(1px);
+}
+
+/* the read-and-do list, before it is opened */
+.procp .qc-open {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: calc(100% - 20px);
+  min-height: 44px;
+  margin: 8px 10px 0;
+  padding: 0 12px;
+  border: 1px solid var(--ck-line-hi);
+  border-radius: 9px;
+  background: var(--ck-bg3);
+  color: var(--ck-text);
+  font: 700 13.5px var(--font);
+  letter-spacing: 0.3px;
+  cursor: pointer;
+}
+.procp .qc-open:hover,
+.procp .qc-open:focus-visible {
+  border-color: var(--ck-accent);
+}
+.procp .procp-kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--ck-line-hi);
+  border-radius: 4px;
+  color: var(--ck-muted);
+  font: 600 11px var(--font);
+}
+
+/* finished */
+.procp .qc-fin {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 10px 0;
   padding: 10px 12px;
   border-radius: 9px;
   border: 1px solid var(--ck-line);
   background: var(--ck-bg3);
 }
-.procp .procp-fin.ok svg {
+.procp .qc-fin.ok {
+  border-color: #26553c;
+}
+.procp .qc-fin.ok svg {
   color: var(--ck-good);
 }
-.procp .procp-fin.stop svg {
+.procp .qc-fin.stop svg {
   color: var(--ck-muted);
 }
-.procp .procp-fin div {
+/* restarted without the best glide: done, but not clean (amber) */
+.procp .qc-fin.warn {
+  border-color: color-mix(in srgb, var(--ck-warn) 55%, transparent);
+}
+.procp .qc-fin.warn svg {
+  color: var(--ck-warn);
+}
+.procp .pv-top.warn .pv-tag {
+  background: var(--ck-warn);
+  color: #1a1204;
+}
+.procp .qc-fin div {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
-.procp .procp-fin small {
+.procp .qc-fin small {
   color: var(--ck-muted);
-  font-size: 12px;
+  font-size: 12.5px;
+  line-height: 1.35;
 }
-.procp .procp-others {
-  margin: 8px 14px 0;
-  color: var(--ck-warn);
-  font: 600 12px var(--font);
-}
-
-/* items: live states */
-.procp .pv-it {
-  align-items: center;
-  min-height: 40px;
-  padding: 7px 6px;
-}
-.procp .pv-it .pv-box {
-  margin-top: 0;
-}
-.procp .pv-it.next {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
-  border-top-color: transparent;
-}
-.procp .pv-it.next + .pv-it {
-  border-top-color: transparent;
-}
-.procp .pv-it.next .pv-t {
-  color: #fff;
-}
-.procp .pv-it.done .pv-box {
-  border-color: var(--ck-good);
-  background: var(--ck-good);
-  color: #04140c;
-}
-.procp .pv-it.done .pv-t {
-  color: var(--ck-muted);
-  font-weight: 500;
-}
-.procp .pv-it.done.late .pv-box {
-  border-color: var(--ck-warn);
-  background: var(--ck-warn);
-}
-.procp .pv-it.late:not(.done) .pv-box {
-  border-color: var(--ck-warn);
-}
-.procp .pv-it.ready .pv-box {
-  border-style: dashed;
-  border-color: var(--ck-accent);
-}
-.procp .pv-it.missed .pv-box {
-  border-color: var(--ck-bad);
-}
-.procp .pv-it.missed .pv-t {
-  color: #ffb4b4;
-}
-.procp .pv-due {
-  min-width: 34px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-.procp .pv-due.over {
-  color: var(--ck-bad);
-}
-.procp .pv-bar i {
-  transition: width 0.1s linear;
-}
-.procp .pv-it.late .pv-bar i {
-  background: var(--ck-bad);
-}
-.procp .procp-at {
-  flex: none;
-  color: var(--ck-muted);
-  font: 600 12px var(--font-cond);
-  font-variant-numeric: tabular-nums;
-}
-.procp .pv-done {
-  min-height: 34px;
-  min-width: 64px;
-  padding: 0 12px;
-  background: var(--ck-bg3);
-  color: var(--ck-text);
-  cursor: pointer;
-  font: 600 13px var(--font);
-}
-.procp .pv-done:hover,
-.procp .pv-done:focus-visible {
-  border-color: var(--ck-accent);
-}
-.procp .pv-done:active {
-  background: #24303b;
-}
-.procp .pv-done.ready {
-  color: var(--ck-accent);
-  border-color: rgba(0, 228, 255, 0.35);
-}
-.procp .pv-done.on,
-.procp .pv-done:disabled {
-  color: var(--ck-good);
-  border-color: rgba(43, 213, 118, 0.4);
-  cursor: default;
-}
-.procp .procp-ready {
-  flex: none;
-  color: var(--ck-accent);
-  font: 600 11.5px var(--font);
-  letter-spacing: 0.3px;
-  text-transform: uppercase;
-}
-.procp .procp-callout {
-  color: var(--ck-muted);
-}
-.procp .pv-open {
+.procp .qc-foot {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  height: 44px;
-}
-.procp .pv-open:hover,
-.procp .pv-open:focus-visible {
-  border-color: var(--ck-accent);
-}
-.procp .procp-kbd {
-  font: 600 11px var(--font);
-  color: var(--ck-muted);
-  border: 1px solid var(--ck-line-hi);
-  border-radius: 4px;
-  padding: 1px 5px;
-}
-.procp .pv-fold {
-  width: 32px;
-  height: 28px;
-}
-.procp .pv-foot {
-  margin-top: 10px;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin: 10px 14px 6px;
+  color: var(--ck-faint, #66717d);
+  font-size: 11.5px;
+  line-height: 1.4;
 }
 
-/* test: a discreet button and the exercise time; the checklist index opens above it */
+/* ---- test: a discreet button and the exercise time; the checklist index opens above it */
 .procp.test {
   width: auto;
   max-width: min(var(--procp-w, 360px), calc(100vw - 24px));
@@ -271,20 +522,32 @@ body.ios-open .procp {
   padding: 0;
   flex-direction: column-reverse;
 }
-.procp.test .pv-test {
+.procp .pv-test {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
   padding: 6px 12px 6px 6px;
 }
-.procp.test .pv-cl {
+.procp .pv-cl {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--ck-line-hi);
+  border-radius: 8px;
+  background: var(--ck-bg3);
+  color: var(--ck-text);
+  font: 600 14px var(--font);
   cursor: pointer;
 }
-.procp.test .pv-cl.on {
+.procp .pv-cl.on {
   border-color: var(--ck-accent);
 }
 .procp.test .pv-time {
   color: var(--ck-muted);
-  font-size: 14px;
+  font-size: 15px;
 }
 .procp .procp-qrh {
   width: min(var(--procp-w, 360px), calc(100vw - 24px));
@@ -297,15 +560,16 @@ body.ios-open .procp {
 .procp .procp-qrh-h {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 12px 14px 6px;
+  gap: 2px;
+  padding: 10px 14px 6px;
 }
 .procp .procp-qrh-h b {
-  font-size: 15px;
+  font-size: 15.5px;
+  line-height: 1.3;
 }
 .procp .procp-qrh-h small {
   color: var(--ck-muted);
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 1.4;
 }
 .procp .procp-qrh-list {
@@ -315,20 +579,62 @@ body.ios-open .procp {
   scrollbar-width: thin;
   overscroll-behavior: contain;
 }
+.procp .qc-groups {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 4px 12px 4px;
+}
+/* the whole index fits a docked card: 8 groups in 4 rows (44 px on touch, 40 px with a mouse) */
+.procp .qc-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 1px solid var(--ck-line-hi);
+  border-radius: 9px;
+  background: var(--ck-bg3);
+  color: var(--ck-text);
+  text-align: left;
+  cursor: pointer;
+}
+.procp .qc-group b {
+  font: 700 13.5px var(--font);
+  line-height: 1.25;
+}
+.procp .qc-group small {
+  color: var(--ck-muted);
+  font: 600 12px var(--font-cond);
+}
+@media (pointer: coarse) {
+  .procp .qc-group {
+    min-height: 44px;
+  }
+}
+.procp .qc-group.fire {
+  border-color: #6a2327;
+  background: #2a1214;
+}
+.procp .qc-group:hover,
+.procp .qc-group:focus-visible {
+  border-color: var(--ck-accent);
+}
 .procp .procp-qrh-it {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   width: calc(100% - 16px);
-  min-height: 44px;
+  min-height: 48px;
   margin: 0 8px;
   padding: 0 8px;
   border: 0;
   border-top: 1px solid var(--ck-line);
   background: none;
   color: var(--ck-text);
-  font: 600 13.5px var(--font);
+  font: 600 14px var(--font);
   text-align: left;
   cursor: pointer;
 }
@@ -346,48 +652,79 @@ body.ios-open .procp {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  min-height: 32px;
+  min-height: 36px;
   padding: 0 8px 0 4px;
   margin-left: -4px;
   border: 0;
   border-radius: 6px;
   background: none;
   color: var(--ck-accent);
-  font: 600 12.5px var(--font);
+  font: 600 13px var(--font);
   cursor: pointer;
 }
 .procp .procp-back svg {
   transform: rotate(90deg);
 }
+.procp .procp-qrh .qc-aviate {
+  margin-top: 0;
+}
 
-/* toasts and the ATC radio move left of the card (landscape: they share the right of the outside view) */
-body.procp-on .cockpit .toasts,
-body.procp-on:not(.portrait) .cockpit .atc-radio {
+/* toasts and the ATC radio move left of the card (landscape: they share the right of the outside view) — not when
+   the card is docked on the G1000 MFD (main.ts fitSides: data-procp-dock) */
+body.procp-on:not([data-procp-dock="mfd"]) .cockpit .toasts,
+body.procp-on:not(.portrait):not([data-procp-dock="mfd"]) .cockpit .atc-radio {
   right: calc(var(--procp-r, 12px) + var(--procp-w, 360px) + 12px);
 }
 /* …and never over the lesson panel on its left: the radio narrows to the room between the two */
-body.procp-on:not(.portrait) .cockpit:has(.coach:not(.empty)) .atc-radio {
-  width: min(480px, calc(100% - var(--procp-r, 12px) - var(--procp-w, 360px) - 24px - min(380px, 46% - 20px) - 26px));
+body.procp-on:not(.portrait):not([data-procp-dock="mfd"])
+  .cockpit:has(.coach:not(.empty))
+  .atc-radio {
+  width: min(
+    480px,
+    calc(
+      100% - var(--procp-r, 12px) - var(--procp-w, 360px) - 24px -
+        min(380px, 46% - 20px) - 26px
+    )
+  );
+  min-width: 0;
+}
+
+/* the lesson window docked as a column on the left (main.ts fitSides: .cockpit[data-lesson="column"], --lesson-w):
+   the radio fits between the column and the card */
+body.procp-on:not(.portrait):not([data-procp-dock="mfd"])
+  .cockpit[data-lesson="column"]
+  .atc-radio {
+  width: min(
+    480px,
+    calc(
+      100% - var(--procp-r, 12px) - var(--procp-w, 360px) -
+        var(--lesson-w, 340px) - 36px
+    )
+  );
   min-width: 0;
 }
 
 @media (pointer: coarse) {
-  .procp .pv-done,
-  .procp .pv-open,
+  .procp .qc-done,
+  .procp .qc-reveal,
+  .procp .qc-open,
   .procp .procp-fold,
-  .procp.test .pv-cl,
-  .procp .procp-back {
+  .procp .pv-cl,
+  .procp .procp-back,
+  .procp .qc-tab {
     min-height: 44px;
+    height: auto;
+  }
+  .procp .qc-done,
+  .procp .qc-reveal {
+    height: 44px;
   }
   .procp .procp-fold {
     width: 44px;
-  }
-  .procp .pv-fold {
-    width: 44px;
     height: 44px;
   }
-  .procp .pv-it {
-    min-height: 48px;
+  .procp .qc-row {
+    min-height: 52px;
   }
 }
 @media print {
@@ -395,7 +732,6 @@ body.procp-on:not(.portrait) .cockpit:has(.coach:not(.empty)) .atc-radio {
     display: none !important;
   }
 }
-
 /* =================================================================== graded procedures (debrief, lesson result) */
 .prr {
   margin-top: 16px;
@@ -1056,4 +1392,179 @@ body.ios-open .procp.moved {
 }
 .procp.dragging .procp-card {
   box-shadow: 0 20px 56px rgba(0, 0, 0, 0.65);
+}
+
+/* docked on the G1000 MFD map (the CHKLIST page of the real unit): square to the screen, no floating shadow; the
+   instructor drawer does not push it (fitSides lays the panel out with the drawer open) */
+body[data-procp-dock="mfd"] .procp:not(.moved) .procp-card {
+  border-radius: 6px;
+  border-color: #2b3540;
+  box-shadow: none;
+  background: rgba(10, 13, 17, 0.98);
+}
+body[data-procp-dock="mfd"].ios-open .procp:not(.moved) {
+  right: var(--procp-r, 12px);
+  max-width: calc(100vw - 24px);
+}
+
+/* a short dock (laptop outside view, iPad landscape): the header and the rows tighten, the note of the item to do
+   now keeps to two lines — the cursor row and the one after it stay readable without scrolling */
+.procp.compact .pv-top {
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+/* one line for the checklist's name: the header already says what happened, the rows need the height */
+.procp.compact .qc-title {
+  padding-top: 5px;
+  font-size: 13.5px;
+  color: #c9d3dc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.procp.compact .qc-aviate {
+  margin-top: 2px;
+  font-size: 13px;
+}
+.procp.compact .qc-mem {
+  margin-top: 6px;
+}
+.procp.compact .qc-sec {
+  min-height: 22px;
+  padding-top: 2px;
+}
+.procp.compact .qc-row {
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+.procp.compact .qc-note {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.3;
+}
+.procp.compact .qc-foot {
+  display: none;
+}
+/* the Aviate line rides in the header of a short card (the body scrolls the title away) */
+.procp .qc-sub {
+  display: none;
+  color: #f1c4c1;
+  font: 600 12.5px var(--font-cond);
+  letter-spacing: 0.2px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.procp .qc-sub b {
+  font: 800 10.5px var(--font);
+  letter-spacing: 0.8px;
+  color: #fff;
+}
+.procp.compact .qc-sub {
+  display: block;
+}
+.procp.compact .procp-body > .qc-aviate {
+  display: none;
+}
+.procp .pv-top.ok .qc-sub {
+  color: #d5f5e3;
+}
+.procp .pv-top.stop .qc-sub {
+  color: var(--ck-muted);
+}
+/* a long response ("a field within gliding distance, into wind…") reads on its own line, left-aligned */
+.procp .qc-line.long {
+  flex-direction: column;
+  align-items: flex-start;
+  row-gap: 1px;
+}
+.procp .qc-line.long .qc-dots {
+  display: none;
+}
+.procp .qc-line.long .qc-rs {
+  margin-left: 0;
+  text-align: left;
+  font-weight: 600;
+  font-size: 14px;
+  color: #e9eef3;
+}
+.procp .qc-row.done .qc-line.long .qc-rs {
+  color: #8fa0ae;
+}
+/* a short card with several emergencies: the tabs name them, the procedure title gives its room to the list */
+.procp.compact .procp-body.tabbed > .qc-title {
+  display: none;
+}
+.procp.compact .qc-tabs {
+  padding-top: 6px;
+}
+@media (pointer: fine) {
+  .procp.compact .qc-tab {
+    min-height: 30px;
+  }
+}
+/* not applicable any more (the engine restarted): greyed, struck through */
+.procp .qc-row.na .qc-ch,
+.procp .qc-row.na .qc-rs {
+  color: var(--ck-muted);
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 255, 255, 0.25);
+}
+.procp .qc-row.na .qc-glyph {
+  border-style: dotted;
+}
+
+/* test mode in a short dock: no bar under the index — the clock and the Checklist toggle sit in the index header
+   (one row: back, title, clock, toggle), and the checklist rows take the rest of the height */
+.procp .procp-card.qrh-compact .procp-qrh {
+  max-height: var(--procp-mh, 70vh);
+  border-bottom: 0;
+}
+.procp.compact .procp-card.qrh-compact .procp-qrh-h {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 4px 6px 4px 12px;
+}
+.procp.compact .procp-card.qrh-compact .procp-qrh-h b {
+  flex: 1;
+  min-width: 0;
+  font-size: 14.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.procp.compact .procp-card.qrh-compact .procp-back {
+  align-self: center;
+  flex: none;
+  max-width: 40%;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.procp .qc-hx {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.procp .pv-cl.icon {
+  width: 40px;
+  padding: 0;
+  justify-content: center;
+}
+@media (pointer: coarse) {
+  .procp .pv-cl.icon {
+    width: 44px;
+    height: 44px;
+  }
+}
+.procp.compact .procp-card.qrh-compact .qc-aviate {
+  display: none;
+}
+.procp.compact .procp-card.qrh-compact .qc-mem {
+  margin-top: 0;
 }

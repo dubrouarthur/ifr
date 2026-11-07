@@ -918,3 +918,26 @@ export function drawSteamGauge(ctx: CanvasRenderingContext2D, sim: Sim, kind: St
       return rmi(ctx, sim, cx, cy, r, Number.isFinite(st.rmiHdg) ? st.rmiHdg : sim.ac.data.hdgTrue);
   }
 }
+
+// ------------------------------------------------------------------ G1000 standby instruments
+export type StandbyKind = 'asi' | 'ai' | 'alt';
+/**
+ * One of the G1000 standby instruments (C172S NAV III POH section 7: standby airspeed indicator, attitude indicator
+ * and altimeter, apart from the displays), drawn as the steam gauge at any radius. They need no screen: the
+ * airspeed indicator and the altimeter are pneumatic on the aircraft's pitot-static system (a blocked pitot or
+ * static port shows on them, an air data computer failure does not), and the standby attitude indicator is the
+ * vacuum gyro — it drifts and topples after a vacuum failure (POH: LOW VACUUM, do not use the standby attitude).
+ */
+export function drawStandbyGauge(ctx: CanvasRenderingContext2D, sim: Sim, kind: StandbyKind, cx: number, cy: number, r: number) {
+  const k = r / 146;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(k, k);
+  if (kind === 'asi') asi(ctx, 0, 0, 146, airDataShown(sim).iasKt);
+  else if (kind === 'alt') alt(ctx, 0, 0, 146, airDataShown(sim).altFt, sim.av.baro);
+  else {
+    const g = vacuumGyro(sim);
+    ai(ctx, 0, 0, 146, g.pitchDeg, g.rollDeg, false);
+  }
+  ctx.restore();
+}

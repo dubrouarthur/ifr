@@ -666,6 +666,21 @@ function filedRoute(flat: FlatLeg[]): Waypoint[] {
   return route;
 }
 
+const TEST_PHASE: Record<DrillPhase, [string, string]> = {
+  lineup: ['take-off', 'décollage'],
+  climbout: ['climb-out', 'montée initiale'],
+  cruise: ['cruise', 'croisière'],
+  approach: ['approach', 'approche'],
+  hold: ['hold', 'attente'],
+};
+/** the neutral name of a test drill: where and when, never what fails ("Test flight · PARD · cruise") */
+export function testFlightTitle(c: Circuit, l: VLang = 'en'): string {
+  const fr = l === 'fr';
+  const apt = c.dep ?? (c.start.type === 'runway' ? c.start.airport : undefined) ?? c.dest;
+  const ph = c.drill?.phase ? TEST_PHASE[c.drill.phase][fr ? 1 : 0] : null;
+  return [fr ? 'Vol de contrôle' : 'Test flight', apt, ph].filter(Boolean).join(' · ');
+}
+
 /** `seed`: replay the random failures of a recorded attempt (default: the circuit's fixed seed, else a new draw) */
 export function circuitToExercise(c: Circuit, opts: { seed?: number } = {}): Exercise {
   const st = circuitStats(c);
@@ -683,8 +698,10 @@ export function circuitToExercise(c: Circuit, opts: { seed?: number } = {}): Exe
   return {
     id: `circuit:${c.id}`,
     stage: 'S9',
-    title: c.name,
-    summary: c.description || c.legs.map(legText).join(' · '),
+    // a test drill never names its failure: the flight title is neutral and the description (which says what
+    // fails) is kept for the debrief — diagnosing the failure is part of the test (ACS emergency operations)
+    title: c.drill?.mode === 'test' ? testFlightTitle(c, ul) : c.name,
+    summary: c.drill?.mode === 'test' ? testFlightTitle(c, ul) : c.description || c.legs.map(legText).join(' · '),
     objectives: c.legs.map(legText),
     // only what the flight has (a take-off drill has no hold or SID to grade)
     standards: (() => {
@@ -842,6 +859,11 @@ export function circuitToExercise(c: Circuit, opts: { seed?: number } = {}): Exe
         seed,
         plan: planFailures(c, seed),
       };
+      // fuel starvation is set up before the flight, never injected by moving a control: the selector was left on
+      // one tank holding a few minutes of fuel, which runs dry about when the failure is due (FAA-H-8083-3C ch.18)
+      for (const it of drill.plan)
+        if (it.key === 'fuelStarvation')
+          sim.systems.prepareStarvation(sim, it.atMin !== undefined ? it.atMin * 60 + 30 : 600);
       const aglPrev = new Map<number, number>();
       const due = (t: { trigger: EventTrigger; at: number; fix?: string }, cx: Ctx) => {
         if (t.trigger === 'time') return cx.run.totalT >= t.at * 60;

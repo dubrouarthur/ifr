@@ -702,6 +702,7 @@ const PK: Record<string, string> = {
   summary: "m",
   when: "w",
   then: "n",
+  group: "q",
 };
 const IK: Record<string, string> = {
   id: "i",
@@ -712,6 +713,7 @@ const IK: Record<string, string> = {
   optional: "o",
   note: "n",
   safety: "s",
+  cockpit: "c",
 };
 const inv = (m: Record<string, string>) =>
   Object.fromEntries(Object.entries(m).map(([a, b]) => [b, a]));

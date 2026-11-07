@@ -150,8 +150,19 @@ sim.rec.onEvent = (e) => {
   if (sim.assess.mode === 'checkride' && !e.text.startsWith('FAILURE') && !e.text.startsWith('CRASH')) return;
   // a procedure test: the student diagnoses the failure from what the aircraft does — nothing names it
   if (testQuiet() && /^(FAILURE|Expected procedure|ATC transmission not received)/.test(e.text)) return;
+  // a failure drill: the emergency card is the one voice — it opens at the first symptom and names the procedure;
+  // a toast at the injection would announce a failure the pilot cannot perceive yet
+  if (/^(FAILURE|Expected procedure)/.test(e.text) && drillFlying()) return;
   if (e.kind !== 'info' || /Crossed FAF|Minimums|Liftoff/.test(e.text)) toast(uiLang() === 'fr' && e.fr ? e.fr : e.text, e.kind);
 };
+/** a failure drill is being flown (safe before the lesson state exists: events can be logged at start-up) */
+function drillFlying(): boolean {
+  try {
+    return !!lesson?.drill?.isDrill;
+  } catch {
+    return false;
+  }
+}
 /** a test drill (or a procedure test the instructor runs) is being flown: no announcement, no coaching */
 let testQuiet = () => false;
 
@@ -341,7 +352,7 @@ function startLesson(run: LessonRun) {
   coachKey = '';
   updateHeader();
   if (run.ex.plate) charts.show(run.ex.plate);
-  toast(`Exercise started: ${run.ex.title}`, 'info');
+  toast(uiLang() === 'fr' ? `Exercice commencé : ${run.ex.title}` : `Exercise started: ${run.ex.title}`, 'info');
   atc.clear();
   lastAtcStep = -1;
   if (run.rt.clearance) atc.say(run.rt.clearance);
@@ -362,8 +373,9 @@ ios.onPair = () => void pairInstructor();
 const procs = new ProcedureController({
   sim,
   lesson: () => lesson,
-  onStart: (r) => {
-    // training: the student needs the switches now; a test never opens anything by itself (no hint)
+  // training: the student needs the switches once the failure shows itself (not at the injection: that would
+  // announce it); a test never opens anything by itself (no hint)
+  onCue: (r) => {
     if (r.mode === 'training') setSystemsPanel(true, false);
   },
 });
@@ -715,6 +727,9 @@ const otwCanvas = h('canvas', { 'aria-label': 'Outside view' });
 const coach = h('div', { class: `coach${store.get('ifr.coachMin', false) ? ' min' : ''}` });
 const glCanvas = h('canvas', { 'aria-label': 'Outside view (3D)', class: 'gl' });
 const glare = h('div', { class: 'glare' });
+/** cabin smoke over the outside view (electrical fire, engine fire with the cabin heat open): with no FIRE / SMOKE
+ *  light on a C172S, the haze is the cue — the instruments get their own veil (gauges.ts smokeHaze) */
+const smokeVeil = h('div', { class: 'cabin-smoke', 'aria-hidden': 'true' });
 const lookHint = h('div', { class: 'look-hint', 'aria-hidden': 'true' }, touchUi ? 'Drag to look around · double-tap to recentre' : 'Drag to look around · double-click to recentre');
 /** the look hint appears once per session, under the situation bar, and fades after 6 s or on the first drag */
 function showLookHint() {
@@ -778,7 +793,7 @@ lessonWin.onAction((a) => {
       break;
   }
 });
-const otw = h('section', { class: 'otw' }, otwCanvas, glCanvas, glare, lookHint, sitbar, pauseVeil, lessonSlot, toasts, replayBar, atc.el);
+const otw = h('section', { class: 'otw' }, otwCanvas, glCanvas, smokeVeil, glare, lookHint, sitbar, pauseVeil, lessonSlot, toasts, replayBar, atc.el);
 let outside: Outside3D | null = null;
 let timeOfDay = store.get<TimeOfDay>('ifr.tod', 'day');
 // tablets: the lighter scene at native pixel ratio 1 (a 2x retina canvas costs 4x the fill rate on an iPad GPU)
@@ -1104,6 +1119,10 @@ function setCockpit(t: CockpitType, announce = true) {
   setSetupPanel(t === 'steam' ? 'steam' : 'glass');
   // the G1000 EIS and the airliner show the engine and electrical readings: the gauges strip is for the steam panel
   sysPanel.setGauges(t === 'steam');
+  // the systems model and the procedures follow the panel: G1000 (STBY BATT, split avionics, NAV III checklists)
+  // or the classic panel (steam-gauge C172S POH)
+  sim.cockpit = t;
+  sysPanel.setGlass(t !== 'steam');
   closeSteps();
   pfdBezel.querySelector('[data-l]')!.textContent = BEZEL_LABELS[t][0];
   mfdBezel.querySelector('[data-r]')!.textContent = BEZEL_LABELS[t][1];
@@ -1563,6 +1582,10 @@ window.addEventListener('keydown', (e) => {
     case 'b': setQnh(); break;
     case 't': toggleTimer(); break;
     case 'f': doAction(e.shiftKey ? 'flapsUp' : 'flapsDn'); break;
+    case 'enter':
+      // the emergency card: Enter confirms the callout to do now (G1000 CHKLIST: ENT checks the highlighted line)
+      if (procPanel.visible && procPanel.confirmCurrent()) { e.preventDefault(); break; }
+      return;
     case 'escape': case 'pause': togglePause(); break;
     case '?': case '/': help.open(); break;
     default: return;
@@ -1903,6 +1926,8 @@ function frameBody(now: number) {
     if (endTimer > 1.5) openDebrief();
   }
 
+  const smokeOp = Math.min(0.72, Math.max(0, (sim.sys?.smokeLevel ?? 0) - 0.03) * 1.05).toFixed(2);
+  if (smokeVeil.style.opacity !== smokeOp) smokeVeil.style.opacity = smokeOp;
   const otwH = otw.clientHeight;
   if (otwH > 10 && outside) {
     const rect = glCanvas.getBoundingClientRect();
@@ -2283,14 +2308,42 @@ function fitSides() {
     const o = otw.getBoundingClientRect();
     const oTop = Math.max(o.top, sb.height > 20 ? sb.bottom : o.top) + 8;
     const free = o.bottom - 8 - oTop;
-    if (otwMode !== 'none' && !document.body.classList.contains('portrait') && free >= 150 && o.width >= 700) {
+    const otwOk = otwMode !== 'none' && !document.body.classList.contains('portrait') && free >= 150 && o.width >= 700;
+    // G1000: the MFD map area, right of the EIS strip and above the softkeys — where the real unit shows its CHKLIST
+    // page (G1000 Cockpit Reference Guide, MFD CHKLIST softkey). The engine and electrical gauges the checklist asks
+    // to check stay in view, and so do the PFD and the AFCS bar. Taken when it gives the card more room than the
+    // outside view (laptops); a short MFD (iPad) keeps the outside view.
+    let dock: 'otw' | 'mfd' | 'panel' = 'panel';
+    if (cockpitType === 'g1000' && vis && !stacked) {
+      const mx = r.left + (r.width * 154) / 1024 + 4;
+      const my = r.top + (r.height * 54) / 768 + 2;
+      const mb = r.top + (r.height * (768 - 26)) / 768 - 2;
+      const mw = r.right - 4 - mx;
+      const mhh = mb - my;
+      const area = (aw: number, ah: number) => Math.min(aw, 460) * Math.min(ah, 420);
+      if (mw >= 330 && mhh >= 260 && (!otwOk || area(mw, mhh) > area(Math.min(460, o.width * 0.36), free) * 1.15)) {
+        dock = 'mfd';
+        document.body.style.setProperty('--procp-b', `${Math.round(window.innerHeight - mb)}px`);
+        document.body.style.setProperty('--procp-r', `${Math.round(window.innerWidth - r.right + 4)}px`);
+        document.body.style.setProperty('--procp-mh', `${Math.round(mhh)}px`);
+        document.body.style.setProperty('--procp-w', `${Math.round(Math.min(mw, 520))}px`);
+      }
+    }
+    if (dock === 'panel' && otwOk) {
+      dock = 'otw';
       // short outside views (laptops): a wider card wraps less, so the memory items still fit its height
       const ow = Math.round(Math.max(320, Math.min(free < 300 ? 460 : 400, o.width * 0.36)));
-      document.body.style.setProperty('--procp-b', `${Math.round(window.innerHeight - o.bottom + 8)}px`);
+      // a short outside view (iPad landscape: ≈ 190 px) holds one or two checklist rows — too few in a fire. The
+      // card then reaches down past it, over the right of the autopilot bar and the top of the panel (MFD map /
+      // radio stack side; the EIS and the PFD stay clear), to ≈ 360 px: at least four rows. Fold or drag it away.
+      const mh = free < 300 ? Math.max(free, Math.min(360, window.innerHeight - oTop - 150)) : free;
+      const bottom = free < 300 ? window.innerHeight - (oTop + mh) : window.innerHeight - o.bottom + 8;
+      document.body.style.setProperty('--procp-b', `${Math.round(bottom)}px`);
       document.body.style.setProperty('--procp-r', `${Math.round(Math.max(8, window.innerWidth - o.right + 12))}px`);
-      document.body.style.setProperty('--procp-mh', `${Math.round(free)}px`);
+      document.body.style.setProperty('--procp-mh', `${Math.round(mh)}px`);
       document.body.style.setProperty('--procp-w', `${ow}px`);
     }
+    document.body.dataset.procpDock = dock;
   }
   // the lesson window's zone, then: the panel shows its hint and steps behind "Details" when its space is short
   const zone = syncLessonZone();

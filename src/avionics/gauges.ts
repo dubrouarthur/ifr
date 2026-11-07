@@ -222,18 +222,20 @@ export function darkScreen(ctx: CanvasRenderingContext2D, w: number, h: number) 
 export function smokeHaze(ctx: CanvasRenderingContext2D, sim: Sim, w: number, h: number, tSec = 0) {
   const s = sysOf(sim)?.smokeLevel ?? 0;
   if (!(s > 0.03)) return;
-  const a = Math.min(0.42, s * 0.48);
+  // dense enough to read as smoke at a glance (≈ 0.65 smoke level dims the screens by half), never a blackout:
+  // the instruments stay readable through it
+  const a = Math.min(0.6, s * 0.8);
   ctx.save();
-  ctx.fillStyle = `rgba(178,176,170,${(a * 0.7).toFixed(3)})`;
+  ctx.fillStyle = `rgba(178,176,170,${(a * 0.72).toFixed(3)})`;
   ctx.fillRect(0, 0, w, h);
-  // two denser wisps drifting across the panel
-  for (let i = 0; i < 2; i++) {
-    const cx = w * (0.5 + 0.38 * Math.sin(tSec * (0.05 + i * 0.03) + i * 2.1));
-    const cy = h * (0.45 + 0.3 * Math.sin(tSec * (0.04 + i * 0.02) + i * 1.3));
-    const r = Math.max(w, h) * (0.45 + i * 0.15);
+  // three denser wisps drifting across the panel
+  for (let i = 0; i < 3; i++) {
+    const cx = w * (0.5 + 0.4 * Math.sin(tSec * (0.05 + i * 0.03) + i * 2.1));
+    const cy = h * (0.45 + 0.32 * Math.sin(tSec * (0.04 + i * 0.02) + i * 1.3));
+    const r = Math.max(w, h) * (0.3 + i * 0.12);
     const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-    g.addColorStop(0, `rgba(178,176,170,${(a * 0.55).toFixed(3)})`);
-    g.addColorStop(1, 'rgba(178,176,170,0)');
+    g.addColorStop(0, `rgba(196,194,188,${(a * 0.7).toFixed(3)})`);
+    g.addColorStop(1, 'rgba(196,194,188,0)');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h);
   }

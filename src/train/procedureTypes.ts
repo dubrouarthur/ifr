@@ -42,7 +42,9 @@ export type CheckId =
   | "landed" // aircraft on the ground, stopped, no crash (outcome)
   | "manual" // student taps Done / says it; the instructor may confirm
   // additive (procedures-engine):
-  | "engineRunning"; // p.value boolean (default true): the engine is (not) running — restart succeeded / follow-ups
+  | "engineRunning" // p.value boolean (default true): the engine is (not) running — restart succeeded / follow-ups
+  | "annunciator" // p.name (e.g. 'LOW VOLTS'), p.lit boolean (default false): the annunciation is (not) lit
+  | "brake"; // p.min 0..1 (default 0.8): the wheel brakes are applied
 
 export interface ProcItem {
   id: string;
@@ -60,7 +62,19 @@ export interface ProcItem {
   /** additive (procedures-engine): safety-critical item — missed or late => FAIL. Default: a memory item with a
    *  time limit is safety-critical; set false to opt out, true to make any item critical. */
   safety?: boolean;
+  /** additive (emergency content): the item exists only in these cockpits, e.g. 'STBY BATT — OFF' on the G1000
+   *  (C172S NAV III POH). The drill runner drops it in any other cockpit (procedureForCockpit). */
+  cockpit?: ProcCockpit[];
+  /** additive: the wording in one cockpit when it differs (classic panel 'Avionics master' vs G1000 'AVIONICS BUS
+   *  1'); procedureForCockpit swaps it in */
+  textFor?: Partial<Record<ProcCockpit, string>>;
 }
+
+/** instrument panel a procedure item or variant is written for */
+export type ProcCockpit = "g1000" | "steam" | "airliner";
+/** whose rules apply where the aircraft flies: 'faa' (14 CFR, AIM — US airspace) or 'icao' (ICAO Annex 2 /
+ *  EASA SERA — Europe and most of the world) */
+export type ProcRegion = "faa" | "icao";
 
 export interface Procedure {
   id: string;
@@ -90,7 +104,18 @@ export interface Procedure {
   summary?: string;
   /** when this procedure applies to its failures (several procedures may list the same failure: the drill session
    *  picks the first one that applies), e.g. EFATO { aglFt: [0, 1000] }, take-off roll { onGround: true } */
-  when?: { aglFt?: [number, number]; onGround?: boolean };
+  when?: {
+    aglFt?: [number, number];
+    onGround?: boolean;
+    /** the cockpits this variant is written for (G1000 LOW VOLTS vs the classic-panel one) */
+    cockpit?: ProcCockpit[];
+    /** the rules of the airspace flown (lost comms: 14 CFR 91.185 vs SERA.14083), never the UI language */
+    region?: ProcRegion;
+  };
+  /** variants of one situation share a group (the base id of the family, e.g. 'c172.alternator' for the G1000 and
+   *  the classic-panel alternator checklists): a drill that expects the group runs the variant whose `when`
+   *  applies (cockpit, airspace) */
+  group?: string;
   /** follow-up procedure started by the drill session when this one is completed (or `afterS` seconds after the
    *  failure) and `unless` is still false, e.g. restart → forced landing unless the engine runs again.
    *  `procedure` is a library base id ('c172.forcedLanding') or a full id. */
@@ -135,6 +160,80 @@ export interface ItemResult {
   /** time limit (s) and how late the item was (s), when it had a limit */
   limitS?: number;
   lateByS?: number;
+  // ---- additive (emergency flow), always filled by the runner
+  /** memory flow, read-and-do checklist, or communicate / decide (MAYDAY, 7700, nearest) */
+  phase?: "memory" | "checklist" | "communicate";
+  /** false: not graded — a callout in a solo test (nobody can hear it), shown as "not assessed — instructor" */
+  assessed?: boolean;
+  /** test: the pilot revealed this memory item on the checklist before doing it (a hint, recorded) */
+  revealed?: boolean;
+  /** no longer applicable (the engine restarted: the glide items left are moot); counted as optional */
+  notApplicable?: boolean;
+}
+
+/** one event of the procedure's timeline (s after the failure injection) */
+export interface ProcTimelineEvent {
+  atS: number;
+  kind:
+    | "failure"
+    | "cue"
+    | "action"
+    | "item"
+    | "checklist"
+    | "reveal"
+    | "complete"
+    | "resolved"
+    | "exceed"
+    | "crash"
+    | "landed"
+    | "end";
+  /** item id (item / reveal), or the limit exceeded ('bank', 'stall', 'vne', 'alt') */
+  ref?: string;
+  /** plain-language label in the procedure's language */
+  text?: string;
+}
+
+/** the flight path graded from the cue to the end of the flight (Aviate) */
+export interface ProcAviate {
+  /** bank limit, IAS band and altitude tolerance graded */
+  maxBankLimitDeg: number;
+  iasKt?: [number, number];
+  altTolFt?: number;
+  /** while the procedure ran */
+  maxBankDeg: number;
+  minIasKt: number | null;
+  maxIasKt: number | null;
+  /** % of the time inside ±altTolFt of the altitude at the cue (null: altitude not graded) */
+  altInPct: number | null;
+  /** largest altitude deviation from the altitude at the cue (ft) */
+  altDevMaxFt: number;
+  /** total stall-warning time above the flare height (s) */
+  stallWarnS: number;
+  vneExceeded: boolean;
+  /** bank beyond the limit + 15°, a sustained stall warning or VNE: control was lost */
+  controlLost: boolean;
+  /** after the checklist was complete (the flight is watched to its end) */
+  after: { maxBankDeg: number; stallWarnS: number; vneExceeded: boolean; crashed: boolean; upset: boolean };
+  /** sim seconds watched after the checklist was complete */
+  watchedAfterS: number;
+  ok: boolean;
+}
+
+/** the five parts of the emergency, as an examiner grades them (FAA-H-8083-3C ch.18; ACS emergency operations) */
+export interface ProcPhases {
+  aviate: { ok: boolean };
+  recognise: {
+    /** s from the failure to the first perceptible symptom */
+    cueS: number | null;
+    /** s from the cue to the first relevant action (null: none) */
+    actionS: number | null;
+    /** expected (null: not timed) */
+    targetS: number | null;
+    ok: boolean | null;
+  };
+  memory: { total: number; done: number; inTime: number; inOrder: number; fromMemory: number; ok: boolean | null };
+  checklist: { total: number; done: number; completedS: number | null; ok: boolean | null };
+  communicate: { total: number; done: number; ok: boolean | null };
 }
 
 export interface ProcedureResult {
@@ -142,7 +241,8 @@ export interface ProcedureResult {
   title: string;
   failure: FailureKey;
   failedAtS: number;
-  /** first pilot action after the failure (any control or switch input), s */
+  /** first RELEVANT pilot action after the first cue (an item of this procedure done by the pilot, or the pitch
+   *  input of a glide / attitude procedure), s — never a control the systems moved, never a Done tap */
   reactionS: number | null;
   items: ItemResult[];
   /** flight-path control during the procedure */
@@ -164,9 +264,24 @@ export interface ProcedureResult {
   /** follow-up procedure (e.g. forced landing after a failed restart): id of the procedure it followed. The reaction
    *  time was graded on that one, not here. */
   followUpOf?: string;
-  /** test mode with no instructor confirming callouts: Done (callout) items were graded as checklist items only
-   *  (never 'from memory', never safety-critical), since nobody could hear them */
+  /** test mode with no instructor confirming callouts: Done (callout) items were not graded (nobody could hear
+   *  them); the score comes from the sensed items and the flight path */
   soloTest?: boolean;
+  // ---- additive (emergency flow), always filled by the runner
+  /** s from the failure injection to the first perceptible cue (null: no cue was ever perceptible) */
+  cueS?: number | null;
+  /** s from the cue to the first relevant action (same as reactionS) and the target it was graded against */
+  recognitionS?: number | null;
+  recognitionTargetS?: number | null;
+  /** s after the failure when every required item was done (null: never) */
+  completedS?: number | null;
+  aviate?: ProcAviate;
+  phases?: ProcPhases;
+  timeline?: ProcTimelineEvent[];
+  /** training: memory items were shown on the card — "from memory" was not graded */
+  guided?: boolean;
+  /** items not graded (solo-test callouts) */
+  notAssessed?: number;
 }
 
 /** Live state the in-flight panel and the instructor companion show. */
@@ -193,14 +308,42 @@ export interface ProcedureRunState {
     /** the control was already in the required position at the failure: ticked ('verified') when the pilot moves
      *  on to the next item — the panel may show it as 'check' rather than 'to do' */
     ready?: boolean;
+    // ---- additive (emergency flow)
+    /** the item to do now (first pending required item in list order) */
+    current?: boolean;
+    /** test: memory item revealed on the checklist */
+    revealed?: boolean;
+    /** time limit (s) */
+    limitS?: number;
+    /** no longer applicable (restart worked) */
+    notApplicable?: boolean;
+    /** the restart worked but this Aviate item (best glide) was never flown: missed, not waived */
+    notFlown?: boolean;
   }[];
   mode: DrillMode;
   // ---- additive (procedures-engine), always filled
   lang?: Lang;
   ref?: string;
   disclaimer?: string;
-  /** the runner stopped (completed, landed, crashed, superseded by a follow-up or finished by the lesson) */
+  /** the checklist part is over: completed (the flight is still watched), landed, crashed, superseded by a
+   *  follow-up or finished by the lesson */
   finished?: boolean;
+  // ---- additive (emergency flow)
+  /** s after the failure when the first symptom became perceptible (the card opens then), null before */
+  cueS?: number | null;
+  /** s since the cue (the card's clock), 0 before the cue */
+  sinceCueS?: number;
+  /** every required item done; the flight path is still graded until the end of the flight */
+  complete?: boolean;
+  /** the runner has stopped for good (end of flight, landed, crashed, follow-up) */
+  stopped?: boolean;
+  outcome?: "completed" | "incomplete" | "crashed" | "landed";
+  /** the procedure this one follows (restart → forced landing) */
+  followUpOf?: string;
+  /** the targets line of the card (airspeed band, bank limit) */
+  targets?: { iasKt?: [number, number]; maxBankDeg?: number };
+  /** the engine restarted but the best glide was never flown: the card says so instead of 'Checklist complete' */
+  restartNoGlide?: boolean;
 }
 
 export type { Switches };

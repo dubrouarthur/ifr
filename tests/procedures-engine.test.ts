@@ -9,11 +9,13 @@ import {
 } from "../src/train/procedureChecks";
 import {
   DrillSession,
+  FOLLOW_RESTART_S,
   PASS_MARK,
   ProcedureRunner,
   baseId,
   fakeView,
   pickProcedure,
+  procedureForCockpit,
   simView,
   type ProcSimView,
 } from "../src/train/procedures";
@@ -278,11 +280,11 @@ describe("procedure runner", () => {
     fly(r, 100, 140, (t, c) => {
       if (t >= 102) c = { ...c, sw: { ...c.sw, mixture: 0 } };
       if (t >= 104) c = { ...c, sw: { ...c.sw, fuelShutoff: false } };
+      // C172S NAV III POH engine fire: no STBY BATT step (the PFD and COM1 stay for the MAYDAY)
       if (t >= 106) c = { ...c, sw: { ...c.sw, batMaster: false } };
       if (t >= 103) c = { ...c, iasKt: Math.min(c.iasKt + 0.5, 100) };
       return c;
     });
-    r.confirm("forced", "student");
     const res = r.result();
     expect(res.reactionS).toBe(2);
     const byId = Object.fromEntries(res.items.map((x) => [x.id, x]));
@@ -297,6 +299,11 @@ describe("procedure runner", () => {
     expect(byId.auxPump.by).toBe("verified"); // already OFF at the failure: credited when the pilot moved on
     expect(byId.cabin.by).toBe("verified");
     expect(byId.ias.done).toBe(true);
+    expect(byId.ias.memory).toBe(true); // 100 KIAS is a memory item (POH flow, ATO practice)
+    expect(byId.stbyBatt).toBeUndefined();
+    // no 'Forced landing — execute' button: the forced landing follows as its own procedure
+    expect(byId.forced).toBeUndefined();
+    expect(p.then?.procedure).toBe("c172.forcedLanding");
     expect(res.verdict).toBe("PASS");
     expect(res.score).toBeGreaterThanOrEqual(90);
     expect(res.lang).toBe("en");
@@ -309,8 +316,9 @@ describe("procedure runner", () => {
     const r = new ProcedureRunner(p, "test", "engineFire", 0);
     fly(r, 0, 40, (t, c) => {
       if (t >= 3) c = { ...c, sw: { ...c.sw, fuelShutoff: false } }; // valve first: out of order
-      if (t >= 14) c = { ...c, sw: { ...c.sw, mixture: 0 } }; // limit 10 s
-      if (t >= 16) c = { ...c, sw: { ...c.sw, batMaster: false } };
+      if (t >= 19) c = { ...c, sw: { ...c.sw, mixture: 0 } }; // limit 15 s
+      if (t >= 20) c = { ...c, sw: { ...c.sw, stbyBatt: false } };
+      if (t >= 21) c = { ...c, sw: { ...c.sw, batMaster: false } };
       return c;
     });
     const res = r.result();
@@ -320,7 +328,7 @@ describe("procedure runner", () => {
     expect(res.items.find((x) => x.id === "shutoff")!.inOrder).toBe(false);
     expect(res.verdict).toBe("FAIL");
     expect(res.notes[0]).toBe(
-      "« Mélange — ÉTOUFFOIR » : fait avec 4 s de retard (à 14 s, limite 10 s) — point critique, exercice échoué.",
+      "« Mélange — ÉTOUFFOIR » : fait avec 4 s de retard (limite 15 s après les premiers signes) — point critique, exercice échoué.",
     );
     expect(
       res.notes.some((n) =>
@@ -329,7 +337,7 @@ describe("procedure runner", () => {
     ).toBe(true);
   });
 
-  it("memory items done after opening the checklist are not from memory", () => {
+  it("training: opening the checklist the card offers never costs anything (the memory items are on it)", () => {
     const r = new ProcedureRunner(
       lib("c172.engineFire.en"),
       "training",
@@ -341,27 +349,50 @@ describe("procedure runner", () => {
       if (t >= 2)
         c = {
           ...c,
-          sw: { ...c.sw, mixture: 0, fuelShutoff: false, batMaster: false },
+          iasKt: 100,
+          sw: { ...c.sw, mixture: 0, fuelShutoff: false, stbyBatt: false, batMaster: false },
         };
       return c;
     });
     const res = r.result();
     expect(res.checklistOpenedS).toBeCloseTo(1, 0);
-    expect(res.items.find((x) => x.id === "mixture")!.fromMemory).toBe(false);
-    expect(
-      res.notes.some((n) => /only after opening the checklist/.test(n)),
-    ).toBe(true);
-    expect(res.score).toBeLessThan(90);
+    expect(res.guided).toBe(true);
+    expect(res.items.find((x) => x.id === "mixture")!.fromMemory).toBe(true);
+    expect(res.notes.some((n) => /checklist before it was done/.test(n))).toBe(false);
+    expect(res.verdict).toBe("PASS");
+  });
+
+  it("test: a memory item revealed on the checklist before it is done is not from memory", () => {
+    const r = new ProcedureRunner(lib("c172.engineFire.en"), "test", "engineFire", 0);
+    fly(r, 0, 30, (t, c) => {
+      if (t === 1) {
+        r.openChecklist(); // picking the checklist alone is no hint: the memory items stay hidden
+        r.reveal("mixture");
+      }
+      if (t >= 2)
+        c = {
+          ...c,
+          iasKt: 100,
+          sw: { ...c.sw, mixture: 0, fuelShutoff: false, stbyBatt: false, batMaster: false },
+        };
+      return c;
+    });
+    const res = r.result();
+    expect(res.items.find((x) => x.id === "mixture")).toMatchObject({ fromMemory: false, revealed: true });
+    expect(res.items.find((x) => x.id === "shutoff")!.fromMemory).toBe(true);
+    expect(res.notes.some((n) => /was read on the checklist before it was done/.test(n))).toBe(true);
+    expect(res.timeline!.some((e) => e.kind === "reveal" && e.ref === "mixture")).toBe(true);
   });
 
   it("missed memory item => FAIL with the memory note first; state() shows due / late", () => {
+    // the classic panel (no STBY BATT item): the master is the first memory item
     const r = new ProcedureRunner(
-      lib("c172.electricalFire.en"),
+      procedureForCockpit(lib("c172.electricalFire.en"), "steam"),
       "test",
       "electricalFire",
       0,
     );
-    fly(r, 0, 15, () => undefined);
+    fly(r, 0, 25, () => undefined);
     const st = r.state();
     const master = st.items.find((x) => x.id === "master")!;
     expect(master.done).toBe(false);
@@ -374,8 +405,8 @@ describe("procedure runner", () => {
     const res = r.result();
     expect(res.verdict).toBe("FAIL");
     expect(res.outcome).toBe("incomplete");
-    expect(res.notes[0]).toMatch(/^No reaction to the failure was detected/);
-    expect(res.notes[1]).toMatch(/^Memory item missed: “Master switch — OFF”/);
+    expect(res.notes[0]).toMatch(/^No action of this procedure after the first signs of the failure/);
+    expect(res.notes[1]).toMatch(/^Memory item missed: “Master switch \(ALT and BAT\) — OFF”/);
   });
 
   it("manual items: the student confirms Done items only, the instructor any item", () => {
@@ -394,7 +425,8 @@ describe("procedure runner", () => {
     const res = r.result();
     expect(res.items.find((x) => x.id === "switches")!.by).toBe("student");
     expect(res.items.find((x) => x.id === "master")!.by).toBe("instructor");
-    expect(res.reactionS).toBe(1);
+    // a Done tap (or an instructor confirmation) is never the pilot's reaction to the failure
+    expect(res.reactionS).toBeNull();
   });
 
   it("flight-path stats: IAS band time, max bank, altitude lost; held checks need their hold time", () => {
@@ -417,8 +449,9 @@ describe("procedure runner", () => {
     const res = r.result();
     const ias = res.items.find((x) => x.id === "ias")!;
     expect(ias.done).toBe(true);
-    expect(ias.atS).toBeGreaterThan(9);
-    expect(ias.atS).toBeLessThan(10.5);
+    // the band is entered at ~9 s while the speed still decays 3.5 kt/s: established once it is steady (~2 s later)
+    expect(ias.atS).toBeGreaterThan(10);
+    expect(ias.atS).toBeLessThan(12.5);
     expect(res.path.maxBankDeg).toBe(35);
     expect(res.path.altLostFt).toBe(720);
     expect(res.path.iasBandPct).toBeGreaterThan(80);
@@ -463,6 +496,7 @@ describe("procedure runner", () => {
       return c;
     });
     r.confirm("fly", "student");
+    r.confirm("mixture", "student"); // RICH then lean for smoothness: a callout (a leaned engine is right too)
     r.confirm("prepare", "student");
     const res = r.result();
     expect(res.items.every((x) => x.inOrder)).toBe(true);
@@ -481,6 +515,7 @@ describe("procedure runner", () => {
     fly(good, 0, 10, (t, c) =>
       t >= 1.5 ? { sw: { ...c.sw, trimCb: false } } : undefined,
     );
+    good.confirm("disc", "student"); // AP DISC / TRIM INTR held: a callout (the runaway itself drops the AP)
     good.confirm("retrim", "student");
     good.confirm("land", "student");
     expect(good.result().score).toBeGreaterThanOrEqual(95);
@@ -514,8 +549,10 @@ describe("drill session", () => {
     expect(club.basedOn).toBe("c172.engineFire.en");
     expect(s.pick("engineFire")!.id).toBe(club.id); // club first, even in another language
     expect(s.pick("engineFire", "c172.engineFire.en")!.id).toBe(club.id); // club override of the expected one
-    expect(s.pick("battery")).toBeNull();
-    expect(s.start("battery", 0)).toBeNull();
+    // the battery failure now has its own checklist
+    expect(s.pick("battery")!.id).toBe("c172.battery.fr");
+    expect(pickProcedure([], "battery", "fr")).toBeNull();
+    expect(new DrillSession({ mode: "test", lang: "fr", procedures: () => [] }).start("battery", 0)).toBeNull();
   });
 
   it("phase decides between take-off roll, EFATO and engine failure in flight", () => {
@@ -613,7 +650,10 @@ describe("drill session", () => {
     expect(s.results()[0].items.find((x) => x.id === "auxPump")!.done).toBe(true);
     const s2 = new DrillSession({ mode: "training", lang: "en" });
     s2.start("fuelPump", 0, undefined, v({ t: 0 }));
-    for (let t = 0; t <= 30; t += 0.5) s2.update(v({ t, engineRunning: t < 4 }));
+    // a restart flow still to do (the aux pump): the restart gets FOLLOW_RESTART_S before the forced landing
+    for (let t = 0; t < 4 + FOLLOW_RESTART_S - 0.5; t += 0.5) s2.update(v({ t, engineRunning: t < 4 }));
+    expect(s2.runners.length).toBe(1);
+    for (let t = 4 + FOLLOW_RESTART_S - 0.5; t <= 50; t += 0.5) s2.update(v({ t, engineRunning: t < 4 }));
     expect(s2.runners.map((r) => baseId(r.procedure.id))).toEqual(["c172.fuelPump", "c172.forcedLanding"]);
     expect(s2.runners[1].failedAtS).toBe(4);
   });
@@ -644,8 +684,8 @@ describe("procedure library", () => {
         fr = libraryProcedure(b, "fr")!;
       expect(baseId(en.id)).toBe(b);
       expect(en.failures).toEqual(fr.failures);
-      if (b !== "c172.lostComms")
-        expect(en.items.map((x) => x.id)).toEqual(fr.items.map((x) => x.id));
+      // both rules in both languages: every procedure has the same items in EN and FR
+      expect(en.items.map((x) => x.id)).toEqual(fr.items.map((x) => x.id));
     }
   });
 
@@ -678,22 +718,25 @@ describe("procedure library", () => {
       min: 63,
       max: 73,
     }); // 68 KIAS ± 5
+    // lost comms: the rule of the airspace, in both languages (never chosen by the UI language)
     expect(lib("c172.lostComms.en").ref).toMatch(/91\.185/);
-    expect(lib("c172.lostComms.fr").ref).toMatch(/SERA\.14083/);
+    expect(lib("c172.lostComms.fr").ref).toMatch(/91\.185/);
+    expect(lib("c172.lostCommsSera.en").ref).toMatch(/SERA\.14083/);
+    expect(lib("c172.lostCommsSera.fr").ref).toMatch(/SERA\.14083/);
     expect(
-      lib("c172.lostComms.fr").items.some((x) => x.check?.id === "timer"),
+      lib("c172.lostCommsSera.en").items.some((x) => x.check?.id === "timer"),
     ).toBe(true);
     expect(
       lib("c172.forcedLanding.fr").items.some(
         (x) => x.check?.id === "xpdr" && x.check.p?.code === "7700",
       ),
     ).toBe(true);
-    // every failure has a procedure except the battery (the C172S POH has no dedicated one)
+    // every failure has a procedure
     const covered = new Set(LIBRARY.flatMap((p) => p.failures));
     const missing = (
       Object.keys(FAILURE_LABELS_EN) as (keyof typeof FAILURE_LABELS_EN)[]
     ).filter((k) => !covered.has(k));
-    expect(missing.sort()).toEqual(["battery"]);
+    expect(missing.sort()).toEqual([]);
     // POH-level wording: 'as soon as practical' is not 'as soon as possible' in French either
     for (const p of LIBRARY.filter((x) => x.lang === "en"))
       p.items.forEach((it, i) => {
@@ -839,7 +882,7 @@ describe("club procedure store", () => {
   });
 
   it("share codes: procedure and pack round-trip, compact, links", () => {
-    const p = customise("c172.lostComms.fr")!;
+    const p = customise("c172.lostCommsVfr.fr")!;
     p.items[1].note = "Consigne club : 7600 avant tout";
     const code = encodeShare(p);
     expect(code.startsWith("P1.")).toBe(true);
@@ -928,7 +971,7 @@ describe("fair grading (review)", () => {
     expect(ri.reactionS).toBeNull();
     expect(ri.items[0].done).toBe(false);
     expect(ri.verdict).toBe("FAIL");
-    expect(ri.notes.some((n) => /No reaction/.test(n))).toBe(true);
+    expect(ri.notes.some((n) => /No action of this procedure/.test(n))).toBe(true);
     // same, the pilot takes the controls at 2 s
     const good = new ProcedureRunner(p, "test", "ap", 0);
     fly(good, 0, 30, (t, cur) => ({
@@ -963,7 +1006,10 @@ describe("fair grading (review)", () => {
     expect(field.done).toBe(false);
     expect(field.safety).toBe(false);
     expect(rs.verdict).toBe("PASS");
-    expect(rs.notes.some((n) => n.startsWith("Callouts not confirmed"))).toBe(true);
+    // nobody can hear a callout in a solo test: it is not assessed (and says so), never a fault
+    expect(field.assessed).toBe(false);
+    expect(rs.notes.some((n) => /callouts? not assessed/.test(n))).toBe(true);
+    expect(rs.notes.some((n) => n.startsWith("Callouts not confirmed"))).toBe(false);
     expect(rs.notes.some((n) => n.startsWith("Memory item missed"))).toBe(false);
     // an instructor is listening (confirmed another callout): the field choice is a real memory item again
     const heard = new ProcedureRunner(p, "test", "engine", 0);
@@ -974,7 +1020,7 @@ describe("fair grading (review)", () => {
     const rh = heard.result();
     expect(rh.soloTest).toBe(false);
     expect(rh.verdict).toBe("FAIL");
-    expect(rh.notes[0]).toMatch(/^Memory item missed: “Field/);
+    expect(rh.notes[0]).toMatch(/^Memory item missed: “Landing site/);
     // a callout confirmed after opening the checklist in a solo test is not penalised as 'not from memory'
     const late = new ProcedureRunner(p, "test", "engine", 0);
     fly(late, 0, 40, (t, cur) => {
@@ -1024,10 +1070,15 @@ describe("fair grading (review)", () => {
   });
 
   it("items already right at the failure show no countdown; electrical fire follows the POH order", () => {
-    const p = lib("c172.electricalFire.en");
-    expect(p.items.map((x) => x.id).slice(0, 5)).toEqual(["master", "cabin", "extinguisher", "avionics", "switches"]);
+    // C172S POH (classic panel): master, vents, heat and air, extinguisher, avionics, every other switch
+    const p = procedureForCockpit(lib("c172.electricalFire.en"), "steam");
+    expect(p.items.map((x) => x.id).slice(0, 6)).toEqual(["master", "vents", "cabin", "extinguisher", "avionics", "switches"]);
+    // the G1000 (NAV III POH) puts STBY BATT first and has the second avionics bus
+    const g = procedureForCockpit(lib("c172.electricalFire.en"), "g1000");
+    expect(g.items.map((x) => x.id).slice(0, 7)).toEqual(["stbyBatt", "master", "vents", "cabin", "extinguisher", "avionics", "avionics2"]);
     const r = new ProcedureRunner(p, "training", "electricalFire", 0);
     fly(r, 0, 20, (t, cur) => ({ sw: { ...cur.sw, batMaster: t < 3, avionics: t < 6 } }));
+    r.confirm("vents", "student");
     r.confirm("switches", "student");
     const res = r.result();
     expect(res.items.filter((x) => !x.optional && x.id !== "breakers" && x.id !== "land").every((x) => x.done && x.inOrder)).toBe(true);
@@ -1109,7 +1160,9 @@ describe("fair grading (second review)", () => {
     expect(bad("L", "L")).toBe(false);
     expect(bad("L", "R")).toBe(true);
     expect(bad("L", "BOTH")).toBe(false);
-    expect(bad(null, "L")).toBe(true);
+    // no faulty magneto (partial power): the POH answer is BOTH — a single magneto there only costs power
+    expect(bad(null, "L")).toBe(false);
+    expect(bad(null, "BOTH")).toBe(true);
     expect(checkLabel({ id: "switch", p: { key: "magnetos", value: "GOOD" } }, "fr")).toMatch(/bonne magnéto/);
     expect(checkParamIssues({ id: "switch", p: { key: "magnetos", value: "GOOD" } }, "en")).toEqual([]);
     expect(lib("c172.roughEngine.en").items.find((x) => x.id === "mags")!.check!.p!.value).toBe("GOOD");
@@ -1124,7 +1177,6 @@ describe("fair grading (second review)", () => {
     const s = new DrillSession({ mode: "training", lang: "fr" });
     expect(s.pick("nav1")!.id).toBe("c172.nav1.fr");
     expect(s.pick("airData")!.id).toBe("c172.airData.fr");
-    expect(s.pick("battery")).toBeNull();
     const cdi = { id: "cdi" as const, p: { value: "NAV2|GPS" } };
     expect(CHECKS.cdi.evaluate(v({ cdi: "GPS" }), cdi.p, ctx)).toBe(true);
     expect(CHECKS.cdi.evaluate(v({ cdi: "NAV2" }), cdi.p, ctx)).toBe(true);

@@ -6,8 +6,9 @@ import { runwaysInView } from './world3d';
 import { wrap180, DEG } from '../nav/geo';
 import { tunedNavaid } from '../nav/radios';
 import { drawMap, drawEisStrip } from './mfd';
-import { airDataShown, darkScreen, hasPower, smokeHaze, sysOf, vacuumGyro } from './gauges';
+import { airDataShown, darkScreen, hasPower, smokeHaze, sysOf } from './gauges';
 import { ANNUNCIATOR_LEVEL } from '../sim/systemsTypes';
+import { drawStandbyGauge } from './steam';
 
 export const PFD_W = 1024;
 export const PFD_H = 768;
@@ -346,10 +347,12 @@ function drawPfdBody(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState, dt: 
   setTextScaleFor(ctx, PFD_W, st.textScale);
   st.flash += dt;
   bindPfdPointer(ctx.canvas, st, sim);
-  // no power on the essential bus: the PFD is dark (black glass); it boots again with the power
+  // no power on the essential bus: the PFD is dark (black glass); it boots again with the power. The pilot flies on
+  // the standby instruments, which need no screen (drawn over the dark glass where the eye goes)
   if (!hasPower(sim, 'pfd')) {
     st.filtInit = false;
     darkScreen(ctx, PFD_W, PFD_H);
+    drawStandbyCluster(ctx, sim, st);
     return;
   }
   updatePfdFilters(st, sim);
@@ -1353,50 +1356,25 @@ function drawFailures(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState, cas
   const adcBad = !Number.isFinite(d.iasKt) || !Number.isFinite(sim.indicatedAlt()) || !Number.isFinite(d.vsFpm);
   if (f.ahrs || ahrsBad) {
     redX(ctx, 222, 84, 556, 370);
-    // standby attitude indicator (vacuum-driven in the C172: it drifts too after a vacuum failure)
-    const cx = 500, cy = 270, r = 92;
-    const sb = vacuumGyro(sim);
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.clip();
-    ctx.translate(cx, cy);
-    ctx.rotate(-fin(sb.rollDeg) * DEG);
-    ctx.translate(0, fin(sb.pitchDeg) * 4);
-    ctx.fillStyle = '#2b78c9';
-    ctx.fillRect(-300, -300, 600, 300);
-    ctx.fillStyle = '#7a4c1c';
-    ctx.fillRect(-300, 0, 600, 300);
-    line(ctx, -300, 0, 300, 0, C.white, 2);
-    for (const p of [-20, -10, 10, 20]) line(ctx, -18, -p * 4, 18, -p * 4, C.white, 2);
-    ctx.restore();
-    ctx.strokeStyle = '#888';
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.arc(cx, cy, r + 3, 0, Math.PI * 2);
-    ctx.stroke();
-    line(ctx, cx - 46, cy, cx - 14, cy, C.amber, 4);
-    line(ctx, cx + 14, cy, cx + 46, cy, C.amber, 4);
-    cbox(ctx, cx - 3, cy - 3, 6, 6, C.amber);
-    text(ctx, 'STBY ATTITUDE', cx, cy + r + 18, C.white, fs(14), 'center', 700);
-    text(ctx, 'AHRS FAIL', cx, 108, C.red, 18, 'center', 700);
+    text(ctx, 'AHRS FAIL', 500, 108, C.red, 18, 'center', 700);
+    // the standby attitude indicator (vacuum gyro: it drifts too after a vacuum failure), shown where the eye goes
+    stbyPlate(ctx, 500, 280, 116);
+    drawStandbyGauge(ctx, sim, 'ai', 500, 280, 104);
     // HSI red X + magnetic compass with lag (northerly turning errors are left to the pilot!)
     redX(ctx, HX - 150, HY - 165, 300, 300, 'HDG FAIL');
-    if (Number.isFinite(d.hdgTrue)) {
-      let diff = d.hdgTrue - st.compassHdg;
-      if (diff > 180) diff -= 360;
-      if (diff < -180) diff += 360;
-      st.compassHdg = (st.compassHdg + diff * Math.min(1, 0.05 + Math.abs(Math.cos(d.hdgTrue * DEG)) * 0.08) + 360) % 360;
-    }
-    if (!Number.isFinite(st.compassHdg)) st.compassHdg = 0;
-    cbox(ctx, HX - 66, 690, 132, 36, '#111', C.gray);
-    text(ctx, `COMPASS ${pad3(st.compassHdg)}`, HX, 708, C.white, fs(15), 'center', 700);
+    stepCompass(st, d.hdgTrue);
+    compassCard(ctx, HX, 700, 220, 40, st.compassHdg);
   } else st.compassHdg = fin(d.hdgTrue);
   if (f.airData || adcBad) {
     redX(ctx, IAS_X, TAPE_TOP, IAS_W, TAPE_BOT - TAPE_TOP);
     redX(ctx, ALT_X, TAPE_TOP, ALT_W, TAPE_BOT - TAPE_TOP);
     redX(ctx, 896, 118, 46, 300);
     text(ctx, 'ADC FAIL', ALT_X + ALT_W / 2, 540, C.red, fs(15), 'center', 700);
+    // the standby airspeed indicator and altimeter (pneumatic: the ADC failure does not touch them)
+    stbyPlate(ctx, 168, 300, 100);
+    drawStandbyGauge(ctx, sim, 'asi', 168, 300, 88);
+    stbyPlate(ctx, 862, 300, 100);
+    drawStandbyGauge(ctx, sim, 'alt', 862, 300, 88);
   }
   // annunciation window (right column, under the VSI): warnings red, cautions amber; an unacknowledged warning
   // flashes (inverse video) until the WARNING softkey is pressed
@@ -1412,6 +1390,79 @@ function drawFailures(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState, cas
     const fit = Math.min(as, as * ((CAS_W - 8) / Math.max(1, tw(ctx, m.text, as, 700))));
     text(ctx, m.text, CAS_X + CAS_W / 2, y + ah / 2 + 1, inv ? '#000' : c, fit, 'center', 700);
   });
+}
+
+// ------------------------------------------------------------------ standby instruments (G1000)
+/** the magnetic compass swings towards the heading with a lag (its turning and acceleration errors are left to
+ *  the pilot) */
+function stepCompass(st: PfdState, hdg: number) {
+  if (Number.isFinite(hdg)) {
+    if (!Number.isFinite(st.compassHdg)) st.compassHdg = hdg;
+    let diff = hdg - st.compassHdg;
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+    st.compassHdg = (st.compassHdg + diff * Math.min(1, 0.05 + Math.abs(Math.cos(hdg * DEG)) * 0.08) + 360) % 360;
+  }
+  if (!Number.isFinite(st.compassHdg)) st.compassHdg = 0;
+}
+
+/** a dark round mount behind a standby instrument, so it reads as a separate gauge, not part of the display */
+function stbyPlate(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number) {
+  ctx.save();
+  ctx.fillStyle = '#0b0c0d';
+  ctx.strokeStyle = '#2c3034';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r + 26, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** wet compass: the card seen through its window, the lubber line in the middle */
+function compassCard(ctx: CanvasRenderingContext2D, cx: number, cy: number, w: number, h: number, hdg: number) {
+  ctx.save();
+  cbox(ctx, cx - w / 2 - 6, cy - h / 2 - 6, w + 12, h + 12, '#16181a', '#3a3e42');
+  ctx.beginPath();
+  ctx.rect(cx - w / 2, cy - h / 2, w, h);
+  ctx.clip();
+  ctx.fillStyle = '#e9e4d6';
+  ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
+  const pxPerDeg = 3.2;
+  const card = ['N', '3', '6', 'E', '12', '15', 'S', '21', '24', 'W', '30', '33'];
+  for (let a = Math.floor(hdg / 5) * 5 - 40; a <= hdg + 40; a += 5) {
+    // a magnetic compass card is read from behind: the headings INCREASE TO THE LEFT (heading north, 'E' sits left
+    // of 'N') — the reversal that makes compass turns a partial-panel teaching point (FAA-H-8083-15B ch.5)
+    const x = cx - (a - hdg) * pxPerDeg;
+    const n = ((a % 360) + 360) % 360;
+    const major = n % 30 === 0;
+    line(ctx, x, cy + h / 2, x, cy + h / 2 - (major ? 14 : n % 10 === 0 ? 9 : 5), '#111', 2);
+    if (major) text(ctx, card[n / 30], x, cy - 4, '#111', fs(17), 'center', 800);
+  }
+  ctx.restore();
+  line(ctx, cx, cy - h / 2 - 4, cx, cy + h / 2 + 4, C.amber, 3);
+}
+
+/**
+ * The G1000 standby instruments with the PFD dark (no essential-bus power, STBY BATT OFF or exhausted): standby
+ * airspeed, attitude and altimeter in a row and the magnetic compass above, the way the C172S NAV III panel keeps
+ * them for exactly this case (POH section 3: "use the standby instruments").
+ */
+function drawStandbyCluster(ctx: CanvasRenderingContext2D, sim: Sim, st: PfdState) {
+  const d = sim.ac.data;
+  const r = 128;
+  const cy = 476;
+  const gap = 2 * r + 44;
+  ctx.save();
+  // the panel cut-out the three instruments sit in
+  cbox(ctx, 512 - gap - r - 40, cy - r - 44, 2 * (gap + r + 40), 2 * r + 88, '#0d0e0f', '#24282c');
+  ctx.restore();
+  drawStandbyGauge(ctx, sim, 'asi', 512 - gap, cy, r);
+  drawStandbyGauge(ctx, sim, 'ai', 512, cy, r);
+  drawStandbyGauge(ctx, sim, 'alt', 512 + gap, cy, r);
+  stepCompass(st, d.hdgTrue);
+  compassCard(ctx, 512, 214, 280, 48, st.compassHdg);
+  text(ctx, 'STBY', 512, 280, '#8d9298', fs(14), 'center', 700);
 }
 
 // ------------------------------------------------------------------ lower windows
