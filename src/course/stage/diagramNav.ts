@@ -135,7 +135,8 @@ export function createSixtyToOne(
     layer.append(
       label(
         ax + 120,
-        ay - 12,
+        // on the side away from the track flown (the TE label sits on the track side)
+        spec.offNm < 0 ? ay + 24 : ay - 12,
         `${L(lang, "Course", "Route")} ${hdg3(spec.course)}°`,
         p,
         { size: 14, weight: 700 },
@@ -188,7 +189,8 @@ export function createSixtyToOne(
       layer.append(
         label(
           cx + 10,
-          (ay + cy) / 2 + 5,
+          // beside the bracket when it is tall enough, else outside the aircraft, away from the closing angle
+          Math.abs(cy - ay) > 40 ? (ay + cy) / 2 + 5 : spec.offNm < 0 ? cy - 16 : cy + 28,
           `${dec(Math.abs(spec.offNm), 1, lang)} NM ${spec.offNm > 0 ? L(lang, "right", "à droite") : L(lang, "left", "à gauche")}`,
           p,
           { size: 13, color: p.wind, weight: 700 },
@@ -287,7 +289,7 @@ export function createSixtyToOne(
       layer.append(
         label(
           cx + cr + 8,
-          cy + (b > 0 ? 20 : -8),
+          b > 0 ? cy + 20 : cy - 10,
           `CA ${dec(Math.abs(r.ca ?? 0), 1, lang).replace(/[.,]0$/, "")}°`,
           p,
           { size: 13.5, color: p.heading, weight: 700 },
@@ -309,7 +311,7 @@ export function createSixtyToOne(
       label(
         0,
         22,
-        `${L(lang, "exact", "exact")} atan: ${dec(Math.abs(r.teExact), 2, lang)}° · ${L(lang, "track", "route suivie")} ${hdg3(trk)}°`,
+        `${L(lang, "exact atan: ", "atan exact : ")}${dec(Math.abs(r.teExact), 2, lang)}° · ${L(lang, "track", "route suivie")} ${hdg3(trk)}°`,
         p,
         { size: 12.5, color: p.muted, weight: 500 },
       ),

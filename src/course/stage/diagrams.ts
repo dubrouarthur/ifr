@@ -22,19 +22,11 @@ export {
   createCgEnvelope,
 };
 
-/** Calc diagram kinds this package draws (the others: course/calcDiagrams, package L). */
-export const STAGE_CALC_DIAGRAMS = [
-  "windTriangle",
-  "sixtyToOne",
-  "profile",
-  "vdp",
-  "holdWind",
-  "compass",
-  "cgEnvelope",
-] as const;
-export type StageCalcDiagramKind = (typeof STAGE_CALC_DIAGRAMS)[number];
-export const hasCalcDiagram = (kind: string): kind is StageCalcDiagramKind =>
-  (STAGE_CALC_DIAGRAMS as readonly string[]).includes(kind);
+export {
+  STAGE_CALC_DIAGRAMS,
+  hasCalcDiagram,
+  type StageCalcDiagramKind,
+} from "./calcKinds";
 
 /** The interactive widget for a calc diagram, or null when another package draws that kind. */
 export function createCalcDiagram(
@@ -126,11 +118,18 @@ export function diagramPane(
     });
     if (widget) wrap.append(widget.el);
     else if (asset) showAsset(asset, o.label ?? "");
-    else wrap.append(placeholder(d.calc.kind));
+    else
+      wrap.append(
+        placeholder(
+          lang === "fr"
+            ? "Schéma non disponible ici"
+            : "Diagram not available here",
+        ),
+      );
   } else if (d.kind === "hold") {
     // the PANS-OPS / AIM figure: black on white like the official one, in both themes
     wrap.classList.add("cs-paper");
-    wrap.innerHTML = holdDiagramSvg(d.inbound, d.turn, d.fix, d.crs);
+    wrap.innerHTML = holdDiagramSvg(d.inbound, d.turn, d.fix, d.crs, lang);
     const svg = wrap.querySelector("svg");
     if (svg) {
       svg.setAttribute("width", "100%");

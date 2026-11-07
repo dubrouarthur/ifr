@@ -209,6 +209,9 @@ export function renderPane(
 // ------------------------------------------------------------------ words read from the Sim
 const pad3 = (n: number) =>
   String(Math.round(((n % 360) + 360) % 360) || 360).padStart(3, "0");
+/** one decimal with the locale's decimal mark ("40.1" / "40,1") */
+const dec1 = (n: number, lang: Lang): string => (lang === "fr" ? n.toFixed(1).replace(".", ",") : n.toFixed(1));
+
 function thousands(n: number, lang: Lang): string {
   return Math.round(n)
     .toString()
@@ -252,7 +255,7 @@ export function paneAriaLabel(
       : "";
   const hdg = `${fr ? "cap" : "heading"} ${pad3(d.hdgTrue)}`;
   const crs = `${fr ? "route" : "course"} ${pad3(sim.course())}`;
-  const alt = `${thousands(sim.indicatedAlt(), lang)} ft`;
+  const alt = `${thousands(Math.round(sim.indicatedAlt() / 10) * 10, lang)} ft`;
   const ias = `${Math.round(d.iasKt)} kt`;
   const name = (en: string, frn: string) => (fr ? frn : en);
   const steamy = frame.kind === "gauge" || (frame.kind === "display" && (frame.display === "six" || frame.display === "stack"));
@@ -328,7 +331,7 @@ export function sceneLine(
   if (n) {
     const nav = NAVAIDS.find((x) => x.ident === n.ident);
     const dist = nav ? distanceNm(s, nav) : null;
-    main = `${n.ident} R-${pad3(n.radial)}${dist !== null ? ` · ${dist.toFixed(1)} NM` : ""}`;
+    main = `${n.ident} R-${pad3(n.radial)}${dist !== null ? ` · ${dec1(dist, lang)} NM` : ""}`;
   } else {
     let best: { ident: string; lat: number; lon: number } | null = null;
     let bd = Infinity;
@@ -340,14 +343,15 @@ export function sceneLine(
       }
     }
     if (best && bd < 60)
-      main = `${best.ident} ${pad3(bearingDeg(best, s))}° · ${bd.toFixed(1)} NM`;
+      main = `${best.ident} ${pad3(bearingDeg(best, s))}° · ${dec1(bd, lang)} NM`;
   }
   const w = sim.weather;
   const wind =
     w.windKt >= 1
       ? `${t("wind", lang)} ${pad3(w.windDir)}/${Math.round(w.windKt)}`
       : t("calm", lang);
-  const extra = `${thousands(sim.indicatedAlt(), lang)} ft · ${wind}`;
+  // to the nearest 10 ft, as a pilot reads it (no "4,001 ft" integration noise)
+  const extra = `${thousands(Math.round(sim.indicatedAlt() / 10) * 10, lang)} ft · ${wind}`;
   if (!main) return { main: extra, extra: "" };
   return { main, extra };
 }

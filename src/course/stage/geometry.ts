@@ -89,7 +89,7 @@ export type PaneFrame =
 export const PFD_CROPS: Record<"pfd.attitude" | "pfd.hsi" | "pfd.tapes", Rect> =
   {
     "pfd.attitude": [196, 60, 632, 404],
-    "pfd.hsi": [344, 430, 342, 318],
+    "pfd.hsi": [374, 424, 276, 316], // the rose and its heading box, clear of the HDG / CRS windows and the NAV source labels
     "pfd.tapes": [112, 56, 852, 426],
   };
 /** The radio stack: the steam panel's NAV/COM + ADF/DME block, or the G1000 top bar. */

@@ -1,0 +1,729 @@
+/* Ground school stage (package C): the dark instrument stage, its panes, overlay, plan inset, controls and the
+   calc diagram widgets. Self-contained tokens (--ck-* cockpit set, scoped to .cstage / .cs-*), so it renders the
+   same in academy.html, the Flight Center and the projector. Restrained aviation look: flat surfaces, hairlines,
+   cockpit colour conventions (cyan = selected, magenta = track / GPS, green = NAV, amber = caution). */
+
+.cstage,
+.cs-scope {
+  --ck-bg: #0b0e12;
+  --ck-bg2: #12171d;
+  --ck-bg3: #1a2129;
+  --ck-line: #2a333d;
+  --ck-line-hi: #3a4552;
+  --ck-text: #e7edf3;
+  --ck-muted: #8b97a4;
+  --ck-faint: #66717d;
+  --ck-accent: #00e4ff;
+  --ck-good: #2bd576;
+  --ck-warn: #ffb020;
+  --ck-bad: #ff5a5f;
+  --ck-magenta: #e04ad0;
+  --cs-font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --cs-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+  --cs-radius: 14px;
+  font-family: var(--cs-font);
+}
+
+/* ---------------------------------------------------------------- stage frame */
+.cstage {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--ck-bg);
+  color: var(--ck-text);
+  border: 1px solid var(--ck-line);
+  border-radius: var(--cs-radius);
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.35;
+  outline: none;
+}
+.cstage *,
+.cs-scope * {
+  box-sizing: border-box;
+}
+.cstage [hidden],
+.cs-scope [hidden] {
+  display: none !important;
+}
+.cstage .i {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}
+
+/* top bar */
+.cs-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ck-line);
+  background: var(--ck-bg);
+  min-height: 52px;
+}
+.cs-bar .sp,
+.cs-goal .sp {
+  flex: 1;
+}
+.cs-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--ck-line-hi);
+  border-radius: 7px;
+  font: 700 11px/1 var(--cs-font);
+  letter-spacing: 0.08em;
+  color: var(--ck-muted);
+  white-space: nowrap;
+}
+.cs-state::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.cs-state.live {
+  color: var(--ck-good);
+  border-color: color-mix(in srgb, var(--ck-good) 55%, transparent);
+}
+.cs-state.clip {
+  color: var(--ck-accent);
+  border-color: color-mix(in srgb, var(--ck-accent) 55%, transparent);
+}
+.cs-state.fly {
+  color: var(--ck-warn);
+  border-color: color-mix(in srgb, var(--ck-warn) 55%, transparent);
+}
+.cs-scn {
+  font: 500 13px/1.2 var(--cs-font);
+  color: var(--ck-text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.cs-scn .x {
+  font-style: normal;
+  color: var(--ck-muted);
+}
+
+/* buttons */
+.cs-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--ck-line-hi);
+  border-radius: 10px;
+  background: var(--ck-bg2);
+  color: var(--ck-text);
+  font: 600 13px/1 var(--cs-font);
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  white-space: nowrap;
+}
+.cs-bar .cs-btn {
+  min-height: 40px;
+}
+.cs-btn:hover {
+  background: var(--ck-bg3);
+}
+.cs-btn:focus-visible,
+.cs-knob:focus-visible,
+.cs-plan-svg:focus-visible {
+  outline: 2px solid var(--ck-accent);
+  outline-offset: 2px;
+}
+.cs-btn.on,
+.cs-btn[aria-pressed="true"] {
+  border-color: var(--ck-accent);
+  color: var(--ck-accent);
+  background: color-mix(in srgb, var(--ck-accent) 10%, var(--ck-bg2));
+}
+.cs-btn.accent {
+  border-color: var(--ck-accent);
+  color: var(--ck-accent);
+}
+.cs-btn.icon {
+  padding: 0;
+}
+.cs-btn.lock {
+  min-height: 34px;
+  min-width: 0;
+  padding: 0 11px;
+  border-style: solid;
+  border-color: var(--ck-line);
+  background: transparent;
+  color: var(--ck-faint);
+  cursor: default;
+  font-size: 12px;
+}
+
+/* view: side column + panes */
+.cs-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+}
+.cs-side {
+  flex: 0 0 clamp(190px, 24%, 270px);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cs-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+  min-height: 0;
+}
+.cs-planwrap {
+  margin-top: auto;
+}
+.cs-host {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.cs-panes {
+  position: absolute;
+  inset: 0;
+}
+.cs-msg {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  max-width: 90%;
+  padding: 8px 12px;
+  border: 1px solid var(--ck-warn);
+  border-radius: 8px;
+  background: var(--ck-bg2);
+  color: var(--ck-text);
+  font-size: 13px;
+}
+
+/* panes */
+.cs-pane {
+  position: absolute;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #05070a;
+  border: 1px solid var(--ck-line);
+  touch-action: manipulation;
+}
+.cs-pane.k-diagram {
+  background: var(--ck-bg2);
+}
+.cs-canvas,
+.cs-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.cs-img {
+  object-fit: contain;
+}
+.cs-dpane {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cs-dpane > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.cs-dpane.cs-paper {
+  background: #fbfaf6;
+  color: #111;
+}
+.cs-ph {
+  padding: 24px;
+  text-align: center;
+  color: var(--ck-muted);
+  font-size: 13px;
+}
+.cs-diagram {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.cs-diagram text {
+  font-family: var(--cs-font);
+}
+.cs-handle {
+  cursor: grab;
+  outline: none;
+}
+.cs-handle.on {
+  cursor: grabbing;
+}
+.cs-handle:focus-visible .cs-ring,
+.cs-handle.on .cs-ring {
+  stroke-opacity: 1;
+  stroke-width: 3;
+}
+
+/* overlay */
+.cs-ov {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.cs-ov.tap {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+.cs-ov-svg,
+.cs-ov-html {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.cs-ov-html {
+  overflow: hidden;
+}
+.cs-spot {
+  fill: rgba(2, 4, 8, 0.72);
+  transition: opacity 0.15s;
+}
+.cs-ov .cs-ring .halo,
+.cs-ov .cs-arrow .halo {
+  fill: none;
+  stroke: rgba(0, 0, 0, 0.55);
+  stroke-width: 6;
+}
+.cs-ov .cs-ring .hl,
+.cs-ov .cs-arrow .hl {
+  fill: none;
+  stroke: var(--ck-accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.cs-ah {
+  fill: var(--ck-accent);
+}
+.cs-ov .dim {
+  opacity: 0.35;
+}
+.cs-ov .cs-ring.on .hl,
+.cs-ov .cs-arrow.on .hl {
+  stroke-width: 4.5;
+}
+.cs-cnum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--ck-accent);
+  color: #02181c;
+  font: 700 13px/1 var(--cs-font);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55);
+}
+.cs-ov-html .cs-cnum {
+  position: absolute;
+  transform: translate(-50%, -50%);
+}
+.cs-cnum.inline {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+  box-shadow: none;
+  margin-top: 1px;
+}
+.cs-cnum.on {
+  box-shadow: 0 0 0 2px #fff;
+}
+.cs-tag {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--ck-line-hi);
+  background: rgba(11, 14, 18, 0.88);
+  color: var(--ck-text);
+  font: 600 12px/1.2 var(--cs-font);
+  white-space: nowrap;
+}
+.cs-tag.on {
+  border-color: var(--ck-accent);
+  color: var(--ck-accent);
+}
+.cs-bubble {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--ck-accent) 70%, transparent);
+  border-radius: 10px;
+  background: rgba(11, 14, 18, 0.94);
+  color: var(--ck-text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.cs-bubble b {
+  color: var(--ck-accent);
+  font-weight: 600;
+}
+.cs-bubble.in {
+  position: absolute;
+  display: block;
+}
+.cs-bubble.side {
+  border-color: var(--ck-line-hi);
+  cursor: default;
+}
+.cs-bubble.side.on {
+  border-color: var(--ck-accent);
+}
+
+/* plan inset */
+.cs-plan {
+  border: 1px solid var(--ck-line-hi);
+  border-radius: 12px;
+  background: var(--ck-bg2);
+  overflow: hidden;
+}
+.cs-plan-h {
+  display: flex;
+  justify-content: space-between;
+  padding: 7px 10px 0;
+  font: 700 10px/1 var(--cs-font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ck-muted);
+}
+.cs-plan-h .r {
+  color: var(--ck-magenta);
+}
+.cs-plan-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: none;
+}
+.cs-plan.drag .cs-plan-svg {
+  cursor: grab;
+}
+.cs-plan.dragging .cs-plan-svg {
+  cursor: grabbing;
+}
+.cs-plan-chip {
+  padding: 0 10px 8px;
+  font: 600 11px/1.3 var(--cs-font);
+  color: var(--ck-muted);
+}
+.cs-plan-chip:empty {
+  display: none;
+}
+.cs-sec {
+  fill: color-mix(in srgb, var(--ck-accent) 5%, transparent);
+}
+.cs-sec.on {
+  fill: color-mix(in srgb, var(--ck-accent) 20%, transparent);
+}
+.cs-sec-b {
+  stroke: var(--ck-line-hi);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.cs-sec-t {
+  fill: var(--ck-faint);
+  font: 600 9px var(--cs-font);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.cs-sec-t.on {
+  fill: var(--ck-accent);
+}
+.cs-rt {
+  fill: none;
+  stroke: var(--ck-magenta);
+  stroke-width: 1.5;
+}
+.cs-plan-t {
+  fill: var(--ck-muted);
+  font: 600 9px var(--cs-mono);
+}
+.cs-plan-ac {
+  color: #fff;
+  cursor: grab;
+}
+.cs-plan-grab {
+  fill: transparent;
+}
+
+/* clip strip */
+.cs-clip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--ck-line);
+}
+.cs-clip .cap {
+  flex: 0 1 36%;
+  min-width: 0;
+  color: var(--ck-muted);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cs-range {
+  flex: 1;
+  min-width: 80px;
+  height: 44px;
+  accent-color: var(--ck-accent);
+  background: transparent;
+}
+
+/* goal strip */
+.cs-goal {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 12px 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--ck-line);
+  border-radius: 12px;
+  background: var(--ck-bg2);
+  font-size: 13px;
+  color: var(--ck-muted);
+  min-height: 48px;
+}
+.cs-goal .txt b {
+  color: var(--ck-text);
+  font-weight: 700;
+}
+.cs-goal .note {
+  color: var(--ck-muted);
+  white-space: nowrap;
+}
+.cs-assist {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid color-mix(in srgb, var(--ck-warn) 60%, transparent);
+  border-radius: 8px;
+  color: var(--ck-warn);
+  background: color-mix(in srgb, var(--ck-warn) 8%, transparent);
+  font: 600 12.5px/1 var(--cs-font);
+  white-space: nowrap;
+}
+.cs-meter {
+  width: clamp(60px, 14%, 130px);
+  height: 5px;
+  border-radius: 3px;
+  background: var(--ck-line);
+  overflow: hidden;
+}
+.cs-meter i {
+  display: block;
+  height: 100%;
+  background: var(--ck-accent);
+  transition: width 0.2s;
+}
+.cs-goal.met .cs-meter i {
+  background: var(--ck-good);
+}
+.cs-goal.met .txt b {
+  color: var(--ck-good);
+}
+
+/* controls */
+.cs-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 22px;
+  padding: 12px 16px 10px;
+  border-top: 1px solid var(--ck-line);
+  background: var(--ck-bg);
+}
+.cs-ctl {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+.cs-ctl .v {
+  min-height: 14px;
+  font: 700 13px/1 var(--cs-mono);
+  color: var(--ck-accent);
+  font-variant-numeric: tabular-nums;
+}
+.cs-ctl .n,
+.cs-locked .n {
+  font: 600 10.5px/1 var(--cs-font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ck-muted);
+}
+.cs-kzone {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  touch-action: none;
+  cursor: grab;
+}
+.cs-kzone .tz {
+  width: 22px;
+  text-align: center;
+  color: var(--ck-faint);
+  font: 600 18px/1 var(--cs-font);
+}
+.cs-knob {
+  --a: 0deg;
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 2px solid var(--ck-line-hi);
+  background: #171d24;
+  transform: rotate(var(--a));
+  transition: border-color 0.12s;
+}
+.cs-knob::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 7px;
+  width: 3px;
+  height: 18px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--ck-text);
+}
+.cs-knob.on,
+.cs-knob:hover {
+  border-color: var(--ck-accent);
+}
+.cs-pad {
+  display: flex;
+  gap: 8px;
+}
+.cs-pad .cs-btn {
+  min-width: 64px;
+  min-height: 52px;
+  font-size: 14px;
+}
+.cs-btn.key {
+  min-width: 54px;
+  min-height: 44px;
+  color: var(--ck-text);
+}
+.cs-ctl.info {
+  max-width: 260px;
+}
+.cs-hint {
+  color: var(--ck-muted);
+  font-size: 12.5px;
+  text-align: center;
+}
+.cs-locked {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.cs-locked .row {
+  display: flex;
+  gap: 6px;
+}
+.cs-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- responsive */
+@media (max-width: 900px) {
+  .cs-view {
+    flex-direction: column;
+  }
+  .cs-side {
+    flex: none;
+    flex-direction: row;
+  }
+  .cs-notes {
+    flex: 1;
+    max-height: 120px;
+  }
+  .cs-planwrap {
+    margin-top: 0;
+    width: 220px;
+    flex: none;
+  }
+  .cs-host {
+    min-height: 240px;
+  }
+}
+@media (pointer: coarse) {
+  .cs-bar .cs-btn {
+    min-height: 44px;
+  }
+  .cs-knob {
+    width: 68px;
+    height: 68px;
+  }
+}
+
+/* projector: bigger type, higher contrast */
+.cstage.projector {
+  font-size: 18px;
+  --ck-muted: #b6c0cb;
+  --ck-line-hi: #55616f;
+}
+.cstage.projector .cs-bubble {
+  font-size: 18px;
+}
+.cstage.projector .cs-goal,
+.cstage.projector .cs-scn {
+  font-size: 17px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cstage *,
+  .cs-scope * {
+    transition: none !important;
+  }
+}
