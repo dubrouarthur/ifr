@@ -1,4 +1,5 @@
 // Connections & export: EFB live link, flight-plan / track export, school webhook, chart services.
+import { BRAND } from '../brand';
 import { h, clear, store } from './dom';
 import { Modal } from './modals';
 import type { Sim } from '../sim/sim';
@@ -100,7 +101,7 @@ export class ConnectModal extends Modal {
     const result = h('span', { class: 'muted' }, '');
     this.body.append(
       this.card('School webhook', 'POST every debrief (student, scenario, ACS result, score, failed tasks) as JSON to your school’s system — FlightLogger, Flight Schedule Pro via Zapier/Make, an LMS or a spreadsheet.',
-        h('div', { class: 'cx-row' }, wh, h('button', { class: 'btn', onclick: () => { store.set('ifr.webhook', { url: wh.value.trim(), auto: auto.checked }); this.toast('Webhook saved', 'good'); } }, 'Save'), h('button', { class: 'btn', onclick: async () => { store.set('ifr.webhook', { url: wh.value.trim(), auto: auto.checked }); result.textContent = 'Sending…'; result.textContent = await postWebhook({ type: 'test', app: 'IFR Trainer', at: new Date().toISOString() }); } }, 'Send test')),
+        h('div', { class: 'cx-row' }, wh, h('button', { class: 'btn', onclick: () => { store.set('ifr.webhook', { url: wh.value.trim(), auto: auto.checked }); this.toast('Webhook saved', 'good'); } }, 'Save'), h('button', { class: 'btn', onclick: async () => { store.set('ifr.webhook', { url: wh.value.trim(), auto: auto.checked }); result.textContent = 'Sending…'; result.textContent = await postWebhook({ type: 'test', app: BRAND.name, at: new Date().toISOString() }); } }, 'Send test')),
         h('label', { class: 'fc-check' }, auto, ' Send automatically after every debrief'),
         result,
       ),

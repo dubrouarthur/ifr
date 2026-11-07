@@ -1,6 +1,6 @@
 {
-  "name": "IFR Trainer",
-  "short_name": "IFR Trainer",
+  "name": "Wingdeck",
+  "short_name": "Wingdeck",
   "description": "Instrument flight training: G1000, steam gauges and airliner cockpits, real approaches with charts, lessons with corrective feedback and scored debriefs.",
   "id": "/",
   "start_url": "/?source=pwa",

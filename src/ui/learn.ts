@@ -90,6 +90,8 @@ function setModalTitle(m: Modal, title: string) {
   if (h2) h2.textContent = title;
   m.box.setAttribute('aria-label', title);
 }
+import { lang as uiLang } from './i18n';
+import type { BriefingSource, DeckStage } from '../course/ui/briefingDeck';
 
 export interface Progress {
   passed: boolean;
@@ -227,6 +229,17 @@ export interface BriefingOptions {
   onCancel?: () => void;
 }
 
+/** the first step's set-up items as the briefing deck shows them (the exercise window's "Set it" list) */
+function briefSetup(run: LessonRun): NonNullable<BriefingSource['setup']> {
+  const st = run.rt.steps[0];
+  if (!st?.setup) return [];
+  try {
+    return st.setup(run.ctx(0)).map((i) => ({ label: i.label, ...(i.detail ? { detail: i.detail } : {}), ok: i.ok, ...(i.action ? { action: i.action.label } : {}) }));
+  } catch {
+    return [];
+  }
+}
+
 /**
  * The briefing of an exercise, opened before it starts.
  *
@@ -247,8 +260,85 @@ export class BriefingModal extends Modal {
   private starting = false;
   /** set-up of a previewed run (built once, reused) */
   private static scratch: Sim | null = null;
+  /** the slide deck (course/ui/deckStage.ts, loaded on demand); null while it loads or if it cannot */
+  private deck: DeckStage | null = null;
+  private deckSeq = 0;
+  private stageHost: HTMLElement;
+  private hint = '';
   constructor(private sim: Sim, private onStart: (run: LessonRun) => void, private onPlate: (id: string) => void) {
     super('Exercise briefing', 'md');
+    // every lesson is briefed by slides played in the cockpit (SPEC slides v2 §11): a dark sheet, the slide at
+    // 16:9, a bar with progress, Cancel, Previous, Next, then Start exercise
+    this.box.classList.remove('md');
+    this.box.classList.add('brief-deck');
+    this.stageHost = h('div', { class: 'bd-stage' });
+    window.addEventListener('keydown', (e) => this.key(e), true);
+    this.swipe(this.stageHost);
+  }
+  /** a horizontal swipe on the slide (iPad): left = Next, right = Previous; never starts the exercise */
+  private swipe(el: HTMLElement) {
+    let x0 = 0;
+    let y0 = 0;
+    let id = -1;
+    el.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'touch' || !e.isPrimary) return;
+      // a drag on a diagram handle or an instrument control is not a swipe
+      if ((e.target as HTMLElement | null)?.closest('.cs-handle, input, button')) return;
+      id = e.pointerId;
+      x0 = e.clientX;
+      y0 = e.clientY;
+    });
+    const end = (e: PointerEvent) => {
+      if (e.pointerId !== id) return;
+      id = -1;
+      const dx = e.clientX - x0;
+      const dy = e.clientY - y0;
+      const d = this.deck;
+      if (!d || Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      if (dx < 0) {
+        if (!d.atEnd || d.reveal < d.revealCount) this.next();
+      } else if (d.prev()) this.renderBar();
+    };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', () => (id = -1));
+  }
+  private get fr() {
+    return uiLang() === 'fr';
+  }
+  private key(e: KeyboardEvent) {
+    if (!this.isOpen || Modal.stack[Modal.stack.length - 1] !== this) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+    const d = this.deck;
+    if (!d) return;
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || (e.key === ' ' && !(t && t.tagName === 'BUTTON'))) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      // the arrow never starts the exercise: on the last slide only Enter or the button does
+      if (!d.atEnd || d.reveal < d.revealCount) this.next();
+    } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (d.prev()) this.renderBar();
+    } else if (e.key === 'Enter' && !(t && t.tagName === 'BUTTON')) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (d.atEnd && d.gatesDone) this.start();
+      else this.next();
+    }
+  }
+  /** Next: the next reveal or slide; on the last slide, Start (or the knowledge check still to answer) */
+  private next() {
+    const d = this.deck;
+    if (!d) return;
+    if (d.next()) return this.renderBar();
+    if (d.gatesDone) return this.start();
+    const g = d.pendingGate;
+    if (g >= 0) {
+      d.go(g);
+      this.hint = this.fr ? 'Répondez à la question pour commencer.' : 'Answer the knowledge check to start.';
+      this.renderBar();
+    }
   }
   /** true while the briefing previews a restart: the sim still holds the exercise that was flying */
   get previewing() {
@@ -295,6 +385,9 @@ export class BriefingModal extends Modal {
   close() {
     const wasOpen = this.isOpen;
     super.close();
+    this.deckSeq++;
+    this.deck?.destroy();
+    this.deck = null;
     if (!wasOpen || this.starting) return;
     // closed without Start: a restart preview leaves the running exercise as it was
     if (this.seed !== null) {
@@ -307,7 +400,121 @@ export class BriefingModal extends Modal {
   }
   /** an extra card at the top of the briefing (main.ts: the lesson's briefing course), kept across re-renders */
   aside: HTMLElement | null = null;
+  /** the briefing as slides: the school's deck for this lesson, else the deck built from the exercise */
   render() {
+    const run = this.run!;
+    const ex = run.ex;
+    const fr = this.fr;
+    this.hint = '';
+    this.deck?.destroy();
+    this.deck = null;
+    const seq = ++this.deckSeq;
+    // header: Briefing · the lesson · the sim is paused at the start
+    const head = this.box.querySelector('header')!;
+    const h2 = head.querySelector('h2')!;
+    clear(h2);
+    h2.classList.add('bd-title');
+    h2.append(h('span', { class: 'bd-k' }, 'Briefing'), h('span', { class: 'bd-t' }, ex.title));
+    head.querySelector('.bd-chip')?.remove();
+    head.insertBefore(
+      h('span', { class: 'bd-chip' }, h('i', { 'aria-hidden': 'true' }), this.seed !== null ? (fr ? 'Votre exercice continue derrière' : 'Your exercise is kept behind') : fr ? 'Simulateur en pause au point de départ' : 'Simulator paused at the start'),
+      head.querySelector('.x'),
+    );
+    this.box.setAttribute('aria-label', `Briefing · ${ex.title}`);
+    clear(this.body);
+    clear(this.stageHost);
+    this.stageHost.classList.add('loading');
+    this.body.append(this.stageHost);
+    this.renderBar();
+    const stage = STAGES.find((s) => s.id === ex.stage);
+    const ap = ex.plate ? findApproach(ex.plate) : undefined;
+    const src: BriefingSource = {
+      id: ex.id,
+      title: ex.title,
+      summary: ex.summary,
+      stageTitle: stage?.title,
+      stage: ex.stage,
+      minutes: ex.minutes,
+      allowAp: ex.allowAp,
+      objectives: ex.objectives,
+      standards: ex.standards,
+      briefing: ex.briefing,
+      ...(ex.plate && ap ? { plate: ex.plate, plateName: `${ap.airport} ${ap.name}` } : {}),
+      ...(run.rt.clearance ? { clearance: run.rt.clearance } : {}),
+      ...(run.rt.quiz ? { quiz: { question: run.rt.quiz.question, options: run.rt.quiz.options, answer: run.rt.quiz.answer, explain: run.rt.quiz.explain } } : {}),
+      ...(run.rt.hold ? { hold: { inbound: run.rt.hold.inbound, turn: run.rt.hold.turn, fix: run.rt.hold.fix.ident, legMin: run.rt.hold.legMin, altFt: run.rt.hold.altFt } } : {}),
+      steps: run.rt.steps.map((x) => x.text),
+      setup: briefSetup(run),
+    };
+    void import('../course/ui/briefingDeck')
+      .then((m) => {
+        if (seq !== this.deckSeq || !this.isOpen) return;
+        const deck = m.briefingDeck(src, fr ? 'fr' : 'en');
+        const d = m.briefingStage(deck, {
+          lang: fr ? 'fr' : 'en',
+          // the plate slide: the approach plate drawn by the chart engine, as an image
+          assetUrl: (id: string) => {
+            const a = id.startsWith('plate:') ? findApproach(id.slice(6)) : undefined;
+            return a ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(approachPlate(a))}` : null;
+          },
+          onChange: () => this.renderBar(),
+          onAnswered: () => {
+            this.hint = '';
+            this.renderBar();
+          },
+        });
+        this.deck = d;
+        this.stageHost.classList.remove('loading');
+        d.mount(this.stageHost);
+        this.renderBar();
+      })
+      .catch(() => {
+        // the slide engine could not load (offline, an old cached build): the text briefing
+        if (seq !== this.deckSeq || !this.isOpen) return;
+        this.box.classList.add('bd-text');
+        this.renderText();
+      });
+  }
+  /** the bar under the slide: progress, Skip to summary, Cancel, Previous, Next / Start exercise */
+  private renderBar() {
+    const fr = this.fr;
+    const d = this.deck;
+    const restart = this.seed !== null;
+    clear(this.foot);
+    const segs = d ? d.segments((i) => { d.go(i); this.renderBar(); }) : h('div', { class: 'ds-segs' });
+    const last = !!d && d.atEnd;
+    const needQuiz = !!d && !d.gatesDone;
+    const ex = this.run?.ex;
+    const items: (HTMLElement | null)[] = [
+      h('div', { class: 'bd-prog' }, segs, d ? h('span', { class: 'bd-n num' }, `${d.index + 1} / ${d.count}`) : null),
+      d && !last ? h('button', { class: 'btn link bd-skip', type: 'button', title: fr ? 'Aller au dernier écran, puis Démarrer l’exercice' : 'Go to the last screen, then Start exercise', onclick: () => { d.go(d.count - 1); this.renderBar(); } }, fr ? 'Passer le briefing ›' : 'Skip briefing ›') : null,
+      this.hint
+        ? h('span', { class: 'bd-hint', role: 'status' }, this.hint)
+        : last && needQuiz && d
+          ? h('button', { class: 'btn link bd-hint bd-gate', type: 'button', onclick: () => { d.go(d.pendingGate); this.renderBar(); } }, fr ? `Répondez à la question (diapo ${d.pendingGate + 1}) pour commencer` : `Answer the question (slide ${d.pendingGate + 1}) to start`)
+          : h('span', { class: 'bd-sp' }),
+      ex?.plate ? h('button', { class: 'btn ghost bd-plate', type: 'button', onclick: () => this.onPlate(ex.plate!), title: fr ? 'Ouvrir la carte d’approche dans le visualiseur' : 'Open the approach plate in the chart viewer' }, fr ? 'Carte' : 'Plate') : null,
+      h('button', { class: 'btn ghost bd-cancel', type: 'button', onclick: () => this.close() }, restart ? (fr ? 'Continuer le vol' : 'Keep flying') : fr ? 'Annuler' : 'Cancel'),
+      h('button', { class: 'btn bd-prev', type: 'button', disabled: !d || (d.index === 0), onclick: () => { if (d?.prev()) this.renderBar(); } }, '‹ ', fr ? 'Précédent' : 'Previous'),
+      last
+        ? h(
+            'button',
+            {
+              class: 'btn primary bd-start',
+              type: 'button',
+              disabled: needQuiz,
+              title: needQuiz ? (fr ? 'Répondez à la question pour commencer' : 'Answer the knowledge check to start') : '',
+              onclick: () => this.start(),
+            },
+            restart ? (fr ? 'Recommencer l’exercice' : 'Restart exercise') : fr ? 'Démarrer l’exercice' : 'Start exercise',
+            ' ›',
+          )
+        : h('button', { class: 'btn primary bd-next', type: 'button', disabled: !d, onclick: () => this.next() }, fr ? 'Suivant' : 'Next', ' ›'),
+    ];
+    this.foot.append(...items.filter((x): x is HTMLElement => !!x));
+  }
+  /** the text briefing (fallback when the slide engine cannot load) */
+  private renderText() {
     const run = this.run!;
     const ex = run.ex;
     clear(this.body);
@@ -346,7 +553,7 @@ export class BriefingModal extends Modal {
       const opts = h('div', { class: 'quiz-opts' });
       q.options.forEach((o, i) => {
         const cls = this.answered === null ? '' : i === q.answer ? 'right' : i === this.answered ? 'wrong' : '';
-        opts.append(h('button', { class: `btn ${cls}`, disabled: this.answered !== null, onclick: () => { this.answered = i; this.render(); } }, o));
+        opts.append(h('button', { class: `btn ${cls}`, disabled: this.answered !== null, onclick: () => { this.answered = i; this.renderText(); } }, o));
       });
       this.body.append(opts);
       if (this.answered !== null) {

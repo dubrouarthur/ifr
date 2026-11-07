@@ -1,3 +1,4 @@
+import { BRAND } from '../brand';
 import { h, clear, fmtTime, store } from './dom';
 import { svgIcon, I } from './icons';
 import type { ProcAttempt } from './history';
@@ -430,7 +431,7 @@ export function saveFlightRecord(sim: Sim): ProcAttempt | null {
   const sig = `${a.score}|${a.acs}|${a.graded}|${Math.round(a.durationSec / 30)}`;
   if (webhookCfg().auto && webhookCfg().url && posted.get(a.id) !== sig) {
     posted.set(a.id, sig);
-    void postWebhook({ type: 'debrief', app: 'IFR Trainer', ...a, acsItems: acs.items, scoreItems: db.items, events: rec.events });
+    void postWebhook({ type: 'debrief', app: BRAND.name, ...a, acsItems: acs.items, scoreItems: db.items, events: rec.events });
   }
   return a;
 }

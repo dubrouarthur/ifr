@@ -575,6 +575,15 @@ export function makeStep(
         ...(o.title ? { title: o.title } : {}),
       });
       if (!o.theme) delete slide.theme;
+      // a checklist the sim ticks (checklist, Your turn layouts) points at the step goal's checks: give the step a
+      // goal, and rows past its checks stay as plain rows (the author binds them in the inspector)
+      const ticks = slide.blocks.some((b) => b.kind === "checklist");
+      const goal = ticks ? newGoal(c.cockpit, o.suggested) : undefined;
+      if (goal)
+        for (const b of slide.blocks)
+          if (b.kind === "checklist")
+            for (const r of b.rows)
+              if (typeof r.check === "number" && r.check >= goal.all.length) delete r.check;
       step = {
         ...base,
         title: o.title ? clone(o.title) : (titleOfSlide(slide) ?? clone(title)),
@@ -583,6 +592,7 @@ export function makeStep(
         slide,
         reader: linearText(slide),
       };
+      if (goal) step.goal = goal;
       break;
     }
   }
@@ -612,7 +622,7 @@ export function linearText(c: SlideCanvas): ReaderBlock[] {
   for (const b of [...c.blocks].sort(byReadingOrder)) {
     if (b.presenterOnly) continue;
     if (b.kind === "text" && b.text.en.trim()) {
-      if (b.style === "label" || b.style === "caption") continue;
+      if (["label", "caption", "eyebrow", "small", "foot"].includes(b.style)) continue;
       out.push(
         b.style === "display" || b.style === "title" || b.style === "heading"
           ? { t: "heading", text: clone(b.text) }

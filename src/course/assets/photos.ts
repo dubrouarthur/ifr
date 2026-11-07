@@ -41,7 +41,7 @@ export const PHOTOS: PhotoDef[] = [
     w: 1400,
     h: 920,
     tags: ["g1000", "glass", "pfd", "mfd"],
-    attribution: "IFR Trainer",
+    attribution: BRAND.name,
   },
   {
     id: "short-final",
@@ -120,3 +120,4 @@ export function sampleLogoSvg(color: string, name = "AÉROCLUB ARDON"): string {
   const esc = name.replace(/&/g, "&amp;").replace(/</g, "&lt;");
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 64" width="360" height="64"><path d="M6 44 L44 14 L58 14 L30 44 Z" fill="${color}"/><path d="M34 44 L62 22 L72 22 L52 44 Z" fill="${color}" fill-opacity="0.55"/><text x="86" y="42" font-family="Inter, system-ui, sans-serif" font-size="25" font-weight="700" letter-spacing="1.6" fill="${color}">${esc}</text></svg>`;
 }
+import { BRAND } from "../../brand";

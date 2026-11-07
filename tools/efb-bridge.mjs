@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// IFR Trainer → EFB bridge.
+// Wingdeck → EFB bridge.
 // Receives own-ship telemetry from the browser over WebSocket (ws://localhost:8765) and re-broadcasts it on the
 // local network as GDL 90 (UDP 4000) and XGPS/XATT (UDP 49002) — the formats ForeFlight, Garmin Pilot,
 // SkyDemon, FltPlan Go, Avare, WingX and others accept from X-Plane or ADS-B receivers.
@@ -80,14 +80,14 @@ export function geoAltitude(t) {
 /** ForeFlight device identification (optional, shows the name in ForeFlight). */
 export function foreflightId() {
   const name = Buffer.from('IFRTrnr '.padEnd(8).slice(0, 8));
-  const long = Buffer.from('IFR Trainer sim'.padEnd(16).slice(0, 16));
+  const long = Buffer.from('Wingdeck sim'.padEnd(16).slice(0, 16));
   return frame([0x65, 0x00, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, ...name, ...long, 0, 0, 0, 0]);
 }
 export function xgps(t) {
-  return Buffer.from(`XGPSIFR Trainer,${t.lon.toFixed(6)},${t.lat.toFixed(6)},${(t.altFt * 0.3048).toFixed(1)},${(t.trackDeg ?? 0).toFixed(2)},${((t.gsKt ?? 0) * 0.514444).toFixed(2)}`);
+  return Buffer.from(`XGPSWingdeck,${t.lon.toFixed(6)},${t.lat.toFixed(6)},${(t.altFt * 0.3048).toFixed(1)},${(t.trackDeg ?? 0).toFixed(2)},${((t.gsKt ?? 0) * 0.514444).toFixed(2)}`);
 }
 export function xatt(t) {
-  return Buffer.from(`XATTIFR Trainer,${(t.hdgDeg ?? 0).toFixed(1)},${(t.pitchDeg ?? 0).toFixed(1)},${(t.rollDeg ?? 0).toFixed(1)}`);
+  return Buffer.from(`XATTWingdeck,${(t.hdgDeg ?? 0).toFixed(1)},${(t.pitchDeg ?? 0).toFixed(1)},${(t.rollDeg ?? 0).toFixed(1)}`);
 }
 
 // ------------------------------------------------------------------ minimal WebSocket server
@@ -138,7 +138,7 @@ export function startBridge({ wsPort = 8765, target = '255.255.255.255', gdlPort
   }, 1000);
   const server = http.createServer((_, res) => {
     res.writeHead(200, { 'content-type': 'text/plain' });
-    res.end('IFR Trainer EFB bridge is running. Connect the simulator to ws://localhost:' + wsPort + '\n');
+    res.end('Wingdeck EFB bridge is running. Connect the simulator to ws://localhost:' + wsPort + '\n');
   });
   server.on('upgrade', (req, socket) => {
     const key = req.headers['sec-websocket-key'];
@@ -166,7 +166,7 @@ export function startBridge({ wsPort = 8765, target = '255.255.255.255', gdlPort
     socket.on('close', () => log('simulator disconnected'));
     socket.on('error', () => undefined);
   });
-  server.listen(wsPort, () => log(`IFR Trainer EFB bridge: ws://localhost:${wsPort} → GDL90 udp:${gdlPort}, XGPS udp:${xgpsPort} → ${target}`));
+  server.listen(wsPort, () => log(`Wingdeck EFB bridge: ws://localhost:${wsPort} → GDL90 udp:${gdlPort}, XGPS udp:${xgpsPort} → ${target}`));
   return { close: () => { clearInterval(hb); server.close(); udp.close(); } };
 }
 

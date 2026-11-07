@@ -57,7 +57,11 @@ export function academyRoute(hash: string): AcademyRoute {
     const v = id(k);
     if (v) {
       const st = kv.get("s");
-      return { k, id: v, ...(st && /^[A-Za-z0-9._~:-]{1,120}$/.test(st) ? { s: st } : {}) };
+      return {
+        k,
+        id: v,
+        ...(st && /^[A-Za-z0-9._~:-]{1,120}$/.test(st) ? { s: st } : {}),
+      };
     }
   }
   return { k: "library" };
@@ -297,13 +301,19 @@ export function thumbOf(c: Course, stepId?: string): ThumbPick | null {
   const slides = c.steps.filter((s) => s.slide);
   if (!slides.length) return null;
   const focusOf = (s: Step, kinds: string[]) => {
-    const bs = (s.slide?.blocks ?? []).filter((b) => kinds.includes(b.kind) && !b.reveal && b.frame.w >= 320);
+    const bs = (s.slide?.blocks ?? []).filter(
+      (b) => kinds.includes(b.kind) && !b.reveal && b.frame.w >= 320,
+    );
     bs.sort((a, b) => b.frame.w * b.frame.h - a.frame.w * a.frame.h);
     const f = bs[0]?.frame;
     return f ? { x: f.x, y: f.y, w: f.w, h: f.h } : undefined;
   };
   const asked = stepId ? slides.find((s) => s.id === stepId) : undefined;
-  if (asked) return { step: asked, focus: focusOf(asked, ["instrument", "diagram", "image"]) };
+  if (asked)
+    return {
+      step: asked,
+      focus: focusOf(asked, ["instrument", "diagram", "image"]),
+    };
   for (const s of slides) {
     const f = focusOf(s, ["instrument", "diagram", "image"]);
     if (f) return { step: s, focus: f };
@@ -326,7 +336,12 @@ export function thumbPlacement(
   const h = 1080 * k;
   const x = Math.min(0, Math.max(W - w, W / 2 - cx * k));
   const y = Math.min(0, Math.max(H - h, H / 2 - cy * k));
-  return { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) };
+  return {
+    x: Math.round(x),
+    y: Math.round(y),
+    w: Math.round(w),
+    h: Math.round(h),
+  };
 }
 
 // ------------------------------------------------------------------ imported ids (the Club shelf)
@@ -401,6 +416,8 @@ export interface LibraryOptions {
   profileId?: string;
   /** academy.html path (the Flight Center is at the site root, so is academy.html) */
   page?: string;
+  /** run once the store is open: create a course (the editor opens on it), or pick a course to present */
+  intent?: "new" | "present";
   /** a PDF import module (pdfImport.ts) when the build has one */
   importPdf?: (
     store: CourseStore,
@@ -513,7 +530,10 @@ export class CourseLibrary {
 
   // ---------------------------------------------------------------- data
   private async attach(s: LibraryOptions["store"]) {
-    if (!s) return;
+    if (!s) {
+      if (this.o.intent === "present") this.pickPresent();
+      return;
+    }
     try {
       this.store = await s;
     } catch {
@@ -522,6 +542,9 @@ export class CourseLibrary {
     if (this.destroyed || !this.store) return;
     this.unsub = this.store.onChange(() => void this.load());
     await this.load();
+    if (this.destroyed) return;
+    if (this.o.intent === "new") void this.newCourse();
+    else if (this.o.intent === "present") this.pickPresent();
   }
   /** Reload everything from the store (after an import, a delete, another tab's change). */
   async load() {
@@ -614,9 +637,16 @@ export class CourseLibrary {
           this.searchIn,
           h("kbd", { "aria-hidden": "true" }, "/"),
         ),
+        h(
+          "button",
+          { class: "gl-primary gl-head-new", type: "button", onclick: () => void this.newCourse() },
+          ic("plus", 18),
+          this.t("newCourse"),
+        ),
       ),
       this.banner,
       this.contHost,
+      h("h2", { class: "gl-sec-h" }, this.t("slideDecks")),
       h(
         "div",
         { class: "gl-filters" },
@@ -633,16 +663,6 @@ export class CourseLibrary {
         { class: "gl-btn", type: "button", onclick: () => this.fileIn.click() },
         ic("upload", 18),
         this.t("import"),
-      ),
-      h(
-        "button",
-        {
-          class: "gl-btn",
-          type: "button",
-          onclick: () => void this.newCourse(),
-        },
-        ic("plus", 18),
-        this.t("newCourse"),
       ),
     );
     const row = (
@@ -859,17 +879,17 @@ export class CourseLibrary {
         !ct0.started && e.summary
           ? h("p", { class: "gl-cont-sum" }, loc(e.summary, l))
           : nextStep
-          ? h(
-              "div",
-              { class: "gl-cont-next" },
-              h(
-                "span",
-                { class: `gl-k ${kindClass(nextStep)}` },
-                kindWord(nextStep, l),
-              ),
-              h("span", {}, this.t("next", { t: loc(nextStep.title, l) })),
-            )
-          : null,
+            ? h(
+                "div",
+                { class: "gl-cont-next" },
+                h(
+                  "span",
+                  { class: `gl-k ${kindClass(nextStep)}` },
+                  kindWord(nextStep, l),
+                ),
+                h("span", {}, this.t("next", { t: loc(nextStep.title, l) })),
+              )
+            : null,
       ),
       h(
         "button",
@@ -945,6 +965,17 @@ export class CourseLibrary {
             : h("p", {}, this.t("emptyFilterBody")),
         ),
       );
+      // no deck of your own yet: the empty shelf is where the first one starts
+      if (!q && this.store && (this.filter === "draft" || !this.entries.some((e) => !e.sample))) {
+        const box = this.grid.querySelector(".gl-empty")!;
+        box.classList.add("gl-empty-create");
+        box.replaceChildren(
+          h("span", { class: "gl-empty-ic", "aria-hidden": "true" }, ic("plus", 28)),
+          h("b", {}, this.t("createFirst")),
+          h("p", {}, this.t("createFirstBody")),
+          h("button", { class: "gl-primary", type: "button", onclick: () => void this.newCourse() }, ic("plus", 18), this.t("newCourse")),
+        );
+      }
       return;
     }
     for (const e of list) this.grid.append(this.card(e));
@@ -978,11 +1009,7 @@ export class CourseLibrary {
         ? this.t("editedAgo", { ago: agoText(e.updated, l) })
         : "",
     ].filter(Boolean);
-    const thumb = h(
-      "div",
-      { class: "gl-thumb", "aria-hidden": "true" },
-      h("span", { class: `gl-tag${e.shelf === "draft" ? " draft" : ""}` }, tag),
-    );
+    const thumb = h("div", { class: "gl-thumb", "aria-hidden": "true" });
     thumb.dataset.id = e.id;
     const sum = e.mix.learn + e.mix.act + e.mix.fly || 1;
     const seg = (n: number, cls: string) =>
@@ -1019,7 +1046,13 @@ export class CourseLibrary {
         "div",
         { class: "gl-card-b" },
         h("div", { class: "gl-card-h" }, h("h3", {}, loc(e.title, l)), more),
-        h("p", { class: "gl-meta" }, meta.join(" · ")),
+        h(
+          "p",
+          { class: "gl-meta" },
+          h("span", { class: `gl-tag${e.shelf === "draft" ? " draft" : ""}` }, tag),
+          " ",
+          meta.join(" · "),
+        ),
         h(
           "div",
           {
@@ -1048,7 +1081,10 @@ export class CourseLibrary {
     const e = this.entries.find((x) => x.id === el.dataset.id);
     const c = e?.course;
     if (!c) return;
-    const pick = thumbOf(c, el.dataset.step);
+    // a grid card shows the deck's cover, whole (a 16:9 slide card); the Continue card shows the step it resumes at
+    const cover = !el.dataset.step && el.classList.contains("gl-thumb");
+    const first = c.steps.find((x) => x.slide);
+    const pick = cover ? (first ? { step: first } : null) : thumbOf(c, el.dataset.step);
     if (!pick) {
       el.classList.add("no-slide");
       return;
@@ -1211,9 +1247,10 @@ export class CourseLibrary {
   private async newCourse() {
     const s = this.store;
     if (!s) return;
-    const { layoutCanvas } = await import("../canvas/layouts");
     const id = await s.newId(this.lang === "fr" ? "mon-cours" : "my-course");
     const title: L10n = { en: "Untitled course", fr: "Cours sans titre" };
+    // no step yet: the builder opens on "Start from a beautiful deck" (live-rendered starter decks, the theme
+    // question "projected in class or played before the flight", or one blank slide)
     const c: Course = {
       format: "ifr-course",
       version: 1,
@@ -1225,23 +1262,7 @@ export class CourseLibrary {
       langs: ["en", "fr"],
       cockpit: "g1000",
       world: { kind: "training" },
-      steps: [
-        {
-          id: "s1",
-          kind: "slide",
-          title,
-          layout: "canvas",
-          reader: [{ t: "heading", text: title }],
-          slide: layoutCanvas("title", {
-            title,
-            subtitle: {
-              en: "What the student will be able to do after this course",
-              fr: "Ce que l’élève saura faire à la fin de ce cours",
-            },
-            byline: { en: "Your club · Your name", fr: "Votre club · Votre nom" },
-          }),
-        },
-      ],
+      steps: [],
       scenes: {},
       clips: {},
       assets: {},

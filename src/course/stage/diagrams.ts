@@ -4,14 +4,30 @@
 //  - diagramPane(): what a stage `diagram` pane shows (hold with entry sectors, route profile, calc diagram, or the
 //    pre-rendered asset for plates / airport diagrams / maps).
 import type { CalcDiagram, DiagramSpec, Lang } from "../types";
-import { holdDiagramSvg } from "../../train/diagram";
+import { holdSlideSvg, type HoldColors } from "../../train/diagram";
 import { createWindTriangle, createHoldWind } from "./diagramWind";
 import { createSixtyToOne, createTvmdc } from "./diagramNav";
 import { createProfile, createVdp } from "./diagramProfile";
 import { createCgEnvelope } from "./diagramCg";
-import type { DiagramOptions, DiagramTheme, DiagramWidget } from "./svgkit";
+import { PALETTES, type DiagramOptions, type DiagramPalette, type DiagramTheme, type DiagramWidget } from "./svgkit";
 
-export type { DiagramOptions, DiagramTheme, DiagramWidget } from "./svgkit";
+export type { DiagramOptions, DiagramPalette, DiagramTheme, DiagramWidget } from "./svgkit";
+export { PALETTES, paletteFromColors } from "./svgkit";
+
+/** The type unit of a pane measured in CSS px: a secondary label (24 u) stays ≥ 13 CSS px. */
+export const PANE_U = 0.56;
+/** The hold's colours from a diagram palette. */
+export const holdColorsOf = (p: DiagramPalette): HoldColors => ({
+  bg: p.bg,
+  ink: p.text,
+  ink2: p.ink2,
+  mute: p.muted,
+  ruleStrong: p.line,
+  accent: p.accent,
+  sel: p.heading,
+  key: p.wind,
+  nav: p.nav,
+});
 export {
   createWindTriangle,
   createHoldWind,
@@ -56,6 +72,17 @@ export function createCalcDiagram(
 
 export interface DiagramPaneOptions {
   theme?: DiagramTheme;
+  /** the slide theme's palette (wins over `theme`) */
+  palette?: DiagramPalette;
+  /** a fixed drawing size in units (a slide block: its logical size, u = 1). Without it the pane measures its
+   *  box in CSS px and redraws at that size with u = PANE_U */
+  w?: number;
+  h?: number;
+  u?: number;
+  /** no background (the slide shows through) */
+  transparent?: boolean;
+  /** worked numbers inside the drawing (default: true in a pane, false on a slide) */
+  card?: boolean;
   lang?: Lang;
   /** the student may drag the calc diagram */
   interactive?: boolean;
@@ -108,14 +135,26 @@ export function diagramPane(
       }
     });
   };
+  const fixed = o.w !== undefined && o.h !== undefined;
+  const pal = (): DiagramPalette => o.palette ?? PALETTES[theme];
+  let theme: DiagramTheme = o.theme ?? "dark";
+  let size = { w: o.w ?? 960, h: o.h ?? 540, u: o.u ?? (fixed ? 1 : PANE_U) };
+  let redraw: (() => void) | null = null;
   if (d.kind === "calc") {
     widget = createCalcDiagram(d.calc, {
       theme: o.theme,
+      palette: o.palette,
       lang,
       drag: o.interactive ? d.calc.drag : [],
       onChange: o.onChange,
       label: o.label,
+      w: size.w,
+      h: size.h,
+      u: size.u,
+      transparent: o.transparent,
+      card: o.card ?? !fixed,
     });
+    if (widget) redraw = () => widget!.resize?.(size.w, size.h, size.u);
     if (widget) wrap.append(widget.el);
     else if (asset) showAsset(asset, o.label ?? "");
     else
@@ -127,26 +166,34 @@ export function diagramPane(
         ),
       );
   } else if (d.kind === "hold") {
-    // the PANS-OPS / AIM figure: black on white like the official one, in both themes
-    wrap.classList.add("cs-paper");
-    wrap.innerHTML = holdDiagramSvg(d.inbound, d.turn, d.fix, d.crs, lang);
-    const svg = wrap.querySelector("svg");
-    if (svg) {
-      svg.setAttribute("width", "100%");
-      svg.setAttribute("height", "100%");
-      svg.setAttribute("role", "img");
-      svg.setAttribute(
-        "aria-label",
-        o.label ??
-          (lang === "fr"
-            ? `Attente à ${d.fix}, rapprochement ${d.inbound}°, virages à ${d.turn === "R" ? "droite" : "gauche"}`
-            : `Hold at ${d.fix}, inbound ${d.inbound}°, ${d.turn === "R" ? "right" : "left"} turns`),
-      );
-    }
+    // the AIM figure in the slide's (or the pane's) colours, sectors tinted: never a white card on a dark slide
+    redraw = () => {
+      // our own SVG string: the fix ident is escaped inside holdSlideSvg
+      wrap.innerHTML = holdSlideSvg(d.inbound, d.turn, d.fix, {
+        w: size.w,
+        h: size.h,
+        u: size.u,
+        lang,
+        colors: holdColorsOf(pal()),
+        quiet: d.quiet,
+        courseToFix: d.crs,
+      });
+      const svg = wrap.querySelector("svg");
+      if (svg) {
+        svg.setAttribute("role", "img");
+        svg.setAttribute(
+          "aria-label",
+          o.label ??
+            (lang === "fr"
+              ? `Attente à ${d.fix}, rapprochement ${d.inbound}°, virages à ${d.turn === "R" ? "droite" : "gauche"}`
+              : `Hold at ${d.fix}, inbound ${d.inbound}°, ${d.turn === "R" ? "right" : "left"} turns`),
+        );
+      }
+    };
+    redraw();
   } else if (d.kind === "profile" || d.kind === "routeMap") {
     if (asset) showAsset(asset, o.label ?? "");
     else {
-      wrap.classList.add("cs-paper");
       // the route profile renderer lives with the route map (large module): loaded on demand
       void import("../../ui/routeMap").then((m) => {
         if (d.kind !== "profile") {
@@ -161,8 +208,8 @@ export function diagramPane(
         }
         wrap.innerHTML = m.profileSvg(
           m.planProfile(d.circuit, false),
-          960,
-          400,
+          Math.round(size.w),
+          Math.round(size.h),
         );
         const svg = wrap.querySelector("svg");
         if (svg) {
@@ -192,13 +239,28 @@ export function diagramPane(
     const t = what[d.kind] ?? [d.kind, d.kind];
     wrap.append(placeholder(lang === "fr" ? t[1] : t[0]));
   }
+  // a pane draws at its measured size (1 unit = 1 CSS px, labels × PANE_U)
+  let ro: ResizeObserver | null = null;
+  if (!fixed && redraw && typeof ResizeObserver !== "undefined") {
+    ro = new ResizeObserver(() => {
+      const r = wrap.getBoundingClientRect();
+      if (!(r.width > 40 && r.height > 40)) return;
+      if (Math.abs(r.width - size.w) < 2 && Math.abs(r.height - size.h) < 2) return;
+      size = { w: Math.round(r.width), h: Math.round(r.height), u: size.u };
+      redraw?.();
+    });
+    ro.observe(wrap);
+  }
   return {
     el: wrap,
     widget,
     setTheme(t) {
-      widget?.setTheme(t);
+      theme = t;
+      if (widget) widget.setTheme(t);
+      else redraw?.();
     },
     destroy() {
+      ro?.disconnect();
       widget?.destroy();
       wrap.remove();
     },

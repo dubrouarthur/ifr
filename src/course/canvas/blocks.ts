@@ -14,8 +14,15 @@ import type {
   Step,
   YourTurn,
 } from "../types";
-import { richFragment, plainText, loc, isMissing, fitScale } from "./text";
-import { color, diagramThemeOf, typeCss } from "./themes";
+import {
+  richFragment,
+  plainText,
+  loc,
+  isMissing,
+  fitScale,
+  formulaFragment,
+} from "./text";
+import { color, diagramThemeOf, MIN_TEXT_PX, typeCss } from "./themes";
 import { arrowControl } from "./geom";
 import { libraryAsset, libraryUrl, paletteOf } from "./library";
 import { airspaceSvg } from "./airspace";
@@ -33,6 +40,9 @@ import {
   type DiagramPane,
 } from "../stage/diagrams";
 import type { DiagramWidget } from "../stage/svgkit";
+import { fitFloor, HINT_H, slidePalette } from "./metrics";
+export { fitFloor, HINT_H, slidePalette } from "./metrics";
+import { holdFootText } from "../../train/diagram";
 import { problemFor, checkAnswer } from "../calc/index";
 import { UNIT_LABEL } from "../calc/text";
 
@@ -147,6 +157,7 @@ function applyCss(el: HTMLElement, css: Record<string, string>) {
 const r1 = (n: number) => Math.round(n * 10) / 10;
 
 // ------------------------------------------------------------------ text
+const FORMULA_STYLES = new Set(["formula", "mono"]);
 function textBlock(b: Of<"text">, env: BlockEnv): BlockView {
   const el = mk("div", `sl-b sl-text sl-st-${b.style}`);
   const inner = mk("div", "sl-text-in");
@@ -173,12 +184,25 @@ function textBlock(b: Of<"text">, env: BlockEnv): BlockView {
     return null;
   };
   let last: string | null = valueOf();
+  const formula = FORMULA_STYLES.has(b.style);
+  if (formula) el.classList.add("sl-st-formula");
+  // the cover title rule (SPEC slides v2 §2): "Main: subtitle" → the main part in display, the rest as a subtitle
+  const cover = b.style === "display" ? /^([^\n:]{2,48}?)\s?:\s+([^\n]+)$/.exec(src) : null;
   const paint = () => {
+    if (cover && !formula) {
+      const sub = mk("span", "sl-cover-sub");
+      sub.append(richFragment(cover[2].charAt(0).toLocaleUpperCase(env.lang) + cover[2].slice(1), { lang: env.lang }));
+      inner.replaceChildren(richFragment(cover[1], { lang: env.lang }), sub);
+      return;
+    }
     inner.replaceChildren(
-      richFragment(src || (env.mode === "edit" ? "" : ""), {
-        value: last,
-        onLink: env.mode === "play" ? env.onLink : undefined,
-      }),
+      formula
+        ? formulaFragment(src.replace(/\{\{[^}]*\}\}/g, last ?? "—"), env.lang)
+        : richFragment(src, {
+            value: last,
+            lang: env.lang,
+            onLink: env.mode === "play" ? env.onLink : undefined,
+          }),
     );
   };
   paint();
@@ -198,12 +222,16 @@ function textBlock(b: Of<"text">, env: BlockEnv): BlockView {
       inner.style.setProperty("--fit", String(k));
       return inner.scrollHeight > H + 1 || inner.scrollWidth > W + 1;
     };
-    const k = fitScale(
-      over,
-      b.style === "body" || b.style === "caption" ? 0.6 : 0.45,
-    );
+    const min = fitFloor(parseFloat(css["font-size"]));
+    const k = fitScale(over, min);
     inner.style.setProperty("--fit", String(k));
     el.classList.toggle("sl-fitted", k < 1);
+    // still too long at the floor: the editor shows it (the checks panel lists it too)
+    const clip = k <= min && over(k);
+    inner.style.setProperty("--fit", String(k));
+    el.classList.toggle("sl-overflow", clip);
+    if (clip && env.mode === "edit") el.dataset.overflow = tx("textTooLong", env.lang);
+    else delete el.dataset.overflow;
   };
   return {
     el,
@@ -480,6 +508,7 @@ function calloutBlock(b: Of<"callout">, env: BlockEnv): BlockView {
   body.style.fontSize = "calc(var(--fs) * var(--fit, 1))";
   body.append(
     richFragment(loc(b.text, env.lang), {
+      lang: env.lang,
       onLink: env.mode === "play" ? env.onLink : undefined,
     }),
   );
@@ -531,7 +560,7 @@ function calloutBlock(b: Of<"callout">, env: BlockEnv): BlockView {
     const k = fitScale((k) => {
       body.style.setProperty("--fit", String(k));
       return card.scrollHeight > H + 1;
-    }, 0.6);
+    }, fitFloor(parseFloat(css["font-size"]) * 0.86));
     body.style.setProperty("--fit", String(k));
   };
   return { el, block: b, layout: fit, destroy: () => el.remove() };
@@ -548,24 +577,33 @@ function markerBlock(b: Of<"marker">, env: BlockEnv): BlockView {
 }
 
 // ------------------------------------------------------------------ diagram
+const SVG_MOVE =
+  "M12 2l3 3h-2v6h6V9l3 3-3 3v-2h-6v6h2l-3 3-3-3h2v-6H5v2l-3-3 3-3v2h6V5H9z";
+/**
+ * A diagram drawn in slide units: the widget gets the block's logical size (1 unit = 1 px), the slide theme's
+ * tokens, no background, no frame (SPEC slides v2 §5). The caption, the drag instruction and what is not to scale
+ * go to a hint row under the drawing.
+ */
 function diagramBlock(b: Of<"diagram">, env: BlockEnv): BlockView {
   const el = mk("div", "sl-b sl-diagram");
   const box = mk("div", "sl-diagram-box");
   el.append(box);
   const label = loc(b.alt, env.lang) || undefined;
   if (label) box.setAttribute("aria-label", label);
-  const cap = b.caption ? loc(b.caption, env.lang) : "";
-  if (cap) {
-    const c = mk("div", "sl-diagram-cap");
-    c.textContent = cap;
-    applyCss(c, typeCss(env.theme, "caption"));
-    el.append(c);
-    el.classList.add("has-caption");
-  }
   const d =
     b.d ?? (b.fromCalc ? env.calcProblem?.(b.fromCalc)?.diagram : undefined);
-  const dtheme = diagramThemeOf(env.theme);
   const interactive = env.mode === "play" && !!b.interactive;
+  const canDrag = !!b.interactive && d?.kind === "calc" && !!d.calc.drag?.length;
+  const cap = b.caption
+    ? loc(b.caption, env.lang)
+    : d?.kind === "hold" && !d.quiet
+      ? holdFootText(d.inbound, d.turn, d.fix, env.lang)
+      : "";
+  const hintH = cap || canDrag || d?.kind === "calc" ? HINT_H : 0;
+  const W = b.frame.w;
+  const H = Math.max(80, b.frame.h - hintH);
+  box.style.height = `${H}px`;
+  const palette = slidePalette(env.theme);
   let pane: DiagramPane | null = null;
   let widget: DiagramWidget<unknown> | null = null;
   let slot: SlotHandle | null | void = null;
@@ -581,10 +619,16 @@ function diagramBlock(b: Of<"diagram">, env: BlockEnv): BlockView {
     if (label) box.firstElementChild?.setAttribute("aria-label", label);
   } else if (d?.kind === "calc") {
     widget = createCalcDiagram(d.calc, {
-      theme: dtheme,
+      theme: diagramThemeOf(env.theme),
+      palette,
       lang: env.lang,
       drag: interactive ? (d.calc.drag ?? []) : [],
       label,
+      w: W,
+      h: H,
+      u: 1,
+      transparent: true,
+      card: false,
     }) as DiagramWidget<unknown> | null;
     if (widget) box.append(widget.el);
     else {
@@ -600,11 +644,17 @@ function diagramBlock(b: Of<"diagram">, env: BlockEnv): BlockView {
     }
   } else if (d) {
     pane = diagramPane(d, b.asset, {
-      theme: dtheme,
+      theme: diagramThemeOf(env.theme),
+      palette,
       lang: env.lang,
       interactive,
       assetUrl: env.assetUrl,
       label,
+      w: W,
+      h: H,
+      u: 1,
+      transparent: true,
+      card: false,
     });
     box.append(pane.el);
   } else if (b.asset) {
@@ -619,7 +669,21 @@ function diagramBlock(b: Of<"diagram">, env: BlockEnv): BlockView {
     );
     box.append(img);
   }
-  if (d?.kind === "hold") el.classList.add("is-paper");
+  // the hint row: the drag instruction (or the caption) and what is not drawn to scale
+  const note = widget?.note?.() ?? null;
+  const hint = [cap, note].filter(Boolean).join(" · ");
+  if (hintH && hint) {
+    const row = mk("div", "sl-diagram-cap sl-hint");
+    applyCss(row, typeCss(env.theme, "foot"));
+    if (canDrag) {
+      const ic = svg("svg", { viewBox: "0 0 24 24", width: 28, height: 28, class: "sl-hint-ic", "aria-hidden": "true" });
+      ic.append(svg("path", { d: SVG_MOVE, fill: "currentColor" }));
+      row.append(ic);
+    }
+    row.append(mk("span", "", hint));
+    el.append(row);
+    el.classList.add("has-caption");
+  }
   return {
     el,
     block: b,
@@ -817,8 +881,14 @@ function simViewportBlock(b: Of<"simViewport">, env: BlockEnv): BlockView {
 }
 
 // ------------------------------------------------------------------ quiz
+/** Short answers are tiles (SPEC slides v2 §7): ≤ 4 options of ≤ 12 characters; longer ones are rows. Pure. */
+export function quizUsesTiles(options: { text: { en: string; fr?: string } }[], lang: Lang): boolean {
+  return options.length >= 2 && options.length <= 4 && options.every((o) => plainText(loc(o.text, lang)).length <= 12);
+}
+/** The quiz on a slide: an eyebrow, the question, tiles or rows, the feedback. No outer card; the options are the
+ *  only surfaces. The content scales down (never under 24 px) when the block is too small for it. */
 function quizBlock(b: Of<"quiz">, env: BlockEnv): BlockView {
-  const el = mk("div", "sl-b sl-card sl-quiz");
+  const el = mk("div", "sl-b sl-quiz");
   const slot = env.slots?.quiz?.(b, el, {
     mode: env.mode,
     lang: env.lang,
@@ -826,60 +896,67 @@ function quizBlock(b: Of<"quiz">, env: BlockEnv): BlockView {
     step: env.step,
     fire: env.fire,
   });
+  const inner = mk("div", "sl-q-in");
+  let fit: (() => void) | undefined;
   if (!slot) {
+    el.append(inner);
     const q = b.quiz;
-    el.append(mk("div", "sl-card-label", tx("quizSlot", env.lang)));
-    const prompt = mk("div", "sl-card-prompt");
-    const pr =
-      "prompt" in q && q.prompt
-        ? loc(q.prompt, env.lang)
-        : tx("calcSlot", env.lang);
-    prompt.append(richFragment(pr));
-    el.append(prompt);
+    inner.append(mk("div", "sl-q-eyebrow", tx("quizSlot", env.lang)));
+    const prompt = mk("div", "sl-q-prompt");
+    const pr = "prompt" in q && q.prompt ? loc(q.prompt, env.lang) : tx("calcSlot", env.lang);
+    prompt.append(richFragment(pr, { lang: env.lang }));
+    inner.append(prompt);
     if (q.kind === "mcq") {
-      const list = mk("div", "sl-opts");
+      const tiles = quizUsesTiles(q.options, env.lang);
+      el.classList.add(tiles ? "is-tiles" : "is-rows");
+      const list = mk("div", "sl-q-opts");
+      if (tiles) list.style.setProperty("--cols", String(Math.max(1, Math.min(q.options.length, Math.floor((b.frame.w + 24) / 224)))));
       list.setAttribute("role", env.mode === "play" ? "radiogroup" : "list");
-      const why = mk("div", "sl-card-why");
+      const why = mk("div", "sl-q-why");
+      // the longest feedback reserves its room while fitting (no jump when it appears)
+      const whyTexts = [loc(q.explain, env.lang), ...q.options.map((o) => (o.why ? loc(o.why, env.lang) : ""))];
+      const longest = whyTexts.reduce((a, x) => (x.length > a.length ? x : a), "");
       q.options.forEach((o, i) => {
-        const opt = mk(env.mode === "play" ? "button" : "div", "sl-opt");
+        const opt = mk(env.mode === "play" ? "button" : "div", "sl-q-opt");
         if (opt instanceof HTMLButtonElement) opt.type = "button";
-        opt.append(
-          mk("span", "sl-opt-k", String.fromCharCode(65 + i)),
-          mk("span", "sl-opt-t", loc(o.text, env.lang)),
-        );
+        const st = mk("span", "sl-q-state");
+        opt.append(mk("span", "sl-q-k", String.fromCharCode(65 + i)), mk("span", "sl-q-v", loc(o.text, env.lang)), st);
         if (env.mode === "play")
           opt.addEventListener("click", (e) => {
             e.stopPropagation();
             if (el.classList.contains("answered")) return;
             el.classList.add("answered");
-            list.querySelectorAll(".sl-opt").forEach((x, j) => {
+            list.querySelectorAll(".sl-q-opt").forEach((x, j) => {
               x.classList.toggle("is-right", j === q.answer);
               x.classList.toggle("is-wrong", j === i && i !== q.answer);
+              const state = x.querySelector(".sl-q-state");
+              if (state) state.textContent = j === q.answer ? tx("quizRight", env.lang) : j === i ? tx("quizYours", env.lang) : "";
             });
-            why.replaceChildren(
-              richFragment(loc(o.why ?? q.explain, env.lang)),
-            );
-            why.hidden = false;
+            why.replaceChildren(richFragment(loc(o.why ?? q.explain, env.lang), { lang: env.lang }));
+            why.classList.remove("is-reserve");
             env.fire("answered");
           });
         list.append(opt);
       });
-      why.hidden = true;
       why.setAttribute("aria-live", "polite");
-      el.append(list, why);
+      why.classList.add("is-reserve");
+      why.append(richFragment(longest, { lang: env.lang }));
+      inner.append(list, why);
     } else {
-      el.append(
-        mk(
-          "div",
-          "sl-card-hint",
-          env.lang === "fr"
-            ? "Répondu dans le lecteur"
-            : "Answered in the player",
-        ),
-      );
+      inner.append(mk("div", "sl-q-hint", tx("answeredInPlayer", env.lang)));
     }
+    fit = () => {
+      inner.style.setProperty("--q", "1");
+      const H = el.clientHeight;
+      if (!H) return;
+      const k = fitScale((k) => {
+        inner.style.setProperty("--q", String(k));
+        return inner.scrollHeight > H + 1;
+      }, MIN_TEXT_PX / 34);
+      inner.style.setProperty("--q", String(k));
+    };
   }
-  return { el, block: b, destroy: () => (slot?.destroy?.(), el.remove()) };
+  return { el, block: b, layout: fit, destroy: () => (slot?.destroy?.(), el.remove()) };
 }
 
 // ------------------------------------------------------------------ calc
@@ -1015,23 +1092,40 @@ function calcBlock(b: Of<"calc">, env: BlockEnv): BlockView {
       }
     }
   }
-  return { el, block: b, destroy: () => (slot?.destroy?.(), el.remove()) };
+  // the card scales down as one piece when the problem is long (never under 80 %: its text stays ≥ 24 px)
+  let inner: HTMLDivElement | null = null;
+  if (!slot) {
+    inner = mk("div", "sl-calc-in");
+    inner.append(...Array.from(el.childNodes));
+    el.append(inner);
+  }
+  const fit = () => {
+    if (!inner) return;
+    inner.style.transform = "";
+    inner.style.width = "";
+    const H = el.clientHeight;
+    const need = inner.scrollHeight;
+    if (!H || need <= H + 1) return;
+    const k = Math.max(0.8, H / need);
+    inner.style.transformOrigin = "0 0";
+    inner.style.transform = `scale(${k})`;
+    inner.style.width = `${b.frame.w / k}px`;
+  };
+  return { el, block: b, layout: fit, destroy: () => (slot?.destroy?.(), el.remove()) };
 }
 
 // ------------------------------------------------------------------ checklist ("Do this", ticked by the sim)
+/** Check rows (SPEC slides v2 §7): a 40 px tick and 34 px ink text, 2 px rules between; never clipped (the rows
+ *  scale down together, never under 24 px, when the block is too small). */
 function checklistBlock(b: Of<"checklist">, env: BlockEnv): BlockView {
-  const el = mk("div", "sl-b sl-card sl-checklist");
-  const head = mk("div", "sl-card-head");
-  head.append(
-    mk(
-      "span",
-      "sl-card-label",
-      b.title ? loc(b.title, env.lang) : tx("doThis", env.lang),
-    ),
-  );
+  const el = mk("div", "sl-b sl-checklist");
+  const inner = mk("div", "sl-ck-in");
+  el.append(inner);
+  const head = mk("div", "sl-ck-head");
+  head.append(mk("span", "sl-ck-title", b.title ? loc(b.title, env.lang) : tx("doThis", env.lang)));
   if (b.rows.some((r) => r.check !== undefined))
-    head.append(mk("span", "sl-card-label dim", tx("checkedBySim", env.lang)));
-  el.append(head);
+    head.append(mk("span", "sl-ck-live", tx("checkedBySim", env.lang)));
+  inner.append(head);
   const list = mk("ul", "sl-rows");
   list.setAttribute("aria-live", env.mode === "play" ? "polite" : "off");
   const rows = b.rows.map((r) => {
@@ -1039,13 +1133,13 @@ function checklistBlock(b: Of<"checklist">, env: BlockEnv): BlockView {
     const tick = mk("span", "sl-tick");
     tick.setAttribute("aria-hidden", "true");
     const t = mk("span", "sl-row-t");
-    t.append(richFragment(loc(r.text, env.lang)));
+    t.append(richFragment(loc(r.text, env.lang), { lang: env.lang }));
     const v = mk("span", "sl-row-v");
     li.append(tick, t, v);
     list.append(li);
     return { r, li, v };
   });
-  el.append(list);
+  inner.append(list);
   const sim = () => env.sims.get(env.slideScene ?? DEMO_SCENE_ID)?.sim ?? null;
   const tick = () => {
     const s = sim();
@@ -1055,9 +1149,20 @@ function checklistBlock(b: Of<"checklist">, env: BlockEnv): BlockView {
   };
   tick();
   let met: readonly boolean[] = [];
+  const fit = () => {
+    inner.style.setProperty("--q", "1");
+    const H = el.clientHeight;
+    if (!H) return;
+    const k = fitScale((k) => {
+      inner.style.setProperty("--q", String(k));
+      return inner.scrollHeight > H + 1;
+    }, MIN_TEXT_PX / 34);
+    inner.style.setProperty("--q", String(k));
+  };
   return {
     el,
     block: b,
+    layout: fit,
     setChecks(m) {
       met = m;
       let current = false;

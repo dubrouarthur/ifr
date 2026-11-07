@@ -229,6 +229,8 @@ export type DiagramSpec =
       turn: "L" | "R";
       fix: string;
       crs?: number;
+      /** cover mode on a slide: the racetrack in accent, no sector labels (SPEC slides v2 A1) */
+      quiet?: boolean;
     }
   | { kind: "profile" | "routeMap"; circuit: Circuit }
   /** `crop`: the part of the plate shown (0..1 of the page: plan view, profile, minimums box) */
@@ -1074,7 +1076,8 @@ export interface SlideCanvas {
   size: SlideSize;
   /** snap grid in logical units (default 24: 80 × 45 cells); blocks snap to it and to the alignment guides */
   grid?: number;
-  /** overrides Course.theme for this slide (e.g. one photo slide in 'classroom' inside a 'cockpit' course) */
+  /** legacy: a per-slide theme. Ignored when drawn (one theme per course, SPEC slides v2 §4); kept so stored
+   *  slides still load */
   theme?: ThemeId;
   /** the layout template the slide was made from (the editor's "Reset layout" goes back to it) */
   layout?: SlideLayoutId;
@@ -1088,6 +1091,15 @@ export interface SlideCanvas {
 }
 /** Layout templates: beautiful defaults so a CFI's first slide already looks professional. */
 export type SlideLayoutId =
+  // the design-system archetypes (SPEC slides v2 §8): exact frames on the 12-column grid
+  | "cover" // A1 cover: display title, subtitle, lead, meta; a hero diagram or instrument on the right
+  | "bigNumber" // A3 big number / rule of thumb, with an optional visual
+  | "heroDiagram" // A4 a diagram on the left, three bullets in its colours on the right
+  | "formula" // A8 diagram + formula + derivation, one line per reveal
+  | "quiz" // A9 a question on the slide: context, tiles or rows, feedback
+  | "recap" // A10 three numbers and three checks
+  | "ready" // A11 "Ready to fly": objectives, standards, a tip (closes every lesson briefing)
+  // earlier templates (kept: stored slides name them)
   | "title" // title + subtitle + school line
   | "section" // section divider
   | "twoColumn"
@@ -1168,7 +1180,13 @@ export type TextStyle =
   | "label" // small caps label, e.g. "KEY TO SUCCESS"
   | "number" // a big figure (318 ft/NM)
   | "quote"
-  | "mono"; // a clearance, a METAR, a formula
+  | "mono" // legacy: drawn as a formula (no monospace on slides)
+  // design system v2 roles (SPEC §2); the older names above stay valid aliases
+  | "lead" // = subtitle: 40 px, ink-2
+  | "small" // = caption: 28 px, mute
+  | "eyebrow" // = label: 24 px caps, accent
+  | "foot" // footer line: source, 24 px, mute
+  | "formula"; // a formula: italic variables, real operators, stacked fractions (markup in text.ts)
 /** Theme colour tokens, or an explicit #rrggbb (the editor offers tokens first). Aviation colours follow the
  *  cockpit convention: magenta = GPS / active leg, cyan = selected / bugs, green = NAV / VOR, amber = caution. */
 export type ColorToken =
@@ -1187,6 +1205,17 @@ export type ColorToken =
   | "green"
   | "amber"
   | "white"
+  // design system v2 tokens (SPEC §4); the older names above map onto them
+  | "ink2" // body text
+  | "rule" // hairlines
+  | "ruleStrong" // sector circles, dimension ticks
+  | "raise" // quiz options and player chrome only
+  | "path" // magenta: what the aircraft follows
+  | "sel" // cyan: selected value, correction
+  | "nav" // green: nav source, OK, correct
+  | "key" // amber: the number to remember
+  | "stop" // red: limit, wrong
+  | "accentInk" // text on an accent fill
   | `#${string}`;
 /** A shipped library asset (aviation icons, diagrams, sample photos): `icon:aircraft-top`, `photo:c172-panel`… */
 export type LibraryAssetId = `${"icon" | "diagram" | "photo" | "shape" | "logo"}:${string}`;
@@ -1378,7 +1407,9 @@ export interface YourTurnResult {
 }
 
 // ---------------------------------------------------------------- themes
-/** Four restrained themes. 'brand' = 'classroom' with the school's colour as the accent and its logo. */
+/** Two themes, one per course (SPEC slides v2 §4): 'cockpit' (dark) and 'classroom' (light). The older ids stay
+ *  valid in stored courses and load as their nearest: 'projector' = classroom + the bright-projector boost,
+ *  'brand' = classroom with the school's colour as the accent. */
 export type ThemeId = "cockpit" | "classroom" | "projector" | "brand";
 export interface SchoolBrand {
   name: string;
@@ -1389,6 +1420,8 @@ export interface SchoolBrand {
 }
 export interface TypeStyleDef {
   font: "display" | "body" | "mono";
+  /** italic (the formula style sets its variables in italic; the role itself is roman) */
+  italic?: boolean;
   /** logical px on the 1920 × 1080 canvas */
   size: number;
   weight: 400 | 500 | 600 | 700;

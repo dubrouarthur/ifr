@@ -1061,16 +1061,21 @@ body.chrome-auto .cockpit.no-otw {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(90deg, rgba(12, 9, 7, 0.62) 0%, rgba(12, 9, 7, 0.36) 36%, rgba(12, 9, 7, 0) 62%),
+    linear-gradient(90deg, rgba(8, 10, 14, 0.78) 0%, rgba(8, 10, 14, 0.5) 40%, rgba(8, 10, 14, 0.34) 100%),
     linear-gradient(0deg, rgba(12, 9, 7, 0.55) 0%, rgba(12, 9, 7, 0) 26%);
 }
+/* text on the left, the product's own slide deck on the right (the slides are the flagship) */
 .intro-main {
   position: relative;
-  align-self: start;
-  padding: clamp(56px, 13vh, 150px) clamp(28px, 7vw, 128px) 0;
+  align-self: center;
+  display: grid;
+  grid-template-columns: minmax(300px, 0.72fr) minmax(0, 1.42fr);
+  align-items: center;
+  gap: clamp(32px, 4.4vw, 80px);
+  padding: clamp(28px, 6vh, 88px) clamp(28px, 5.5vw, 104px) 0;
 }
-.intro-main > * {
-  max-width: 680px;
+.intro-txt {
+  min-width: 0;
 }
 .intro-brand {
   display: flex;
@@ -1087,16 +1092,16 @@ body.chrome-auto .cockpit.no-otw {
 }
 .intro-main h1 {
   margin: 20px 0 14px;
-  font: 800 clamp(56px, 6.4vw, 104px) / 0.96 var(--font);
+  font: 800 clamp(48px, 5vw, 88px) / 0.96 var(--font);
   letter-spacing: -0.035em;
   white-space: nowrap;
   color: #fff;
   text-shadow: 0 2px 24px rgba(20, 10, 0, 0.35);
 }
 .intro-lead {
-  max-width: 31em;
-  margin: 0 0 36px;
-  font: 400 clamp(17px, 1.35vw, 21px) / 1.5 var(--font);
+  max-width: 28em;
+  margin: 0 0 32px;
+  font: 400 clamp(16.5px, 1.3vw, 20px) / 1.5 var(--font);
   color: rgba(255, 255, 255, 0.9);
   text-shadow: 0 1px 12px rgba(20, 10, 0, 0.45);
 }
@@ -1140,7 +1145,31 @@ body.chrome-auto .cockpit.no-otw {
   outline: 3px solid rgba(255, 255, 255, 0.92);
   outline-offset: 3px;
 }
+.intro-alt {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 58px;
+  padding: 0 22px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font: 600 16px var(--font);
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+.intro-alt:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+.intro-alt:focus-visible,
+.intro-deck-b:focus-visible {
+  outline: 3px solid rgba(255, 255, 255, 0.92);
+  outline-offset: 3px;
+}
 .intro-keys {
+  display: block;
+  margin-top: 16px;
   font-size: 13.5px;
   color: rgba(255, 255, 255, 0.78);
 }
@@ -1183,6 +1212,77 @@ body.chrome-auto .cockpit.no-otw {
   color: #fff;
   text-decoration: underline;
 }
+.intro-deck {
+  min-width: 0;
+  width: 100%;
+  max-width: calc((100dvh - 210px) * 16 / 9);
+  justify-self: end;
+}
+.intro-stage {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #0b0f14;
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.12);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.intro-stage.ready {
+  opacity: 1;
+}
+.intro-deck-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  margin-top: 14px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+}
+.intro-deck-bar .ds-segs {
+  flex: 0 1 260px;
+}
+.intro-deck-sp {
+  flex: 1;
+}
+.intro-deck-b {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  cursor: pointer;
+}
+.intro-deck-b:not(.next) svg {
+  transform: rotate(180deg);
+}
+.intro-deck-b:hover:not([disabled]) {
+  background: rgba(255, 255, 255, 0.16);
+}
+.intro-deck-b[disabled] {
+  opacity: 0.35;
+  cursor: default;
+}
+@media (max-width: 1000px), (orientation: portrait) {
+  .intro {
+    overflow-y: auto;
+  }
+  .intro-main {
+    grid-template-columns: minmax(0, 1fr);
+    align-self: safe center;
+    gap: 28px;
+  }
+  .intro-deck {
+    justify-self: stretch;
+    max-width: none;
+  }
+}
 @media (max-height: 760px) {
   .intro-main h1 {
     font-size: 60px;
@@ -1195,6 +1295,7 @@ body.chrome-auto .cockpit.no-otw {
 @media (prefers-reduced-motion: reduce) {
   .intro,
   .intro-photo,
+  .intro-stage,
   .intro-go svg {
     transition: none;
   }

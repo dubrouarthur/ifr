@@ -18,7 +18,8 @@ import { resolveTheme, typeCss } from "./themes";
 import { loc } from "./text";
 import { tx, type CanvasString } from "./strings";
 import { SceneSims, SlideInstrument } from "./instruments";
-import { DEMO_SCENE_ID, demoScene } from "./factory";
+import { DEMO_SCENE_ID, demoScene, emptyCanvas, placeDraft } from "./factory";
+import { renderThumb, type SlideView } from "./render";
 
 export interface LibraryTarget {
   add(d: BlockDraft): unknown;
@@ -116,6 +117,9 @@ export class LibraryPanel {
   private theme: SlideTheme;
   private sims: SceneSims;
   private insts: SlideInstrument[] = [];
+  /** live diagram previews (the real renderer, in the slide theme) */
+  private views: SlideView[] = [];
+  private io: IntersectionObserver | null = null;
   private ghost: HTMLElement | null = null;
   constructor(private o: LibraryPanelOptions) {
     this.lang = o.lang ?? "en";
@@ -164,6 +168,8 @@ export class LibraryPanel {
   }
   destroy() {
     for (const i of this.insts) i.destroy();
+    for (const v of this.views.splice(0)) v.destroy();
+    this.io?.disconnect();
     this.sims.destroy();
     this.ghost?.remove();
     this.el.remove();
@@ -187,6 +193,7 @@ export class LibraryPanel {
   private render() {
     for (const i of this.insts) i.destroy();
     this.insts = [];
+    for (const v of this.views.splice(0)) v.destroy();
     this.grid.replaceChildren();
     const q = this.search.value.trim();
     const items = q
@@ -214,25 +221,82 @@ export class LibraryPanel {
     this.dragWire(b, it, art);
     return b;
   }
+  /**
+   * A diagram tile drawn by the slide renderer itself: the block fills a slide (its aspect kept) and the slide is
+   * drawn as a thumbnail in the course theme, when the tile scrolls into view. The glyph stays as the fallback.
+   */
+  private liveDiagram(el: HTMLElement, it: LibraryItem): boolean {
+    if (it.tab !== "diagrams") return false;
+    const job = () => {
+      try {
+        const d = it.make();
+        const k = Math.min(1680 / d.frame.w, 900 / d.frame.h);
+        const draft = { ...d, frame: { ...d.frame, w: Math.round(d.frame.w * k), h: Math.round(d.frame.h * k) } } as typeof d;
+        const b = placeDraft(emptyCanvas(), draft, undefined, 0);
+        const host = mk("div", "sle-tile-live");
+        const v = renderThumb({ ...emptyCanvas(), blocks: [b] }, host, {
+          lang: this.lang,
+          theme: this.theme.id,
+        });
+        this.views.push(v);
+        el.replaceChildren(host);
+        el.classList.add("is-live");
+      } catch {
+        /* keep the glyph */
+      }
+    };
+    if (typeof IntersectionObserver === "undefined") {
+      requestAnimationFrame(job);
+      return true;
+    }
+    this.io ??= new IntersectionObserver(
+      (ents) => {
+        for (const e of ents)
+          if (e.isIntersecting) {
+            this.io?.unobserve(e.target);
+            (e.target as HTMLElement & { _job?: () => void })._job?.();
+          }
+      },
+      { rootMargin: "160px" },
+    );
+    (el as HTMLElement & { _job?: () => void })._job = job;
+    this.io.observe(el);
+    return true;
+  }
   private art(el: HTMLElement, p: LibraryPreview, it: LibraryItem) {
+    if (it.tab === "diagrams") this.liveDiagram(el, it);
     switch (p.k) {
       case "text": {
-        const s = mk(
-          "span",
-          "sle-tile-text",
-          p.style === "number"
-            ? "318"
-            : p.style === "mono"
-              ? "QNH 1013"
-              : p.style === "label"
-                ? "LABEL"
-                : "Aa",
-        );
+        // the role, written in its own style: "Add a title", "Add body text"… (the Canva text panel)
+        const fr = this.lang === "fr";
+        const SAMPLE: Record<string, [string, string]> = {
+          display: ["Cover title", "Titre de couverture"],
+          title: ["Add a title", "Ajouter un titre"],
+          heading: ["Add a heading", "Ajouter un intertitre"],
+          subtitle: ["Add a lead", "Ajouter un chapeau"],
+          lead: ["Add a lead", "Ajouter un chapeau"],
+          body: ["Add body text", "Ajouter du texte"],
+          caption: ["Add a caption", "Ajouter une légende"],
+          small: ["Add a caption", "Ajouter une légende"],
+          label: ["EYEBROW", "SURTITRE"],
+          eyebrow: ["EYEBROW", "SURTITRE"],
+          number: ["318", "318"],
+          quote: ["« Cleared ILS 27 »", "« Autorisé ILS 27 »"],
+          mono: ["angle = 60 × off ÷ dist", "angle = 60 × écart ÷ dist"],
+          formula: ["angle = 60 × off ÷ dist", "angle = 60 × écart ÷ dist"],
+          foot: ["Source · FAA AIM 5-3-8", "Source · FAA AIM 5-3-8"],
+        };
+        const sample = SAMPLE[p.style]?.[fr ? 1 : 0] ?? "Aa";
+        const s = mk("span", "sle-tile-text", sample);
         const css = typeCss(this.theme, p.style);
         s.style.fontFamily = css["font-family"];
         s.style.fontWeight = css["font-weight"];
-        s.style.fontSize = `${Math.max(13, Math.min(34, parseFloat(css["font-size"]) * 0.4))}px`;
-        if (p.style === "label") s.style.letterSpacing = "0.12em";
+        s.style.fontSize = `${Math.max(13, Math.min(30, parseFloat(css["font-size"]) * 0.36))}px`;
+        if (css["text-transform"] === "uppercase" || p.style === "label") {
+          s.style.letterSpacing = "0.12em";
+          s.style.textTransform = "uppercase";
+        }
+        if (p.style === "mono" || p.style === "formula" || p.style === "quote") s.style.fontStyle = "italic";
         el.append(s);
         break;
       }

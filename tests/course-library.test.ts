@@ -156,8 +156,8 @@ describe("library entries", () => {
       (x) => x.id === VOR_ID,
     )!;
     expect(e.progress).toMatchObject({
-      index: 5,
-      total: 12,
+      index: 9,
+      total: 14,
       stepId: "v-intercept",
     });
     expect(e.progress!.next!.kind).toBe("try");
@@ -218,7 +218,7 @@ describe("kind mix and thumbnails", () => {
   it("counts reading, acting and flying steps", () => {
     const vor = sampleCourse(VOR_ID)!;
     const m = kindMix(vor.steps);
-    expect(m.learn + m.act + m.fly).toBe(12);
+    expect(m.learn + m.act + m.fly).toBe(14);
     expect(m.fly).toBe(1);
     expect(m.act).toBeGreaterThanOrEqual(6);
   });
@@ -226,7 +226,7 @@ describe("kind mix and thumbnails", () => {
     const vor = sampleCourse(VOR_ID)!;
     const t = thumbOf(vor)!;
     expect(t.step.id).toBe("v-cover");
-    expect(t.focus).toMatchObject({ x: 1080, w: 816 });
+    expect(t.focus).toMatchObject({ x: 1032, w: 720 });
     expect(thumbOf(vor, "v-hsi")!.step.id).toBe("v-hsi");
     const none: Course = { ...vor, steps: vor.steps.filter((s) => !s.slide) };
     expect(thumbOf(none)).toBeNull();

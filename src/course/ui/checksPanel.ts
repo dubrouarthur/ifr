@@ -13,6 +13,8 @@ import {
   type ValidateContext,
 } from "../validate";
 import { h } from "../../ui/dom";
+import { readIssueText, slideReadability } from "../canvas/readability";
+import { resolveTheme } from "../canvas/themes";
 
 const L = (en: string, fr: string): L10n => ({ en, fr });
 const tr = (t: L10n, lang: Lang) => (lang === "fr" ? (t.fr ?? t.en) : t.en);
@@ -77,7 +79,7 @@ export function pacingText(run: [number, number], lang: Lang): string {
 }
 
 // ------------------------------------------------------------------ the checks
-export type CheckCode = CourseIssue["code"] | "airac";
+export type CheckCode = CourseIssue["code"] | "airac" | "readability";
 export interface EditorCheck {
   level: "error" | "warn";
   code: CheckCode;
@@ -148,6 +150,33 @@ export function editorChecks(
         blockId: i.blockId,
         path: i.path,
       });
+  // readability on a projector (SPEC slides v2 §13): text under 24 px at 1920, words that cannot fit their frame,
+  // blocks off the slide or on top of each other, diagram labels on top of each other — in every language
+  const theme = resolveTheme(course.theme, course.brand);
+  const seenRead = new Set<string>();
+  for (const s of course.steps) {
+    if (!s.slide) continue;
+    for (const lang of (course.langs?.length ? course.langs : ["en", "fr"]) as Lang[]) {
+      let issues: ReturnType<typeof slideReadability> = [];
+      try {
+        issues = slideReadability(s.slide, { theme, lang, diagrams: typeof document !== "undefined" });
+      } catch {
+        issues = [];
+      }
+      for (const i of issues) {
+        const k = `${s.id}|${i.blockId}|${i.kind}`;
+        if (seenRead.has(k)) continue;
+        seenRead.add(k);
+        push({
+          level: "warn",
+          code: "readability",
+          stepId: s.id,
+          blockId: i.blockId,
+          message: readIssueText(i, lang),
+        });
+      }
+    }
+  }
   // stale AIRAC: scenes and plates recorded with an older cycle than the data loaded today
   const current = ctx.airac ?? airacCycle(ctx.now ?? new Date());
   const stale = (rec: string | undefined) => {
@@ -238,6 +267,7 @@ export function checksForStep(
 // ------------------------------------------------------------------ the panel (DOM)
 const CODE_LABEL: Partial<Record<CheckCode, L10n>> = {
   pacing: L("Pacing", "Rythme"),
+  readability: L("Projector", "Projection"),
   fr: L("French", "Français"),
   airac: L("AIRAC", "AIRAC"),
   alt: L("Alt text", "Texte alternatif"),

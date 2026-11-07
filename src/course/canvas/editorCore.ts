@@ -2,7 +2,7 @@
 // gestures (move, resize, rotate, arrow ends, a callout's leader, marquee) with grid snapping and alignment
 // guides, the commands (duplicate, delete, group, lock, z-order, align, nudge, copy / paste) and the keyboard map,
 // over an undo / redo History. editor.ts turns pointer and key events into these calls and draws the overlay.
-import type { Pt, SlideBlock, SlideCanvas } from "../types";
+import type { BlockFrame, Pt, SlideBlock, SlideCanvas } from "../types";
 import {
   aabb,
   DEFAULT_GRID,
@@ -13,6 +13,7 @@ import {
   rotationAt,
   snap,
   snapMove,
+  snapResize,
   type Box,
   type Guide,
   type Handle,
@@ -21,6 +22,8 @@ import {
   addBlock,
   alignBlocks,
   blockById,
+  centerOnSlide,
+  matchSize,
   distributeBlocks,
   duplicateBlocks,
   expandGroups,
@@ -59,7 +62,9 @@ export type EditorCommand =
   | { k: "unlock" }
   | { k: "toggleLock" }
   | { k: "z"; how: ZMove }
-  | { k: "align"; how: Align }
+  | { k: "align"; how: Align; to?: "slide" | "selection" }
+  | { k: "match"; dim: "w" | "h" | "both" }
+  | { k: "center" }
   | { k: "distribute"; axis: "h" | "v" }
   | { k: "nudge"; dx: number; dy: number }
   | { k: "selectAll" }
@@ -122,6 +127,8 @@ export class EditorCore {
   marqueeBox: Box | null = null;
   /** snapping to guides and the grid (Alt during a drag turns it off) */
   snapOn = true;
+  /** touch: every tap adds to (or removes from) the selection, as Shift does with a keyboard */
+  multiSelect = false;
   private g: Gesture | null = null;
   constructor(
     canvas: SlideCanvas,
@@ -210,16 +217,18 @@ export class EditorCore {
   pointerDown(p: Pt, mods: Mods = {}, tol = 8): "move" | "marquee" {
     const hit = hitTest(this.canvas.blocks, p, { pad: tol });
     if (!hit) {
+      const add = !!mods.shift || this.multiSelect;
       this.g = {
         k: "marquee",
         origin: p,
-        base: mods.shift ? [...this.selection] : [],
+        base: add ? [...this.selection] : [],
       };
-      if (!mods.shift) this.setSelection([]);
+      if (!add) this.setSelection([]);
       this.marqueeBox = { x: p[0], y: p[1], w: 0, h: 0 };
       return "marquee";
     }
     const wasSelected = this.selection.includes(hit.id);
+    if (this.multiSelect) mods = { ...mods, shift: true };
     if (mods.shift) this.select([hit.id], true);
     else if (!wasSelected) this.select([hit.id]);
     const ids = this.selection.filter(
@@ -315,12 +324,23 @@ export class EditorCore {
           fromCenter: false,
           grid: b.frame.rot ? 0 : grid,
         });
+        let g2: BlockFrame = f;
+        this.guides = [];
+        // edges snap to the other blocks, the slide and the column grid (not when the aspect is kept or rotated)
+        if (snapping && !keep && !b.frame.rot) {
+          const others = g.start.blocks
+            .filter((x) => x.id !== b.id && !x.hiddenInEditor)
+            .map((x) => aabb(x.frame));
+          const s = snapResize(f, g.handle, others, { threshold: 10 });
+          g2 = { ...f, ...s.box };
+          this.guides = s.guides;
+        }
         const r = {
-          ...f,
-          x: Math.round(f.x),
-          y: Math.round(f.y),
-          w: Math.round(f.w),
-          h: Math.round(f.h),
+          ...g2,
+          x: Math.round(g2.x),
+          y: Math.round(g2.y),
+          w: Math.round(g2.w),
+          h: Math.round(g2.h),
         };
         this.live(
           updateBlock(g.start, b.id, () => reframeBlock(b, r)),
@@ -506,7 +526,23 @@ export class EditorCore {
         return true;
       case "align":
         if (!has) return false;
-        this.apply(alignBlocks(this.canvas, sel, c.how));
+        this.apply(alignBlocks(this.canvas, sel, c.how, c.to ?? "auto"));
+        return true;
+      case "match":
+        if (sel.length < 2) return false;
+        {
+          // the reference is the widest (tallest, largest) block: "same width" makes every block as wide as it
+          const size = (x: SlideBlock) =>
+            c.dim === "w" ? x.frame.w : c.dim === "h" ? x.frame.h : x.frame.w * x.frame.h;
+          const ordered = [...this.selected]
+            .sort((p, q) => size(q) - size(p))
+            .map((x) => x.id);
+          this.apply(matchSize(this.canvas, ordered, c.dim, keepsAspect));
+        }
+        return true;
+      case "center":
+        if (!has) return false;
+        this.apply(centerOnSlide(this.canvas, sel));
         return true;
       case "distribute":
         if (sel.length < 3) return false;

@@ -11,6 +11,7 @@ import {
 } from "./holding";
 import { MATHS_IFR_ID, mathsIfrCourse } from "./mathsIfr";
 import { MATHS_VFR_ID, mathsVfrCourse } from "./mathsVfr";
+import { CRAFTED_BRIEFINGS } from "./briefings";
 
 export { VOR_ID, HOLDING_ID, HOLD_NDB_BRIEFING_ID, MATHS_IFR_ID, MATHS_VFR_ID };
 
@@ -69,6 +70,15 @@ export const SAMPLES: readonly SampleDef[] = [
       fr: "Le briefing interactif de la leçon d’attente sur NDB",
     },
   },
+  // the crafted lesson briefings (samples/briefings): one deck per key sim lesson
+  ...CRAFTED_BRIEFINGS.map(
+    (b, i): SampleDef => ({
+      id: b.id,
+      order: 6 + i,
+      build: b.build,
+      blurb: b.blurb,
+    }),
+  ),
 ];
 
 export const SAMPLE_IDS: readonly string[] = SAMPLES.map((s) => s.id);

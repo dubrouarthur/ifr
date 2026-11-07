@@ -50,7 +50,7 @@ describe('GDL 90 encoding', () => {
     const own = got.gdl.map((b) => unframe(b)).filter((u) => u.ok && u.msg[0] === 10);
     expect(own.length).toBeGreaterThan(0);
     expect(got.gdl.some((b) => unframe(b).msg[0] === 0)).toBe(true); // heartbeat
-    expect(got.xgps.some((s) => s.startsWith('XGPSIFR Trainer,-35.000000,47.500000'))).toBe(true);
+    expect(got.xgps.some((s) => s.startsWith('XGPSWingdeck,-35.000000,47.500000'))).toBe(true);
     expect(got.xgps.some((s) => s.startsWith('XATT'))).toBe(true);
     expect(String(xgps({ lat: 1, lon: 2, altFt: 0, trackDeg: 0, gsKt: 0 }))).toContain('XGPS');
   });

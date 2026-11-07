@@ -27,6 +27,10 @@ const S = {
   calcNewNumbers: ["New numbers each try", "Nouveaux chiffres à chaque essai"],
   checkedBySim: ["Checked by the sim", "Vérifié par le simulateur"],
   doThis: ["Do this", "À faire"],
+  quizRight: ["Correct", "Juste"],
+  quizYours: ["Your answer", "Votre réponse"],
+  answeredInPlayer: ["Answered in the player", "Répondu dans le lecteur"],
+  textTooLong: ["Text too long", "Texte trop long"],
   answer: ["Answer", "Réponse"],
   // editor
   duplicate: ["Duplicate", "Dupliquer"],

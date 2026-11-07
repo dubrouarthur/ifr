@@ -120,6 +120,10 @@ const EN = {
   exportNow: "Export now",
   // empty states and errors
   emptyFilter: "No courses here yet",
+  createFirst: "Create your first deck",
+  createFirstBody:
+    "Start from a template: a cover, a diagram, a live instrument, a question. Your decks appear here.",
+  slideDecks: "Slide decks",
   emptyFilterBody:
     "Samples are always available, and your own courses appear under My drafts.",
   emptySearch: "No course matches “{q}”",
@@ -264,6 +268,10 @@ const FR: Record<CourseStringKey, string> = {
   exportNudge: "Non exporté depuis {n} jours",
   exportNow: "Exporter",
   emptyFilter: "Aucun cours ici pour l’instant",
+  createFirst: "Créez votre premier cours",
+  createFirstBody:
+    "Partez d’un modèle : une couverture, un schéma, un instrument en direct, une question. Vos cours apparaissent ici.",
+  slideDecks: "Cours en diapositives",
   emptyFilterBody:
     "Les exemples sont toujours disponibles, et vos cours apparaissent dans Mes brouillons.",
   emptySearch: "Aucun cours ne correspond à « {q} »",
