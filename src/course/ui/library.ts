@@ -1,11 +1,15 @@
-// Ground school — the course library (package I, SPEC §3.1, mockup final/flightcenter.png). DOM only (h()), no
-// framework; the same component runs in the Flight Center view (index.html) and in academy.html#library.
-//   Continue card   the assigned or last opened course, one primary action ("Continue at step 6")
-//   filters         All · Assigned · Club · Samples · My drafts, plus search
-//   cards           thumbnail (the course's first designed slide, drawn statically), tag, title, meta line, the
-//                   kind-mix bar (what you read · where you act · where you fly), a ⋯ menu
-//   instructor rail New course · Import your slides (PDF) · Import a course or club pack · Present to a class;
-//                   below 1000 px it collapses into two buttons in the filter row
+// The library: one place for everything a club or a school teaches and flies (slide courses, procedures and
+// checklists, sim lessons, failure drills, scenarios), organised by program (LAPL, PPL, Night · VFR, IR, ATPL, Club,
+// Instructors). DOM only (h()), no framework; the same component runs in academy.html#library and in the Flight
+// Center's Library (index.html), so there is one mental model. The model is src/library (pure, tested).
+//   header          what it is, search ("/"), Import (PDF, course or club pack), Present, New course
+//   program strip   All · LAPL(A) · PPL(A) · Night · VFR · IR · ATPL · Club · Instructors, with counts
+//   filters         kind (courses · flights · procedures) and level (three bars)
+//   rows            Continue (or Start here), Assigned, My drafts; then one preview row per program ("See all"),
+//                   or, inside a program, one section per kind; a search lists every match by kind
+//   cards           a 16:9 cover (a course's first slide, a lesson's briefing deck cover, a procedure's checklist
+//                   card, a flight's profile and strip), the kind, the program, the level, the title, a meta line;
+//                   a course opens in the player, a procedure as its checklist, a flight in the cockpit
 //   nudges          "not saved on this device", persist() ("keep my courses"), "not exported for 7 days"
 // Pure helpers (entries, filters, the continue target, the kind mix, the academy route) are exported and tested.
 // The app's own dialogs only (never confirm() / alert()).
@@ -13,7 +17,50 @@ import type { Course, CourseProgress, L10n, Lang, Step } from "../types";
 import type { CourseIndexEntry, CourseStore } from "../store";
 import { h } from "../../ui/dom";
 import { agoText, ct, ctSteps, loc, type CourseStringKey } from "../i18n";
-import { allSamples, isSampleId, sampleCourse } from "../samples";
+import { SAMPLES, allSamples, isSampleId, sampleCourse } from "../samples";
+import type { Procedure, ProcCategory } from "../../train/procedureTypes";
+import {
+  KINDS,
+  KIND_FILTER,
+  KIND_ORDER,
+  LEVELS,
+  PROGRAMS,
+  SUB_LABEL,
+  isProgramId,
+  levelTitle,
+  programDef,
+  type Level,
+  type ProgramId,
+} from "../../library/programs";
+import {
+  NO_FILTER,
+  kindCounts,
+  libraryView,
+  programCounts,
+  type LibFilter,
+  type LibItem,
+  type LibSection,
+  type OpenTarget,
+} from "../../library/model";
+import {
+  coursePlacement,
+  libraryItems,
+  procBase,
+  type ClubDrill,
+  type LessonRecord,
+} from "../../library/sources";
+import { DRILL_META } from "../../library/meta";
+import {
+  checklistCover,
+  courseCover,
+    lessonCover,
+  plateUrl,
+  stripCover,
+  type CoverSlide,
+} from "../../library/covers";
+import { procedureSheet } from "../../library/procedureSheet";
+import { lt, ltN, type LibStringKey } from "../../library/strings";
+import "../../styles/library.css";
 
 // ------------------------------------------------------------------ routes (academy.html hash)
 export type AcademyRoute =
@@ -111,7 +158,14 @@ export interface LibraryEntry {
   author?: { name: string; club?: string };
   mix: KindMix;
   /** where the student is (from the progress store) */
-  progress?: { index: number; total: number; stepId: string; next?: Step };
+  progress?: {
+    index: number;
+    total: number;
+    stepId: string;
+    next?: Step;
+    /** when (ISO) */
+    at?: string;
+  };
   needsExport?: boolean;
   exportAgeDays?: number | null;
   /** loaded course (thumbnails, Continue card) */
@@ -163,6 +217,7 @@ function progressOf(
     total: c.steps.length,
     stepId: p.stepId,
     next: c.steps[i],
+    ...(p.updated ? { at: p.updated } : {}),
   };
 }
 /** Build the library's entries: stored courses first (newest first), then the built-in samples. */
@@ -384,6 +439,8 @@ const ICON: Record<string, string> = {
   shield: "M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z",
   download: "M12 4v12M7 11l5 5 5-5M5 20h14",
   warn: "M12 4 3 20h18zM12 10v4M12 17h.01",
+  back: "M15 6l-6 6 6 6",
+  check: "M5 12.5l4.5 4.5L19 7.5",
 };
 function ic(name: keyof typeof ICON, size = 18): SVGSVGElement {
   const NS = "http://www.w3.org/2000/svg";
@@ -416,6 +473,8 @@ export interface LibraryOptions {
   profileId?: string;
   /** academy.html path (the Flight Center is at the site root, so is academy.html) */
   page?: string;
+  /** the simulator page a sim lesson, a drill or a scenario opens in (default index.html) */
+  simPage?: string;
   /** run once the store is open: create a course (the editor opens on it), or pick a course to present */
   intent?: "new" | "present";
   /** a PDF import module (pdfImport.ts) when the build has one */
@@ -424,6 +483,14 @@ export interface LibraryOptions {
     file: File,
     lang: Lang,
   ) => Promise<{ id: string } | null>;
+  /** the host flies a sim item itself (the Flight Center): true when it did */
+  openSim?: (t: OpenTarget) => boolean;
+  /** the host can adapt a procedure for the club (the Flight Center's procedure editor) */
+  editProcedure?: (id: string) => void;
+  /** the club's own failure drills (the Flight Center lists them) */
+  clubDrills?: () => ClubDrill[];
+  /** open on a program */
+  program?: ProgramId;
 }
 
 const isIpad = () =>
@@ -431,19 +498,75 @@ const isIpad = () =>
   (/iPad/.test(navigator.userAgent) ||
     (navigator.platform === "MacIntel" && (navigator.maxTouchPoints ?? 0) > 1));
 
+const FILTER_KEY = "ifr.lib.filter";
+function readFilter(): Partial<LibFilter> {
+  try {
+    const v = JSON.parse(
+      localStorage.getItem(FILTER_KEY) ?? "{}",
+    ) as Partial<LibFilter>;
+    return {
+      ...(v.program === "all" || isProgramId(v.program)
+        ? { program: v.program }
+        : {}),
+      ...(v.kind === "all" ||
+      v.kind === "course" ||
+      v.kind === "procedure" ||
+      v.kind === "flight"
+        ? { kind: v.kind }
+        : {}),
+      ...(v.level === 0 || v.level === 1 || v.level === 2 || v.level === 3
+        ? { level: v.level }
+        : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+function saveFilter(f: LibFilter) {
+  try {
+    localStorage.setItem(
+      FILTER_KEY,
+      JSON.stringify({ program: f.program, kind: f.kind, level: f.level }),
+    );
+  } catch {
+    /* per-viewer convenience only */
+  }
+}
+/** The lessons flown in the cockpit (ui/learn.ts progress, localStorage). */
+function lessonRecords(): Record<string, LessonRecord> {
+  try {
+    const v = JSON.parse(
+      localStorage.getItem("ifr.progress.v1") ?? "{}",
+    ) as unknown;
+    return v && typeof v === "object"
+      ? (v as Record<string, LessonRecord>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+const CARD_MIN = 272;
+const GAP = 20;
+
 export class CourseLibrary {
   readonly el: HTMLDivElement;
   private lang: Lang;
   private store: CourseStore | null = null;
   private entries: LibraryEntry[] = [];
-  private filter: LibraryFilter = "all";
-  private q = "";
-  private main: HTMLDivElement;
-  private rail: HTMLElement;
-  private grid: HTMLDivElement;
-  private segs: HTMLDivElement;
-  private compact: HTMLDivElement;
-  private contHost: HTMLDivElement;
+  private items: LibItem[] = [];
+  private procedures: Procedure[] = [];
+  private procMod: {
+    cats: Record<ProcCategory, Record<Lang, string>>;
+    disclaimer: Record<Lang, string>;
+    effective: (l: Lang) => Procedure[];
+    get: (id: string) => Procedure | null;
+  } | null = null;
+  private filter: LibFilter;
+  private cols = 4;
+  private head: HTMLElement;
+  private strip: HTMLElement;
+  private bar: HTMLElement;
+  private body: HTMLDivElement;
   private banner: HTMLDivElement;
   private searchIn: HTMLInputElement;
   private toastEl: HTMLDivElement;
@@ -457,29 +580,40 @@ export class CourseLibrary {
   private dialogEl: HTMLElement | null = null;
   private unsub: (() => void) | null = null;
   private toastTimer = 0;
+  private searchTimer = 0;
   private destroyed = false;
   private loadSeq = 0;
 
   constructor(private o: LibraryOptions) {
     this.lang = o.lang;
-    this.el = h("div", { class: `gl${o.embedded ? " gl-embedded" : ""}` });
+    this.filter = {
+      ...NO_FILTER,
+      ...readFilter(),
+      ...(o.program ? { program: o.program } : {}),
+    };
+    this.el = h("div", { class: `gl lb${o.embedded ? " gl-embedded" : ""}` });
     this.searchIn = h("input", {
       class: "gl-search-in",
       type: "search",
       enterkeyhint: "search",
       autocomplete: "off",
+      spellcheck: "false",
       oninput: () => {
-        this.q = this.searchIn.value;
-        this.renderGrid();
+        window.clearTimeout(this.searchTimer);
+        // a short pause so typing stays smooth with a big library
+        this.searchTimer = window.setTimeout(() => {
+          this.filter = { ...this.filter, q: this.searchIn.value };
+          this.renderStrip();
+          this.renderBar();
+          this.renderBody();
+        }, 90);
       },
     }) as HTMLInputElement;
-    this.main = h("div", { class: "gl-main" });
-    this.rail = h("aside", { class: "gl-rail" });
-    this.grid = h("div", { class: "gl-grid", role: "list" });
-    this.segs = h("div", { class: "gl-seg", role: "tablist" });
-    this.compact = h("div", { class: "gl-compact" });
-    this.contHost = h("div", { class: "gl-cont-host" });
+    this.head = h("div", { class: "lb-head" });
+    this.strip = h("nav", { class: "lb-strip" });
+    this.bar = h("div", { class: "lb-bar" });
     this.banner = h("div", { class: "gl-banners" });
+    this.body = h("div", { class: "lb-body" });
     this.toastEl = h("div", {
       class: "gl-toast",
       role: "status",
@@ -501,8 +635,9 @@ export class CourseLibrary {
       onchange: () => this.importPdfFile(),
     }) as HTMLInputElement;
     this.el.append(
-      this.main,
-      this.rail,
+      h("div", { class: "lb-top" }, this.head, this.strip, this.bar),
+      this.banner,
+      this.body,
       this.toastEl,
       this.live,
       this.fileIn,
@@ -517,14 +652,16 @@ export class CourseLibrary {
       this.io = new IntersectionObserver(
         (list) => {
           for (const x of list)
-            if (x.isIntersecting) this.drawThumb(x.target as HTMLElement);
+            if (x.isIntersecting) void this.drawCover(x.target as HTMLElement);
         },
-        { rootMargin: "200px" },
+        { rootMargin: "300px" },
       );
-    this.renderShell();
-    // samples render at once; stored courses join when the store opens
+    // the built-in courses and flights render at once; stored courses and the procedures join when they load
     this.entries = libraryEntries({ samples: allSamples(), stored: [] });
+    this.rebuild();
+    this.renderHead();
     this.renderAll();
+    void this.loadProcedures();
     void this.attach(o.store);
   }
 
@@ -545,6 +682,49 @@ export class CourseLibrary {
     if (this.destroyed) return;
     if (this.o.intent === "new") void this.newCourse();
     else if (this.o.intent === "present") this.pickPresent();
+  }
+  private async loadProcedures() {
+    try {
+      const [st, lib] = await Promise.all([
+        import("../../train/procedureStore"),
+        import("../../train/procedureLibrary"),
+      ]);
+      if (this.destroyed) return;
+      this.procMod = {
+        cats: lib.CATEGORY_LABELS,
+        disclaimer: lib.DISCLAIMER,
+        effective: (l) => st.effectiveProcedures(l),
+        get: (id) => st.getProcedure(id),
+      };
+      this.rebuild();
+      this.renderAll();
+    } catch {
+      /* the procedures stay out of the library */
+    }
+  }
+  private readProcedures(): Procedure[] {
+    const m = this.procMod;
+    if (!m) return [];
+    const l = this.lang;
+    const other: Lang = l === "fr" ? "en" : "fr";
+    // the library in the screen language, and every club procedure (a club writes in its own language)
+    return [
+      ...m.effective(l),
+      ...m.effective(other).filter((p) => p.source === "club"),
+    ];
+  }
+  private rebuild() {
+    this.procedures = this.readProcedures();
+    this.items = libraryItems({
+      lang: this.lang,
+      courses: this.entries,
+      sampleProgram: (id) => SAMPLES.find((s) => s.id === id)?.program,
+      sampleBlurb: (id) => SAMPLES.find((s) => s.id === id)?.blurb,
+      lessons: lessonRecords(),
+      procedures: this.procedures,
+      ...(this.procMod ? { categories: this.procMod.cats } : {}),
+      clubDrills: this.o.clubDrills?.() ?? [],
+    });
   }
   /** Reload everything from the store (after an import, a delete, another tab's change). */
   async load() {
@@ -585,13 +765,15 @@ export class CourseLibrary {
       needsExport: (id) => store?.needsExport(id) ?? false,
       exportAgeDays: (id) => store?.exportAgeDays(id) ?? null,
     });
+    this.rebuild();
     this.renderAll();
   }
 
   setLang(l: Lang) {
     if (l === this.lang) return;
     this.lang = l;
-    this.renderShell();
+    this.rebuild();
+    this.renderHead();
     this.renderAll();
   }
   destroy() {
@@ -604,124 +786,237 @@ export class CourseLibrary {
     this.closeMenu();
     this.closeDialog();
     window.clearTimeout(this.toastTimer);
+    window.clearTimeout(this.searchTimer);
     this.el.remove();
   }
 
   // ---------------------------------------------------------------- layout
   private measure() {
     const w = this.el.clientWidth;
-    this.el.classList.toggle("is-narrow", w > 0 && w < 1240);
-    this.el.classList.toggle("is-phone", w > 0 && w < 640);
+    if (!w) return;
+    this.el.classList.toggle("is-narrow", w < 1100);
+    this.el.classList.toggle("is-phone", w < 640);
+    const inner = this.body.clientWidth || w - 64;
+    const min = w < 640 ? 240 : CARD_MIN;
+    const cols = Math.max(
+      1,
+      Math.min(6, Math.floor((inner + GAP) / (min + GAP))),
+    );
+    if (cols !== this.cols) {
+      this.cols = cols;
+      this.renderBody();
+    }
   }
   private t(k: CourseStringKey, v?: Record<string, string | number>) {
     return ct(k, this.lang, v);
   }
-  private renderShell() {
+  private s(k: LibStringKey, v?: Record<string, string | number>) {
+    return lt(k, this.lang, v);
+  }
+  private setFilter(f: Partial<LibFilter>, focus?: HTMLElement | null) {
+    this.filter = { ...this.filter, ...f };
+    saveFilter(this.filter);
+    this.renderStrip();
+    this.renderBar();
+    this.renderBody();
+    if (focus) focus.focus({ preventScroll: true });
+  }
+  private renderHead() {
     const l = this.lang;
-    this.searchIn.placeholder = this.t("search");
-    this.searchIn.setAttribute("aria-label", this.t("search"));
-    this.main.replaceChildren(
+    this.searchIn.placeholder = this.s("search");
+    this.searchIn.setAttribute("aria-label", this.s("search"));
+    const importBtn = h(
+      "button",
+      {
+        class: "gl-btn lb-head-b",
+        type: "button",
+        "aria-haspopup": "menu",
+        "aria-label": this.s("import"),
+        onclick: (ev: Event) => {
+          ev.stopPropagation();
+          this.openImportMenu(importBtn);
+        },
+      },
+      ic("upload", 18),
+      h("span", {}, this.s("import")),
+    );
+    this.head.replaceChildren(
       h(
         "div",
-        { class: "gl-head" },
+        { class: "lb-head-t" },
         h(
-          "div",
-          { class: "gl-head-t" },
-          h("h1", {}, this.t("groundSchool")),
-          h("p", {}, this.t("groundSchoolLead")),
+          "p",
+          { class: "lb-eyebrow" },
+          this.s("eyebrow"),
+          h("span", { class: "lb-eyebrow-n num" }, ""),
         ),
+        h("h1", {}, this.s("title")),
+        h("p", { class: "lb-lead" }, this.s("lead")),
+      ),
+      h(
+        "div",
+        { class: "lb-head-acts" },
         h(
           "label",
-          { class: "gl-search" },
+          { class: "gl-search lb-search" },
           ic("search", 18),
           this.searchIn,
           h("kbd", { "aria-hidden": "true" }, "/"),
         ),
         h(
-          "button",
-          { class: "gl-primary gl-head-new", type: "button", onclick: () => void this.newCourse() },
-          ic("plus", 18),
-          this.t("newCourse"),
+          "div",
+          { class: "lb-head-row" },
+          importBtn,
+          h(
+            "button",
+            {
+              class: "gl-btn lb-head-b",
+              type: "button",
+              "aria-label": this.s("present"),
+              onclick: () => this.pickPresent(),
+            },
+            ic("screen", 18),
+            h("span", {}, this.s("present")),
+          ),
+          h(
+            "button",
+            {
+              class: "gl-primary lb-head-new",
+              type: "button",
+              onclick: () => void this.newCourse(),
+            },
+            ic("plus", 18),
+            this.s("newCourse"),
+          ),
         ),
-      ),
-      this.banner,
-      this.contHost,
-      h("h2", { class: "gl-sec-h" }, this.t("slideDecks")),
-      h(
-        "div",
-        { class: "gl-filters" },
-        this.segs,
-        h("span", { class: "gl-sp" }),
-        this.compact,
-      ),
-      this.grid,
-    );
-    // the compact instructor actions (narrow widths)
-    this.compact.replaceChildren(
-      h(
-        "button",
-        { class: "gl-btn", type: "button", onclick: () => this.fileIn.click() },
-        ic("upload", 18),
-        this.t("import"),
-      ),
-    );
-    const row = (
-      icon: keyof typeof ICON,
-      title: CourseStringKey,
-      desc: CourseStringKey,
-      run: () => void,
-    ) =>
-      h(
-        "button",
-        { class: "gl-rail-row", type: "button", onclick: run },
-        h("span", { class: "gl-rail-ic" }, ic(icon, 20)),
-        h(
-          "span",
-          { class: "gl-rail-tx" },
-          h("b", {}, this.t(title)),
-          h("small", {}, this.t(desc)),
-        ),
-      );
-    const chip = (cls: string, word: string, text: CourseStringKey) =>
-      h(
-        "li",
-        {},
-        h("span", { class: `gl-k ${cls}` }, word),
-        h("span", {}, this.t(text)),
-      );
-    this.rail.replaceChildren(
-      h(
-        "section",
-        { class: "gl-panel" },
-        h("h2", { class: "gl-panel-h" }, this.t("forInstructors")),
-        row("plus", "newCourse", "newCourseDesc", () => void this.newCourse()),
-        row("pdf", "importSlides", "importSlidesDesc", () => this.pickPdf()),
-        row("upload", "importCourse", "importCourseDesc", () =>
-          this.fileIn.click(),
-        ),
-        row("screen", "present", "presentDesc", () => this.pickPresent()),
-      ),
-      h(
-        "section",
-        { class: "gl-panel gl-opens" },
-        h("h2", { class: "gl-panel-h" }, this.t("aStepCanOpen")),
-        h(
-          "ul",
-          {},
-          chip("k-fly", l === "fr" ? "VOL" : "FLY IT", "openFly"),
-          chip("k-drill", l === "fr" ? "EXERCICE" : "DRILL", "openDrill"),
-          chip("k-plate", l === "fr" ? "CARTE" : "PLATE", "openPlate"),
-        ),
-        h("p", {}, this.t("andComesBack")),
       ),
     );
+    void l;
   }
   private renderAll() {
     this.closeMenu();
+    const n = this.items.length;
+    const eb = this.head.querySelector(".lb-eyebrow-n");
+    if (eb)
+      eb.textContent = ` · ${n === 1 ? this.s("item1") : this.s("items", { n })}`;
     this.renderBanners();
-    this.renderContinue();
-    this.renderSegs();
-    this.renderGrid();
+    this.renderStrip();
+    this.renderBar();
+    this.renderBody();
+  }
+
+  // ---------------------------------------------------------------- the program strip and the filters
+  private renderStrip() {
+    const l = this.lang;
+    const n = programCounts(this.items, {
+      kind: this.filter.kind,
+      level: this.filter.level,
+      q: this.filter.q,
+    });
+    this.strip.setAttribute("aria-label", this.s("programsNav"));
+    const cell = (id: ProgramId | "all", code: string, title: string) => {
+      const on = this.filter.program === id;
+      return h(
+        "button",
+        {
+          class: `lb-prog${on ? " on" : ""}${n[id] || id === "instructors" ? "" : " empty"}`,
+          type: "button",
+          "aria-pressed": on ? "true" : "false",
+          "data-program": id,
+          onclick: (ev: Event) => {
+            this.setFilter({ program: id }, ev.currentTarget as HTMLElement);
+            this.scrollTop();
+          },
+        },
+        h(
+          "span",
+          { class: "lb-prog-c" },
+          code,
+          h("span", { class: "lb-prog-n num" }, n[id] || id !== "instructors" ? String(n[id]) : ""),
+        ),
+        h("span", { class: "lb-prog-t" }, title),
+      );
+    };
+    this.strip.replaceChildren(
+      cell("all", this.s("all"), this.s("allPrograms")),
+      ...PROGRAMS.map((p) => cell(p.id, loc(p.code, l), loc(p.title, l))),
+    );
+    // keep the chosen program in view on a narrow strip
+    const on = this.strip.querySelector<HTMLElement>(".lb-prog.on");
+    if (on && this.strip.scrollWidth > this.strip.clientWidth)
+      this.strip.scrollLeft = Math.max(0, on.offsetLeft - 24);
+  }
+  private renderBar() {
+    const l = this.lang;
+    const kc = kindCounts(this.items, {
+      program: this.filter.program,
+      level: this.filter.level,
+      q: this.filter.q,
+    });
+    const seg = (
+      label: string,
+      on: boolean,
+      run: (b: HTMLElement) => void,
+      count?: number,
+      level?: Level,
+    ) =>
+      h(
+        "button",
+        {
+          class: `gl-seg-b${on ? " on" : ""}`,
+          type: "button",
+          "aria-pressed": on ? "true" : "false",
+          onclick: (ev: Event) => run(ev.currentTarget as HTMLElement),
+        },
+        level ? levelGlyph(level) : null,
+        label,
+        count !== undefined
+          ? h("span", { class: "gl-seg-n num" }, String(count))
+          : null,
+      );
+    const kinds = h(
+      "div",
+      {
+        class: "gl-seg lb-kinds",
+        role: "group",
+        "aria-label": this.s("kindsNav"),
+      },
+      seg(
+        this.s("all"),
+        this.filter.kind === "all",
+        (b) => this.setFilter({ kind: "all" }, b),
+        kc.all,
+      ),
+      ...KIND_ORDER.map((k) =>
+        seg(
+          loc(KIND_FILTER[k], l),
+          this.filter.kind === k,
+          (b) => this.setFilter({ kind: k }, b),
+          kc[k],
+        ),
+      ),
+    );
+    const levels = h(
+      "div",
+      {
+        class: "gl-seg lb-levels",
+        role: "group",
+        "aria-label": this.s("levelsNav"),
+      },
+      seg(this.s("allLevels"), !this.filter.level, (b) =>
+        this.setFilter({ level: 0 }, b),
+      ),
+      ...LEVELS.map((x) =>
+        seg(loc(x.title, l), this.filter.level === x.id, (b) => this.setFilter({ level: x.id }, b), undefined, x.id),
+      ),
+    );
+    this.bar.replaceChildren(kinds, levels);
+  }
+  private scrollTop() {
+    const sc = this.el.closest(".ga-scroll, .fc-main") as HTMLElement | null;
+    const top = this.strip.parentElement as HTMLElement;
+    if (sc && top && sc.scrollTop > top.offsetTop)
+      sc.scrollTop = Math.max(0, top.offsetTop - 8);
   }
 
   // ---------------------------------------------------------------- banners and nudges
@@ -811,325 +1106,612 @@ export class CourseLibrary {
     this.renderBanners();
   }
 
-  // ---------------------------------------------------------------- Continue card
-  private renderContinue() {
-    const l = this.lang;
-    const last = this.store?.last() ?? null;
-    const ct0 = continueTarget(this.entries, last);
-    this.contHost.replaceChildren();
-    if (!ct0) return;
-    const e = ct0.entry;
-    const total = e.steps;
-    const index = e.progress?.index ?? 0;
-    const n = ct0.started ? index + 1 : 1;
-    const nextStep = e.course?.steps[ct0.started ? index : 0];
-    const thumb = h("div", { class: "gl-cont-thumb", "aria-hidden": "true" });
-    thumb.dataset.id = e.id;
-    if (ct0.started && nextStep?.id) thumb.dataset.step = nextStep.id;
-    const tags: HTMLElement[] = [];
-    if (e.assigned)
-      tags.push(h("span", { class: "gl-pill ok" }, this.t("tagAssigned")));
-    else if (!ct0.started)
-      tags.push(h("span", { class: "gl-pill" }, this.t("startHere")));
-    else if (e.sample)
-      tags.push(h("span", { class: "gl-pill" }, this.t("tagSample")));
-    const by = e.author
-      ? e.sample
-        ? this.t("builtIn")
-        : this.t("byCfi", { name: e.author.name })
-      : "";
-    const pct = total
-      ? Math.round(((ct0.started ? index : 0) / total) * 100)
-      : 0;
-    const go = () => this.play(e, ct0.started ? e.progress?.stepId : undefined);
-    const card = h(
-      "section",
-      { class: "gl-cont", "aria-label": loc(e.title, l) },
-      thumb,
-      h(
-        "div",
-        { class: "gl-cont-body" },
-        h(
-          "div",
-          { class: "gl-cont-meta" },
-          ...tags,
-          by ? h("span", { class: "gl-muted" }, by) : null,
-        ),
-        h("h2", { class: "gl-cont-title" }, loc(e.title, l)),
-        h(
-          "div",
-          { class: "gl-prog" },
-          h(
-            "span",
-            {
-              class: "gl-bar",
-              role: "progressbar",
-              "aria-valuemin": "0",
-              "aria-valuemax": String(total),
-              "aria-valuenow": String(ct0.started ? index : 0),
-            },
-            h("i", { style: `width:${pct}%` }),
-          ),
-          h(
-            "span",
-            { class: "gl-muted num" },
-            this.t("ofN", { a: ct0.started ? index : 0, b: total }),
-          ),
-        ),
-        !ct0.started && e.summary
-          ? h("p", { class: "gl-cont-sum" }, loc(e.summary, l))
-          : nextStep
-            ? h(
-                "div",
-                { class: "gl-cont-next" },
-                h(
-                  "span",
-                  { class: `gl-k ${kindClass(nextStep)}` },
-                  kindWord(nextStep, l),
-                ),
-                h("span", {}, this.t("next", { t: loc(nextStep.title, l) })),
-              )
-            : null,
-      ),
-      h(
-        "button",
-        { class: "gl-primary", type: "button", onclick: go },
-        ct0.started ? this.t("continueAt", { n }) : this.t("startCourse"),
-        ic("chev", 18),
-      ),
-    );
-    this.contHost.append(card);
-    this.observeThumb(thumb);
-  }
-
-  // ---------------------------------------------------------------- filters and grid
-  private renderSegs() {
-    const n = shelfCounts(this.entries);
-    const items: [LibraryFilter, CourseStringKey][] = [
-      ["all", "fAll"],
-      ["assigned", "fAssigned"],
-      ["club", "fClub"],
-      ["sample", "fSamples"],
-      ["draft", "fDrafts"],
-    ];
-    this.segs.setAttribute("aria-label", this.t("groundSchool"));
-    this.segs.replaceChildren(
-      ...items.map(([f, k]) =>
-        h(
-          "button",
-          {
-            class: `gl-seg-b${this.filter === f ? " on" : ""}`,
-            type: "button",
-            role: "tab",
-            "aria-selected": this.filter === f ? "true" : "false",
-            onclick: () => {
-              this.filter = f;
-              this.renderSegs();
-              this.renderGrid();
-            },
-          },
-          this.t(k),
-          f === "all" || this.filter === f
-            ? h("span", { class: "gl-seg-n num" }, ` · ${n[f]}`)
-            : null,
-        ),
-      ),
-    );
-  }
-  private renderGrid() {
+  // ---------------------------------------------------------------- sections
+  private renderBody() {
+    this.closeMenu();
     for (const [el, t] of this.thumbs)
-      if (this.grid.contains(el)) (t.destroy(), this.thumbs.delete(el));
-    const list = filterEntries(this.entries, this.filter, this.q);
-    this.grid.replaceChildren();
-    if (!list.length) {
-      const q = this.q.trim();
-      this.grid.append(
+      if (this.body.contains(el)) (t.destroy(), this.thumbs.delete(el));
+    const f = this.filter;
+    const l = this.lang;
+    const sections = libraryView(this.items, f, {
+      cols: this.cols,
+      drafts: !!this.store,
+    });
+    this.body.style.setProperty("--lb-cols", String(this.cols));
+    const out: HTMLElement[] = [];
+    const q = f.q.trim();
+    if (q) {
+      const n = sections.reduce((a, s) => a + s.total, 0);
+      out.push(
         h(
           "div",
-          { class: "gl-empty" },
-          h("b", {}, q ? this.t("emptySearch", { q }) : this.t("emptyFilter")),
-          q
+          { class: "lb-results-h" },
+          h(
+            "h2",
+            {},
+            n === 1
+              ? this.s("result1", { q })
+              : n
+                ? this.s("results", { n, q })
+                : this.s("noResults", { q }),
+          ),
+          f.program !== "all" || f.kind !== "all" || f.level
             ? h(
                 "button",
                 {
-                  class: "gl-btn",
+                  class: "gl-btn sm",
                   type: "button",
-                  onclick: () => {
-                    this.searchIn.value = "";
-                    this.q = "";
-                    this.renderGrid();
-                  },
+                  onclick: () =>
+                    this.setFilter({ program: "all", kind: "all", level: 0 }),
                 },
-                this.t("clearSearch"),
+                this.s("clearFilters"),
               )
-            : h("p", {}, this.t("emptyFilterBody")),
+            : null,
         ),
       );
-      // no deck of your own yet: the empty shelf is where the first one starts
-      if (!q && this.store && (this.filter === "draft" || !this.entries.some((e) => !e.sample))) {
-        const box = this.grid.querySelector(".gl-empty")!;
-        box.classList.add("gl-empty-create");
-        box.replaceChildren(
-          h("span", { class: "gl-empty-ic", "aria-hidden": "true" }, ic("plus", 28)),
-          h("b", {}, this.t("createFirst")),
-          h("p", {}, this.t("createFirstBody")),
-          h("button", { class: "gl-primary", type: "button", onclick: () => void this.newCourse() }, ic("plus", 18), this.t("newCourse")),
-        );
-      }
-      return;
-    }
-    for (const e of list) this.grid.append(this.card(e));
+    } else if (f.program !== "all") out.push(this.programHero(f.program));
+    for (const s of sections) out.push(this.section(s));
+    if (f.program === "instructors" && !q)
+      out.splice(1, 0, this.toolsSection());
+    if (!sections.length && !(f.program === "instructors" && !q))
+      out.push(
+        h(
+          "div",
+          { class: "gl-empty lb-empty" },
+          h("b", {}, q ? this.s("noResults", { q }) : this.s("emptyFilter")),
+          q ? h("p", {}, this.s("noResultsBody")) : null,
+          h(
+            "button",
+            {
+              class: "gl-btn",
+              type: "button",
+              onclick: () => {
+                if (q) {
+                  this.searchIn.value = "";
+                  this.filter = { ...this.filter, q: "" };
+                }
+                this.setFilter(
+                  q ? {} : { program: "all", kind: "all", level: 0 },
+                );
+              },
+            },
+            q ? this.s("clearSearch") : this.s("clearFilters"),
+          ),
+        ),
+      );
+    this.body.replaceChildren(...out);
+    void l;
   }
-  private card(e: LibraryEntry): HTMLElement {
+  private programHero(p: ProgramId): HTMLElement {
     const l = this.lang;
-    const tag = e.briefing
-      ? this.t("tagBriefing")
-      : e.shelf === "sample"
-        ? this.t("tagSample")
-        : e.shelf === "club"
-          ? this.t("tagClub")
-          : e.shelf === "assigned"
-            ? this.t("tagAssigned")
-            : this.t("tagDraft");
-    const who = e.sample
-      ? this.t("builtIn")
-      : e.shelf === "draft"
-        ? this.t("you")
-        : (e.author?.club ?? e.author?.name ?? "");
-    const meta = [
-      who,
-      ctSteps(e.steps, l),
-      e.minutes ? this.t("minutes", { n: e.minutes }) : "",
-      e.langs.map((x) => x.toUpperCase()).join(" "),
-      e.progress
-        ? this.t("ofN", { a: e.progress.index + 1, b: e.progress.total })
-        : "",
-      e.sample && !e.progress ? this.t("duplicateToAdapt") : "",
-      e.shelf === "draft"
-        ? this.t("editedAgo", { ago: agoText(e.updated, l) })
-        : "",
-    ].filter(Boolean);
-    const thumb = h("div", { class: "gl-thumb", "aria-hidden": "true" });
-    thumb.dataset.id = e.id;
-    const sum = e.mix.learn + e.mix.act + e.mix.fly || 1;
-    const seg = (n: number, cls: string) =>
-      n ? h("i", { class: cls, style: `flex:${n / sum}` }) : null;
-    const more = h(
-      "button",
-      {
-        class: "gl-more",
-        type: "button",
-        "aria-label": this.t("menu", { t: loc(e.title, l) }),
-        "aria-haspopup": "menu",
-        onclick: (ev: Event) => {
-          ev.stopPropagation();
-          this.openMenu(e, more);
-        },
-      },
-      ic("more", 20),
-    );
-    const open = h("button", {
-      class: "gl-card-hit",
-      type: "button",
-      "aria-label": `${this.t("open")}: ${loc(e.title, l)}`,
-      onclick: () => this.play(e, e.progress?.stepId),
+    const d = programDef(p);
+    const kc = kindCounts(this.items, { program: p, level: this.filter.level });
+    const parts = KIND_ORDER.filter((k) => kc[k]).map((k) => {
+      const d = KINDS.find((x) => x.id === k)!;
+      return `${kc[k]} ${loc(kc[k] === 1 ? d.title : KIND_FILTER[k], l).toLowerCase()}`;
     });
-    const card = h(
-      "article",
-      {
-        class: `gl-card shelf-${e.shelf}${e.needsExport ? " stale" : ""}`,
-        role: "listitem",
-      },
-      open,
-      thumb,
+    return h(
+      "section",
+      { class: `lb-hero prog-${p}` },
+      h(
+        "button",
+        {
+          class: "lb-back",
+          type: "button",
+          onclick: (ev: Event) =>
+            this.setFilter({ program: "all" }, ev.currentTarget as HTMLElement),
+        },
+        ic("back", 16),
+        this.s("backAll"),
+      ),
       h(
         "div",
-        { class: "gl-card-b" },
-        h("div", { class: "gl-card-h" }, h("h3", {}, loc(e.title, l)), more),
+        { class: "lb-hero-row" },
+        h("span", { class: "lb-hero-code" }, loc(d.code, l)),
         h(
-          "p",
-          { class: "gl-meta" },
-          h("span", { class: `gl-tag${e.shelf === "draft" ? " draft" : ""}` }, tag),
-          " ",
-          meta.join(" · "),
+          "div",
+          { class: "lb-hero-t" },
+          h("h2", {}, loc(d.title, l)),
+          h("p", {}, loc(d.blurb, l)),
         ),
         h(
           "div",
-          {
-            class: "gl-mix",
-            title: `${e.mix.learn} · ${e.mix.act} · ${e.mix.fly}`,
-          },
-          seg(e.mix.learn, "m-learn"),
-          seg(e.mix.act, "m-act"),
-          seg(e.mix.fly, "m-fly"),
+          { class: "lb-hero-m" },
+          h("span", { class: "lb-frame" }, loc(d.frame, l)),
+          h("span", { class: "lb-hero-n num" }, parts.join(" · ")),
         ),
       ),
     );
-    this.observeThumb(thumb);
-    return card;
+  }
+  private section(s: LibSection): HTMLElement {
+    const l = this.lang;
+    const head: (HTMLElement | null)[] = [];
+    let items = s.items;
+    let extra: HTMLElement[] = [];
+    const row = (title: string, sub: string) =>
+      h(
+        "div",
+        { class: "lb-sec-t" },
+        h("h2", {}, title),
+        h("span", { class: "lb-sec-sub" }, sub),
+      );
+    switch (s.type) {
+      case "continue":
+        head.push(row(this.s("continue"), this.s("continueSub")));
+        items = items.slice(0, this.cols);
+        break;
+      case "start":
+        head.push(row(this.s("start"), this.s("startSub")));
+        items = items.slice(0, Math.max(this.cols, 4));
+        break;
+      case "assigned":
+        head.push(row(this.s("assigned"), this.s("assignedSub")));
+        break;
+      case "drafts":
+        head.push(row(this.s("drafts"), this.s("draftsSub")));
+        if (!items.length) return this.draftsEmpty(head);
+        extra = [this.newCard()];
+        break;
+      case "program": {
+        const d = programDef(s.program!);
+        head.push(
+          h(
+            "button",
+            {
+              class: "lb-sec-id",
+              type: "button",
+              onclick: (ev: Event) => {
+                this.setFilter(
+                  { program: d.id },
+                  ev.currentTarget as HTMLElement,
+                );
+                this.scrollTop();
+              },
+            },
+            h("span", { class: "lb-code" }, loc(d.code, l)),
+            h("span", { class: "lb-sec-name" }, loc(d.title, l)),
+          ),
+          h("span", { class: "lb-frame" }, loc(d.frame, l)),
+        );
+        if (s.total > items.length)
+          head.push(
+            h(
+              "button",
+              {
+                class: "lb-see",
+                type: "button",
+                onclick: (ev: Event) => {
+                  this.setFilter(
+                    { program: d.id },
+                    ev.currentTarget as HTMLElement,
+                  );
+                  this.scrollTop();
+                },
+              },
+              this.s("seeAll", { n: s.total }),
+              ic("chev", 16),
+            ),
+          );
+        // the instructors' row ends on their tools
+        if (
+          d.id === "instructors" &&
+          !this.filter.q &&
+          items.length < this.cols
+        )
+          extra = this.toolCards().slice(0, this.cols - items.length);
+        break;
+      }
+      case "kind":
+      case "results":
+        head.push(
+          row(
+            loc(KINDS.find((k) => k.id === s.kind)!.plural, l),
+            s.total === 1 ? this.s("item1") : this.s("items", { n: s.total }),
+          ),
+        );
+        break;
+    }
+        // a long kind section inside a program reads as its syllabus: lessons by stage, then the drills, the scenarios;
+    // procedures by category
+    if (s.type === "kind" && s.kind !== "course" && items.length > this.cols * 2) {
+      const groups = groupFlights(items, l);
+      return h(
+        "section",
+        { class: `lb-sec sec-kind sec-grouped${s.program ? ` prog-${s.program}` : ""}`, "data-key": s.key },
+        h("div", { class: "lb-sec-h" }, ...head),
+        ...groups.map((g) =>
+          h(
+            "div",
+            { class: "lb-group" },
+            h("h3", { class: "lb-group-h" }, g.title, h("span", { class: "lb-group-n num" }, String(g.items.length))),
+            h("div", { class: "lb-grid", role: "list" }, ...g.items.map((i) => this.card(i, null))),
+          ),
+        ),
+      );
+    }
+    const grid = h(
+      "div",
+      { class: "lb-grid", role: "list" },
+      ...(s.type === "drafts" ? extra : []),
+      // inside a program's section the card does not repeat the program
+      ...items.map((i) => this.card(i, s.type === "program" || s.type === "kind" ? null : undefined)),
+      ...(s.type === "drafts" ? [] : extra),
+    );
+    return h(
+      "section",
+      {
+        class: `lb-sec sec-${s.type}${s.program ? ` prog-${s.program}` : ""}`,
+        "data-key": s.key,
+      },
+      h("div", { class: "lb-sec-h" }, ...head),
+      grid,
+    );
   }
 
-  // ---------------------------------------------------------------- thumbnails (static slide renders, lazy)
-  private observeThumb(el: HTMLElement) {
-    if (this.io) this.io.observe(el);
-    else this.drawThumb(el);
+  // ---------------------------------------------------------------- cards
+  private card(i: LibItem, inProgram?: ProgramId | null): HTMLElement {
+    const l = this.lang;
+    const cover = h("div", {
+      class: `lb-cover cov-${i.kind}`,
+      "aria-hidden": "true",
+    });
+    cover.dataset.key = i.key;
+    // the cheap covers draw at once, the slides when they come into view
+    if (i.kind === "procedure" || (i.kind === "flight" && i.sub !== "lesson"))
+      this.fillCover(cover, i);
+    else this.observeCover(cover);
+    const p = i.progress;
+    if (p && (i.kind === "course" ? p.done > 0 : true)) {
+      const pct =
+        i.kind === "course"
+          ? Math.round((p.done / Math.max(1, p.total)) * 100)
+          : p.passed
+            ? 100
+            : Math.round(p.best ?? 0);
+      cover.append(
+        h(
+          "span",
+          { class: `lb-cover-bar${p.passed ? " ok" : ""}` },
+          h("i", { style: `width:${Math.max(4, pct)}%` }),
+        ),
+      );
+    }
+    if (i.assigned)
+      cover.append(h("span", { class: "lb-flag ok" }, this.s("assignedTag")));
+    else if (i.draft)
+      cover.append(h("span", { class: "lb-flag" }, this.s("draftTag")));
+    else if (p?.passed)
+      cover.append(
+        h("span", { class: "lb-flag ok" }, ic("check", 14), this.s("passed")),
+      );
+    const prog = inProgram === null ? undefined : (inProgram ?? i.programs[0]);
+    const meta = this.metaLine(i);
+    const more =
+      i.kind === "course"
+        ? h(
+            "button",
+            {
+              class: "gl-more lb-more",
+              type: "button",
+              "aria-label": this.s("more", { t: loc(i.title, l) }),
+              "aria-haspopup": "menu",
+              onclick: (ev: Event) => {
+                ev.stopPropagation();
+                const e = this.entries.find(
+                  (x) => x.id === (i.open as { id: string }).id,
+                );
+                if (e) this.openMenu(e, more!);
+              },
+            },
+            ic("more", 20),
+          )
+        : null;
+    const card = h(
+      "article",
+      {
+        class: `lb-card k-${i.kind} s-${i.sub}`,
+        role: "listitem",
+        "data-key": i.key,
+      },
+      h("button", {
+        class: "lb-hit",
+        type: "button",
+        "aria-label": `${loc(SUB_LABEL[i.sub], l)} · ${loc(i.title, l)}`,
+        onclick: () => this.openItem(i),
+      }),
+      cover,
+      h(
+        "div",
+        { class: "lb-card-b" },
+        h(
+          "p",
+          { class: "lb-card-k" },
+          h("span", { class: `lb-kind k-${i.kind}` }, loc(SUB_LABEL[i.sub], l)),
+          prog
+            ? h("span", { class: "lb-card-p" }, loc(programDef(prog).code, l))
+            : null,
+          levelGlyph(i.level, loc(levelTitle(i.level), l)),
+        ),
+        h("div", { class: "lb-card-h" }, h("h3", {}, loc(i.title, l)), more),
+        meta ? h("p", { class: "lb-card-m" }, meta) : null,
+      ),
+    );
+    return card;
   }
-  private async drawThumb(el: HTMLElement) {
+  private metaLine(i: LibItem): string {
+    const l = this.lang;
+    const parts: string[] = [];
+    const p = i.progress;
+    if (i.kind === "course") {
+      if (p && p.done > 0)
+        parts.push(
+          this.s("ofN", {
+            a: p.done + 1 > p.total ? p.total : p.done + 1,
+            b: p.total,
+          }),
+        );
+      else if (i.count) parts.push(ltN("step1", "steps", i.count.n, l));
+      if (i.minutes) parts.push(this.s("min", { n: i.minutes }));
+      if (i.source === "mine") {
+        const e = this.entries.find(
+          (x) => x.id === (i.open as { id: string }).id,
+        );
+        parts.push(
+          e
+            ? this.t("editedAgo", { ago: agoText(e.updated, l) })
+            : this.s("you"),
+        );
+      } else if (i.source === "club") parts.push(this.s("club"));
+    } else if (i.kind === "procedure") {
+      if (i.count) parts.push(ltN("itemsN", "itemsN", i.count.n, l));
+      const mem = (i.lines ?? []).filter((x) => x.memory).length;
+      const all =
+        this.procedures
+          .find((x) => `proc:${x.id}` === i.key)
+          ?.items.filter((x) => x.memory).length ?? mem;
+      if (all) parts.push(this.s("memoryN", { n: all }));
+      if (i.source === "club") parts.push(this.s("club"));
+    } else {
+      if (i.eyebrow && i.sub !== "scenario" && i.sub !== "circuit")
+        parts.push(loc(i.eyebrow, l));
+      else if (i.eyebrow) parts.push(loc(i.eyebrow, l));
+      if (i.minutes) parts.push(this.s("min", { n: i.minutes }));
+      if (p?.attempts)
+        parts.push(
+          p.passed
+            ? this.s("bestPct", { n: Math.round(p.best ?? 0) })
+            : ltN("attempt1", "attemptsN", p.attempts, l),
+        );
+    }
+    return parts.filter(Boolean).join(" · ");
+  }
+  /** My drafts before the first one: one quiet line with the two ways to start. */
+  private draftsEmpty(head: (HTMLElement | null)[]): HTMLElement {
+    return h(
+      "section",
+      { class: "lb-sec sec-drafts is-empty", "data-key": "drafts" },
+      h("div", { class: "lb-sec-h" }, ...head),
+      h(
+        "div",
+        { class: "lb-drafts-empty" },
+        h("span", { class: "lb-new-ic sm", "aria-hidden": "true" }, ic("plus", 20)),
+        h("p", {}, h("b", {}, this.s("draftsEmpty")), " ", this.s("draftsEmptyBody")),
+        h(
+          "div",
+          { class: "lb-drafts-acts" },
+          h("button", { class: "gl-btn", type: "button", onclick: () => this.pickPdf() }, ic("pdf", 18), this.s("toolPdf")),
+          h("button", { class: "gl-primary sm", type: "button", onclick: () => void this.newCourse() }, ic("plus", 18), this.s("newCourse")),
+        ),
+      ),
+    );
+  }
+  private newCard(): HTMLElement {
+    return h(
+      "article",
+      { class: "lb-card lb-new", role: "listitem" },
+      h("button", {
+        class: "lb-hit",
+        type: "button",
+        "aria-label": this.s("newCourseCard"),
+        onclick: () => void this.newCourse(),
+      }),
+      h(
+        "div",
+        { class: "lb-cover lb-new-c", "aria-hidden": "true" },
+        h("span", { class: "lb-new-ic" }, ic("plus", 28)),
+      ),
+      h(
+        "div",
+        { class: "lb-card-b" },
+        h("div", { class: "lb-card-h" }, h("h3", {}, this.s("newCourseCard"))),
+        h("p", { class: "lb-card-m" }, this.s("newCourseCardSub")),
+      ),
+    );
+  }
+  private toolCards(): HTMLElement[] {
+    const tool = (
+      icon: keyof typeof ICON,
+      title: LibStringKey,
+      sub: LibStringKey,
+      run: () => void,
+    ) =>
+      h(
+        "article",
+        { class: "lb-card lb-tool", role: "listitem" },
+        h("button", {
+          class: "lb-hit",
+          type: "button",
+          "aria-label": this.s(title),
+          onclick: run,
+        }),
+        h(
+          "div",
+          { class: "lb-cover lb-tool-c", "aria-hidden": "true" },
+          h("span", { class: "lb-tool-ic" }, ic(icon, 28)),
+        ),
+        h(
+          "div",
+          { class: "lb-card-b" },
+          
+          h("div", { class: "lb-card-h" }, h("h3", {}, this.s(title))),
+          h("p", { class: "lb-card-m" }, this.s(sub)),
+        ),
+      );
+    return [
+      tool("plus", "toolNew", "toolNewSub", () => void this.newCourse()),
+      tool("pdf", "toolPdf", "toolPdfSub", () => this.pickPdf()),
+      tool("upload", "toolPack", "toolPackSub", () => this.fileIn.click()),
+      tool("screen", "toolPresent", "toolPresentSub", () => this.pickPresent()),
+    ];
+  }
+  private toolsSection(): HTMLElement {
+    return h(
+      "section",
+      { class: "lb-sec sec-tools" },
+      h(
+        "div",
+        { class: "lb-sec-h" },
+        h("div", { class: "lb-sec-t" }, h("h2", {}, this.s("tools"))),
+      ),
+      h("div", { class: "lb-grid", role: "list" }, ...this.toolCards()),
+    );
+  }
+
+  // ---------------------------------------------------------------- covers (lazy for slides)
+  private observeCover(el: HTMLElement) {
+    if (this.io) this.io.observe(el);
+    else void this.drawCover(el);
+  }
+  private fillCover(el: HTMLElement, i: LibItem) {
+    el.prepend(
+      i.kind === "procedure"
+        ? checklistCover(i, this.lang)
+        : stripCover(i, this.lang),
+    );
+    el.dataset.drawn = "1";
+  }
+  private async drawCover(el: HTMLElement) {
     this.io?.unobserve(el);
     if (this.thumbs.has(el) || el.dataset.drawn) return;
     el.dataset.drawn = "1";
-    const e = this.entries.find((x) => x.id === el.dataset.id);
-    const c = e?.course;
-    if (!c) return;
-    // a grid card shows the deck's cover, whole (a 16:9 slide card); the Continue card shows the step it resumes at
-    const cover = !el.dataset.step && el.classList.contains("gl-thumb");
-    const first = c.steps.find((x) => x.slide);
-    const pick = cover ? (first ? { step: first } : null) : thumbOf(c, el.dataset.step);
+    const i = this.items.find((x) => x.key === el.dataset.key);
+    if (!i) return;
+    let pick: CoverSlide | null = null;
+    try {
+      if (i.kind === "course") {
+        const c = this.entries.find((x) => x.id === i.deck)?.course;
+        pick = c ? courseCover(c) : null;
+      } else if (i.sub === "lesson") {
+        const written = i.deck
+          ? (this.entries.find((x) => x.id === i.deck)?.course ??
+            sampleCourse(i.deck))
+          : null;
+        pick = await lessonCover(i, this.lang, written);
+      }
+    } catch {
+      pick = null;
+    }
     if (!pick) {
       el.classList.add("no-slide");
+      el.prepend(
+        h("div", { class: "lb-noslide" }, h("b", {}, loc(i.title, this.lang))),
+      );
       return;
     }
-    const s = pick.step;
-    const slide = s.slide!;
     try {
       const { renderThumb } = await import("../canvas/render");
       if (this.destroyed || !el.isConnected) return;
       const host = h("div", { class: "gl-thumb-slide" });
       const place = () => {
-        const W = el.clientWidth || 320;
-        const H = el.clientHeight || 120;
-        const r = thumbPlacement(W, H, pick.focus);
+        const r = thumbPlacement(el.clientWidth || 320, el.clientHeight || 180);
         host.style.cssText = `width:${r.w}px;height:${r.h}px;left:${r.x}px;top:${r.y}px`;
       };
       place();
-      el.append(host);
+      el.prepend(host);
       const store = this.store;
-      const v = renderThumb(slide, host, {
+      const v = renderThumb(pick.slide, host, {
         lang: this.lang,
-        theme: c.theme,
-        brand: c.brand,
-        scenes: c.scenes,
-        cockpit: c.cockpit,
-        step: s,
-        assetUrl: store
-          ? (id) =>
-              store
-                .getAsset(id)
-                .then((b) => (b ? URL.createObjectURL(b) : null))
-          : undefined,
+        theme: pick.theme,
+        brand: pick.brand,
+        scenes: pick.scenes,
+        cockpit: pick.cockpit,
+        step: pick.step,
+        assetUrl: (id) =>
+          plateUrl(id) ??
+          (store
+            ? store.getAsset(id).then((b) => (b ? URL.createObjectURL(b) : null))
+            : Promise.resolve(null)),
       });
-      this.thumbs.set(el, v);
+      let ro: ResizeObserver | null = null;
       if (typeof ResizeObserver !== "undefined") {
-        const ro = new ResizeObserver(place);
+        ro = new ResizeObserver(place);
         ro.observe(el);
-        this.thumbs.set(el, { destroy: () => (ro.disconnect(), v.destroy()) });
       }
+      this.thumbs.set(el, { destroy: () => (ro?.disconnect(), v.destroy()) });
     } catch {
       el.classList.add("no-slide");
     }
   }
 
-  // ---------------------------------------------------------------- actions
+  // ---------------------------------------------------------------- opening
+  private openItem(i: LibItem) {
+    const t = i.open;
+    if (t.k === "course") {
+      const e = this.entries.find((x) => x.id === t.id);
+      if (e) return this.play(e, t.stepId);
+      return this.go({ k: "play", id: t.id });
+    }
+    if (t.k === "procedure") return this.openProcedure(t.id);
+    if (this.o.openSim?.(t)) return;
+    const sim = this.o.simPage ?? "index.html";
+    const e = encodeURIComponent;
+    const url =
+      t.k === "lesson"
+        ? `${sim}?lesson=${e(t.id)}`
+        : t.k === "drill"
+          ? `${sim}?drill=${e(t.id)}`
+          : `${sim}?flight=${e(t.id)}`;
+    location.assign(url);
+  }
+  private openProcedure(id: string) {
+    const m = this.procMod;
+    const p = m?.get(id) ?? this.procedures.find((x) => x.id === id) ?? null;
+    if (!p || !m) return;
+    const l = this.lang;
+    const base = procBase(p);
+    const drill = Object.entries(DRILL_META).find(([, d]) =>
+      d.trains.includes(base),
+    )?.[0];
+    const actions: {
+      label: string;
+      danger?: boolean;
+      run: () => void | Promise<void>;
+    }[] = [];
+    if (this.o.editProcedure)
+      actions.push({
+        label: p.source === "club" ? this.s("editClub") : this.s("customise"),
+        run: () => this.o.editProcedure!(p.id),
+      });
+    if (drill)
+      actions.push({
+        label: this.s("drillIt"),
+        run: () => {
+          const it = this.items.find((x) => x.key === `drill:${drill}`);
+          if (it) this.openItem(it);
+        },
+      });
+    this.showDialog(
+      p.title,
+      procedureSheet(p, l, {
+        category: m.cats[p.category]?.[l],
+        ...(p.source === "library" ? { disclaimer: m.disclaimer[l] } : {}),
+      }),
+      actions,
+      "lb-proc-dialog",
+    );
+  }
+
+  // ---------------------------------------------------------------- course actions
   private go(a: LibraryAction) {
     const r: AcademyRoute =
       a.k === "play"
@@ -1156,10 +1738,21 @@ export class CourseLibrary {
     const src = e.course ?? (e.sample ? sampleCourse(e.id) : null);
     if (!s || !src) return null;
     const title: L10n = { ...src.title };
-    const r = await s.duplicate(src, {
-      title,
-      ...(e.sample ? { sample: e.id } : {}),
-    });
+    // the copy keeps the shelf it was on
+    const place = coursePlacement(
+      e,
+      (id) => SAMPLES.find((x) => x.id === id)?.program,
+    );
+    const r = await s.duplicate(
+      {
+        ...src,
+        ...(src.program || !place.programs.length
+          ? {}
+          : { program: place.programs }),
+        ...(src.level ? {} : { level: place.level }),
+      },
+      { title, ...(e.sample ? { sample: e.id } : {}) },
+    );
     if (!r.ok) {
       this.toast(loc(r.message, this.lang));
       return null;
@@ -1244,13 +1837,113 @@ export class CourseLibrary {
       ],
     );
   }
+  /** File one of my courses in programs (and a level): the course's own `program` and `level`. */
+  private fileCourse(e: LibraryEntry) {
+    const s = this.store;
+    const c = e.course;
+    if (!s || !c || e.sample) return;
+    const l = this.lang;
+    const cur = coursePlacement(e);
+    const picked = new Set<ProgramId>(cur.programs);
+    const order: ProgramId[] = [...cur.programs];
+    let level: Level = cur.level;
+    const boxes = h(
+      "div",
+      {
+        class: "lb-file-progs",
+        role: "group",
+        "aria-label": this.s("programs"),
+      },
+      ...PROGRAMS.map((p) => {
+        const b = h("input", {
+          type: "checkbox",
+          checked: picked.has(p.id),
+          onchange: () => {
+            if (b.checked)
+              (picked.add(p.id), order.includes(p.id) || order.push(p.id));
+            else (picked.delete(p.id), order.splice(order.indexOf(p.id), 1));
+          },
+        }) as HTMLInputElement;
+        return h(
+          "label",
+          { class: "lb-file-p" },
+          b,
+          h("span", { class: "lb-code" }, loc(p.code, l)),
+          h("span", {}, loc(p.title, l)),
+        );
+      }),
+    );
+    const lv = h(
+      "div",
+      {
+        class: "gl-seg lb-file-lv",
+        role: "group",
+        "aria-label": this.s("level"),
+      },
+      ...LEVELS.map((x) => {
+        const b = h(
+          "button",
+          {
+            class: `gl-seg-b${x.id === level ? " on" : ""}`,
+            type: "button",
+            "aria-pressed": x.id === level ? "true" : "false",
+            onclick: () => {
+              level = x.id;
+              lv.querySelectorAll("button").forEach((y, k) => {
+                y.classList.toggle("on", k + 1 === level);
+                y.setAttribute(
+                  "aria-pressed",
+                  k + 1 === level ? "true" : "false",
+                );
+              });
+            },
+          },
+          loc(x.title, l),
+        );
+        return b;
+      }),
+    );
+    this.showDialog(
+      this.s("fileTitle", { t: loc(e.title, l) }),
+      h(
+        "div",
+        { class: "lb-file" },
+        h("p", {}, this.s("fileBody")),
+        boxes,
+        h("p", { class: "lb-file-h" }, this.s("level")),
+        lv,
+      ),
+      [
+        {
+          label: this.s("fileSave"),
+          run: async () => {
+            const progs = order.filter((x) => picked.has(x));
+            const next: Course = { ...c, level };
+            if (progs.length)
+              next.program = progs.length === 1 ? progs[0] : progs;
+            else delete next.program;
+            const r = await s.save(next);
+            if (!r.ok) return this.toast(loc(r.message, l));
+            this.toast(
+              progs.length
+                ? this.s("filed", {
+                    p: progs.map((x) => loc(programDef(x).code, l)).join(", "),
+                  })
+                : this.s("unfiled"),
+            );
+            await this.load();
+          },
+        },
+      ],
+    );
+  }
   private async newCourse() {
     const s = this.store;
     if (!s) return;
     const id = await s.newId(this.lang === "fr" ? "mon-cours" : "my-course");
     const title: L10n = { en: "Untitled course", fr: "Cours sans titre" };
-    // no step yet: the builder opens on "Start from a beautiful deck" (live-rendered starter decks, the theme
-    // question "projected in class or played before the flight", or one blank slide)
+    const p = this.filter.program;
+    // no step yet: the builder opens on "Start from a beautiful deck"; a course made from a program's page is filed in it
     const c: Course = {
       format: "ifr-course",
       version: 1,
@@ -1266,7 +1959,8 @@ export class CourseLibrary {
       scenes: {},
       clips: {},
       assets: {},
-      theme: "cockpit",
+      theme: "classroom",
+      ...(p !== "all" && p !== "instructors" ? { program: p } : {}),
     };
     const r = await s.save(c);
     if (!r.ok) return this.toast(loc(r.message, this.lang));
@@ -1287,7 +1981,6 @@ export class CourseLibrary {
       const issues: string[] = [];
       for (const f of files) {
         const rep = await importCourseBlob(s, f, "newer", { lang: this.lang });
-        // a course whose id was already taken by someone else's comes in as a new copy (renamed)
         added.push(...rep.added, ...rep.renamed.map((r) => r.to));
         replaced.push(...rep.replaced);
         skipped += rep.skipped.length;
@@ -1317,7 +2010,6 @@ export class CourseLibrary {
         );
         return;
       }
-      if (added.length === 1 && !replaced.length) this.filter = "all";
       this.toast(`${this.t("importDone")}: ${parts.join(" · ")}`);
     } catch (err) {
       this.toast(
@@ -1353,37 +2045,50 @@ export class CourseLibrary {
     }
   }
   private pickPresent() {
+    const l = this.lang;
     const list = h(
       "div",
       { class: "gl-pick" },
-      ...this.entries
-        .filter((e) => !e.briefing)
-        .map((e) =>
-          h(
+      ...this.items
+        .filter((i) => i.kind === "course")
+        .map((i) => {
+          const id = (i.open as { id: string }).id;
+          return h(
             "button",
             {
               class: "gl-pick-row",
               type: "button",
               onclick: () => {
                 this.closeDialog();
-                this.go({ k: "present", id: e.id });
+                this.go({ k: "present", id });
               },
             },
-            h("b", {}, loc(e.title, this.lang)),
+            h("b", {}, loc(i.title, l)),
             h(
               "small",
               {},
-              `${ctSteps(e.steps, this.lang)}${e.minutes ? ` · ${this.t("minutes", { n: e.minutes })}` : ""}`,
+              [
+                i.programs[0] ? loc(programDef(i.programs[0]).code, l) : "",
+                i.count ? ctSteps(i.count.n, l) : "",
+                i.minutes ? this.t("minutes", { n: i.minutes }) : "",
+              ]
+                .filter(Boolean)
+                .join(" · "),
             ),
-          ),
-        ),
+          );
+        }),
     );
     this.showDialog(this.t("pickCourse"), list, []);
   }
 
-  // ---------------------------------------------------------------- the ⋯ menu
+  // ---------------------------------------------------------------- menus
+  private openImportMenu(anchor: HTMLElement) {
+    this.popMenu(anchor, [
+      [this.s("toolPdf"), () => this.pickPdf()],
+      [this.s("toolPack"), () => this.fileIn.click()],
+    ]);
+  }
   private openMenu(e: LibraryEntry, anchor: HTMLElement) {
-    this.closeMenu();
     const items: [string, () => void, boolean?][] = [
       [this.t("open"), () => this.play(e, e.progress?.stepId)],
     ];
@@ -1394,6 +2099,8 @@ export class CourseLibrary {
       ]);
     if (this.store && !e.sample)
       items.push([this.t("duplicate"), () => void this.duplicate(e)]);
+    if (this.store && !e.sample && e.course)
+      items.push([this.s("file"), () => this.fileCourse(e)]);
     if (!e.briefing)
       items.push([
         this.t("presentThis"),
@@ -1408,6 +2115,13 @@ export class CourseLibrary {
       ]);
       items.push([this.t("delete"), () => this.confirmDelete(e), true]);
     }
+    this.popMenu(anchor, items);
+  }
+  private popMenu(
+    anchor: HTMLElement,
+    items: [string, () => void, boolean?][],
+  ) {
+    this.closeMenu();
     const menu = h(
       "div",
       { class: "gl-menu", role: "menu" },
@@ -1431,7 +2145,7 @@ export class CourseLibrary {
     this.el.append(menu);
     const r = anchor.getBoundingClientRect();
     const host = this.el.getBoundingClientRect();
-    const w = 232;
+    const w = 248;
     const left = Math.max(
       8,
       Math.min(r.right - host.left - w, host.width - w - 8),
@@ -1468,6 +2182,7 @@ export class CourseLibrary {
         (btns[(i - 1 + btns.length) % btns.length].focus(),
           ev.preventDefault());
       else if (ev.key === "Escape") {
+        ev.stopPropagation();
         this.closeMenu();
         anchor.focus();
       }
@@ -1487,6 +2202,7 @@ export class CourseLibrary {
       danger?: boolean;
       run: () => void | Promise<void>;
     }[],
+    cls = "",
   ) {
     this.closeDialog();
     const prev = document.activeElement as HTMLElement | null;
@@ -1497,7 +2213,7 @@ export class CourseLibrary {
     const box = h(
       "div",
       {
-        class: "gl-dialog",
+        class: `gl-dialog ${cls}`.trim(),
         role: "dialog",
         "aria-modal": "true",
         "aria-label": title,
@@ -1524,13 +2240,13 @@ export class CourseLibrary {
         h(
           "button",
           { class: "gl-btn", type: "button", onclick: close },
-          actions.length ? this.t("cancel") : this.t("close"),
+          actions.length && !cls ? this.t("cancel") : this.t("close"),
         ),
-        ...actions.map((a) =>
+        ...actions.map((a, k) =>
           h(
             "button",
             {
-              class: `gl-primary sm${a.danger ? " danger" : ""}`,
+              class: `${k === actions.length - 1 ? "gl-primary" : "gl-btn"} sm${a.danger ? " danger" : ""}`,
               type: "button",
               onclick: async () => {
                 this.closeDialog();
@@ -1556,9 +2272,9 @@ export class CourseLibrary {
     this.dialogEl = scrim;
     requestAnimationFrame(() =>
       (
-        box.querySelector(
-          ".gl-dialog-f .gl-primary, .gl-dialog-f .gl-btn",
-        ) as HTMLElement | null
+        // the main action, never a destructive one (Cancel keeps the focus then)
+        (box.querySelector(".gl-dialog-f .gl-primary:not(.danger)") ??
+          box.querySelector(".gl-dialog-f .gl-btn")) as HTMLElement | null
       )?.focus(),
     );
   }
@@ -1588,15 +2304,63 @@ export class CourseLibrary {
       document.activeElement === this.searchIn &&
       this.searchIn.value
     ) {
+      e.stopPropagation();
       this.searchIn.value = "";
-      this.q = "";
-      this.renderGrid();
+      this.filter = { ...this.filter, q: "" };
+      this.renderBody();
     }
   }
   /** Focus the search field (the Flight Center's "/" shortcut). */
   focusSearch() {
     this.searchIn.focus();
   }
+  /** Show a program (the Flight Center's links). */
+  showProgram(p: ProgramId | "all") {
+    this.setFilter({ program: p });
+  }
+}
+/** A program's flights or procedures in groups: lessons by IR stage, failure drills, scenarios and school
+ *  circuits; procedures by category (their eyebrow). Order kept. */
+function groupFlights(items: readonly LibItem[], l: Lang): { title: string; items: LibItem[] }[] {
+  const out: { key: string; title: string; items: LibItem[] }[] = [];
+  for (const i of items) {
+    const key =
+      i.sub === "lesson"
+        ? `stage-${i.facet}`
+        : i.sub === "drill"
+          ? "drill"
+          : i.sub === "scenario" || i.sub === "circuit"
+            ? "scenario"
+            : `cat-${i.facet ?? ""}`;
+    const title =
+      i.sub === "drill"
+        ? loc(DRILLS_TITLE, l)
+        : key === "scenario"
+          ? loc(SCENARIOS_TITLE, l)
+          : i.eyebrow
+            ? loc(i.eyebrow, l)
+            : loc(SUB_LABEL[i.sub], l);
+    let g = out.find((x) => x.key === key);
+    if (!g) out.push((g = { key, title, items: [] }));
+    g.items.push(i);
+  }
+  return out;
+}
+const DRILLS_TITLE: L10n = { en: "Failure drills", fr: "Exercices de panne" };
+const SCENARIOS_TITLE: L10n = { en: "Scenarios and school circuits", fr: "Scénarios et circuits école" };
+
+/** A level as three bars (1 getting started · 2 core · 3 advanced); the words are its label. */
+function levelGlyph(lv: Level, label?: string): HTMLElement {
+  return h(
+    "span",
+    {
+      class: `lb-lv lv-${lv}`,
+      ...(label ? { role: "img", "aria-label": label, title: label } : { "aria-hidden": "true" }),
+    },
+    h("i"),
+    h("i"),
+    h("i"),
+  );
 }
 
 /** The library in `host`. */

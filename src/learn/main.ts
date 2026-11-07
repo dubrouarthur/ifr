@@ -8,7 +8,7 @@
 // A "Your turn" on a designed slide (package Q) runs here when no dedicated runner is installed: the slide's
 // instrument becomes a live Try-it stage over the slide, its goal checked live, and the result comes back to the
 // slide (the yourTurnDone reveal, the bound values, an AttemptRecord of kind 'yourTurn').
-import { BRAND, brandTitle } from "../brand";
+import { BRAND, brandMarkSvg, brandTitle } from "../brand";
 import "../styles/course.css";
 import type {
   Course,
@@ -173,7 +173,7 @@ function topBar(): HTMLElement {
         href: "index.html",
         "aria-label": ct("flightCenter", lang),
       },
-      h("span", { class: "ga-brand-mark", "aria-hidden": "true" }),
+      h("span", { class: "ga-brand-mark", "aria-hidden": "true", html: brandMarkSvg(24) }),
       BRAND.name,
     ),
     h("span", { class: "ga-crumb-sep", "aria-hidden": "true" }, "/"),

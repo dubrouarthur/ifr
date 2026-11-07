@@ -281,34 +281,33 @@ export function formulaStep(id: string, o: FormulaOpts): Step {
   if (o.visual) {
     const x = 1176;
     const w = 624;
-    const pitch = 96;
+    // three derivation rows and a rule of thumb: the formula block is tighter, so the rule of thumb keeps two
+    // full lines of body under the rows (never a squeezed frame)
+    const tight = !!o.after && o.lines.length >= 3;
+    const top = tight ? 608 : 664;
+    const afterH = o.after ? 104 : 0;
+    const pitch = Math.min(96, Math.floor((984 - afterH - top) / o.lines.length));
     blocks.push(
       ...o.visual,
       T("eyebrow", L("The formula", "La formule"), x, 360, w, 32, {
         color: "muted",
       }),
-      T("formula", o.formula, x, 408, w, 136),
-      T("small", o.units, x, 560, w, 40),
-      rule(x, 632, w),
+      T("formula", o.formula, x, 408, w, tight ? 104 : 136),
+      T("small", o.units, x, tight ? 520 : 560, w, 40),
+      rule(x, top - 32, w),
       ...o.lines.map((l, i) =>
-        T("formula", l, x, 664 + i * pitch, w, 88, { reveal: i + 1 }),
+        T("formula", l, x, top + i * pitch, w, pitch - 8, { reveal: i + 1 }),
       ),
     );
-    if (o.after)
+    if (o.after) {
+      const y = top + o.lines.length * pitch + 8;
       blocks.push(
-        T(
-          "body",
-          o.after,
-          x,
-          664 + o.lines.length * pitch + 16,
-          w,
-          984 - (664 + o.lines.length * pitch + 16),
-          {
-            reveal: o.lines.length + 1,
-            color: "ink2",
-          },
-        ),
+        T("body", o.after, x, y, w, 984 - y, {
+          reveal: o.lines.length + 1,
+          color: "ink2",
+        }),
       );
+    }
   } else {
     // the no-diagram variant: the formula large on the left, the derivation below it, one line per reveal
     blocks.push(
@@ -648,7 +647,7 @@ export function briefing(
       title: meta.title,
       summary: meta.summary,
       cockpit: meta.cockpit ?? "steam",
-      theme: "cockpit",
+      theme: "classroom",
       tags: [...meta.tags, "briefing"],
       minutes: meta.minutes,
       shape: "briefing",

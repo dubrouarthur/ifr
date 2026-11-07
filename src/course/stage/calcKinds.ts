@@ -8,6 +8,7 @@ export const STAGE_CALC_DIAGRAMS = [
   "holdWind",
   "compass",
   "cgEnvelope",
+  "turn",
 ] as const;
 export type StageCalcDiagramKind = (typeof STAGE_CALC_DIAGRAMS)[number];
 export const hasCalcDiagram = (kind: string): kind is StageCalcDiagramKind =>

@@ -829,7 +829,7 @@ export const SAMPLE_BRAND: SchoolBrand = {
 
 /** The examples as a course (one designed-slide step each): the gallery, the builder's starters, the tests. */
 export function exampleCourse(
-  theme: ThemeId = "cockpit",
+  theme: ThemeId = "classroom",
   brand?: SchoolBrand,
 ): Course {
   const steps: Step[] = exampleSlides().map(

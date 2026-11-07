@@ -1,7 +1,7 @@
 {
   "name": "Wingdeck",
   "short_name": "Wingdeck",
-  "description": "Instrument flight training: G1000, steam gauges and airliner cockpits, real approaches with charts, lessons with corrective feedback and scored debriefs.",
+  "description": "The platform for aviation education: one tool that unites a flight simulator and beautiful slides. Build courses with live instruments, teach them in class, then fly them in the built-in simulator, which also works on its own.",
   "id": "/",
   "start_url": "/?source=pwa",
   "scope": "/",

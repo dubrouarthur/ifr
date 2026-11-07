@@ -18,6 +18,7 @@ import type {
   CalcUnit,
   ColorToken,
   Course,
+  CourseProgram,
   CourseShape,
   Criterion,
   DiagramSpec,
@@ -254,6 +255,18 @@ const THEMES = keys<ThemeId>({
   brand: 1,
 });
 const SHAPES = keys<CourseShape>({ course: 1, lesson: 1, briefing: 1 });
+const COURSE_PROGRAMS = new Set<string>(
+  Object.keys({
+    lapl: 1,
+    ppl: 1,
+    "lapl-ppl": 1,
+    night: 1,
+    ir: 1,
+    atpl: 1,
+    club: 1,
+    instructors: 1,
+  } satisfies Record<CourseProgram, 1>),
+);
 const GAUGES = keys<InstrumentGauge>({
   asi: 1,
   ai: 1,
@@ -670,6 +683,27 @@ function validateInto(x: unknown, out: CourseIssue[], host: ValidateContext) {
         "Tags must be lower-case words",
         "Les étiquettes doivent être en minuscules",
       ),
+    );
+  if (
+    course.program !== undefined &&
+    !(Array.isArray(course.program) ? course.program : [course.program]).every(
+      (x) => isStr(x) && COURSE_PROGRAMS.has(x),
+    )
+  )
+    push(
+      cx,
+      "warn",
+      "shape",
+      "program",
+      L("Unknown library program", "Programme de bibliothèque inconnu"),
+    );
+  if (course.level !== undefined && ![1, 2, 3].includes(course.level))
+    push(
+      cx,
+      "warn",
+      "shape",
+      "level",
+      L("The level is 1, 2 or 3", "Le niveau vaut 1, 2 ou 3"),
     );
   if (course.briefingFor?.step)
     stepRef(cx, course.briefingFor.step, "briefingFor.step");

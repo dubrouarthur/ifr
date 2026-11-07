@@ -80,7 +80,7 @@ function runtimeOf(ex: (typeof EXERCISES)[number]): BriefingRuntime {
 }
 
 const LANGS: Lang[] = ["fr", "en"];
-const theme = resolveTheme("cockpit");
+const theme = resolveTheme("classroom");
 
 describe("generated briefing deck: every exercise of the curriculum", () => {
   for (const ex of EXERCISES)

@@ -2022,7 +2022,7 @@
 }
 .cp-tiles {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
 }
 .cp-tile {
@@ -2545,6 +2545,24 @@
 .gl-head-new {
   flex: none;
 }
+/* portrait tablets: what the product is takes the whole row, search and New course go under it */
+@media (max-width: 1000px) {
+  .gl-head {
+    flex-wrap: wrap;
+    row-gap: 16px;
+  }
+  .gl-head-t {
+    flex-basis: 100%;
+  }
+  .gl-head p {
+    max-width: 44em;
+  }
+  .gl-head .gl-search {
+    flex: 1;
+    width: auto;
+    max-width: none;
+  }
+}
 /* the decks' own heading over the filters */
 .gl-sec-h {
   margin: 10px 0 -6px;
@@ -2627,7 +2645,7 @@
   aspect-ratio: 16 / 9;
   border-radius: 8px;
   overflow: hidden;
-  background: #0d1116;
+  background: #fbfaf7;
 }
 .gl-cont-body {
   min-width: 0;
@@ -2818,7 +2836,7 @@
   position: relative;
   aspect-ratio: 16 / 9;
   border-bottom: 1px solid var(--gl-line);
-  background: #0d1116;
+  background: #fbfaf7;
   overflow: hidden;
 }
 .gl-thumb.no-slide {
@@ -3185,7 +3203,10 @@
   border-radius: 10px;
   background: #18212b;
   color: #f4f6f8;
-  font: 500 14px/1.4 "Inter", system-ui, sans-serif;
+  font:
+    500 14px/1.4 "Inter",
+    system-ui,
+    sans-serif;
   box-shadow: 0 8px 24px rgb(15 23 32 / 0.25);
 }
 .ga-toast[hidden],
@@ -3250,13 +3271,10 @@ html.ga-doc body {
   min-height: 44px;
 }
 .ga-brand-mark {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background:
-    linear-gradient(var(--gl-accent), var(--gl-accent)) center / 12px 2px no-repeat,
-    linear-gradient(var(--gl-accent), var(--gl-accent)) center / 2px 12px no-repeat,
-    #edf3fc;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  color: var(--gl-text, #14181f);
 }
 .ga-crumb-sep {
   color: var(--gl-line-strong);
@@ -3317,7 +3335,10 @@ html.ga-doc body {
   display: grid;
   place-items: center;
   color: #5f6b77;
-  font: 15px "Inter", system-ui, sans-serif;
+  font:
+    15px "Inter",
+    system-ui,
+    sans-serif;
 }
 .ga-center {
   flex: 1;
@@ -3517,7 +3538,7 @@ html.ga-doc body {
   aspect-ratio: 16 / 9;
   border-radius: 6px;
   overflow: hidden;
-  background: #0d1116;
+  background: #fbfaf7;
   border: 1px solid var(--gl-line);
 }
 .gb-th.no-slide {
@@ -3645,7 +3666,7 @@ html.ga-doc body {
   aspect-ratio: 16 / 9;
   border-radius: 6px;
   overflow: hidden;
-  background: #0d1116;
+  background: #fbfaf7;
   margin-bottom: 4px;
 }
 .gb-lth .sl-view {
@@ -3983,40 +4004,21 @@ html.ga-doc body {
   }
 }
 
-/* ------------------------------------------------------------ the chrome around a designed slide follows the
-   course theme (SPEC slides v2 §10): dark around a cockpit deck, warm grey around a classroom deck */
+/* ------------------------------------------------------------ the chrome around a designed slide is always light
+   (owner direction: light and professional, Keynote-like): a calm paper-grey stage, white bars, one accent blue and
+   hairlines. A dark (cockpit-theme) slide sits on the same light stage, framed by a hairline. */
+.cp-app[data-chrome="classroom"],
 .cp-app[data-chrome="cockpit"] {
-  --bg: #07090d;
-  --surface: #0d1117;
-  --surface-2: #151b23;
-  --line: #222a33;
-  --line-strong: #3d4855;
-  --text: #eef2f6;
-  --text-2: #c3ccd5;
-  --muted: #8b98a6;
-  --accent: #6cb4ff;
-  --accent-rgb: 108 180 255;
-  --good: #5bd98e;
-  --good-bg: rgba(91, 217, 142, 0.12);
-  --good-line: rgba(91, 217, 142, 0.35);
-  --warn: #f4bb4a;
-  --warn-bg: rgba(244, 187, 74, 0.12);
-  --warn-line: rgba(244, 187, 74, 0.35);
-  --bad: #ff7a7a;
-  --bad-bg: rgba(255, 122, 122, 0.12);
-  color-scheme: dark;
+  --bg: #f1f0ec;
+  --surface: #ffffff;
+  --surface-2: #f7f6f3;
+  --line: #e2e0d9;
+  --line-strong: #c9c6bd;
 }
-.cp-app[data-chrome="cockpit"] .cp-btn.primary {
-  color: #06121f;
-}
-.cp-app[data-chrome="classroom"] {
-  --bg: #ecebe6;
-  --surface: #f6f5f1;
-  --line: #dcdad2;
-}
-.cp-app[data-chrome="cockpit"] .cp-langseg {
-  background: var(--surface-2);
-}
-.cp-app[data-chrome="cockpit"] .cp-langseg button.on {
-  background: #2a333e;
+/* the slide is scaled from 1920 × 1080: these are logical px (about 0.7 CSS px at 1440 wide) */
+.cp-app[data-chrome] .cp-canvaswrap .sl-slide {
+  box-shadow:
+    0 0 0 1.5px rgba(20, 24, 31, 0.09),
+    0 2px 4px rgba(20, 24, 31, 0.05),
+    0 18px 44px -22px rgba(20, 24, 31, 0.22);
 }

@@ -1315,7 +1315,7 @@ export function vorCourse(): Course {
         "Lire le HSI, trouver son radial, intercepter et encadrer le vent sur l’instrument réel, puis le voler à ARD.",
       ),
       cockpit: "steam",
-      theme: "cockpit",
+      theme: "classroom",
       tags: ["ifr", "vor", "navigation", "tracking"],
       minutes: 35,
     },

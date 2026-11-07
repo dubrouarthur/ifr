@@ -15,6 +15,7 @@ import {
   VOR_ID,
 } from "../src/course/samples";
 import { isStudentAction } from "../src/course/samples/kit";
+import { STAGE_CALC_DIAGRAMS } from "../src/course/stage/calcKinds";
 import {
   TEARDROP_DRAG,
   outboundHeading,
@@ -24,15 +25,8 @@ import { validateCourse, missingTranslations } from "../src/course/validate";
 import { GENERATORS, problemFor } from "../src/course/calc";
 import { holdEntry } from "../src/nav/holding";
 
-const STAGE_DIAGRAMS = new Set([
-  "windTriangle",
-  "sixtyToOne",
-  "profile",
-  "vdp",
-  "holdWind",
-  "compass",
-  "cgEnvelope",
-]);
+// the calc diagrams the stage really draws (stage/calcKinds.ts): anything else would show a placeholder box
+const STAGE_DIAGRAMS = new Set<string>(STAGE_CALC_DIAGRAMS);
 const errors = (c: Course) =>
   validateCourse(c).filter((i) => i.level === "error");
 const blocks = (s: Step): SlideBlock[] => s.slide?.blocks ?? [];

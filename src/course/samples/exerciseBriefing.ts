@@ -1,8 +1,8 @@
-// The briefing deck of a cockpit lesson (SPEC slides v2 §11): every exercise is briefed by slides played in the
-// cockpit, then "Start exercise". An authored deck (a sample course with briefingFor) wins; otherwise the deck is
-// built here from the exercise itself, on the design-system frames: cover, clearance + knowledge check, the hold,
-// the approach plate, key points, the steps, then "Ready to fly" (objectives and standards). Pure: no DOM.
-import { G, IMG, L, MARK, SHAPE, T } from "../canvas/layouts";
+// The slides an exercise's own attempt data gives its cockpit briefing (SPEC slides v2 §11): the ATC clearance with
+// its knowledge check, the hold, and the approach plate. They are parts, not a deck: the one deck builder is
+// lesson/briefingDeck.ts (buildBriefingDeck), which places them between the key concept and the steps, and an
+// authored deck (a sample course with briefingFor) wins over both (course/ui/briefingDeck.ts). Pure: no DOM.
+import { G, L, MARK, SHAPE, T } from "../canvas/layouts";
 import type { L10n, SlideBlock, SlideCanvas } from "../types";
 
 /** What the deck is built from: the exercise and the runtime of the attempt being briefed (train/engine.ts). */
@@ -79,89 +79,11 @@ const rule = (x: number, y: number, w: number): SlideBlock =>
   SHAPE("line", x, y - 8, w, 16, { stroke: "line", strokeW: 2 });
 const pad3 = (d: number) =>
   String(Math.round(((d % 360) + 360) % 360) || 360).padStart(3, "0");
-/** "Stage 3 — Holding" → "Holding" */
-const stageName = (s?: string) => (s ? (s.split("—")[1] ?? s).trim() : "");
 
-/** The deck. Always at least the cover and the Ready slide. */
-export function exerciseBriefingDeck(src: BriefingSource): BriefingSlide[] {
+/** The data slides of an attempt, in deck order (b-check, b-hold, b-plate); none when the attempt has no such data. */
+export function exerciseDataSlides(src: BriefingSource): BriefingSlide[] {
   n = 0;
   const out: BriefingSlide[] = [];
-  const stage = stageName(src.stageTitle);
-  const eyebrowCover = stage
-    ? { en: `Lesson briefing · ${stage}`, fr: `Briefing de leçon · ${stage}` }
-    : L("Lesson briefing", "Briefing de leçon");
-
-  // ---------------------------------------------------------------- A1 cover: the hold, the plate or a photo on the right
-  {
-    const right: SlideBlock[] = src.hold
-      ? [
-          {
-            id: "x",
-            frame: { x: 1032, y: 120, w: 768, h: 840, z: 1 },
-            kind: "diagram",
-            d: {
-              kind: "hold",
-              inbound: src.hold.inbound,
-              turn: src.hold.turn,
-              fix: src.hold.fix,
-              quiet: true,
-            },
-            alt: E(
-              `Holding pattern at ${src.hold.fix}, inbound ${pad3(src.hold.inbound)}`,
-            ),
-          },
-        ]
-      : src.plate
-        ? [
-            {
-              id: "x",
-              frame: { x: 1080, y: 96, w: 720, h: 888, z: 1 },
-              kind: "diagram",
-              d: { kind: "plate", approachId: src.plate },
-              asset: plateAsset(src.plate),
-              alt: E(`Approach plate ${src.plateName ?? src.plate}`),
-            },
-          ]
-        : [
-            IMG({ lib: "photo:in-cloud" }, L("A light aircraft flying in cloud", "Un avion léger dans les nuages"), 1128, 0, 792, 1080),
-          ];
-    const meta = [
-      { en: `About ${src.minutes} min`, fr: `Environ ${src.minutes} min` },
-      src.allowAp
-        ? L("autopilot allowed", "pilote automatique autorisé")
-        : L("hand-flown", "pilotage manuel"),
-      { en: `${src.steps.length} ${src.steps.length === 1 ? "step" : "steps"}`, fr: `${src.steps.length} ${src.steps.length < 2 ? "étape" : "étapes"}` },
-    ];
-    out.push({
-      id: "b-cover",
-      title: E(src.title),
-      slide: canvas(
-        ids(
-          [
-            T("eyebrow", eyebrowCover, G.left, G.eyebrowY, 840, 32),
-            T("display", E(src.title), G.left, 248, 864, 368, {
-              valign: "bottom",
-            }),
-            T("lead", E(src.summary), G.left, 648, 840, 232),
-            T(
-              "foot",
-              {
-                en: meta.map((m) => m.en).join(" · "),
-                fr: meta.map((m) => m.fr ?? m.en).join(" · "),
-              },
-              G.left,
-              912,
-              840,
-              32,
-            ),
-            ...right,
-          ],
-          "b-cover",
-        ),
-        "cover",
-      ),
-    });
-  }
 
   // ---------------------------------------------------------------- A9 clearance and the knowledge check
   if (src.clearance || src.quiz) {
@@ -320,107 +242,5 @@ export function exerciseBriefingDeck(src: BriefingSource): BriefingSlide[] {
     });
   }
 
-  // ---------------------------------------------------------------- key points (the exercise's briefing tips)
-  const tips = src.briefing.filter(Boolean);
-  for (let i = 0; i < tips.length; i += 4) {
-    const part = tips.slice(i, i + 4);
-    const blocks: SlideBlock[] = [
-      ...header(
-        L("Before the flight", "Avant le vol"),
-        tips.length > 4
-          ? {
-              en: `Key points · ${i / 4 + 1}`,
-              fr: `Points clés · ${i / 4 + 1}`,
-            }
-          : L("Key points", "Points clés"),
-      ),
-      ...part.flatMap((t, k): SlideBlock[] => {
-        const y = 312 + k * 168;
-        return [
-          rule(G.left, y, 1680),
-          MARK(i + k + 1, G.left + 28, y + 76, { size: 56 }),
-          T("body", E(t), 200, y + 24, 1600, 120, { valign: "middle" }),
-        ];
-      }),
-    ];
-    out.push({
-      id: `b-tips${i / 4 + 1}`,
-      title: L("Key points", "Points clés"),
-      slide: canvas(ids(blocks, `b-tips${i}`), "stepByStep"),
-    });
-  }
-
-  // ---------------------------------------------------------------- A7 the steps, five per slide
-  const steps = src.steps.filter(Boolean);
-  for (let i = 0; i < steps.length; i += 5) {
-    const part = steps.slice(i, i + 5);
-    const pages = Math.ceil(steps.length / 5);
-    const blocks: SlideBlock[] = [
-      ...header(
-        L("The exercise", "L’exercice"),
-        pages > 1
-          ? {
-              en: `The steps · ${i / 5 + 1} of ${pages}`,
-              fr: `Les étapes · ${i / 5 + 1} sur ${pages}`,
-            }
-          : L("The steps", "Les étapes"),
-      ),
-      ...part.flatMap((t, k): SlideBlock[] => {
-        const y = 320 + k * 128;
-        return [
-          MARK(i + k + 1, G.left + 28, y + 44, { size: 56 }),
-          T("body", E(t), 200, y, 1600, 96, { valign: "middle" }),
-        ];
-      }),
-    ];
-    out.push({
-      id: `b-steps${i / 5 + 1}`,
-      title: L("The steps", "Les étapes"),
-      slide: canvas(ids(blocks, `b-steps${i}`), "stepByStep"),
-    });
-  }
-
-  // ---------------------------------------------------------------- A11 ready to fly: objectives and standards
-  {
-    const obj = src.objectives.filter(Boolean).slice(0, 4);
-    const std = src.standards.filter(Boolean).slice(0, 4);
-    const rowH = obj.length > 3 ? 136 : 152;
-    const blocks: SlideBlock[] = [
-      ...header(
-        L("Before the flight", "Avant le vol"),
-        L("Ready to fly", "Prêt à voler"),
-      ),
-      T(
-        "eyebrow",
-        L("What you will do", "Ce que vous allez faire"),
-        G.left,
-        320,
-        960,
-        32,
-        { color: "muted" },
-      ),
-      ...obj.flatMap((t, i): SlideBlock[] => [
-        MARK(i + 1, G.left + 28, 400 + i * rowH + 4, { size: 56 }),
-        T("body", E(t), 200, 376 + i * rowH, 856, rowH - 24),
-      ]),
-      T("eyebrow", L("To pass", "Pour réussir"), 1176, 320, 624, 32, {
-        color: "muted",
-      }),
-      ...std.flatMap((t, i): SlideBlock[] => [
-        SHAPE("rect", 1176, 388 + i * rowH, 6, 40, {
-          fill: "key",
-          stroke: null,
-        }),
-        T("body", E(t), 1208, 376 + i * rowH, 592, rowH - 24),
-      ]),
-    ];
-    if (!obj.length && !std.length)
-      blocks.push(T("lead", E(src.summary), G.left, 376, 1680, 200));
-    out.push({
-      id: "b-ready",
-      title: L("Ready to fly", "Prêt à voler"),
-      slide: canvas(ids(blocks, "b-ready"), "ready"),
-    });
-  }
   return out;
 }

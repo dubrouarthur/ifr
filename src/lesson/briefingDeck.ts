@@ -21,7 +21,7 @@ import { estimateText } from "../course/canvas/text";
 import { resolveTheme } from "../course/canvas/themes";
 import { scene } from "../course/samples/kit";
 import {
-  exerciseBriefingDeck,
+  exerciseDataSlides,
   plateAsset,
   type BriefingSource,
 } from "../course/samples/exerciseBriefing";
@@ -98,7 +98,7 @@ const STAGE_NAMES: Record<string, L10n> = {
 // ------------------------------------------------------------------ small helpers
 /** exercise text is authored in English: the same words in both languages */
 const E = (s: string): L10n => ({ en: s, fr: s });
-const THEME = resolveTheme("cockpit");
+const THEME = resolveTheme("classroom");
 /** lines a text takes at its style's size in a frame `w` wide (the longer of the two languages) */
 function lines(text: L10n, style: TextStyle, w: number): number {
   const st = THEME.styles[style];
@@ -1253,7 +1253,7 @@ export function buildBriefingDeck(
     ...(rt.quiz ? { quiz: rt.quiz } : {}),
     ...(rt.hold ? { hold: rt.hold } : {}),
   };
-  const given = exerciseBriefingDeck(src);
+  const given = exerciseDataSlides(src);
   const pick = (id: string) => given.find((s) => s.id === id);
   const out: DeckStep[] = [];
   const steps = rt.steps.filter(Boolean);
@@ -1836,6 +1836,6 @@ export function buildBriefingDeck(
     ],
     shape: "briefing",
     briefingFor: { exerciseId: ex.id },
-    theme: "cockpit",
+    theme: "classroom",
   };
 }

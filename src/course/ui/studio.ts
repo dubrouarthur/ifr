@@ -348,7 +348,7 @@ export class StudioPanel {
     }
     this.lib = new LibraryPanel({
       lang,
-      theme: host.course.theme ?? "cockpit",
+      theme: host.course.theme ?? "classroom",
       target: {
         add: (d) => {
           host.addDraft(d);
@@ -835,7 +835,7 @@ export class StudioPanel {
         this.views.push(
           renderThumb(first, preview, {
             lang,
-            theme: c.theme ?? "cockpit",
+            theme: c.theme ?? "classroom",
             brand: c.brand ?? {
               ...b,
               name: b.name || (lang === "fr" ? "Votre école" : "Your school"),

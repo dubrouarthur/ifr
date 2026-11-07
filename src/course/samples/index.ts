@@ -12,6 +12,7 @@ import {
 import { MATHS_IFR_ID, mathsIfrCourse } from "./mathsIfr";
 import { MATHS_VFR_ID, mathsVfrCourse } from "./mathsVfr";
 import { CRAFTED_BRIEFINGS } from "./briefings";
+import { LIBRARY_COURSES, type LibraryProgram } from "./library";
 
 export { VOR_ID, HOLDING_ID, HOLD_NDB_BRIEFING_ID, MATHS_IFR_ID, MATHS_VFR_ID };
 
@@ -22,6 +23,8 @@ export interface SampleDef {
   build: () => Course;
   /** one line for the library card when the course itself is not loaded */
   blurb: L10n;
+  /** the library program it belongs to (library courses only: samples/library) */
+  program?: LibraryProgram;
 }
 
 export const SAMPLES: readonly SampleDef[] = [
@@ -77,6 +80,16 @@ export const SAMPLES: readonly SampleDef[] = [
       order: 6 + i,
       build: b.build,
       blurb: b.blurb,
+    }),
+  ),
+  // the course library (samples/library): LAPL/PPL, IR, ATPL and Club courses, one registry per author
+  ...LIBRARY_COURSES.map(
+    (d, i): SampleDef => ({
+      id: d.id,
+      order: 6 + CRAFTED_BRIEFINGS.length + i,
+      build: d.build,
+      blurb: d.blurb,
+      program: d.program,
     }),
   ),
 ];

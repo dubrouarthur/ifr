@@ -390,7 +390,7 @@ describe("rich text", () => {
 // ------------------------------------------------------------------ themes
 describe("themes", () => {
   it("has two themes whose every text token passes WCAG AA on the background and on raise (SPEC v2 §4)", () => {
-    expect(THEME_IDS).toEqual(["cockpit", "classroom"]);
+    expect(THEME_IDS).toEqual(["classroom", "cockpit"]);
     for (const id of THEME_IDS) {
       const t = THEMES[id];
       for (const tok of ["text", "ink2", "muted", "accent", "path", "sel", "nav", "key", "stop"] as const) {
@@ -425,7 +425,7 @@ describe("themes", () => {
       contrastRatio(other.colors.brand, other.colors.bg),
     ).toBeGreaterThanOrEqual(3);
     expect(ensureContrast("#ffffff", "#ffffff")).not.toBe("#ffffff");
-    expect(resolveTheme(undefined).id).toBe("cockpit");
+    expect(resolveTheme(undefined).id).toBe("classroom");
   });
   it("resolves tokens and hex colours, with a fallback", () => {
     const t = THEMES.classroom;

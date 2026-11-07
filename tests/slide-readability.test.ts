@@ -22,6 +22,8 @@ import {
   typo,
 } from "../src/course/canvas/text";
 import { holdSlideSvg } from "../src/train/diagram";
+import { hasCalcDiagram } from "../src/course/stage/calcKinds";
+import { quizUsesTiles } from "../src/course/canvas/blocks";
 import type { Lang, SlideBlock } from "../src/course/types";
 
 // ------------------------------------------------------------------ a tiny SVG DOM (enough for the diagram widgets)
@@ -123,6 +125,10 @@ describe("readability guard: every sample slide at 1920 × 1080", () => {
           diagrams += step.slide.blocks.filter(
             (b) => b.kind === "diagram",
           ).length;
+          // a calc diagram the stage does not draw would show a placeholder box: it does not count as a diagram
+          for (const b of step.slide.blocks)
+            if (b.kind === "diagram" && b.d?.kind === "calc" && !hasCalcDiagram(b.d.calc.kind))
+              fails.push(`${step.id}/${b.id}: calc diagram “${b.d.calc.kind}” is not drawn (a placeholder)`);
           for (const i of slideReadability(step.slide, { theme, lang }))
             if (READ_FAILS.has(i.kind))
               fails.push(
@@ -163,6 +169,15 @@ describe("the guard catches what it should", () => {
     style,
     text: { en: t, fr: t },
     frame: { x: 120, y: 120, w, h, z: 1 },
+  });
+  it("a quiz shows big tiles only when every answer fits its tile", () => {
+    const opts = (...t: string[]) => t.map((en) => ({ text: { en } }));
+    // three entry names in a 816-wide block: "Teardrop" at 72 px does not fit a third of it → rows
+    expect(quizUsesTiles(opts("Direct", "Teardrop", "Parallel"), "en", 816)).toBe(false);
+    expect(quizUsesTiles(opts("Direct", "Teardrop", "Parallel"), "en", 1680)).toBe(true);
+    expect(quizUsesTiles(opts("1 NM", "5 NM", "0.2 NM"), "en", 1680)).toBe(true);
+    // long answers are always rows
+    expect(quizUsesTiles(opts("Continue to 100 ft above the touchdown zone", "Land"), "en", 1680)).toBe(false);
   });
   it("a text that cannot fit its frame at 24 px", () => {
     const long = "word ".repeat(80);

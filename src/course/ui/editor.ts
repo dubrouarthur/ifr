@@ -1238,8 +1238,8 @@ export class CourseEditor implements InspectorHost {
               "p",
               { class: "ce-note muted" },
               fr
-                ? "Un thème par cours. Projeté en salle : Salle de cours. Joué avant le vol : Cockpit."
-                : "One theme per course. Projected in class: Classroom. Played before the flight: Cockpit.",
+                ? "Un thème par cours. Salle de cours (clair) par défaut ; Cockpit (sombre) pour une scène de nuit ou en IMC."
+                : "One theme per course. Classroom (light) by default; Cockpit (dark) for a night or IMC scene.",
             ),
           );
           popover(themeB, box, {
@@ -2404,7 +2404,7 @@ export class CourseEditor implements InspectorHost {
       ),
       field(
         fr ? "Thème des diapositives" : "Slide theme",
-        themePicker(this.lang, c.theme ?? "cockpit", (id) =>
+        themePicker(this.lang, c.theme ?? "classroom", (id) =>
           set((x) => (x.theme = id)),
         ),
       ),

@@ -29,6 +29,7 @@ import {
 import { MIN_TEXT_PX } from "./themes";
 import { fitFloor, HINT_H, slidePalette } from "./metrics";
 import { createCalcDiagram, holdColorsOf } from "../stage/diagrams";
+import { quizTileCols, quizUsesTiles } from "./blocks";
 import { holdSlideSvg } from "../../train/diagram";
 import { airspaceSvg, AIRSPACE_H, AIRSPACE_W } from "./airspace";
 import { paletteOf } from "./library";
@@ -355,13 +356,9 @@ export function slideReadability(
           w: f.w,
           h: f.h,
         });
-        const tiles =
-          q.options.length <= 4 &&
-          q.options.every((x) => plainText(loc(x.text, o.lang)).length <= 12);
-        const cols = Math.max(
-          1,
-          Math.min(q.options.length, Math.floor((f.w + 24) / 224)),
-        );
+        // the renderer's own choice (blocks.ts): tiles only when every answer fits its tile on one line
+        const tiles = quizUsesTiles(q.options, o.lang, f.w);
+        const cols = quizTileCols(q.options.length, f.w);
         const optH = tiles
           ? Math.ceil(q.options.length / cols) * (200 * k + 24 * k)
           : q.options.reduce(

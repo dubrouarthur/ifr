@@ -9,6 +9,7 @@ import { createWindTriangle, createHoldWind } from "./diagramWind";
 import { createSixtyToOne, createTvmdc } from "./diagramNav";
 import { createProfile, createVdp } from "./diagramProfile";
 import { createCgEnvelope } from "./diagramCg";
+import { createTurn } from "./diagramTurn";
 import { PALETTES, type DiagramOptions, type DiagramPalette, type DiagramTheme, type DiagramWidget } from "./svgkit";
 
 export type { DiagramOptions, DiagramPalette, DiagramTheme, DiagramWidget } from "./svgkit";
@@ -36,6 +37,7 @@ export {
   createProfile,
   createVdp,
   createCgEnvelope,
+  createTurn,
 };
 
 export {
@@ -65,6 +67,8 @@ export function createCalcDiagram(
       return createTvmdc(d, opts) as DiagramWidget<CalcDiagram>;
     case "cgEnvelope":
       return createCgEnvelope(d, opts) as DiagramWidget<CalcDiagram>;
+    case "turn":
+      return createTurn(d, opts) as DiagramWidget<CalcDiagram>;
     default:
       return null;
   }

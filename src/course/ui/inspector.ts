@@ -5407,8 +5407,8 @@ export class Inspector {
           "p",
           { class: "ce-note muted" },
           this.t(
-            "One theme for the whole course. Projected in class: Classroom. Played before the flight: Cockpit.",
-            "Un thème pour tout le cours. Projeté en salle : Salle de cours. Joué avant le vol : Cockpit.",
+            "One theme for the whole course. Classroom (light) by default; Cockpit (dark) for a night or IMC scene.",
+            "Un thème pour tout le cours. Salle de cours (clair) par défaut ; Cockpit (sombre) pour une scène de nuit ou en IMC.",
           ),
         ),
         course.theme === "brand" ? this.brandFields() : null,
@@ -5556,7 +5556,7 @@ export function layoutPicker(
       try {
         renderThumb(layoutCanvas(L.id), thumb, {
           lang,
-          theme: course.theme ?? "cockpit",
+          theme: course.theme ?? "classroom",
           brand: course.brand,
           scenes: course.scenes,
           cockpit: course.cockpit,

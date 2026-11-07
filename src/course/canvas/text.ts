@@ -159,9 +159,9 @@ export function plainText(src: string, value = ""): string {
     .join("\n");
 }
 
-/** A number never wraps away from its unit: "8 °C", "1,500 ft", "12 kt", "R-270" (no-break spaces). Pure. */
+/** A number never wraps away from its unit: "8 °C", "1,500 ft", "12 kt", "12 DME", "95 KIAS" (no-break spaces). Pure. */
 export function keepUnits(s: string): string {
-  return s.replace(/(\d) (?=(?:°|%|ft\b|m\b|km\b|NM\b|SM\b|kt\b|hPa\b|inHg\b|UTC\b|min\b|s\b|h\b|dots?\b|pts?\b|lb\b|kg\b|L\b|gal\b|ft\/min\b|ft\/NM\b))/g, "$1\u00a0");
+  return s.replace(/(\d) (?=(?:°|%|ft\b|m\b|km\b|NM\b|SM\b|kt\b|KIAS\b|KTAS\b|DME\b|MHz\b|kHz\b|fpm\b|g\b|hPa\b|inHg\b|UTC\b|min\b|s\b|h\b|dots?\b|points?\b|pts?\b|lb\b|kg\b|L\b|gal\b|ft\/min\b|ft\/NM\b))/g, "$1\u00a0");
 }
 
 export interface RichOptions {

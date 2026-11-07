@@ -24,7 +24,7 @@ export interface DeckStarter {
   title: L10n;
   /** one line: what the deck is for */
   pitch: L10n;
-  /** the course theme it is built for (SPEC §4: cockpit = flown / briefed, classroom = theory, printed) */
+  /** the course theme it is built for (light classroom by default; cockpit only for a deck that needs dark slides) */
   theme: "cockpit" | "classroom";
   slides: SlideLayoutId[];
   /** the cover's words and its hero (the deck's signature diagram or instrument, from one of its archetypes) */
@@ -49,7 +49,7 @@ export const DECK_STARTERS: readonly DeckStarter[] = [
       "Entry, timing and wind, then a question and Ready to fly",
       "Entrée, chronométrage et vent, puis une question et Prêt à voler",
     ),
-    theme: "cockpit",
+    theme: "classroom",
     slides: ["cover", "heroDiagram", "stepByStep", "quiz", "ready"],
   },
   {
@@ -80,7 +80,7 @@ export const DECK_STARTERS: readonly DeckStarter[] = [
       "A live instrument with callouts, a before / after, the checklist",
       "Un instrument en direct annoté, un avant / après, la check-list",
     ),
-    theme: "cockpit",
+    theme: "classroom",
     slides: ["cover", "instrumentNotes", "compare", "checklist", "recap"],
     cover: {
       eyebrow: L("Instruments · HSI", "Instruments · HSI"),
@@ -121,7 +121,7 @@ export const BLANK_STARTER: DeckStarter = {
   id: "blank",
   title: L("Blank deck", "Présentation vierge"),
   pitch: L("A cover, then add your slides", "Une couverture, puis vos diapos"),
-  theme: "cockpit",
+  theme: "classroom",
   slides: ["cover"],
 };
 
@@ -216,7 +216,7 @@ export function addStarterDeck(
 
 /**
  * The starter gallery: one card per deck, its cover drawn live by the renderer with the next slides as a strip,
- * plus the blank deck. `theme` re-draws the cards (the "projected in class / played before the flight" switch).
+ * plus the blank deck. `theme` re-draws the cards (the "light (recommended) / dark" switch).
  */
 export function deckStarterGallery(
   lang: Lang,
@@ -295,9 +295,8 @@ export function deckStarterGallery(
     "aria-label": fr ? "Thème" : "Theme",
   });
   const segOpts: [typeof mode, string][] = [
-    ["auto", fr ? "Recommandé" : "Recommended"],
-    ["classroom", fr ? "Projeté en salle" : "Projected in class"],
-    ["cockpit", fr ? "Joué avant le vol" : "Played before the flight"],
+    ["auto", fr ? "Clair (recommandé)" : "Light (recommended)"],
+    ["cockpit", fr ? "Sombre, pour la nuit ou l’IMC" : "Dark, for night or IMC"],
   ];
   const drawSeg = () => {
     seg.replaceChildren(

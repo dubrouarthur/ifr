@@ -475,8 +475,8 @@ function holdBriefingFor(entry: HoldEntry): Briefing {
           `${x}-entry.q`,
           mcq(
             L(
-              `Course ${crs} to ARD. Which entry?`,
-              `Route ${crs} vers ARD. Quelle entrée ?`,
+              `Which entry from course ${crs}?`,
+              `Quelle entrée depuis la route ${crs} ?`,
             ),
             ENTRIES.map((k) => ({
               text: ENTRY_ROW[k],

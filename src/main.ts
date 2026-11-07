@@ -2884,6 +2884,8 @@ requestAnimationFrame(frame);
 const deepQ = new URLSearchParams(location.search);
 const deepLesson = deepQ.get('lesson');
 const deepBuilder = deepQ.has('builder');
+const deepDrill = deepQ.get('drill');
+const deepFlight = deepQ.get('flight');
 // a course link (Ground school): ?fly= a course step, ?scene= a shared scene, ?capture= for the editor, ?proc= a
 // procedure drill. The bridge decides what flies: no start page, no Flight Center.
 const courseLink = ['fly', 'scene', 'capture', 'proc'].some((k) => deepQ.has(k));
@@ -2897,6 +2899,14 @@ void installCourses();
 if (courseLoading) { syncCourseStrip(); updateHeader(); fitSoon(); }
 if (courseLink) {
   /* the bridge starts the flight */
+// the library (academy.html#library) opens a failure drill (?drill=<id>) or a scenario / school circuit (?flight=<id>)
+} else if (deepDrill || deepFlight) {
+  const ok = fc.openLibraryItem(deepDrill ? { k: 'drill', id: deepDrill } : { k: 'scenario', id: deepFlight! });
+  if (!ok) {
+    fc.open();
+    const what = deepDrill ?? deepFlight;
+    toast(uiLang() === 'fr' ? `« ${what} » introuvable : choisissez-le dans le Flight Center` : `"${what}" not found — pick it in the Flight Center`, 'warn', 9000);
+  }
 } else if (deepLesson) {
   try {
     const ex = exercise(deepLesson);

@@ -1803,9 +1803,10 @@ export class CoursePlayer {
         h(
           "div",
           { class: "cp-tiles" },
-          tile(ps("goalsMet", lang), `${met} / ${acting.length}`),
-          tile(ps("answeredRight", lang), `${right} / ${asked.length}`),
-          tile(ps("flights", lang), `${flown} / ${flights.length}`),
+          // a tile only for what the course has (no "0 / 0" for a course without goals or flights)
+          acting.length ? tile(ps("goalsMet", lang), `${met} / ${acting.length}`) : null,
+          asked.length ? tile(ps("answeredRight", lang), `${right} / ${asked.length}`) : null,
+          flights.length ? tile(ps("flights", lang), `${flown} / ${flights.length}`) : null,
           tile(ps("skippedSteps", lang), String(skipped)),
         ),
         h(

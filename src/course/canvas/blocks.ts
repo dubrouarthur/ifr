@@ -21,6 +21,7 @@ import {
   isMissing,
   fitScale,
   formulaFragment,
+  textWidth,
 } from "./text";
 import { color, diagramThemeOf, MIN_TEXT_PX, typeCss } from "./themes";
 import { arrowControl } from "./geom";
@@ -882,8 +883,16 @@ function simViewportBlock(b: Of<"simViewport">, env: BlockEnv): BlockView {
 
 // ------------------------------------------------------------------ quiz
 /** Short answers are tiles (SPEC slides v2 §7): ≤ 4 options of ≤ 12 characters; longer ones are rows. Pure. */
-export function quizUsesTiles(options: { text: { en: string; fr?: string } }[], lang: Lang): boolean {
-  return options.length >= 2 && options.length <= 4 && options.every((o) => plainText(loc(o.text, lang)).length <= 12);
+/** Columns of a tiled quiz in a block `w` wide (a tile is at least 200 wide, 24 apart). */
+export const quizTileCols = (n: number, w: number): number => Math.max(1, Math.min(n, Math.floor((w + 24) / 224)));
+/** Short answers ("1 NM", "060") show as big tiles, the rest as rows. Given the block width, a tile is used only
+ *  when every answer fits its tile on one line at the tile size (72 px semibold, 24 px padding each side). */
+export function quizUsesTiles(options: { text: { en: string; fr?: string } }[], lang: Lang, w?: number): boolean {
+  if (options.length < 2 || options.length > 4 || !options.every((o) => plainText(loc(o.text, lang)).length <= 12)) return false;
+  if (w === undefined) return true;
+  const cols = quizTileCols(options.length, w);
+  const inner = (w - (cols - 1) * 24) / cols - 48 - 4;
+  return options.every((o) => textWidth(plainText(loc(o.text, lang)), 72, 600, -0.02) <= inner);
 }
 /** The quiz on a slide: an eyebrow, the question, tiles or rows, the feedback. No outer card; the options are the
  *  only surfaces. The content scales down (never under 24 px) when the block is too small for it. */
@@ -907,10 +916,10 @@ function quizBlock(b: Of<"quiz">, env: BlockEnv): BlockView {
     prompt.append(richFragment(pr, { lang: env.lang }));
     inner.append(prompt);
     if (q.kind === "mcq") {
-      const tiles = quizUsesTiles(q.options, env.lang);
+      const tiles = quizUsesTiles(q.options, env.lang, b.frame.w);
       el.classList.add(tiles ? "is-tiles" : "is-rows");
       const list = mk("div", "sl-q-opts");
-      if (tiles) list.style.setProperty("--cols", String(Math.max(1, Math.min(q.options.length, Math.floor((b.frame.w + 24) / 224)))));
+      if (tiles) list.style.setProperty("--cols", String(quizTileCols(q.options.length, b.frame.w)));
       list.setAttribute("role", env.mode === "play" ? "radiogroup" : "list");
       const why = mk("div", "sl-q-why");
       // the longest feedback reserves its room while fitting (no jump when it appears)

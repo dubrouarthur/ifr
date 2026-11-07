@@ -1,6 +1,6 @@
 // Ground school — designed slides: the two themes of the slide design system (SPEC slides v2 §2, §4).
-//   cockpit    dark: flying a procedure, reading instruments, every lesson briefing played in the cockpit
-//   classroom  light, warm paper: ground-school theory, maths, regulations, anything printed
+//   classroom  light, warm paper: the default for every course (theory, procedures, briefings, anything printed)
+//   cockpit    dark: an opt-in for a course that genuinely needs a dark slide (a night or IMC scene)
 // One theme per course. The older ids load as their nearest: 'projector' = classroom + the bright-projector boost
 // (heavier type, mute → ink-2, white paper), 'brand' = classroom with the school's colour as the accent.
 // A theme defines colour tokens (every text token ≥ 4.5:1 on its background) and the type scale in logical px on
@@ -15,7 +15,7 @@ import type {
 } from "../types";
 
 /** The themes an author picks from (the editor's theme picker). */
-export const THEME_IDS: readonly ThemeId[] = ["cockpit", "classroom"];
+export const THEME_IDS: readonly ThemeId[] = ["classroom", "cockpit"];
 /** Every id a stored course may carry (validation). */
 export const ALL_THEME_IDS: readonly ThemeId[] = [
   "cockpit",
@@ -278,9 +278,7 @@ export const THEMES: Record<ThemeId, SlideTheme> = {
 export const baseThemeId = (
   id: ThemeId | undefined,
 ): "cockpit" | "classroom" =>
-  id === "cockpit" || id === undefined || !isThemeId(id)
-    ? "cockpit"
-    : "classroom";
+  id === "cockpit" ? "cockpit" : "classroom";
 
 // ------------------------------------------------------------------ colour maths (WCAG 2.x)
 export function parseHex(hex: string): [number, number, number] | null {
@@ -365,7 +363,8 @@ export function resolveTheme(
   brand?: SchoolBrand,
   o: { boost?: boolean } = {},
 ): SlideTheme {
-  const known = isThemeId(id) ? id : "cockpit";
+  // light by default: a course without a theme (or with an unknown one) is drawn in the classroom theme
+  const known = isThemeId(id) ? id : "classroom";
   let t = THEMES[known];
   if (o.boost && known !== "projector")
     t = { ...projectorBoost(t), id: t.id, name: t.name };

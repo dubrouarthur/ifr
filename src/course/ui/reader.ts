@@ -24,7 +24,7 @@ import { getProcedure } from "../../train/procedureStore";
 // ------------------------------------------------------------------ strings
 const S = {
   // top bar, footer, navigation
-  backToLibrary: ["Back to Ground school", "Retour à l’école au sol"],
+  backToLibrary: ["Back to the library", "Retour à la bibliothèque"],
   reader: ["Lesson text", "Texte de la leçon"],
   outline: ["Outline", "Plan"],
   outlineTitle: ["Course outline", "Plan du cours"],

@@ -1821,14 +1821,30 @@
   height: 26px;
   border-radius: 7px;
 }
-.cat-engine { --c: #b54708; }
-.cat-fire { --c: #c22a3a; }
-.cat-electrical { --c: #8a6100; }
-.cat-instruments { --c: #0b63ce; }
-.cat-avionics { --c: #6941c6; }
-.cat-comms { --c: #0f7b5f; }
-.cat-flight { --c: #475467; }
-.cat-other { --c: #66737f; }
+.cat-engine {
+  --c: #b54708;
+}
+.cat-fire {
+  --c: #c22a3a;
+}
+.cat-electrical {
+  --c: #8a6100;
+}
+.cat-instruments {
+  --c: #0b63ce;
+}
+.cat-avionics {
+  --c: #6941c6;
+}
+.cat-comms {
+  --c: #0f7b5f;
+}
+.cat-flight {
+  --c: #475467;
+}
+.cat-other {
+  --c: #66737f;
+}
 
 /* drills */
 .ch-grid {
@@ -2524,21 +2540,45 @@
 }
 
 /* ================================================================ home: the slides lead (SPEC slides v2 §12)
-   A dark band with a real deck drawn live (a large slide + its filmstrip), the three teaching actions, then every
-   deck as a slide card. The flying entries follow under "Fly". */
+   A light band (white paper, hairlines, one accent blue: Keynote / Garmin Pilot light) with a real deck drawn live
+   (a large slide + its filmstrip), what the product is and the three teaching actions, then every deck as a slide
+   card. The flying entries follow under "Fly". */
 .fc-sh {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(300px, 0.82fr) minmax(0, 1.18fr);
   gap: 40px;
   align-items: center;
-  padding: 28px 28px 24px 36px;
-  border-radius: 18px;
-  background: #0b0f14;
-  color: #e9eef5;
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06);
+  padding: 30px 28px 24px 36px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+/* a graduated top edge, as on a chart's neatline (decoration: faint hairline ticks) */
+.fc-sh::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 6px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--line-strong) 0 1px,
+    transparent 1px 24px
+  );
+  opacity: 0.8;
+  pointer-events: none;
 }
 .fc-sh-txt {
   min-width: 0;
+  /* prose: no tabular figures (the page-wide 'tnum' spaces out hyphens in "Enseignez-les", "built-in") */
+  font-feature-settings:
+    "cv11" 1,
+    "ss01" 1;
 }
 .fc-sh-k {
   margin: 0 0 12px;
@@ -2546,7 +2586,7 @@
   font-weight: 650;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #6cb4ff;
+  color: var(--accent);
 }
 .fc-sh-txt > h1 {
   margin: 0 0 12px;
@@ -2554,8 +2594,8 @@
   font-size: clamp(28px, 2.5vw, 38px);
   line-height: 1.1;
   font-weight: 700;
-  letter-spacing: -0.02em;
-  color: #fff;
+  letter-spacing: -0.022em;
+  color: var(--text);
   text-wrap: balance;
 }
 .fc-sh-txt > p {
@@ -2563,7 +2603,7 @@
   margin: 0 0 22px;
   font-size: 15px;
   line-height: 1.55;
-  color: rgb(233 238 245 / 0.74);
+  color: var(--text-2, var(--muted));
   text-wrap: pretty;
 }
 .fc-sh-acts {
@@ -2585,22 +2625,72 @@
 }
 .fc-sh-acts .fc-sh-open {
   padding: 0 22px;
-  color: var(--accent-ink);
-}
-.fc-sh-acts .fc-sh-open:hover {
-  filter: brightness(1.1);
 }
 .fc-sh-b {
-  background: rgb(255 255 255 / 0.06);
-  border-color: rgb(255 255 255 / 0.22);
-  color: #fff;
+  background: var(--surface);
+  border-color: var(--line-strong);
+  color: var(--text);
 }
 .fc-sh-b:hover {
-  background: rgb(255 255 255 / 0.12);
-  border-color: rgb(255 255 255 / 0.42);
+  background: var(--surface-2);
+  border-color: var(--muted);
 }
-.modal.fc .fc-sh :is(button):focus-visible {
-  outline-color: #9ccbff;
+/* who it is for: one quiet line under the pitch, led by a short magenta course rule */
+.fc-sh-txt > p.fc-sh-aud {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: -10px 0 22px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.fc-sh-aud::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 18px;
+  height: 1px;
+  transform: translateY(-4px);
+  background: #a8238f;
+}
+/* the quieter ways in, under the two buttons */
+.fc-sh-more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 22px;
+  margin-top: 12px;
+}
+.fc-sh-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-2, var(--muted));
+  font: 600 14px/1 inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+.fc-sh-link svg {
+  width: 17px;
+  height: 17px;
+  color: var(--muted);
+}
+.fc-sh-link:hover,
+.fc-sh-link:hover svg {
+  color: var(--accent);
+}
+.fc-sh-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (pointer: coarse) {
+  .fc-sh-link {
+    min-height: 44px;
+  }
 }
 
 /* the deck: a large slide, the filmstrip beside it, the caption under */
@@ -2615,12 +2705,13 @@
   grid-area: stage;
   position: relative;
   aspect-ratio: 16 / 9;
-  border-radius: 12px;
+  border-radius: 10px;
   overflow: hidden;
-  background: #151b23;
+  background: #fbfaf7;
   box-shadow:
-    0 24px 60px rgb(0 0 0 / 0.5),
-    0 0 0 1px rgb(255 255 255 / 0.1);
+    0 0 0 1px rgb(20 24 31 / 0.1),
+    0 2px 4px rgb(20 24 31 / 0.04),
+    0 18px 40px -20px rgb(20 24 31 / 0.28);
 }
 .dh-slide {
   position: absolute;
@@ -2637,12 +2728,12 @@
   inset: 0;
   z-index: 2;
   border: 0;
-  border-radius: 12px;
+  border-radius: 10px;
   background: none;
   cursor: pointer;
 }
 .dh-slide-hit:hover {
-  box-shadow: inset 0 0 0 2px rgb(108 180 255 / 0.7);
+  box-shadow: inset 0 0 0 2px rgb(var(--accent-rgb) / 0.6);
 }
 .dh-film {
   grid-area: film;
@@ -2659,22 +2750,24 @@
   aspect-ratio: 16 / 9;
   padding: 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: 6px;
   overflow: hidden;
-  background: #151b23;
+  background: #fbfaf7;
   cursor: pointer;
-  opacity: 0.62;
-  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.1);
+  opacity: 0.78;
+  box-shadow: 0 0 0 1px var(--line-strong);
   transition:
     opacity 0.15s,
     box-shadow 0.15s;
 }
 .dh-film-b:hover {
-  opacity: 0.9;
+  opacity: 1;
 }
 .dh-film-b.on {
   opacity: 1;
-  box-shadow: 0 0 0 2px #6cb4ff;
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 0 0 4px rgb(var(--accent-rgb) / 0.16);
 }
 .dh-film-t {
   position: absolute;
@@ -2698,14 +2791,14 @@
 .dh-cap-t b {
   font-size: 15px;
   font-weight: 650;
-  color: #fff;
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .dh-cap-t small {
   font-size: 13px;
-  color: rgb(233 238 245 / 0.62);
+  color: var(--muted);
 }
 .dh-cap-b {
   flex: none;
@@ -2714,15 +2807,15 @@
   gap: 8px;
   height: 40px;
   padding: 0 14px;
-  border: 1px solid rgb(255 255 255 / 0.22);
+  border: 1px solid var(--line-strong);
   border-radius: 9px;
-  background: rgb(255 255 255 / 0.06);
-  color: #fff;
+  background: var(--surface);
+  color: var(--text);
   font: 600 14px var(--font, inherit);
   cursor: pointer;
 }
 .dh-cap-b:hover {
-  background: rgb(255 255 255 / 0.12);
+  background: var(--surface-2);
 }
 .dh-ic {
   fill: none;
@@ -2733,8 +2826,9 @@
 }
 .dh-wait.dh-stage,
 .dh-wait.dh-film {
-  background: #151b23;
-  border-radius: 12px;
+  background: var(--surface-2);
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--line);
 }
 
 /* section heads: Courses · Fly */
@@ -2847,7 +2941,7 @@
 .dh-card-media {
   position: relative;
   aspect-ratio: 16 / 9;
-  background: #151b23;
+  background: #fbfaf7;
   border-bottom: 1px solid var(--line);
 }
 .dh-wait .dh-card-media {

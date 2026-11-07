@@ -481,7 +481,7 @@ export class BriefingModal extends Modal {
     const d = this.deck;
     const restart = this.seed !== null;
     clear(this.foot);
-    const segs = d ? d.segments((i) => { d.go(i); this.renderBar(); }) : h('div', { class: 'ds-segs' });
+    const segs = d ? d.segments((i) => { d.go(i, i < d.index ? Infinity : 0); this.renderBar(); }) : h('div', { class: 'ds-segs' });
     const last = !!d && d.atEnd;
     const needQuiz = !!d && !d.gatesDone;
     const ex = this.run?.ex;

@@ -69,6 +69,19 @@ export type World =
   | { kind: "real"; region: string; icaos?: string[]; airac?: string };
 
 // ---------------------------------------------------------------- course
+/** The programs of the unified library (src/library/programs.ts). 'lapl-ppl' is the course authors' shared shelf
+ *  (samples/library): it lists the course under both LAPL and PPL. */
+export type CourseProgram =
+  | "lapl"
+  | "ppl"
+  | "lapl-ppl"
+  | "night"
+  | "ir"
+  | "atpl"
+  | "club"
+  | "instructors";
+/** 1 getting started · 2 core · 3 advanced */
+export type CourseLevel = 1 | 2 | 3;
 export interface Course {
   format: "ifr-course";
   version: 1;
@@ -100,6 +113,11 @@ export interface Course {
   sample?: string;
   /** library facets (e.g. 'maths', 'ifr', 'vfr', 'holding'); free text, lower case */
   tags?: string[];
+  /** additive (unified library): the program(s) the course belongs to, first = its home shelf; a course without
+   *  one is placed from its sample entry, its tags or its id (src/library/meta.ts) */
+  program?: CourseProgram | CourseProgram[];
+  /** additive (unified library): 1 getting started · 2 core · 3 advanced (default: from the program) */
+  level?: CourseLevel;
   /** 'course' (default), 'lesson' (briefing pages + a Fly-it, the briefing team's shape) or 'briefing' (Briefing) */
   shape?: CourseShape;
   /** what a 'briefing' prepares for */

@@ -27,7 +27,6 @@ import {
   whyStep,
   yourTurnStep,
 } from "./kit";
-void DIAGRAM;
 
 export const TURNS_BRIEFING_ID = "sample-briefing-bai-turns";
 export const UNUSUAL_BRIEFING_ID = "sample-briefing-bai-unusual";
@@ -247,7 +246,7 @@ export function turnsBriefing(): Briefing {
         "inclinaison en degrés · Vp en nœuds",
       ),
       lines: [
-        L("TAS | ≈ 95 + 4 × 2 % ≈ !101 kt!", "Vp | ≈ 95 + 4 × 2 % ≈ !101 kt!"),
+        L("TAS | ≈ 95 × 1.08 ≈ !103 kt!", "Vp | ≈ 95 × 1,08 ≈ !103 kt!"),
         L("bank | ≈ 10 + 7 ≈ !17°!", "inclinaison | ≈ 10 + 7 ≈ !17°!"),
         L(
           "lead | ≈ ½ × bank ≈ !8°!",
@@ -259,8 +258,8 @@ export function turnsBriefing(): Briefing {
         "Prenez environ 15°, puis calez l’aile sur le repère.",
       ),
       foot: L(
-        "FAA IFH ch. 7 · TAS ≈ IAS + 2 % per 1,000 ft · exact at 101 KTAS: 15.5°",
-        "FAA IFH ch. 7 · Vp ≈ Vi + 2 % par 1 000 ft · exact à 101 kt : 15,5°",
+        "FAA IFH ch. 7 · TAS ≈ IAS + 2 % per 1,000 ft (4,000 ft: × 1.08) · ISA: 101 KTAS, exactly 15.5°",
+        "FAA IFH ch. 7 · Vp ≈ Vi + 2 % par 1 000 ft (4 000 ft : × 1,08) · ISA : 101 kt, exactement 15,5°",
       ),
       reader: [
         {
@@ -611,14 +610,17 @@ export function unusualBriefing(): Briefing {
       eyebrow: L("Why wings level first", "Pourquoi les ailes d’abord"),
       title: L("Pulling in a bank tightens the spiral", "Tirer incliné serre la spirale"),
       visual: [
-        INST(
-          GAUGE("ai"),
-          L("Attitude indicator: 55° of right bank, nose low", "Horizon artificiel : 55° d’inclinaison à droite, nez bas"),
-          272,
-          368,
-          592,
-          592,
-          { id: "bu-load.ai", scene: "ua.low" },
+        DIAGRAM(
+          "bu-load.turn",
+          { kind: "calc", calc: { kind: "turn", tasKt: 125, bankDeg: 55 } },
+          L(
+            "Turn at 125 kt and 55° of bank: about 12° per second on a radius near 1,000 ft",
+            "Virage à 125 kt et 55° d’inclinaison : environ 12° par seconde, rayon proche de 1 000 ft",
+          ),
+          120,
+          336,
+          960,
+          648,
         ),
       ],
       formula: L("{n} = [1/cos {bank}]", "{n} = [1/cos {inclinaison}]"),
@@ -799,8 +801,22 @@ export function compassBriefing(): Briefing {
     formulaStep("bp-time", {
       eyebrow: L("Timed turns", "Virages chronométrés"),
       title: L("No heading indicator: the clock steers", "Sans cap : le chrono dirige"),
+      visual: [
+        DIAGRAM(
+          "bp-time.turn",
+          { kind: "calc", calc: { kind: "turn", tasKt: 101, bankDeg: 15 } },
+          L(
+            "Standard-rate turn at 101 kt true airspeed: about 15° of bank, 3° per second",
+            "Virage au taux standard à 101 kt de vitesse propre : environ 15° d’inclinaison, 3° par seconde",
+          ),
+          120,
+          336,
+          960,
+          648,
+        ),
+      ],
       formula: L("{time} = [{turn}/3]", "{temps} = [{virage}/3]"),
-      units: L("time in seconds · turn in degrees · at standard rate, 3°/s", "temps en secondes · virage en degrés · au taux standard, 3°/s"),
+      units: L("time in s · turn in ° · standard rate 3°/s", "temps en s · virage en ° · taux standard 3°/s"),
       lines: [
         L("090 → 180 | = [90/3] = !30 s!", "090 → 180 | = [90/3] = !30 s!"),
         L("180 → 360 | = [180/3] = !60 s!", "180 → 360 | = [180/3] = !60 s!"),

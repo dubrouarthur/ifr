@@ -338,7 +338,7 @@
   aspect-ratio: 16 / 9;
   border-radius: 9px;
   overflow: hidden;
-  background: #0d1117;
+  background: #fbfaf7;
   box-shadow:
     0 0 0 1px rgba(15, 23, 32, 0.1),
     0 2px 6px rgba(15, 23, 32, 0.08);
@@ -460,7 +460,7 @@
   aspect-ratio: 16 / 9;
   border-radius: 10px;
   overflow: hidden;
-  background: #0d1117;
+  background: #fbfaf7;
   box-shadow: 0 0 0 1px rgba(15, 23, 32, 0.08);
 }
 .ce-deck-cover > *,
@@ -477,7 +477,7 @@
   aspect-ratio: 16 / 9;
   border-radius: 5px;
   overflow: hidden;
-  background: #0d1117;
+  background: #fbfaf7;
   box-shadow: 0 0 0 1px rgba(15, 23, 32, 0.08);
 }
 .ce-deck-tx {
@@ -1170,7 +1170,7 @@
   aspect-ratio: 16 / 9;
   border-radius: 10px;
   overflow: hidden;
-  background: #0d1117;
+  background: #fbfaf7;
   box-shadow:
     0 0 0 1px rgba(15, 23, 32, 0.1),
     0 6px 18px rgba(15, 23, 32, 0.12);

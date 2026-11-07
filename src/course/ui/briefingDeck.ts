@@ -80,8 +80,8 @@ export function briefingDeck(
     }
     return {
       slides: own,
-      // the deck theme is always cockpit in the cockpit (§11)
-      theme: "cockpit",
+      // the course's own theme (light by default, also in the cockpit)
+      theme: c.theme ?? "classroom",
       scenes: c.scenes,
       cockpit: c.cockpit,
       authored: true,
@@ -90,7 +90,7 @@ export function briefingDeck(
   const g = generatedBriefing(src, lang);
   return {
     slides: slidesOf(g),
-    theme: "cockpit",
+    theme: g.theme ?? "classroom",
     scenes: g.scenes,
     cockpit: g.cockpit,
     authored: false,

@@ -14,7 +14,7 @@ describe.each(CRAFTED_BRIEFINGS.map((b) => [b.exerciseId, b]))("briefing for %s"
     expect(EXERCISES.some((e) => e.id === exerciseId)).toBe(true);
     expect(c.shape).toBe("briefing");
     expect(c.briefingFor).toEqual({ exerciseId });
-    expect(c.theme).toBe("cockpit");
+    expect(c.theme).toBe("classroom");
     expect(briefingForLesson(exerciseId)?.id).toBe(def.id);
   });
   it("has 6 to 10 slides, from the cover to Ready to fly, then Fly it", () => {

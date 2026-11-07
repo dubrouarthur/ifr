@@ -50,14 +50,14 @@ export function productDeck(): ProductSlide[] {
   // 1 · cover
   out.push({
     id: "p-cover",
-    title: L("Slides that come alive", "Des diapositives vivantes"),
+    title: L("From the classroom to the cockpit", "De la salle au cockpit"),
     slide: canvas(
       [
         T(
           "eyebrow",
           {
-            en: `${BRAND.name} · Ground school`,
-            fr: `${BRAND.name} · Théorie`,
+            en: `${BRAND.name} · Aviation education`,
+            fr: `${BRAND.name} · Éducation aéronautique`,
           },
           G.left,
           G.eyebrowY,
@@ -67,8 +67,8 @@ export function productDeck(): ProductSlide[] {
         T(
           "display",
           L(
-            "Teach IFR with slides that come alive",
-            "Enseignez l’IFR avec des diapositives vivantes",
+            "One lesson, from the classroom to the cockpit",
+            "Une leçon, de la salle au cockpit",
           ),
           G.left,
           232,
@@ -79,8 +79,8 @@ export function productDeck(): ProductSlide[] {
         T(
           "lead",
           L(
-            "Designed for the classroom and the simulator: the lesson you show is the lesson they fly.",
-            "Conçues pour la classe et le simulateur : la leçon que vous montrez est celle que l’élève vole.",
+            "Build the course with live instruments, teach it in class, then fly it in the built-in IFR simulator.",
+            "Créez le cours avec instruments en direct, enseignez-le en salle, puis volez-le dans le simulateur IFR intégré.",
           ),
           G.left,
           672,
@@ -242,8 +242,8 @@ export function productDeck(): ProductSlide[] {
         T(
           "lead",
           L(
-            "Capable and simple: the engine behind every course, in the browser.",
-            "Performant et simple : le moteur derrière chaque cours, dans le navigateur.",
+            "The built-in IFR simulator flies every course, and also works on its own, in the browser.",
+            "Le simulateur IFR intégré fait voler chaque cours et s’utilise aussi seul, dans le navigateur.",
           ),
           G.left,
           264,

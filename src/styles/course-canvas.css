@@ -99,6 +99,15 @@
   flex-direction: column;
   overflow: hidden;
 }
+/* the fitter fits line boxes, but a descender of the last line (g, p, y in a 1.08 title, a 1.0 display) hangs
+   below the line box: clip a little under the frame so it is not cut (playing and thumbnails; the editor keeps
+   the strict frame, where its overflow outline is drawn) */
+@supports (overflow-clip-margin: 1px) {
+  .sl-view:not(.sl-mode-edit) .sl-text {
+    overflow: clip;
+    overflow-clip-margin: 24px;
+  }
+}
 .sl-text-in {
   overflow-wrap: break-word;
   hyphens: manual;

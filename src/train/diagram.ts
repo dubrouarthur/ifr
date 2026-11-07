@@ -259,6 +259,56 @@ export function holdSlideSvg(
     return `M${f2(cx)},${f2(cy)} L${P(a)} A${f2(RC)},${f2(RC)} 0 ${to - from > 180 ? 1 : 0} ${sw} ${P(b)} Z`;
   };
   const entry: K | null = o.courseToFix !== undefined ? holdEntry(I, turn, o.courseToFix) : null;
+  // where the arriving aircraft is drawn, in sector terms (bearing from the fix relative to the inbound course):
+  // the labels on its way (a sector's name, its arc size, the fix) step aside so the dashed arrival never crosses them
+  const norm = (d: number) => ((d % 360) + 360) % 360;
+  const planeRel = entry && o.courseToFix !== undefined ? norm((o.courseToFix + 180 - I) * s) : null;
+  const dRel = (a: number, b: number) => Math.abs(norm(a - b + 180) - 180);
+  const aside = (rel: number, from: number, to: number, gap: number, off: number): number => {
+    if (planeRel === null || dRel(rel, planeRel) >= gap) return rel;
+    let best = rel;
+    let room = -1;
+    for (const c of [planeRel + off, planeRel - off]) {
+      if (norm(c - from) > to - from) continue;
+      const m = Math.min(dRel(c, from), dRel(c, to));
+      if (m > room) [best, room] = [c, m];
+    }
+    return best;
+  };
+  // the fix's label, between the two boundaries next to it (never on a line), off the arrival's way
+  const fl = at(absB(planeRel !== null && dRel(-35, planeRel) < 25 ? 250 : -35), 78 * u);
+  // a sector's name (a box about 160 × 110 at u = 1): kept clear of the lines from the fix — the two sector
+  // boundaries, the inbound extension and the dashed arrival — by trying a few bearings and radii in its sector
+  const rays: number[] = [I, I + 110 * s, I - 70 * s];
+  if (planeRel !== null && o.courseToFix !== undefined) rays.push(o.courseToFix + 180);
+  const clearance = (p: [number, number], only?: number[]): number => {
+    const bx = p[0];
+    const by = p[1] + 15 * u;
+    let m = Infinity;
+    for (const b of only ?? rays)
+      for (let t = 0; t <= RC; t += 6 * u) {
+        const q = at(b, t);
+        m = Math.min(m, Math.max(Math.abs(q[0] - bx) - 80 * u, Math.abs(q[1] - by) - 55 * u));
+      }
+    // and the fix's own label (about 72 × 36 around its anchor)
+    if (!only) m = Math.min(m, Math.max(Math.abs(fl[0] - bx) - 116 * u, Math.abs(fl[1] - by) - 73 * u));
+    return m;
+  };
+  const labelAt = (rel: number, from: number, to: number, r: number): [number, number] => {
+    let best = at(absB(rel), r);
+    // only a name the dashed arrival runs into moves
+    if (planeRel === null || o.courseToFix === undefined || clearance(best, [o.courseToFix + 180]) >= 10 * u) return best;
+    let score = clearance(best);
+    for (const d of [8, -8, 14, -14, 20, -20, 28, -28, 36, -36])
+      for (const k of [1, 0.88, 1.12]) {
+        const c = rel + d;
+        if (norm(c - from) < 4 || norm(to - c) < 4 || norm(c - from) > to - from) continue;
+        const q = at(absB(c), r * k);
+        const sc = clearance(q);
+        if (sc > score + 1) [best, score] = [q, sc];
+      }
+    return best;
+  };
   const text = (x: number, y: number, t: string, size: number, fill: string, extra = "") =>
     `<text x="${f2(x)}" y="${f2(y)}" font-size="${f2(size * u)}" fill="${fill}" font-family="Inter, system-ui, sans-serif" font-variant-numeric="tabular-nums" ${extra}>${t}</text>`;
   const arrowHead = (p: [number, number], ang: number, size: number, fill: string) =>
@@ -308,16 +358,15 @@ export function holdSlideSvg(
   // the fix, its label between the two boundaries next to it (never on a line)
   const k = 15 * u;
   out += `<path d="M${f2(cx)},${f2(cy - k * 1.13)} L${f2(cx + k)},${f2(cy + k * 0.67)} L${f2(cx - k)},${f2(cy + k * 0.67)} Z" fill="${C.bg}" stroke="${C.ink}" stroke-width="${4 * u}" stroke-linejoin="round"/>`;
-  const fl = at(I - 35 * s, 78 * u);
   out += text(fl[0], fl[1] + 10 * u, fix, 28, C.ink, `text-anchor="middle" font-weight="600"`);
   if (!quiet) {
     for (const kk of Object.keys(SECT) as K[]) {
       const S = SECT[kk];
-      const p = at(absB(S.lab), RC * S.lr);
+      const p = labelAt(S.lab, S.from, S.to, RC * S.lr);
       out += text(p[0], p[1] - 10 * u, `${fr ? "SECTEUR" : "SECTOR"} ${S.n}`, 24, C.mute, `text-anchor="middle" font-weight="500" letter-spacing="${2.5 * u}"`);
       out += text(p[0], p[1] + 30 * u, S.name, 32, S.col, `text-anchor="middle" font-weight="600"`);
       if (entry === kk) out += text(p[0], p[1] + 64 * u, fr ? "votre entrée" : "your entry", 24, C.ink2, `text-anchor="middle" font-weight="600"`);
-      const q = at(absB((S.from + S.to) / 2), RC + 44 * u);
+      const q = at(absB(aside((S.from + S.to) / 2, S.from, S.to, 16, 20)), RC + 44 * u);
       out += text(q[0], q[1] + 9 * u, S.arc, 24, C.mute, `text-anchor="middle" font-style="italic" font-weight="500"`);
     }
   }
