@@ -48,6 +48,7 @@ import { problemFor } from "../calc";
 import { windText } from "../calc/text";
 import { Sim } from "../../sim/sim";
 import { renderSlide } from "../canvas/render";
+import { baseThemeId } from "../canvas/themes";
 import { StageFrame } from "../stage/frame";
 import type { StageEnv, StageEvent } from "../stage/host";
 import { newInstrumentStates, renderPane } from "../stage/views";
@@ -711,6 +712,9 @@ export class CoursePlayer {
     this.body.dataset.layout = layout;
     this.body.dataset.kind = step.kind;
     this.el.dataset.layout = layout;
+    // the chrome around a designed slide follows the course theme (SPEC slides v2 §10): never a dark slide in a
+    // white frame
+    this.el.dataset.chrome = layout === "canvas" ? baseThemeId(this.course.theme) : "";
     // stage
     if (fresh) {
       if (layout === "split" || layout === "stageWide") {
@@ -1799,9 +1803,10 @@ export class CoursePlayer {
         h(
           "div",
           { class: "cp-tiles" },
-          tile(ps("goalsMet", lang), `${met} / ${acting.length}`),
-          tile(ps("answeredRight", lang), `${right} / ${asked.length}`),
-          tile(ps("flights", lang), `${flown} / ${flights.length}`),
+          // a tile only for what the course has (no "0 / 0" for a course without goals or flights)
+          acting.length ? tile(ps("goalsMet", lang), `${met} / ${acting.length}`) : null,
+          asked.length ? tile(ps("answeredRight", lang), `${right} / ${asked.length}`) : null,
+          flights.length ? tile(ps("flights", lang), `${flown} / ${flights.length}`) : null,
           tile(ps("skippedSteps", lang), String(skipped)),
         ),
         h(

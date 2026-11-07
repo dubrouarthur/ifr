@@ -15,6 +15,7 @@ import {
   VOR_ID,
 } from "../src/course/samples";
 import { isStudentAction } from "../src/course/samples/kit";
+import { STAGE_CALC_DIAGRAMS } from "../src/course/stage/calcKinds";
 import {
   TEARDROP_DRAG,
   outboundHeading,
@@ -24,15 +25,8 @@ import { validateCourse, missingTranslations } from "../src/course/validate";
 import { GENERATORS, problemFor } from "../src/course/calc";
 import { holdEntry } from "../src/nav/holding";
 
-const STAGE_DIAGRAMS = new Set([
-  "windTriangle",
-  "sixtyToOne",
-  "profile",
-  "vdp",
-  "holdWind",
-  "compass",
-  "cgEnvelope",
-]);
+// the calc diagrams the stage really draws (stage/calcKinds.ts): anything else would show a placeholder box
+const STAGE_DIAGRAMS = new Set<string>(STAGE_CALC_DIAGRAMS);
 const errors = (c: Course) =>
   validateCourse(c).filter((i) => i.level === "error");
 const blocks = (s: Step): SlideBlock[] => s.slide?.blocks ?? [];
@@ -40,8 +34,8 @@ const allSteps = (c: Course): Step[] =>
   c.steps.flatMap((s) => [s, ...(s.flyIt?.briefing ?? [])]);
 
 describe("sample registry", () => {
-  it("lists the four courses and the briefing", () => {
-    expect(SAMPLES.map((s) => s.id)).toEqual([
+  it("lists the four courses and the briefing, then the crafted lesson briefings", () => {
+    expect(SAMPLES.slice(0, 5).map((s) => s.id)).toEqual([
       MATHS_IFR_ID,
       MATHS_VFR_ID,
       VOR_ID,
@@ -65,7 +59,7 @@ describe("sample registry", () => {
       kind: "lesson",
       exerciseId: "hold-ndb",
     });
-    expect(briefingForLesson("nav-vor-out")).toBeNull();
+    expect(briefingForLesson("hold-random")).toBeNull();
   });
 });
 
@@ -151,15 +145,15 @@ describe.each(SAMPLES.map((s) => [s.id]))("%s", (id) => {
 describe("step counts and mix", () => {
   const count = (c: Course, k: string) =>
     c.steps.filter((s) => s.kind === k).length;
-  it("VOR tracking has 12 steps and ends with a Fly it", () => {
+  it("VOR tracking has 14 steps (slides first) and ends with a Fly it", () => {
     const c = sampleCourse(VOR_ID)!;
-    expect(c.steps).toHaveLength(12);
+    expect(c.steps).toHaveLength(14);
     expect(c.steps.at(-1)!.kind).toBe("fly");
     expect(count(c, "try")).toBeGreaterThanOrEqual(3);
   });
-  it("Holding has 18 steps, an inline briefing and a Your turn on a slide", () => {
+  it("Holding has 20 steps (slides first), an inline briefing and a Your turn on a slide", () => {
     const c = sampleCourse(HOLDING_ID)!;
-    expect(c.steps).toHaveLength(18);
+    expect(c.steps).toHaveLength(20);
     const fly = c.steps.at(-1)!;
     expect(fly.flyIt!.briefing!.length).toBeGreaterThanOrEqual(2);
     expect(

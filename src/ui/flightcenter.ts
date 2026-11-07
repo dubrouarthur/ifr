@@ -3,6 +3,7 @@
 // The full catalogue (every flight by type, search, filters, learning paths, detail pane) sits one click deeper,
 // behind "Browse all flights".
 import { h, clear, store } from "./dom";
+import { brandAudience, brandEyebrow, brandLead, brandTagline } from "../brand";
 import { Modal, WX_PRESETS, type WxPreset } from "./modals";
 import { CATEGORIES, MINE_SUB as MINE, catalog, type CatId, type Item } from "./catalog";
 import { PATHS, type Path } from "../train/curriculum";
@@ -80,7 +81,10 @@ type View =
   | { type: "path"; path: Path }
   | { type: "search" }
   | { type: "club"; tab: ClubTab }
-  | { type: "courses" };
+  | { type: "courses"; intent?: CourseIntent; program?: import("../library/programs").ProgramId };
+
+/** what the Ground school page does once the library is up: create a course, or pick one to present */
+export type CourseIntent = "new" | "present";
 
 type QuickKind = "approach" | "hold";
 
@@ -601,7 +605,7 @@ const CLUB_TAB_KEY = "ifr.fc.clubTab";
 
 /** the Ground school tile and crumb (FR / EN like the procedures page) */
 function groundSchoolLabel(): string {
-  return uiLang() === "fr" ? "Théorie" : "Ground school";
+  return uiLang() === "fr" ? "Bibliothèque" : "Library";
 }
 /** the tile's meta line, from the small course index (course/store.ts) without loading the store */
 function groundSchoolMeta(): string {
@@ -714,7 +718,9 @@ export class FlightCenter extends Modal {
             t.tagName === "TEXTAREA");
         if (e.key === "/" && !typing && !e.ctrlKey && !e.metaKey) {
           e.preventDefault();
-          this.searchInput.focus();
+          // the Library has its own search (courses, procedures and flights)
+          if (this.view.type === "courses" && this.courseLib) this.courseLib.focusSearch();
+          else this.searchInput.focus();
         }
       },
       true,
@@ -793,6 +799,14 @@ export class FlightCenter extends Modal {
     super.open();
   }
 
+  /** open on the Ground school page: every slide deck (the top bar's Courses button); `intent` creates a course or
+   *  picks one to present once the library is up */
+  openCourses(intent?: CourseIntent) {
+    this.items = catalog();
+    if (!this.isOpen) super.open();
+    this.go({ type: "courses", ...(intent ? { intent } : {}) });
+  }
+
   /** open on the Procedures · Flying club page (main.ts: ?proc= share links, the builder's procedure links) */
   openClub(tab?: ClubTab) {
     this.items = catalog();
@@ -836,6 +850,7 @@ export class FlightCenter extends Modal {
       this.view.type === "courses";
     this.gridEl.classList.toggle("home", home);
     this.box.classList.toggle("fc-is-home", home);
+    this.box.classList.toggle("fc-lib-view", this.view.type === "courses");
     this.searchClear.hidden = !this.q;
     // the search field follows the FR / EN switch of the procedures page
     this.searchInput.placeholder = t("ch.searchAll");
@@ -920,6 +935,11 @@ export class FlightCenter extends Modal {
         icon: svgIcon(I.records),
         key: "all",
         count: String(this.items.length),
+      }),
+      navBtn(groundSchoolLabel(), false, () => this.go({ type: "courses" }), {
+        icon: svgIcon(I.slides),
+        key: "library",
+        tip: uiLang() === "fr" ? "Cours, procédures et leçons au simulateur, par programme" : "Courses, procedures and sim lessons, by program",
       }),
       navBtn(t("ch.nav"), false, () => this.goClub(), {
         icon: pIcon("drill"),
@@ -1261,11 +1281,13 @@ export class FlightCenter extends Modal {
   private renderMain() {
     this.courseLib?.destroy();
     this.courseLib = null;
+    this.deckHome?.destroy();
+    this.deckHome = null;
     clear(this.main);
     const v = this.view;
     if (v.type === "home") return this.renderHome();
     if (v.type === "instructor") return this.renderInstructor();
-    if (v.type === "courses") return this.renderCourses();
+    if (v.type === "courses") return this.renderCourses(v.intent, v.program);
     if (v.type === "club") return this.renderClub(v.tab);
     if (v.type === "path") return this.renderPath(v.path);
     if (v.type === "search") {
@@ -1458,8 +1480,105 @@ export class FlightCenter extends Modal {
   }
 
   // ------------------------------------------------------------------ home
+  /** the slide decks drawn on the home screen (course/ui/deckHome.ts, loaded on demand) */
+  private deckHome: { destroy(): void } | null = null;
+
+  /** Home: the slides lead (SPEC slides v2 §12). A light hero band with a real deck drawn live, the three teaching
+   *  actions, then every deck as a slide card; the flying entries (build a flight, Quick start, the syllabus,
+   *  tools, flight types) follow under "Fly". */
   private renderHome() {
     const ci = continueInfo(this.items);
+    const fr = uiLang() === "fr";
+    const L = (en: string, frText: string) => (fr ? frText : en);
+    const visual = h("div", { class: "fc-sh-vis dh-visual", "aria-label": L("A course, drawn live", "Un cours, dessiné en direct") });
+    const shelf = h("div", { class: "fc-deck-row dh-shelf", role: "list", "aria-label": L("Courses", "Cours") });
+    // placeholders the size of the slides, so nothing moves when the engine arrives
+    visual.append(h("div", { class: "dh-stage dh-wait" }), h("div", { class: "dh-film dh-wait" }));
+    for (let i = 0; i < 4; i++) shelf.append(h("div", { class: "dh-card dh-wait", "aria-hidden": "true" }, h("div", { class: "dh-card-media" })));
+    const slidesHero = h(
+      "section",
+      { class: "fc-sh", "aria-labelledby": "fc-sh-t" },
+      h(
+        "div",
+        { class: "fc-sh-txt" },
+        h("div", { class: "fc-sh-k" }, brandEyebrow(fr ? "fr" : "en")),
+        h("h1", { id: "fc-sh-t" }, brandTagline(fr ? "fr" : "en")),
+        h("p", {}, brandLead(fr ? "fr" : "en")),
+        h("p", { class: "fc-sh-aud" }, brandAudience(fr ? "fr" : "en")),
+        h(
+          "div",
+          { class: "fc-sh-acts" },
+          h(
+            "button",
+            { class: "btn primary fc-sh-open", type: "button", onclick: () => this.go({ type: "courses" }), title: L("Every course: samples, your club’s and your drafts", "Tous les cours : exemples, ceux du club et vos brouillons") },
+            svgIcon(I.learn, 20),
+            L("Open a course", "Ouvrir un cours"),
+          ),
+          h(
+            "button",
+            { class: "btn fc-sh-b fc-sh-new", type: "button", onclick: () => this.go({ type: "courses", intent: "new" }), title: L("A new deck from a template, in the course builder", "Un nouveau cours à partir d’un modèle, dans l’éditeur") },
+            svgIcon(I.plus, 18),
+            L("Create a course", "Créer un cours"),
+          ),
+        ),
+        // the quieter ways in: teach a class, or fly the simulator on its own (it scrolls to "Fly")
+        h(
+          "div",
+          { class: "fc-sh-more" },
+          h(
+            "button",
+            { class: "fc-sh-link fc-sh-present", type: "button", onclick: () => this.go({ type: "courses", intent: "present" }), title: L("Projector window and presenter notes on one computer", "Fenêtre projecteur et notes du présentateur sur un seul ordinateur") },
+            svgIcon(I.screen, 18),
+            L("Present to a class", "Présenter à une classe"),
+          ),
+          h(
+            "button",
+            {
+              class: "fc-sh-link fc-sh-fly",
+              type: "button",
+              onclick: (e: Event) =>
+                (e.currentTarget as HTMLElement)
+                  .closest(".fc-home")
+                  ?.querySelector<HTMLElement>(".fc-fly")
+                  ?.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }),
+            },
+            svgIcon(I.plane, 18),
+            L("Fly the simulator on its own", "Voler le simulateur seul"),
+          ),
+        ),
+      ),
+      visual,
+    );
+    const decks = h(
+      "section",
+      { class: "fc-decks", "aria-labelledby": "fc-decks-t" },
+      h(
+        "div",
+        { class: "fc-sec-h" },
+        h("h2", { id: "fc-decks-t" }, L("Courses", "Cours")),
+        h("span", { class: "fc-sec-sub" }, groundSchoolMeta()),
+        h(
+          "button",
+          { class: "fc-sec-link", type: "button", onclick: () => this.go({ type: "courses" }) },
+          L("The whole library", "Toute la bibliothèque"),
+          svgIcon(I.arrow, 16),
+        ),
+      ),
+      shelf,
+    );
+    void Promise.all([import("../course/ui/deckHome"), import("../course/store")]).then(([m, st]) => {
+      if (!shelf.isConnected || this.view.type !== "home") return;
+      this.deckHome?.destroy();
+      this.deckHome = m.mountDeckHome({
+        lang: fr ? "fr" : "en",
+        visual,
+        shelf,
+        page: "academy.html",
+        store: st.courseStore(),
+        navigate: (url) => this.leave(() => location.assign(url)),
+        onCreate: () => this.go({ type: "courses", intent: "new" }),
+      });
+    });
     const hero = h(
       "section",
       { class: "fc-hero2" },
@@ -1468,15 +1587,19 @@ export class FlightCenter extends Modal {
         src: "/img/clouds.jpg",
         alt: "",
         decoding: "async",
+        loading: "lazy",
       }),
       h(
         "div",
         { class: "fc-hero-txt" },
-        h("h1", {}, "What are we flying today?"),
+        h("h1", {}, L("What are we flying today?", "Qu’est-ce qu’on vole aujourd’hui ?")),
         h(
           "p",
           {},
-          "Every flight is set up in the flight builder: airports, route, holds and approaches, weather and failures. Or let Quick start pick one for you.",
+          L(
+            "Every flight is set up in the flight builder: airports, route, holds and approaches, weather and failures. Or let Quick start pick one for you.",
+            "Chaque vol se prépare dans l’éditeur de vol : aérodromes, route, attentes et approches, météo et pannes. Ou laissez Départ rapide en choisir un.",
+          ),
         ),
         h(
           "div",
@@ -1490,7 +1613,7 @@ export class FlightCenter extends Modal {
               onclick: () => this.leave(() => this.hooks.planFlight()),
             },
             svgIcon(I.plan, 20),
-            "Build a flight",
+            L("Build a flight", "Préparer un vol"),
           ),
           h(
             "button",
@@ -1506,12 +1629,18 @@ export class FlightCenter extends Modal {
                   : this.openQuick(e.currentTarget as HTMLElement),
             },
             svgIcon(I.dice, 18),
-            "Quick start",
+            L("Quick start", "Départ rapide"),
             svgIcon(I.chevDown, 14),
           ),
         ),
       ),
       this.continueCard(ci),
+    );
+    const flyHead = h(
+      "div",
+      { class: "fc-sec-h fc-fly-h" },
+      h("h2", {}, L("Fly", "Voler")),
+      h("span", { class: "fc-sec-sub" }, L("The simulator: approaches, holds, the syllabus, real-world flights", "Le simulateur : approches, attentes, syllabus, vols réels")),
     );
     const tools = h(
       "div",
@@ -1605,19 +1734,16 @@ export class FlightCenter extends Modal {
         run: () => this.go({ type: "instructor" }),
         cls: "fc-tile-ins",
       }),
-      this.tile({
-        img: "steam",
-        title: groundSchoolLabel(),
-        desc:
-          uiLang() === "fr"
-            ? "Les cours de votre club : lire, essayer l’instrument, voler."
-            : "Courses from your club: read, try the instrument, fly it.",
-        meta: groundSchoolMeta(),
-        run: () => this.go({ type: "courses" }),
-        cls: "fc-tile-courses",
-      }),
     );
-    this.main.append(h("div", { class: "fc-home" }, hero, tools, tiles));
+    this.main.append(
+      h(
+        "div",
+        { class: "fc-home" },
+        slidesHero,
+        decks,
+        h("section", { class: "fc-fly", "aria-label": L("Fly", "Voler") }, flyHead, hero, tools, tiles),
+      ),
+    );
   }
 
   private continueCard(ci: ReturnType<typeof continueInfo>): HTMLElement {
@@ -1899,9 +2025,31 @@ export class FlightCenter extends Modal {
 
   // ------------------------------------------------------------------ instructor
   // ------------------------------------------------------------------ Ground school (the course library)
-  private courseLib: { destroy(): void } | null = null;
+  private courseLib: { destroy(): void; focusSearch(): void } | null = null;
   /** the course library (course/ui/library.ts, loaded on demand); a course opens academy.html in this tab */
-  private renderCourses() {
+  /** A sim item opened from the library: a lesson (its briefing deck, then the cockpit), a failure drill, a scenario
+   *  or a school circuit. */
+  openLibraryItem(t: { k: string; id: string }): boolean {
+    if (t.k === "drill") {
+      const e = listDrills(uiL()).find((x) => x.id === t.id);
+      if (!e) return false;
+      this.flyEntry(e);
+      return true;
+    }
+    const items = catalog();
+    const i =
+      t.k === "lesson"
+        ? items.find((x) => x.kind === "exercise" && x.ex?.id === t.id && !x.circuit)
+        : t.k === "scenario"
+          ? items.find((x) => x.id === `sc-${t.id}` || x.circuit?.id === t.id)
+          : undefined;
+    if (!i) return false;
+    const ir = PATHS.find((p) => p.id === "ir") ?? null;
+    this.fly(i, t.k === "lesson" && ir?.exercises.includes(t.id) ? ir : null);
+    return true;
+  }
+
+  private renderCourses(intent?: CourseIntent, program?: import("../library/programs").ProgramId) {
     const host = h("div", { class: "fc-courses" });
     this.main.append(host);
     void Promise.all([import("../course/ui/library"), import("../course/store")]).then(
@@ -1913,7 +2061,22 @@ export class FlightCenter extends Modal {
           store: st.courseStore(),
           embedded: true,
           page: "academy.html",
+          ...(intent ? { intent } : {}),
+          ...(program ? { program } : {}),
           navigate: (url) => this.leave(() => location.assign(url)),
+          // the simulator's own items fly from here, without leaving the page
+          openSim: (t) => this.openLibraryItem(t),
+          editProcedure: (id) => this.openProc(id),
+          clubDrills: () =>
+            listDrills(uiL())
+              .filter((e) => e.kind === "club")
+              .map((e) => ({
+                id: e.id,
+                name: e.name,
+                desc: e.desc,
+                ...(e.phase ? { phase: e.phase } : {}),
+                ...(e.assignee ? { assignee: e.assignee } : {}),
+              })),
         });
       },
     );
@@ -3285,4 +3448,23 @@ export class FlightCenter extends Modal {
       );
     else if (i.sc) this.hooks.flyScenario(i.sc, this.wx, { ...this.assess });
   }
+}
+
+/**
+ * The top bar's Courses button (main.ts): the slide decks are one click away from the cockpit. Its label follows
+ * the FR / EN switch.
+ */
+export function coursesTopbarButton(open: () => void): HTMLElement {
+  const lbl = h("span", { class: "lbl" });
+  const b = h("button", { class: "btn tb-courses", type: "button", onclick: open }, svgIcon(I.slides), lbl);
+  const sync = () => {
+    const fr = uiLang() === "fr";
+    lbl.textContent = fr ? "Cours" : "Courses";
+    b.title = fr
+      ? "Cours en diapositives : ouvrir, créer, présenter à une classe"
+      : "Slide courses: open, create, present to a class";
+  };
+  sync();
+  onLangChange(sync);
+  return b;
 }

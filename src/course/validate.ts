@@ -18,6 +18,7 @@ import type {
   CalcUnit,
   ColorToken,
   Course,
+  CourseProgram,
   CourseShape,
   Criterion,
   DiagramSpec,
@@ -153,6 +154,11 @@ const TEXT_STYLES = keys<TextStyle>({
   number: 1,
   quote: 1,
   mono: 1,
+  lead: 1,
+  small: 1,
+  eyebrow: 1,
+  foot: 1,
+  formula: 1,
 });
 const COLOR_NAMES = keys<Exclude<ColorToken, `#${string}`>>({
   bg: 1,
@@ -170,6 +176,16 @@ const COLOR_NAMES = keys<Exclude<ColorToken, `#${string}`>>({
   green: 1,
   amber: 1,
   white: 1,
+  ink2: 1,
+  rule: 1,
+  ruleStrong: 1,
+  raise: 1,
+  path: 1,
+  sel: 1,
+  nav: 1,
+  key: 1,
+  stop: 1,
+  accentInk: 1,
 });
 const CONTROLS = keys<StageControl>({
   obs1: 1,
@@ -213,6 +229,13 @@ const READOUTS = keys<ReadoutId>({
   wca: 1,
 });
 const LAYOUTS = keys<SlideLayoutId>({
+  cover: 1,
+  bigNumber: 1,
+  heroDiagram: 1,
+  formula: 1,
+  quiz: 1,
+  recap: 1,
+  ready: 1,
   title: 1,
   section: 1,
   twoColumn: 1,
@@ -232,6 +255,18 @@ const THEMES = keys<ThemeId>({
   brand: 1,
 });
 const SHAPES = keys<CourseShape>({ course: 1, lesson: 1, briefing: 1 });
+const COURSE_PROGRAMS = new Set<string>(
+  Object.keys({
+    lapl: 1,
+    ppl: 1,
+    "lapl-ppl": 1,
+    night: 1,
+    ir: 1,
+    atpl: 1,
+    club: 1,
+    instructors: 1,
+  } satisfies Record<CourseProgram, 1>),
+);
 const GAUGES = keys<InstrumentGauge>({
   asi: 1,
   ai: 1,
@@ -648,6 +683,27 @@ function validateInto(x: unknown, out: CourseIssue[], host: ValidateContext) {
         "Tags must be lower-case words",
         "Les étiquettes doivent être en minuscules",
       ),
+    );
+  if (
+    course.program !== undefined &&
+    !(Array.isArray(course.program) ? course.program : [course.program]).every(
+      (x) => isStr(x) && COURSE_PROGRAMS.has(x),
+    )
+  )
+    push(
+      cx,
+      "warn",
+      "shape",
+      "program",
+      L("Unknown library program", "Programme de bibliothèque inconnu"),
+    );
+  if (course.level !== undefined && ![1, 2, 3].includes(course.level))
+    push(
+      cx,
+      "warn",
+      "shape",
+      "level",
+      L("The level is 1, 2 or 3", "Le niveau vaut 1, 2 ou 3"),
     );
   if (course.briefingFor?.step)
     stepRef(cx, course.briefingFor.step, "briefingFor.step");

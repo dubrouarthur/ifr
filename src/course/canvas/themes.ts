@@ -1,9 +1,10 @@
-// Ground school — designed slides: the four restrained themes (package N).
-//   cockpit    dark instrument-room look, the default (instruments sit naturally on it)
-//   classroom  light, white paper, the look of the editor mockups
-//   projector  high contrast for a washed-out projector in a lit room (white, black, heavier type, larger sizes)
-//   brand      classroom with the school's colour as the accent and its logo
-// A theme only defines colour tokens and ten type styles: no gradients, glows or shadows by construction.
+// Ground school — designed slides: the two themes of the slide design system (SPEC slides v2 §2, §4).
+//   classroom  light, warm paper: the default for every course (theory, procedures, briefings, anything printed)
+//   cockpit    dark: an opt-in for a course that genuinely needs a dark slide (a night or IMC scene)
+// One theme per course. The older ids load as their nearest: 'projector' = classroom + the bright-projector boost
+// (heavier type, mute → ink-2, white paper), 'brand' = classroom with the school's colour as the accent.
+// A theme defines colour tokens (every text token ≥ 4.5:1 on its background) and the type scale in logical px on
+// the 1920 × 1080 canvas, with a hard floor of 24 px. No gradients, glows or shadows by construction.
 import type {
   ColorToken,
   SchoolBrand,
@@ -13,225 +14,271 @@ import type {
   TypeStyleDef,
 } from "../types";
 
-export const THEME_IDS: readonly ThemeId[] = [
+/** The themes an author picks from (the editor's theme picker). */
+export const THEME_IDS: readonly ThemeId[] = ["classroom", "cockpit"];
+/** Every id a stored course may carry (validation). */
+export const ALL_THEME_IDS: readonly ThemeId[] = [
   "cockpit",
   "classroom",
   "projector",
   "brand",
 ];
 
-const FONTS = {
-  display: '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
-  body: '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
-  mono: '"JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace',
-};
+/** The smallest text on a slide, in logical px (diagrams included): 17.2 CSS px at 1440 × 900, 12.4 at 1024. */
+export const MIN_TEXT_PX = 24;
+
+const INTER =
+  '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+// no monospace on slides: code and formulas are set in Inter with tabular figures
+const FONTS = { display: INTER, body: INTER, mono: INTER };
 
 type Named = Exclude<ColorToken, `#${string}`>;
 
+/** The type scale (SPEC §2). Older role names are aliases of the new ones. */
 function styles(
-  over: Partial<Record<TextStyle, Partial<TypeStyleDef>>> = {},
-  k = 1,
+  accentRole: ColorToken = "accent",
+  boost = false,
 ): Record<TextStyle, TypeStyleDef> {
-  const base: Record<TextStyle, TypeStyleDef> = {
-    display: {
-      font: "display",
-      size: 104,
-      weight: 700,
-      lineHeight: 1.04,
-      tracking: -0.022,
-      color: "text",
-    },
-    title: {
-      font: "display",
-      size: 68,
-      weight: 700,
-      lineHeight: 1.1,
-      tracking: -0.016,
-      color: "text",
-    },
-    subtitle: {
-      font: "body",
-      size: 38,
-      weight: 400,
-      lineHeight: 1.32,
-      tracking: -0.004,
-      color: "muted",
-    },
-    heading: {
-      font: "display",
-      size: 42,
-      weight: 600,
-      lineHeight: 1.18,
-      tracking: -0.01,
-      color: "text",
-    },
-    body: {
-      font: "body",
-      size: 30,
-      weight: 400,
-      lineHeight: 1.48,
-      color: "text",
-    },
-    caption: {
-      font: "body",
-      size: 23,
-      weight: 400,
-      lineHeight: 1.4,
-      color: "muted",
-    },
-    label: {
-      font: "body",
-      size: 21,
-      weight: 600,
-      lineHeight: 1.25,
-      tracking: 0.12,
-      upper: true,
-      color: "amber",
-    },
-    number: {
-      font: "display",
-      size: 150,
-      weight: 700,
-      lineHeight: 1,
-      tracking: -0.03,
-      color: "accent",
-    },
-    quote: {
-      font: "display",
-      size: 44,
-      weight: 500,
-      lineHeight: 1.3,
-      tracking: -0.01,
-      color: "text",
-    },
-    mono: {
-      font: "mono",
-      size: 30,
-      weight: 500,
-      lineHeight: 1.45,
-      color: "text",
-    },
+  const w = (n: 400 | 500 | 600): 400 | 500 | 600 | 700 =>
+    boost ? ((n + 100) as 500 | 600 | 700) : n;
+  const mute: ColorToken = boost ? "ink2" : "muted";
+  const display: TypeStyleDef = {
+    font: "display",
+    size: 120,
+    weight: w(600),
+    lineHeight: 1.0,
+    tracking: -0.032,
+    color: "text",
   };
-  const out = {} as Record<TextStyle, TypeStyleDef>;
-  for (const id of Object.keys(base) as TextStyle[]) {
-    const s = { ...base[id], ...(over[id] ?? {}) };
-    out[id] = { ...s, size: Math.round(s.size * k) };
-  }
-  return out;
+  const title: TypeStyleDef = {
+    font: "display",
+    size: 72,
+    weight: w(600),
+    lineHeight: 1.08,
+    tracking: -0.022,
+    color: "text",
+  };
+  const heading: TypeStyleDef = {
+    font: "display",
+    size: 44,
+    weight: w(600),
+    lineHeight: 1.18,
+    tracking: -0.012,
+    color: "text",
+  };
+  const lead: TypeStyleDef = {
+    font: "body",
+    size: 40,
+    weight: w(400),
+    lineHeight: 1.35,
+    tracking: -0.008,
+    color: "ink2",
+  };
+  const body: TypeStyleDef = {
+    font: "body",
+    size: 34,
+    weight: w(400),
+    lineHeight: 1.42,
+    tracking: -0.004,
+    color: "ink2",
+  };
+  const small: TypeStyleDef = {
+    font: "body",
+    size: 28,
+    weight: w(400),
+    lineHeight: 1.4,
+    color: mute,
+  };
+  const eyebrow: TypeStyleDef = {
+    font: "body",
+    size: 24,
+    weight: w(600),
+    lineHeight: 1.34,
+    tracking: 0.14,
+    upper: true,
+    color: accentRole,
+  };
+  const foot: TypeStyleDef = {
+    font: "body",
+    size: 24,
+    weight: w(500),
+    lineHeight: 1.34,
+    tracking: 0.01,
+    color: mute,
+  };
+  const number: TypeStyleDef = {
+    font: "display",
+    size: 168,
+    weight: w(600),
+    lineHeight: 0.92,
+    tracking: -0.045,
+    color: accentRole,
+  };
+  const quote: TypeStyleDef = {
+    font: "display",
+    size: 52,
+    weight: w(500),
+    lineHeight: 1.26,
+    tracking: -0.014,
+    color: "text",
+  };
+  const formula: TypeStyleDef = {
+    font: "body",
+    size: 44,
+    weight: w(500),
+    lineHeight: 1.2,
+    color: "text",
+  };
+  return {
+    display,
+    title,
+    heading,
+    lead,
+    subtitle: lead,
+    body,
+    small,
+    caption: small,
+    eyebrow,
+    label: eyebrow,
+    foot,
+    number,
+    quote,
+    formula,
+    mono: formula,
+  };
 }
 
+/** Token values of the two themes (SPEC §4 table; ratios measured on bg). */
+const COCKPIT = {
+  bg: "#0d1117",
+  raise: "#151b23",
+  rule: "#2a333e",
+  ruleStrong: "#3d4855",
+  ink: "#eef2f6",
+  ink2: "#c3ccd5",
+  mute: "#8b98a6",
+  accent: "#6cb4ff",
+  accentInk: "#06121f",
+  path: "#ee72dc",
+  sel: "#5ad4ec",
+  nav: "#5bd98e",
+  key: "#f4bb4a",
+  stop: "#ff7a7a",
+};
+const CLASSROOM = {
+  bg: "#fbfaf7",
+  raise: "#f1f0eb",
+  rule: "#e2e0d9",
+  ruleStrong: "#c9c6bd",
+  ink: "#14181f",
+  ink2: "#353c47",
+  mute: "#5d6671",
+  accent: "#1d5fd1",
+  accentInk: "#ffffff",
+  path: "#a8238f",
+  sel: "#0b6f88",
+  nav: "#17763c",
+  key: "#a04d06",
+  stop: "#b42323",
+};
+type Tokens = typeof COCKPIT;
+
+/** The full colour map of a theme: the v2 tokens plus the older names mapped onto them. */
+function colorsOf(t: Tokens): SlideTheme["colors"] {
+  return {
+    bg: t.bg,
+    surface: t.raise,
+    raise: t.raise,
+    line: t.rule,
+    rule: t.rule,
+    ruleStrong: t.ruleStrong,
+    text: t.ink,
+    ink2: t.ink2,
+    muted: t.mute,
+    accent: t.accent,
+    accentInk: t.accentInk,
+    brand: t.accent,
+    ok: t.nav,
+    nav: t.nav,
+    green: t.nav,
+    warn: t.key,
+    key: t.key,
+    amber: t.key,
+    danger: t.stop,
+    stop: t.stop,
+    magenta: t.path,
+    path: t.path,
+    cyan: t.sel,
+    sel: t.sel,
+    white: "#ffffff",
+  };
+}
+
+const COCKPIT_THEME: SlideTheme = {
+  id: "cockpit",
+  name: { en: "Cockpit (dark)", fr: "Cockpit (sombre)" },
+  dark: true,
+  colors: colorsOf(COCKPIT),
+  fonts: FONTS,
+  styles: styles(),
+  bezel: { color: "#05070a", radius: 28 },
+};
+const CLASSROOM_THEME: SlideTheme = {
+  id: "classroom",
+  name: { en: "Classroom (light)", fr: "Salle de cours (clair)" },
+  dark: false,
+  colors: colorsOf(CLASSROOM),
+  fonts: FONTS,
+  styles: styles(),
+  bezel: { color: "#0d1116", radius: 28 },
+};
+
+/** The bright-projector boost (SPEC §4): weights +100, mute → ink-2, white paper on the light theme. */
+export function projectorBoost(theme: SlideTheme): SlideTheme {
+  const colors = { ...theme.colors };
+  colors.muted = colors.ink2;
+  if (!theme.dark) colors.bg = "#ffffff";
+  return { ...theme, colors, styles: styles("accent", true) };
+}
+/** A school's colour as the accent (SPEC §4): made readable on the theme's background (4.5:1 for text). */
+export function brandAccent(theme: SlideTheme, hex: string): SlideTheme {
+  if (!parseHex(hex)) return theme;
+  const colors = { ...theme.colors };
+  // the logo keeps the school's own colour; the accent (text, markers) is made readable
+  colors.brand = hex;
+  colors.accent = ensureContrast(hex, colors.bg, 4.5);
+  colors.accentInk =
+    contrastRatio("#ffffff", colors.accent) >= 4.5 ? "#ffffff" : "#06121f";
+  return { ...theme, colors };
+}
+
+/** Every theme id → its definition (the older ids resolve to their nearest, see resolveTheme). */
 export const THEMES: Record<ThemeId, SlideTheme> = {
-  cockpit: {
-    id: "cockpit",
-    name: { en: "Cockpit", fr: "Cockpit" },
-    dark: true,
-    colors: {
-      bg: "#0c1015",
-      surface: "#141a21",
-      line: "#28323d",
-      text: "#e9eef3",
-      muted: "#93a0ad",
-      accent: "#3ea6ff",
-      brand: "#3ea6ff",
-      ok: "#2fcf7a",
-      warn: "#ffb020",
-      danger: "#ff5a5f",
-      magenta: "#e04ad0",
-      cyan: "#22d3ee",
-      green: "#2fcf7a",
-      amber: "#ffb020",
-      white: "#ffffff",
-    },
-    fonts: FONTS,
-    styles: styles(),
-    bezel: { color: "#05070a", radius: 18 },
-  },
-  classroom: {
-    id: "classroom",
-    name: { en: "Classroom", fr: "Salle de cours" },
-    dark: false,
-    colors: {
-      bg: "#ffffff",
-      surface: "#f3f5f8",
-      line: "#dce2e9",
-      text: "#111827",
-      muted: "#5a6575",
-      accent: "#1665d8",
-      brand: "#1665d8",
-      ok: "#13804a",
-      warn: "#b45309",
-      danger: "#c62828",
-      magenta: "#b3249e",
-      cyan: "#0e7490",
-      green: "#13804a",
-      amber: "#b45309",
-      white: "#ffffff",
-    },
-    fonts: FONTS,
-    styles: styles({ label: { color: "accent" }, number: { color: "accent" } }),
-    bezel: { color: "#0d1116", radius: 18 },
-  },
+  cockpit: COCKPIT_THEME,
+  classroom: CLASSROOM_THEME,
   projector: {
+    ...projectorBoost(CLASSROOM_THEME),
     id: "projector",
-    name: { en: "Projector", fr: "Projecteur" },
-    dark: false,
-    colors: {
-      bg: "#ffffff",
-      surface: "#eef0f3",
-      line: "#1a1a1a",
-      text: "#000000",
-      muted: "#2b2b2b",
-      accent: "#0040b8",
-      brand: "#0040b8",
-      ok: "#006b2e",
-      warn: "#8a4b00",
-      danger: "#b00000",
-      magenta: "#a1008a",
-      cyan: "#005f73",
-      green: "#006b2e",
-      amber: "#8a4b00",
-      white: "#ffffff",
+    name: {
+      en: "Classroom, bright projector",
+      fr: "Salle de cours, projecteur lumineux",
     },
-    fonts: FONTS,
-    styles: styles(
-      {
-        subtitle: { weight: 500, color: "muted" },
-        body: { weight: 500 },
-        caption: { weight: 500, color: "muted" },
-        label: { weight: 700, color: "accent" },
-        heading: { weight: 700 },
-        mono: { weight: 600 },
-      },
-      1.08,
-    ),
-    bezel: { color: "#000000", radius: 12 },
   },
   brand: {
+    ...CLASSROOM_THEME,
     id: "brand",
-    name: { en: "School brand", fr: "Couleurs de l’école" },
-    dark: false,
-    colors: {
-      bg: "#ffffff",
-      surface: "#f4f5f7",
-      line: "#dfe3e8",
-      text: "#121722",
-      muted: "#5a6575",
-      accent: "#1665d8",
-      brand: "#1665d8",
-      ok: "#13804a",
-      warn: "#b45309",
-      danger: "#c62828",
-      magenta: "#b3249e",
-      cyan: "#0e7490",
-      green: "#13804a",
-      amber: "#b45309",
-      white: "#ffffff",
+    name: {
+      en: "Classroom, school colour",
+      fr: "Salle de cours, couleur de l’école",
     },
-    fonts: FONTS,
-    styles: styles({ label: { color: "brand" }, number: { color: "brand" } }),
-    bezel: { color: "#0d1116", radius: 18 },
   },
 };
+
+/** The theme a stored id stands for in the two-theme system (projector, brand → classroom). */
+export const baseThemeId = (
+  id: ThemeId | undefined,
+): "cockpit" | "classroom" =>
+  id === "cockpit" ? "cockpit" : "classroom";
 
 // ------------------------------------------------------------------ colour maths (WCAG 2.x)
 export function parseHex(hex: string): [number, number, number] | null {
@@ -282,6 +329,17 @@ export function shade(hex: string, t: number): string {
     rgb[2] + (to - rgb[2]) * k,
   ]);
 }
+/** `a` mixed over `b` with opacity t (a tint over the background, the colour a halo must match). */
+export function mix(a: string, b: string, t: number): string {
+  const x = parseHex(a);
+  const y = parseHex(b);
+  if (!x || !y) return a;
+  return toHex([
+    y[0] + (x[0] - y[0]) * t,
+    y[1] + (x[1] - y[1]) * t,
+    y[2] + (x[2] - y[2]) * t,
+  ]);
+}
 /** The colour darkened (on a light bg) or lightened (on a dark bg) until it reaches `min` contrast against bg. */
 export function ensureContrast(fg: string, bg: string, min = 4.5): string {
   if (!parseHex(fg)) return fg;
@@ -296,24 +354,33 @@ export const isThemeId = (x: unknown): x is ThemeId =>
   typeof x === "string" && x in THEMES;
 
 /**
- * The theme a slide is drawn with: the slide's override, else the course theme, else 'cockpit'.
- * 'brand' takes the school's colour as `brand` and `accent` (darkened for text when it fails 4.5:1 on white).
+ * The theme a course is drawn with (one per course; a slide's own `theme` is ignored, SPEC §4).
+ * 'projector' → classroom + boost; 'brand' → classroom with the school's colour as the accent. `boost` is the
+ * presenter's "Bright projector" toggle, for either theme.
  */
 export function resolveTheme(
   id: ThemeId | undefined,
   brand?: SchoolBrand,
+  o: { boost?: boolean } = {},
 ): SlideTheme {
-  const base = THEMES[isThemeId(id) ? id : "cockpit"];
-  if (!brand || !parseHex(brand.color)) return base;
-  const colors = { ...base.colors };
-  if (base.id === "brand") {
-    colors.brand = brand.color;
-    colors.accent = ensureContrast(brand.color, colors.bg, 4.5);
-  } else {
+  // light by default: a course without a theme (or with an unknown one) is drawn in the classroom theme
+  const known = isThemeId(id) ? id : "classroom";
+  let t = THEMES[known];
+  if (o.boost && known !== "projector")
+    t = { ...projectorBoost(t), id: t.id, name: t.name };
+  if (brand && parseHex(brand.color)) {
+    if (known === "brand") t = brandAccent(t, brand.color);
     // other themes keep their accent; the logo corner uses the school's colour (made readable on the bg)
-    colors.brand = ensureContrast(brand.color, colors.bg, 3);
+    else
+      t = {
+        ...t,
+        colors: {
+          ...t.colors,
+          brand: ensureContrast(brand.color, t.colors.bg, 3),
+        },
+      };
   }
-  return { ...base, colors };
+  return t;
 }
 
 /** A colour token (or #rrggbb) of a theme; unknown values fall back to `text`. */
@@ -344,14 +411,15 @@ export function themeVars(theme: SlideTheme): Record<string, string> {
   v["--sl-font-mono"] = theme.fonts.mono;
   v["--sl-bezel"] = theme.bezel.color;
   v["--sl-bezel-r"] = `${theme.bezel.radius}px`;
-  v["--sl-accent-soft"] = alpha(theme.colors.accent, theme.dark ? 0.16 : 0.09);
+  v["--sl-accent-soft"] = alpha(theme.colors.accent, theme.dark ? 0.16 : 0.1);
   v["--sl-warn-soft"] = alpha(theme.colors.warn, theme.dark ? 0.16 : 0.1);
-  v["--sl-on-accent"] =
-    contrastRatio("#ffffff", theme.colors.accent) >= 3 ? "#ffffff" : "#000000";
+  v["--sl-ok-soft"] = alpha(theme.colors.ok, theme.dark ? 0.14 : 0.1);
+  v["--sl-stop-soft"] = alpha(theme.colors.stop, theme.dark ? 0.14 : 0.08);
+  v["--sl-on-accent"] = theme.colors.accentInk;
   return v;
 }
 
-/** The diagram widgets' palette for a theme. */
+/** The diagram widgets' palette for a theme (diagrams follow the slide theme, SPEC §4). */
 export const diagramThemeOf = (theme: SlideTheme): "dark" | "light" =>
   theme.dark ? "dark" : "light";
 
@@ -369,6 +437,7 @@ export function typeCss(
     "line-height": String(s.lineHeight),
     "letter-spacing": s.tracking ? `${s.tracking}em` : "0",
     "text-transform": s.upper ? "uppercase" : "none",
+    "font-style": s.italic ? "italic" : "normal",
     color: color(colorOverride ?? s.color, theme),
   };
 }

@@ -2,6 +2,7 @@
 // content (live instruments posed from scenes, the shipped diagrams, live readouts in the text, reveals, a Your
 // turn) and serve as starters in the builder and the gallery. Rules taught cite their source; hold entries come
 // from holdEntry() (nav/holding.ts, AIM FIG 5-3-8), never from a local table.
+import { BRAND } from "../../brand";
 import type {
   Course,
   L10n,
@@ -828,7 +829,7 @@ export const SAMPLE_BRAND: SchoolBrand = {
 
 /** The examples as a course (one designed-slide step each): the gallery, the builder's starters, the tests. */
 export function exampleCourse(
-  theme: ThemeId = "cockpit",
+  theme: ThemeId = "classroom",
   brand?: SchoolBrand,
 ): Course {
   const steps: Step[] = exampleSlides().map(
@@ -848,7 +849,7 @@ export function exampleCourse(
     rev: 1,
     updated: "2026-11-06T00:00:00.000Z",
     title: L("Designed slides: examples", "Diapositives : exemples"),
-    author: { name: "IFR Trainer", club: "Ground school" },
+    author: { name: BRAND.name, club: "Ground school" },
     langs: ["en", "fr"],
     cockpit: "steam",
     world: { kind: "training" },

@@ -1,0 +1,312 @@
+/* The cockpit briefing played as slides (SPEC slides v2 §11, mock 10): a light sheet over the paused cockpit, the
+   slide at 16:9, a bar with progress, Cancel, Previous, Next, then Start exercise. Also the deck stage (.ds-*)
+   shared with the first-run intro. */
+
+/* ---------------------------------------------------------------- the deck stage */
+.ds-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.ds-slide {
+  position: absolute;
+  inset: 0;
+}
+.ds-slide > .sl-view {
+  position: absolute;
+  inset: 0;
+}
+.ds-segs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.ds-seg {
+  flex: 0 1 28px;
+  min-width: 10px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  position: relative;
+}
+.ds-seg::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 8px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgb(20 24 31 / 0.14);
+}
+.ds-seg.done::before {
+  background: rgb(20 24 31 / 0.42);
+}
+.ds-seg.on::before {
+  background: #1d5fd1;
+}
+
+/* ---------------------------------------------------------------- the sheet */
+.modal.brief-deck {
+  /* light chrome (owner direction: light and professional); the slide keeps the course theme */
+  --bd-bg: #ffffff;
+  --bd-paper: #fbfaf7;
+  --bd-ink: #14181f;
+  --bd-mute: #5d6671;
+  --bd-rule: #e2e0d9;
+  --bd-rule-strong: #c9c6bd;
+  --bd-accent: #1d5fd1;
+  --bd-key: #a04d06;
+  width: min(1280px, calc(100vw - 64px), calc((100dvh - 168px) * 16 / 9));
+  max-height: none;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bd-bg);
+  color: var(--bd-ink);
+  border: 0;
+  border-radius: 18px;
+  box-shadow:
+    0 0 0 1px rgb(20 24 31 / 0.1),
+    0 30px 80px rgb(0 0 0 / 0.35);
+}
+.modal-bg:has(> .modal.brief-deck) {
+  background: rgb(10 14 20 / 0.5);
+  backdrop-filter: blur(6px);
+}
+.modal.brief-deck > header {
+  position: static;
+  height: 52px;
+  padding: 0 12px 0 20px;
+  gap: 16px;
+  background: var(--bd-bg);
+  border-bottom: 1px solid var(--bd-rule);
+}
+.modal.brief-deck > header h2.bd-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin: 0;
+  color: var(--bd-ink);
+}
+.bd-k {
+  flex: none;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--bd-accent);
+}
+.bd-t {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 600;
+}
+.bd-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--bd-mute);
+  white-space: nowrap;
+}
+.bd-chip i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--bd-key);
+}
+.modal.brief-deck > header .x {
+  width: 40px;
+  height: 40px;
+  color: var(--bd-mute);
+  font-size: 22px;
+}
+.modal.brief-deck > header .x:hover {
+  color: var(--bd-ink);
+  background: #f1f0eb;
+}
+.modal.brief-deck > .body {
+  padding: 0;
+  background: var(--bd-bg);
+}
+.bd-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: var(--bd-paper);
+  border-bottom: 1px solid var(--bd-rule);
+}
+.bd-stage.loading::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 28px;
+  height: 28px;
+  margin: -14px;
+  border-radius: 50%;
+  border: 3px solid rgb(20 24 31 / 0.1);
+  border-top-color: var(--bd-accent);
+  animation: bd-spin 0.9s linear infinite;
+}
+@keyframes bd-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.modal.brief-deck > footer {
+  position: static;
+  min-height: 68px;
+  padding: 0 16px;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-start;
+  background: var(--bd-bg);
+  border-top: 1px solid var(--bd-rule);
+}
+.bd-prog {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.bd-prog .ds-segs {
+  max-width: 340px;
+}
+.bd-n {
+  font-size: 13px;
+  color: var(--bd-mute);
+  white-space: nowrap;
+}
+.bd-sp,
+.bd-hint {
+  flex: 1;
+  min-width: 0;
+}
+.bd-hint {
+  font-size: 13.5px;
+  color: var(--bd-key);
+  text-align: right;
+}
+.modal.brief-deck footer .btn {
+  height: 44px;
+  padding: 0 16px;
+  border-radius: 10px;
+  font-size: 14.5px;
+  font-weight: 600;
+  background: transparent;
+  color: var(--bd-ink);
+  border: 1px solid var(--bd-rule-strong);
+}
+.modal.brief-deck footer .btn:hover:not([disabled]) {
+  background: #f1f0eb;
+}
+.modal.brief-deck footer .btn.ghost,
+.modal.brief-deck footer .btn.link {
+  border-color: transparent;
+}
+.modal.brief-deck footer .btn.link {
+  color: var(--bd-mute);
+  font-weight: 500;
+  padding: 0 10px;
+}
+.modal.brief-deck footer .btn.primary {
+  background: var(--bd-accent);
+  border-color: var(--bd-accent);
+  color: #ffffff;
+  padding: 0 20px;
+}
+.modal.brief-deck footer .btn.primary:hover:not([disabled]) {
+  background: #174fb0;
+}
+.modal.brief-deck footer .btn[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+.modal.brief-deck :is(button):focus-visible {
+  outline: 2px solid var(--bd-accent);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+/* the text briefing (the slide engine could not load): the light window it used to be */
+.modal.brief-deck.bd-text {
+  width: min(760px, 100%);
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  background: var(--surface);
+  color: var(--text);
+}
+.modal.brief-deck.bd-text > header,
+.modal.brief-deck.bd-text > .body,
+.modal.brief-deck.bd-text > footer {
+  background: var(--surface);
+  color: var(--text);
+}
+.modal.brief-deck.bd-text > .body {
+  padding: 18px 20px;
+}
+.modal.brief-deck.bd-text footer .btn {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+
+@media (max-width: 900px) {
+  .bd-chip {
+    display: none;
+  }
+  .bd-prog .ds-segs {
+    display: none;
+  }
+}
+@media (max-width: 700px) {
+  .bd-skip,
+  .bd-plate {
+    display: none;
+  }
+}
+@media (pointer: coarse) {
+  .ds-seg {
+    height: 44px;
+  }
+  /* 44 px touch targets: the close button and the link buttons of the bar */
+  .modal.brief-deck > header .x {
+    width: 44px;
+    height: 44px;
+  }
+  .bd-skip,
+  .bd-gate {
+    min-height: 44px;
+  }
+  .ds-seg::before {
+    top: 20px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bd-stage.loading::after {
+    animation: none;
+  }
+}
+.modal.brief-deck footer .btn.link.bd-gate {
+  flex: 1;
+  justify-content: flex-end;
+  color: var(--bd-key);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+/* a horizontal swipe on the slide moves through the deck (ui/learn.ts BriefingModal.swipe) */
+.bd-stage {
+  touch-action: pan-y;
+}

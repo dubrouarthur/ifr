@@ -1,3 +1,4 @@
+import { BRAND } from '../brand';
 import { h, clear, fmtTime, store } from './dom';
 import { svgIcon, I } from './icons';
 import { RouteMap, MAP_COL } from './routeMap';
@@ -430,7 +431,7 @@ export function saveFlightRecord(sim: Sim): ProcAttempt | null {
   const sig = `${a.score}|${a.acs}|${a.graded}|${Math.round(a.durationSec / 30)}`;
   if (webhookCfg().auto && webhookCfg().url && posted.get(a.id) !== sig) {
     posted.set(a.id, sig);
-    void postWebhook({ type: 'debrief', app: 'IFR Trainer', ...a, acsItems: acs.items, scoreItems: db.items, events: rec.events });
+    void postWebhook({ type: 'debrief', app: BRAND.name, ...a, acsItems: acs.items, scoreItems: db.items, events: rec.events });
   }
   return a;
 }
@@ -476,7 +477,7 @@ export class DebriefModal extends Modal {
     }
     const title = rec.lesson?.title ?? (sc?.id === 'lesson' ? 'Exercise' : sc?.name ?? 'Free flight');
     this.body.append(
-      h('div', { class: 'report-head' }, h('h2', { style: 'margin:0' }, `IFR Trainer — ${rec.mode === 'checkride' ? 'Checkride report' : 'Training debrief'}`), h('div', {}, `Student: ${rec.student || '—'} · ${new Date().toLocaleString()} · ${title}`)),
+      h('div', { class: 'report-head' }, h('h2', { style: 'margin:0' }, `${BRAND.name} — ${rec.mode === 'checkride' ? 'Checkride report' : 'Training debrief'}`), h('div', {}, `Student: ${rec.student || '—'} · ${new Date().toLocaleString()} · ${title}`)),
     );
     const sub = [rec.mode === 'checkride' ? 'Checkride' : 'Training', rec.student, title, db.approachName, `${fmtTime(db.durationSec)} flight time`].filter(Boolean).join(' · ');
     const penCell = (i: ScoreItem) =>

@@ -68,7 +68,7 @@ import {
 import { UNIT_LABEL } from "../calc/text";
 import { unitsLike } from "../calc/units";
 import { LAYOUTS, layoutCanvas } from "../canvas/layouts";
-import { THEMES, THEME_IDS } from "../canvas/themes";
+import { baseThemeId, THEMES, THEME_IDS } from "../canvas/themes";
 import { renderThumb } from "../canvas/render";
 import { blockLabel } from "../canvas/blocks";
 import type { EditorCommand } from "../canvas/editorCore";
@@ -568,33 +568,60 @@ const ALL_CONTROLS = Object.keys(CONTROL_LABEL) as StageControl[];
 const STYLE_LABEL: Record<TextStyle, L10n> = {
   display: L("Display", "Affiche"),
   title: L("Title", "Titre"),
-  subtitle: L("Subtitle", "Sous-titre"),
+  lead: L("Lead", "Chapeau"),
+  subtitle: L("Lead", "Chapeau"),
   heading: L("Heading", "Intertitre"),
   body: L("Body", "Texte"),
-  caption: L("Caption", "Légende"),
-  label: L("Label", "Étiquette"),
-  number: L("Number", "Chiffre"),
+  small: L("Small", "Petit"),
+  caption: L("Small", "Petit"),
+  eyebrow: L("Eyebrow", "Surtitre"),
+  label: L("Eyebrow", "Surtitre"),
+  foot: L("Source line", "Ligne de source"),
+  number: L("Big number", "Grand chiffre"),
   quote: L("Quote", "Citation"),
-  mono: L("Mono", "Mono"),
+  formula: L("Formula", "Formule"),
+  mono: L("Formula", "Formule"),
 };
+/** the roles of the type scale an author picks from (the older names are aliases, SPEC slides v2 §2) */
+const STYLE_PICK: TextStyle[] = [
+  "display",
+  "title",
+  "lead",
+  "heading",
+  "body",
+  "small",
+  "eyebrow",
+  "foot",
+  "number",
+  "quote",
+  "formula",
+];
+const STYLE_ALIAS: Partial<Record<TextStyle, TextStyle>> = {
+  subtitle: "lead",
+  caption: "small",
+  label: "eyebrow",
+  mono: "formula",
+};
+// the colours an author picks: ink, the semantic aviation colours (SPEC slides v2 §4), white for photos
 const TOKENS: Exclude<ColorToken, `#${string}`>[] = [
   "text",
+  "ink2",
   "muted",
   "accent",
-  "brand",
-  "ok",
-  "warn",
-  "danger",
-  "magenta",
-  "cyan",
-  "green",
-  "amber",
+  "path",
+  "sel",
+  "nav",
+  "key",
+  "stop",
   "white",
-  "surface",
-  "line",
-  "bg",
 ];
 const TOKEN_SWATCH: Record<string, string> = {
+  ink2: "#353c47",
+  path: "#a8238f",
+  sel: "#0b6f88",
+  nav: "#17763c",
+  key: "#a04d06",
+  stop: "#b42323",
   text: "#111827",
   muted: "#6b7280",
   accent: "#0b63ce",
@@ -950,20 +977,37 @@ export class Inspector {
   /** Re-draw (after a step change, an undo, a selection change). Keeps the tab when it still applies. */
   render() {
     const step = this.host.step;
+    if (!step) {
+      // a course with no step yet (the builder shows the starter decks): nothing to inspect
+      this.stepId = "";
+      this.tabsEl.replaceChildren();
+      this.body.replaceChildren(
+        h(
+          "p",
+          { class: "ce-note muted ce-insp-empty" },
+          this.t(
+            "Pick a deck or a first slide: its properties show here.",
+            "Choisissez une présentation ou une première diapo : ses propriétés s’affichent ici.",
+          ),
+        ),
+      );
+      return;
+    }
     const tabs = inspectorTabs(step);
     if (step.id !== this.stepId) {
       this.stepId = step.id;
-      this.tab = this.tab && tabs.includes(this.tab)
-        ? this.tab
-        : step.slide
-          ? "block"
-          : tabs.includes("stage") &&
-              step.kind !== "fly" &&
-              step.kind !== "quiz"
-            ? step.kind === "page"
-              ? "reader"
-              : "stage"
-            : tabs[0];
+      this.tab =
+        this.tab && tabs.includes(this.tab)
+          ? this.tab
+          : step.slide
+            ? "block"
+            : tabs.includes("stage") &&
+                step.kind !== "fly" &&
+                step.kind !== "quiz"
+              ? step.kind === "page"
+                ? "reader"
+                : "stage"
+              : tabs[0];
       this.sceneForm = null;
       this.previewSeed = 1;
     }
@@ -1665,7 +1709,10 @@ export class Inspector {
                   x !== undefined &&
                   set({
                     kind: "calc",
-                    calc: { ...(d.calc as object), [k]: x } as unknown as typeof d.calc,
+                    calc: {
+                      ...(d.calc as object),
+                      [k]: x,
+                    } as unknown as typeof d.calc,
                   }),
               ),
             ),
@@ -3460,12 +3507,10 @@ export class Inspector {
     const targetFields: Kid[] = [];
     if (tg.kind === "scene") {
       targetFields.push(
-        this.sceneGroup(
-          tg.scene,
-          (id) =>
-            set((x) => {
-              (x.target as { scene: string }).scene = id;
-            }),
+        this.sceneGroup(tg.scene, (id) =>
+          set((x) => {
+            (x.target as { scene: string }).scene = id;
+          }),
         ),
       );
       targetFields.push(
@@ -3704,7 +3749,10 @@ export class Inspector {
             [
               {
                 value: "thisStep" as const,
-                label: this.t("This step (debrief)", "Cette étape (débriefing)"),
+                label: this.t(
+                  "This step (debrief)",
+                  "Cette étape (débriefing)",
+                ),
               },
               {
                 value: "nextStep" as const,
@@ -4061,8 +4109,8 @@ export class Inspector {
       return [
         note(
           this.t(
-            "Select a block on the slide, or add one from the toolbar.",
-            "Sélectionnez un bloc sur la diapositive, ou ajoutez-en un depuis la barre.",
+            "Select a block on the slide (Shift adds to it, right click or a long press opens its menu), or add one from the rail on the left: templates, text, instruments, diagrams.",
+            "Sélectionnez un bloc sur la diapo (Maj l’ajoute à la sélection, clic droit ou appui long ouvre son menu), ou ajoutez-en un depuis le rail à gauche : modèles, texte, instruments, schémas.",
           ),
           "",
         ),
@@ -4070,9 +4118,13 @@ export class Inspector {
       ];
     // a group (an instrument with its markers): edit its main block, the group stays together
     const grp = sel[0].frame.group;
-    const grouped = sel.length > 1 && !!grp && sel.every((x) => x.frame.group === grp);
+    const grouped =
+      sel.length > 1 && !!grp && sel.every((x) => x.frame.group === grp);
     const main = grouped
-      ? [...sel].sort((a, b) => rank(b) - rank(a) || b.frame.w * b.frame.h - a.frame.w * a.frame.h)[0]
+      ? [...sel].sort(
+          (a, b) =>
+            rank(b) - rank(a) || b.frame.w * b.frame.h - a.frame.w * a.frame.h,
+        )[0]
       : null;
     if (sel.length > 1 && !main)
       return [
@@ -4153,14 +4205,30 @@ export class Inspector {
         "div",
         { class: "ce-blockhd" },
         h("b", {}, blockLabel(b, this.lang)),
-        h("span", { class: "ce-tag" }, main ? `${blockKindLabel(b.kind, this.lang)} + ${sel.length - 1}` : blockKindLabel(b.kind, this.lang)),
+        h(
+          "span",
+          { class: "ce-tag" },
+          main
+            ? `${blockKindLabel(b.kind, this.lang)} + ${sel.length - 1}`
+            : blockKindLabel(b.kind, this.lang),
+        ),
       ),
       main
         ? h(
             "div",
             { class: "ce-row" },
-            note(this.t(`Grouped with ${sel.length - 1} block${sel.length > 2 ? "s" : ""}: they move together.`, `Groupé avec ${sel.length - 1} bloc${sel.length > 2 ? "s" : ""} : ils bougent ensemble.`), "muted"),
-            btn(this.t("Ungroup", "Dissocier"), () => this.host.runCanvas({ k: "ungroup" }), { cls: "sm" }),
+            note(
+              this.t(
+                `Grouped with ${sel.length - 1} block${sel.length > 2 ? "s" : ""}: they move together.`,
+                `Groupé avec ${sel.length - 1} bloc${sel.length > 2 ? "s" : ""} : ils bougent ensemble.`,
+              ),
+              "muted",
+            ),
+            btn(
+              this.t("Ungroup", "Dissocier"),
+              () => this.host.runCanvas({ k: "ungroup" }),
+              { cls: "sm" },
+            ),
           )
         : null,
     ];
@@ -4456,10 +4524,10 @@ export class Inspector {
           ),
           group(T("Style", "Style"), [
             chips(
-              (Object.keys(STYLE_LABEL) as TextStyle[]).map((s) => ({
+              STYLE_PICK.map((s) => ({
                 value: s,
                 label: tr(STYLE_LABEL[s], this.lang),
-                on: b.style === s,
+                on: (STYLE_ALIAS[b.style] ?? b.style) === s,
               })),
               (s) => setB((x) => ((x as typeof b).style = s)),
             ),
@@ -5263,7 +5331,11 @@ export class Inspector {
           const row = h(
             "button",
             { type: "button", class: `ce-layer${sel.has(b.id) ? " on" : ""}` },
-            h("span", { class: "ce-layer-k" }, blockKindLabel(b.kind, this.lang)),
+            h(
+              "span",
+              { class: "ce-layer-k" },
+              blockKindLabel(b.kind, this.lang),
+            ),
             h("span", { class: "ce-layer-n" }, blockLabel(b, this.lang)),
             b.reveal
               ? h(
@@ -5303,8 +5375,7 @@ export class Inspector {
             ...(c.scene ? { scene: c.scene } : {}),
             title: s.title,
           });
-          if (c.theme) next.theme = c.theme;
-          else delete next.theme;
+          delete next.theme;
           this.host.setSlide(next);
           this.host.toast(
             this.t("Layout applied", "Mise en page appliquée"),
@@ -5313,30 +5384,34 @@ export class Inspector {
           this.render();
         }),
       ]),
-      group(this.t("Theme", "Thème"), [
-        themePicker(this.lang, c.theme ?? course.theme ?? "cockpit", (id) =>
-          setC((x) => (x.theme = id)),
+      group(this.t("Course theme", "Thème du cours"), [
+        // one theme per course (SPEC slides v2 §4): picking here changes every slide
+        themePicker(this.lang, baseThemeId(course.theme), (id) => {
+          this.host.setCourse(
+            {
+              ...course,
+              theme: id,
+              steps: course.steps.map((x) => {
+                if (!x.slide?.theme) return x;
+                const { theme: _t, ...rest } = x.slide;
+                void _t;
+                return { ...x, slide: rest };
+              }),
+            },
+            undefined,
+            false,
+          );
+          setC((x) => delete x.theme);
+        }),
+        h(
+          "p",
+          { class: "ce-note muted" },
+          this.t(
+            "One theme for the whole course. Classroom (light) by default; Cockpit (dark) for a night or IMC scene.",
+            "Un thème pour tout le cours. Salle de cours (clair) par défaut ; Cockpit (sombre) pour une scène de nuit ou en IMC.",
+          ),
         ),
-        c.theme
-          ? linkBtn(
-              this.t("Use the course theme", "Utiliser le thème du cours"),
-              () => setC((x) => delete x.theme),
-            )
-          : null,
-        c.theme && c.theme !== (course.theme ?? "cockpit")
-          ? linkBtn(
-              this.t("Make it the course theme", "En faire le thème du cours"),
-              () => {
-                this.host.setCourse(
-                  { ...course, theme: c.theme },
-                  undefined,
-                  false,
-                );
-                setC((x) => delete x.theme);
-              },
-            )
-          : null,
-        (c.theme ?? course.theme) === "brand" ? this.brandFields() : null,
+        course.theme === "brand" ? this.brandFields() : null,
       ]),
       group(this.t("Background", "Fond"), [
         this.colorChips(c.background?.color, (v) =>
@@ -5481,7 +5556,7 @@ export function layoutPicker(
       try {
         renderThumb(layoutCanvas(L.id), thumb, {
           lang,
-          theme: course.theme ?? "cockpit",
+          theme: course.theme ?? "classroom",
           brand: course.brand,
           scenes: course.scenes,
           cockpit: course.cockpit,
@@ -5559,7 +5634,22 @@ function fmtNum(v: number, lang: Lang): string {
 }
 /** Which block of a group the inspector edits: the instrument or the picture, not its markers. */
 function rank(b: SlideBlock): number {
-  return { instrument: 5, simViewport: 5, diagram: 4, image: 4, quiz: 3, calc: 3, checklist: 3, text: 2, shape: 1, callout: 1, arrow: 0, marker: 0 }[b.kind] ?? 0;
+  return (
+    {
+      instrument: 5,
+      simViewport: 5,
+      diagram: 4,
+      image: 4,
+      quiz: 3,
+      calc: 3,
+      checklist: 3,
+      text: 2,
+      shape: 1,
+      callout: 1,
+      arrow: 0,
+      marker: 0,
+    }[b.kind] ?? 0
+  );
 }
 /** A goal check with its catalogue defaults. */
 export function defaultCheck(id: GoalId): GoalCheck {
@@ -5572,6 +5662,14 @@ export function defaultCheck(id: GoalId): GoalCheck {
 /** A goal parameter's unit as the author reads it (the catalogue writes them in English). */
 function paramUnit(u: string | undefined, lang: Lang): string | undefined {
   if (!u || lang !== "fr") return u;
-  const FR: Record<string, string> = { dots: "points", dot: "point", s: "s", sec: "s", laps: "tours", lap: "tour", "ft/min": "ft/min" };
+  const FR: Record<string, string> = {
+    dots: "points",
+    dot: "point",
+    s: "s",
+    sec: "s",
+    laps: "tours",
+    lap: "tour",
+    "ft/min": "ft/min",
+  };
   return FR[u] ?? u;
 }

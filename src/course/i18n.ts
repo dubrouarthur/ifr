@@ -9,10 +9,10 @@ import {
 } from "../ui/i18n";
 
 const EN = {
-  groundSchool: "Ground school",
+  groundSchool: "Library",
   groundSchoolLead:
-    "Courses from your club. Read a step, try it on the real instrument, then fly it in the cockpit.",
-  tileDesc: "Courses from your club: read, try the instrument, fly it.",
+    "The platform for aviation education: slides and a flight simulator in one tool, for aeroclubs and flight schools, from LAPL and PPL to IR and ATPL theory.",
+  tileDesc: "Build courses with live instruments, teach them, fly them.",
   flightCenter: "Flight Center",
   openSim: "Open the simulator",
   search: "Search courses",
@@ -120,6 +120,10 @@ const EN = {
   exportNow: "Export now",
   // empty states and errors
   emptyFilter: "No courses here yet",
+  createFirst: "Create your first deck",
+  createFirstBody:
+    "Build a course with live instruments, teach it in class, then fly it in the built-in simulator. Start from a template: a cover, a diagram, a live instrument, a question.",
+  slideDecks: "Slide decks",
   emptyFilterBody:
     "Samples are always available, and your own courses appear under My drafts.",
   emptySearch: "No course matches “{q}”",
@@ -127,7 +131,7 @@ const EN = {
   notFound: "Course not found",
   notFoundBody:
     "It is not on this device. Import the course file your instructor sent, or open a sample.",
-  backToLibrary: "Back to the courses",
+  backToLibrary: "Back to the library",
   loading: "Loading…",
   shareOpened: "Course opened from a link",
   shareBad: "This link is damaged or incomplete",
@@ -161,10 +165,10 @@ const EN = {
 export type CourseStringKey = keyof typeof EN;
 
 const FR: Record<CourseStringKey, string> = {
-  groundSchool: "Théorie",
+  groundSchool: "Bibliothèque",
   groundSchoolLead:
-    "Les cours de votre club. Lisez une étape, essayez-la sur l’instrument réel, puis volez-la au cockpit.",
-  tileDesc: "Les cours de votre club : lire, essayer l’instrument, voler.",
+    "La plateforme de l’éducation aéronautique : diapositives et simulateur de vol dans un seul outil, pour les aéroclubs et les écoles de pilotage, du LAPL et du PPL jusqu’à l’IR et la théorie ATPL.",
+  tileDesc: "Créez des cours avec instruments en direct, enseignez-les, volez-les.",
   flightCenter: "Centre de vol",
   openSim: "Ouvrir le simulateur",
   search: "Rechercher un cours",
@@ -264,6 +268,10 @@ const FR: Record<CourseStringKey, string> = {
   exportNudge: "Non exporté depuis {n} jours",
   exportNow: "Exporter",
   emptyFilter: "Aucun cours ici pour l’instant",
+  createFirst: "Créez votre premier cours",
+  createFirstBody:
+    "Créez un cours avec des instruments en direct, enseignez-le en salle, puis volez-le dans le simulateur intégré. Partez d’un modèle : une couverture, un schéma, un instrument en direct, une question.",
+  slideDecks: "Cours en diapositives",
   emptyFilterBody:
     "Les exemples sont toujours disponibles, et vos cours apparaissent dans Mes brouillons.",
   emptySearch: "Aucun cours ne correspond à « {q} »",
@@ -271,7 +279,7 @@ const FR: Record<CourseStringKey, string> = {
   notFound: "Cours introuvable",
   notFoundBody:
     "Il n’est pas sur cet appareil. Importez le fichier envoyé par votre instructeur, ou ouvrez un exemple.",
-  backToLibrary: "Retour aux cours",
+  backToLibrary: "Retour à la bibliothèque",
   loading: "Chargement…",
   shareOpened: "Cours ouvert depuis un lien",
   shareBad: "Ce lien est abîmé ou incomplet",

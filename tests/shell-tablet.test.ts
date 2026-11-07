@@ -3,6 +3,7 @@
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { BRAND } from "../src/brand";
 import { kbAxisStep, KB_SENSITIVITY } from "../src/sim/input";
 
 const mem = new Map<string, string>();
@@ -135,7 +136,7 @@ describe("installable web app", () => {
     const m = JSON.parse(
       readFileSync(resolve(root, "public/manifest.webmanifest"), "utf8"),
     );
-    expect(m.name).toBe("IFR Trainer");
+    expect(m.name).toBe(BRAND.name);
     expect(m.display).toBe("fullscreen");
     expect(m.start_url.startsWith("/")).toBe(true);
     expect(m.icons.length).toBeGreaterThan(0);

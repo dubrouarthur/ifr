@@ -389,28 +389,30 @@ describe("rich text", () => {
 
 // ------------------------------------------------------------------ themes
 describe("themes", () => {
-  it("has four themes whose body text passes WCAG AA (projector AAA)", () => {
-    expect(THEME_IDS).toEqual(["cockpit", "classroom", "projector", "brand"]);
+  it("has two themes whose every text token passes WCAG AA on the background and on raise (SPEC v2 §4)", () => {
+    expect(THEME_IDS).toEqual(["classroom", "cockpit"]);
     for (const id of THEME_IDS) {
       const t = THEMES[id];
-      expect(contrastRatio(t.colors.text, t.colors.bg)).toBeGreaterThanOrEqual(
-        id === "projector" ? 7 : 4.5,
-      );
-      expect(contrastRatio(t.colors.muted, t.colors.bg)).toBeGreaterThanOrEqual(
-        4.5,
-      );
-      expect(
-        contrastRatio(t.colors.accent, t.colors.bg),
-      ).toBeGreaterThanOrEqual(3);
-      expect(
-        contrastRatio(t.colors.text, t.colors.surface),
-      ).toBeGreaterThanOrEqual(4.5);
-      // only the ten type styles, sizes readable on a 1920 canvas
-      expect(Object.values(t.styles).every((s) => s.size >= 20)).toBe(true);
+      for (const tok of ["text", "ink2", "muted", "accent", "path", "sel", "nav", "key", "stop"] as const) {
+        expect(contrastRatio(t.colors[tok], t.colors.bg), `${id} ${tok}`).toBeGreaterThanOrEqual(4.5);
+        expect(contrastRatio(t.colors[tok], t.colors.raise), `${id} ${tok} on raise`).toBeGreaterThanOrEqual(4.5);
+      }
+      expect(contrastRatio(t.colors.accentInk, t.colors.accent)).toBeGreaterThanOrEqual(4.5);
+      // the type scale's hard floor: nothing under 24 logical px, no monospace
+      expect(Object.values(t.styles).every((s) => s.size >= 24)).toBe(true);
+      expect(Object.values(t.fonts).some((f) => /mono/i.test(f))).toBe(false);
     }
-    expect(THEMES.projector.styles.body.size).toBeGreaterThan(
-      THEMES.classroom.styles.body.size,
-    );
+  });
+  it("loads the older theme ids as their nearest (projector = classroom + boost, brand = classroom)", () => {
+    const proj = resolveTheme("projector");
+    expect(proj.dark).toBe(false);
+    expect(proj.colors.bg).toBe("#ffffff");
+    expect(proj.colors.muted).toBe(THEMES.classroom.colors.ink2);
+    expect(proj.styles.body.weight).toBeGreaterThan(THEMES.classroom.styles.body.weight);
+    expect(resolveTheme("brand").colors.text).toBe(THEMES.classroom.colors.text);
+    const boosted = resolveTheme("cockpit", undefined, { boost: true });
+    expect(boosted.dark).toBe(true);
+    expect(boosted.styles.title.weight).toBe(700);
   });
   it("makes a school colour readable as the brand accent", () => {
     const pale = resolveTheme("brand", { name: "Club", color: "#7fd3ff" });
@@ -423,7 +425,7 @@ describe("themes", () => {
       contrastRatio(other.colors.brand, other.colors.bg),
     ).toBeGreaterThanOrEqual(3);
     expect(ensureContrast("#ffffff", "#ffffff")).not.toBe("#ffffff");
-    expect(resolveTheme(undefined).id).toBe("cockpit");
+    expect(resolveTheme(undefined).id).toBe("classroom");
   });
   it("resolves tokens and hex colours, with a fallback", () => {
     const t = THEMES.classroom;
@@ -576,9 +578,10 @@ describe("layout templates", () => {
       expect(new Set(c.blocks.map((b) => b.id)).size).toBe(c.blocks.length);
       for (const b of c.blocks) {
         expect(onSlide(b), `${l.id}/${b.id}`).toBe(true);
+        // the design system's frames sit on an 8 px baseline (SPEC slides v2 §1)
         if (b.kind !== "marker") {
-          expect(b.frame.x % 24, `${l.id}/${b.id} x`).toBe(0);
-          expect(b.frame.y % 24, `${l.id}/${b.id} y`).toBe(0);
+          expect(b.frame.x % 8, `${l.id}/${b.id} x`).toBe(0);
+          expect(b.frame.y % 8, `${l.id}/${b.id} y`).toBe(0);
         }
         if (
           b.kind === "image" ||
