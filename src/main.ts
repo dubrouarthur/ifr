@@ -21,7 +21,11 @@ import { svgIcon, I } from './ui/icons';
 import { ViewDock, layoutName, nextLayout, shellKeyIntent, lessonZone, lessonColumnW, type LessonZone } from './ui/viewDock';
 import { ChartsDrawer } from './ui/charts';
 import { InstructorDrawer, HistoryModal } from './ui/instructor';
-import { LearnModal, BriefingModal, LessonResultModal, HoldDrillModal } from './ui/learn';
+import { LearnModal, BriefingModal, HoldDrillModal } from './ui/learn';
+import { createResultSheet, ResultObserver, buildReport, type ResultOpenOpts } from './ui/result';
+import { DebriefView } from './ui/result/debrief';
+import { debriefOpen, type ExerciseCtx, type FlightCtx } from './ui/result/debriefSource';
+import { computeDebrief } from './sim/recorder';
 import { FlightCenter } from './ui/flightcenter';
 import { FlightSetup } from './ui/flightsetup';
 import { SettingsModal } from './ui/settings';
@@ -35,7 +39,7 @@ import { circuitToExercise, type Circuit } from './train/circuits';
 import { LessonRun, type Exercise } from './train/engine';
 import { exercise, PATHS, type Path } from './train/curriculum';
 import type { AssessSettings } from './sim/sim';
-import { Launcher, ProcModal, DirectModal, JoystickModal, DebriefModal, HelpModal, Modal, WX_PRESETS, type WxPreset } from './ui/modals';
+import { Launcher, ProcModal, DirectModal, JoystickModal, HelpModal, Modal, WX_PRESETS, saveFlightRecord, type WxPreset } from './ui/modals';
 import { distanceNm, wrap180 } from './nav/geo';
 import { runway } from './nav/data';
 import { assessTouchdown } from './sim/landing';
@@ -68,6 +72,9 @@ registerStrings('en', {
   'ped.switches': 'Switches',
   'ped.switchesTip': 'Aircraft systems: masters, magnetos, fuel pump, mixture, fuel selector (Z)',
   'drill.endDone': 'Drill complete: procedure flown (the rest of the flight was not graded)',
+  'ex.resumed': 'Exercise resumed: {title}',
+  'ex.started': 'Exercise started: {title}',
+  'ex.takeOverEnded': 'Exercise ended, not graded: you are flying from the replay as practice',
 });
 registerStrings('fr', {
   'ped.throttle': 'Gaz',
@@ -81,6 +88,9 @@ registerStrings('fr', {
   'ped.switches': 'Interrupteurs',
   'ped.switchesTip': 'Systèmes de l’avion : interrupteurs généraux, magnétos, pompe, mélange, sélecteur carburant (Z)',
   'drill.endDone': 'Exercice terminé : procédure effectuée (la suite du vol n’est pas évaluée)',
+  'ex.resumed': 'Exercice repris : {title}',
+  'ex.started': 'Exercice commencé : {title}',
+  'ex.takeOverEnded': 'Exercice arrêté, non évalué : vous volez depuis le replay, en entraînement',
 });
 
 // ------------------------------------------------------------------ state
@@ -161,8 +171,32 @@ const weatherModal = new WeatherStation(sim);
 const procModal = new ProcModal(sim, (m) => toast(m, 'good'));
 const directModal = new DirectModal(sim, (m) => toast(m, 'good'));
 const joyModal = new JoystickModal(input);
-const debrief = new DebriefModal(sim, () => startScenario(lastScenario, lastWx, sim.assess), () => fc.open());
-debrief.onReplay = () => startReplay();
+/** the full-window debrief replay (src/ui/result/debrief.ts): grades exercises and approaches, instructor sign-off */
+const debrief = new DebriefView({
+  sim,
+  cockpit: () => cockpitType,
+  toast: (m, k) => toast(m, k ?? 'info', 5000),
+  onNext: (it) => lessonResult.runItem(it),
+  onAgain: () => startScenario(lastScenario, lastWx, sim.assess),
+  onNew: () => fc.open(),
+  // "Fly from 5:03": a new practice flight from the replay (not graded); the exercise's record stays as flown.
+  // A debrief opened while an exercise was still flying (Shift D) ends that exercise first, as not graded: the
+  // takeover rewinds the aircraft, so the run's clock, steps and deviation spans no longer match the flight.
+  onTakeOver: () => {
+    if (lesson) {
+      const run = lesson;
+      lesson = null;
+      run.abort();
+      procs.finish();
+      toast(tr('ex.takeOverEnded'), 'info', 6000);
+    }
+    sim.rec.lesson = null;
+    sim.rec.startedAt = Date.now();
+    hideCrash();
+    syncPauseBtn();
+    updateHeader();
+  },
+});
 const historyModal = new HistoryModal();
 const connect = new ConnectModal(sim, (m, k) => toast(m, k ?? 'info'));
 let lesson: LessonRun | null = null;
@@ -170,71 +204,6 @@ let lessonPath: Path | null = null;
 const briefing = new BriefingModal(sim, (run) => startLesson(run), (id) => { charts.toggle(true); charts.show(id); });
 const drill = new HoldDrillModal();
 const learn = new LearnModal((ex, path) => pickExercise(ex, path), () => drill.open());
-// ------------------------------------------------------------------ replay
-interface ReplayState { samples: import('./sim/recorder').Sample[]; events: import('./sim/recorder').FlightEvent[]; pos: number; playing: boolean; speed: number; saved: string; wasPaused: boolean }
-let replay: ReplayState | null = null;
-function startReplay() {
-  const r = sim.rec;
-  if (r.samples.length < 10) return;
-  replay = { samples: [...r.samples], events: [...r.events], pos: 0, playing: true, speed: 4, saved: JSON.stringify(sim.ac.s), wasPaused: sim.paused };
-  sim.paused = true;
-  sim.replaying = true;
-  document.body.classList.add('replaying');
-  renderReplayBar();
-}
-function stopReplay() {
-  if (!replay) return;
-  Object.assign(sim.ac.s, JSON.parse(replay.saved));
-  sim.paused = replay.wasPaused;
-  replay = null;
-  sim.replaying = false;
-  document.body.classList.remove('replaying');
-  replayBar.innerHTML = '';
-  sim.step(0.01);
-}
-function renderReplayBar() {
-  if (!replay) return;
-  const R = replay;
-  const t0 = R.samples[0].t;
-  const t1 = R.samples[R.samples.length - 1].t;
-  replayBar.innerHTML = '';
-  const slider = h('input', { type: 'range', min: 0, max: R.samples.length - 1, step: 0.1, value: R.pos, class: 'lever', 'aria-label': 'Replay position' }) as HTMLInputElement;
-  slider.addEventListener('input', () => { R.pos = Number(slider.value); R.playing = false; applyReplay(); });
-  slider.addEventListener('keydown', (e) => e.stopPropagation());
-  const marks = h('div', { class: 'rp-marks' }, ...R.events.filter((e) => e.kind !== 'info' || /FAF|Minimums|Touchdown|Liftoff/.test(e.text)).map((e) => h('i', { class: e.kind, style: `left:${((e.t - t0) / Math.max(1, t1 - t0)) * 100}%`, title: e.text })));
-  replayBar.append(
-    h('span', { class: 'rp-tag' }, 'REPLAY'),
-    h('button', { class: 'btn', onclick: () => { R.playing = !R.playing; renderReplayBar(); } }, R.playing ? '❚❚' : '▶'),
-    h('div', { class: 'rp-track' }, marks, slider),
-    h('span', { class: 'rp-time', 'data-rp': 'time' }, ''),
-    h('div', { class: 'seg' }, ...[1, 4, 16].map((k) => h('button', { class: R.speed === k ? 'on' : '', onclick: () => { R.speed = k; renderReplayBar(); } }, `${k}×`))),
-    h('span', { class: 'rp-ev', 'data-rp': 'ev' }, ''),
-    h('button', { class: 'btn primary', onclick: () => stopReplay() }, 'Exit replay'),
-  );
-  applyReplay();
-}
-function applyReplay() {
-  if (!replay) return;
-  const R = replay;
-  const i = Math.max(0, Math.min(R.samples.length - 1, Math.floor(R.pos)));
-  const a = R.samples[i];
-  const b = R.samples[Math.min(R.samples.length - 1, i + 1)];
-  const f = R.pos - i;
-  const lerp = (x: number, y: number) => x + (y - x) * f;
-  let dh = b.hdg - a.hdg;
-  if (dh > 180) dh -= 360;
-  if (dh < -180) dh += 360;
-  sim.ac.applySnapshot({ lat: lerp(a.lat, b.lat), lon: lerp(a.lon, b.lon), altFt: lerp(a.alt, b.alt) - (sim.av.baro - sim.weather.qnh) * 1000, hdg: (a.hdg + dh * f + 360) % 360, pitch: lerp(a.pitch, b.pitch), bank: lerp(a.bank, b.bank), ias: lerp(a.ias, b.ias), vs: lerp(a.vs, b.vs), agl: lerp(a.agl, b.agl) });
-  const t = lerp(a.t, b.t) - R.samples[0].t;
-  const time = replayBar.querySelector('[data-rp=time]');
-  if (time) time.textContent = `${fmtTime(t)} / ${fmtTime(R.samples[R.samples.length - 1].t - R.samples[0].t)}`;
-  const ev = [...R.events].reverse().find((e) => e.t <= a.t);
-  const evEl = replayBar.querySelector('[data-rp=ev]');
-  if (evEl) evEl.textContent = ev ? ev.text : '';
-  const sl = replayBar.querySelector('input') as HTMLInputElement | null;
-  if (sl && R.playing) sl.value = String(R.pos);
-}
-
 // late terrain tiles of a real-world region: rebuild the 3D view with the real relief
 window.addEventListener('ifr-terrain-updated', () => rebuildOutside());
 /** Flight Center content lives in the built-in training region */
@@ -310,7 +279,40 @@ function flyCircuit(c: Circuit) {
   if (c.cockpit && c.cockpit !== cockpitType) setCockpit(c.cockpit);
   pickExercise(circuitToExercise(c), null);
 }
-const lessonResult = new LessonResultModal((ex) => pickExercise(ex, lessonPath), (ex) => pickExercise(ex, lessonPath), () => openDebrief());
+/** watches the exercise flying (deviation spans, step times) for its result sheet */
+const resultObs = new ResultObserver();
+/** the exercise result sheet (src/ui/result): standard met / not met / not graded, findings, practise next */
+const lessonResult = createResultSheet(
+  {
+    onRetry: (ex) => pickExercise(ex, lessonPath),
+    onNext: (ex) => pickExercise(ex, lessonPath),
+    onLesson: (ex) => pickExercise(ex, null),
+    onDebrief: (at) => openDebrief(at),
+    onDrill: () => drill.open(),
+    onResume: (run) => resumeLesson(run),
+  },
+  resultObs,
+);
+/** "Back to the course" on the result sheet: set by the course bridge for the exercise it launches, and kept with
+ *  that run only (a later exercise flown on its own never offers it) */
+const backToCourse = new WeakMap<LessonRun, NonNullable<ResultOpenOpts['backToCourse']>>();
+/** set before the course's exercise starts: taken by the next run that starts */
+let pendingBackToCourse: ResultOpenOpts['backToCourse'] | null = null;
+/** the hints already listed as help on the result sheet, per run (a new attempt logs its hints again) */
+const hintSeen = new WeakMap<LessonRun, Set<string>>();
+/** an exercise ended early resumes exactly where it stopped: only while the aircraft is still in the state it was
+ *  stopped in (the sheet checks the sim has not run since; otherwise only "Start again" is offered) */
+function resumeLesson(run: LessonRun) {
+  if (lesson || !run.finished || run.finished.graded !== false || sim.ac.s.crashed || !lessonResult.canResume(run)) return;
+  run.finished = null;
+  lesson = run;
+  lastLessonEx = run.ex;
+  coachKey = '';
+  updateHeader();
+  sim.paused = false;
+  syncPauseBtn();
+  toast(tr('ex.resumed', { title: run.ex.title }), 'info');
+}
 /** start an exercise immediately (no briefing window) — used by Plan a flight, Retry */
 function startExerciseNow(ex: Exercise, path: Path | null = null) {
   lessonPath = path;
@@ -333,6 +335,8 @@ function pickExercise(ex: Exercise, path: Path | null) {
 }
 function startLesson(run: LessonRun) {
   lesson = run;
+  if (pendingBackToCourse) backToCourse.set(run, pendingBackToCourse);
+  pendingBackToCourse = null;
   lastLessonEx = run.ex;
   startProcedures(run);
   debriefShown = true; // the lesson result replaces the automatic debrief
@@ -341,7 +345,7 @@ function startLesson(run: LessonRun) {
   coachKey = '';
   updateHeader();
   if (run.ex.plate) charts.show(run.ex.plate);
-  toast(`Exercise started: ${run.ex.title}`, 'info');
+  toast(tr('ex.started', { title: run.ex.title }), 'info');
   atc.clear();
   lastAtcStep = -1;
   if (run.rt.clearance) atc.say(run.rt.clearance);
@@ -734,7 +738,6 @@ sitbar.addEventListener('click', (e) => { if (sim.paused && !sim.replaying && (e
 const pauseKeyHint = h('span', { class: 'pv-key' }, 'or press Esc');
 const pauseVeil = h('div', { class: 'pause-veil' }, h('b', {}, 'Paused'),
   h('div', { class: 'pv-acts' }, h('button', { class: 'btn primary pv-resume', type: 'button', onclick: () => { if (sim.paused) togglePause(); } }, icon(I.play), h('span', {}, 'Resume')), pauseKeyHint));
-const replayBar = h('div', { class: 'replay' });
 const atc = new AtcRadio(sim, () => audio.squelch());
 /** the lesson window's place (docked zone decided by fitSides(): column | row | strip | card); the coach lives in it */
 const lessonSlot = h('div', { class: 'lesson-slot' }, coach);
@@ -778,7 +781,7 @@ lessonWin.onAction((a) => {
       break;
   }
 });
-const otw = h('section', { class: 'otw' }, otwCanvas, glCanvas, glare, lookHint, sitbar, pauseVeil, lessonSlot, toasts, replayBar, atc.el);
+const otw = h('section', { class: 'otw' }, otwCanvas, glCanvas, glare, lookHint, sitbar, pauseVeil, lessonSlot, toasts, atc.el);
 let outside: Outside3D | null = null;
 let timeOfDay = store.get<TimeOfDay>('ifr.tod', 'day');
 // tablets: the lighter scene at native pixel ratio 1 (a 2x retina canvas costs 4x the fill rate on an iPad GPU)
@@ -1456,9 +1459,40 @@ function showChecklist() {
   };
   toast(lists[ph] ?? lists.initial, 'info', 9000);
 }
-function openDebrief() {
+/** the debrief of the flight recorded: the exercise that just ended (graded by its own standards, "‹ Result" goes
+ *  back to its result), an exercise still flying (in progress, not graded here), or a free flight (FAA ACS) */
+function openDebrief(atLessonT?: number) {
   debriefShown = true;
-  debrief.open();
+  const run = lessonResult.lastRun;
+  const inp = lessonResult.resultInput;
+  let ex: ExerciseCtx | null = null;
+  let flight: FlightCtx | null = null;
+  if (!lesson && run?.finished && inp && sim.rec.lesson?.id === run.ex.id) {
+    ex = {
+      inp,
+      plan: (L) => lessonResult.planFor(buildReport({ ...inp, lang: L }), L),
+      toSim: (t) => lessonResult.toSim(t),
+      attemptId: lessonResult.recordId ?? `rec-${sim.rec.startedAt}`,
+    };
+  } else {
+    const sc = sim.scenario;
+    const rec = lesson ? null : saveFlightRecord(sim);
+    // the best graded result of a built-in scenario (Flight Center card)
+    const db = computeDebrief(sim.rec, sim.av.minimums);
+    if (!lesson && sc && sc.id !== 'lesson' && db.graded) {
+      const best = store.get<Record<string, { score: number; grade: string }>>('ifr.best', {});
+      if (!best[sc.id] || best[sc.id].score < db.score) {
+        best[sc.id] = { score: db.score, grade: db.grade };
+        store.set('ifr.best', best);
+      }
+    }
+    flight = {
+      title: lesson ? lesson.ex.title : sc && sc.id !== 'lesson' ? sc.name : (lastLessonEx?.title ?? (uiLang() === 'fr' ? 'Vol libre' : 'Free flight')),
+      inProgress: !!lesson,
+      attemptId: rec?.id ?? `rec-${sim.rec.startedAt}`,
+    };
+  }
+  debrief.show(debriefOpen(sim, ex, flight, { atLessonT, onBack: ex ? () => lessonResult.reopen() : undefined }));
 }
 
 function doAction(a: ButtonAction) {
@@ -1669,6 +1703,16 @@ function updateCoach() {
       quiet: ride,
     };
     lessonWin.update(view);
+    // help is shown, never graded (debrief SPEC §1.4): the first time a step's hint is on screen, the result sheet lists it
+    if (view.hint && !run.finished) {
+      const key = `${run.idx}|${view.hint}`;
+      let seen = hintSeen.get(run);
+      if (!seen) hintSeen.set(run, (seen = new Set()));
+      if (!seen.has(key) && lessonWin.el.querySelector<HTMLElement>('.lw-hint')?.offsetParent) {
+        seen.add(key);
+        resultObs.logHelp({ t: run.totalT, kind: 'hint', text: view.hint }, run);
+      }
+    }
     if (coachKey !== 'lw') {
       coachKey = 'lw';
       coach.innerHTML = '';
@@ -1867,17 +1911,11 @@ function frameBody(now: number) {
     sim.ap.disconnect();
     toast('Autopilot disconnected — control input', 'warn');
   }
-  if (replay) {
-    if (replay.playing) {
-      replay.pos = Math.min(replay.samples.length - 1, replay.pos + (dt * replay.speed) / 0.5);
-      if (replay.pos >= replay.samples.length - 1) replay.playing = false;
-    }
-    applyReplay();
-    sim.updateAvionics(0);
-  } else sim.step(dt);
+  sim.step(dt);
   mark('sim');
   if (lesson && !sim.paused) {
     lesson.update(Math.min(0.1, dt) * sim.rate);
+    resultObs.tick(lesson);
   }
   // procedures: new failures start their procedure; grading at 10 Hz (sim time)
   procs.tick(Math.min(0.1, dt) * sim.rate);
@@ -1887,14 +1925,9 @@ function frameBody(now: number) {
     sim.paused = true;
     // the procedures stop with the lesson: their results go into the record the result window saves
     procs.finish();
-    lessonResult.show(run, lessonPath);
+    resultObs.tick(run);
     const res = procs.results();
-    if (res.length) {
-      const sec = procedureSection(res);
-      const head = lessonResult.body.querySelector('.grade-row');
-      if (head) head.after(sec);
-      else lessonResult.body.prepend(sec);
-    }
+    lessonResult.show(run, lessonPath, { extra: res.length ? [procedureSection(res)] : undefined, backToCourse: backToCourse.get(run) });
   }
 
   // auto debrief at the end of a flight
@@ -2145,6 +2178,18 @@ async function pairInstructor() {
 
 // test/automation hook
 (window as unknown as { __ifr: unknown }).__ifr = { sim, get outside() { return outside; }, thr27: runway('PARD', '27').threshold, charts: (id: string) => chartIndex().find((c) => c.id === id)?.render() ?? '', world: () => import('./nav/world'), lesson: (id: string) => pickExercise(exercise(id), null), perf, remote: remoteApi, setView: (v: ViewMode) => setView(v), afcs: (on: boolean) => setAfcsBar(on),
+  // exercise result: the run flying, the result sheet, End, the course bridge's "Back to the course"
+  get run() { return lesson; },
+  result: () => lessonResult,
+  debrief: () => debrief,
+  openDebrief: (at?: number) => openDebrief(at),
+  endFlight: () => endFlight(),
+  setBackToCourse: (o: ResultOpenOpts['backToCourse'] | null) => {
+    if (lesson && !lesson.finished) {
+      if (o) backToCourse.set(lesson, o);
+      else backToCourse.delete(lesson);
+    } else pendingBackToCourse = o;
+  },
   // procedures mode
   procs,
   procPanel,
@@ -2152,7 +2197,10 @@ async function pairInstructor() {
     for (let t = 0; t < sec && !sim.paused; t += 1 / 30) {
       Object.assign(sim.controls, ctl);
       sim.step(1 / 30);
-      if (lesson && !lesson.finished) lesson.update(1 / 30);
+      if (lesson && !lesson.finished) {
+        lesson.update(1 / 30);
+        resultObs.tick(lesson);
+      }
       procs.tick(1 / 30);
     }
     procPanel.update();

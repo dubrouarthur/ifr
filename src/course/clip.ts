@@ -556,10 +556,16 @@ export class ClipPlayer {
     sim: Sim,
     rec: Recorder = sim.rec,
     opts: Omit<ClipPlayerOptions, "scene"> = {},
+    /** sim time the replay stops at (an exercise's debrief ends with the exercise, not with the flight after it) */
+    endT?: number,
   ): ClipPlayer | null {
     if (rec.samples.length < 10) return null;
     const t0 = rec.samples[0].t;
-    const t1 = rec.samples[rec.samples.length - 1].t;
+    const last = rec.samples[rec.samples.length - 1].t;
+    const t1 =
+      endT !== undefined && Number.isFinite(endT)
+        ? Math.max(t0 + 1, Math.min(last, endT))
+        : last;
     const clip: Clip = {
       id: "debrief",
       startScene: "",
@@ -570,7 +576,9 @@ export class ClipPlayer {
       cues: [],
       source: "recorded",
     };
-    const flightEvents = rec.events.map((e) => ({ ...e, t: e.t - t0 }));
+    const flightEvents = rec.events
+      .filter((e) => e.t <= t1 + 0.5)
+      .map((e) => ({ ...e, t: e.t - t0 }));
     return new ClipPlayer(sim, clip, opts, {
       mode: "debrief",
       t0,
