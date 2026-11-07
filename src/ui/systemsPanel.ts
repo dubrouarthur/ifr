@@ -96,6 +96,8 @@ export type PanelToggle =
   | "bat"
   | "alt"
   | "avionics"
+  | "avionics2"
+  | "stbyBatt"
   | "auxPump"
   | "beacon"
   | "landingLight"
@@ -108,6 +110,8 @@ const TOGGLE_KEY: Record<PanelToggle, keyof Switches> = {
   bat: "batMaster",
   alt: "altMaster",
   avionics: "avionics",
+  avionics2: "avionics2",
+  stbyBatt: "stbyBatt",
   auxPump: "auxPump",
   beacon: "beacon",
   landingLight: "landingLight",
@@ -276,12 +280,9 @@ export function panelSummary(sim: PanelSim): SummaryChip[] {
       out.push({ id: "engineOff", text: t("sysp.engineOff"), tone: "warning" });
     if (!sys.powered)
       out.push({ id: "noPower", text: t("sysp.noPower"), tone: "warning" });
-    if (sys.fire)
-      out.push({ id: "fire", text: t("sysp.fire"), tone: "warning" });
-    else if (sys.smoke)
-      out.push({ id: "smoke", text: t("sysp.smoke"), tone: "warning" });
+    // no 'Smoke' chip: a C172S has no FIRE or SMOKE annunciator — the cue is the haze over the panel and the
+    // outside view (recognising the fire is the pilot's job, ACS emergency operations)
     for (const a of sys.annunciators) {
-      if (a === "FIRE" || a === "SMOKE") continue;
       out.push({
         id: `ann-${a}`,
         text: a,
@@ -438,6 +439,8 @@ export interface SystemsPanel {
   setVisible(v: boolean): void;
   /** show / hide the live gauges strip (on for the steam cockpit; the G1000 EIS shows the same readings) */
   setGauges(v: boolean): void;
+  /** G1000 controls (STBY BATT, split avionics BUS 1 | BUS 2) on, or the classic panel's single avionics master */
+  setGlass(v: boolean): void;
 }
 
 /** Mount the panel in `host`. opts.compact starts it folded (slim strip); opts.gauges = false hides the gauges
@@ -618,14 +621,44 @@ export function mountSystemsPanel(
       lang() === "fr" ? "Interrupteur général" : "Master switch",
     ),
   );
+  // G1000 (C172S NAV III): the STBY BATT switch beside the master and the split AVIONICS BUS 1 | BUS 2 rocker; the
+  // classic panel has neither (one avionics master). setGlass() shows the panel of the cockpit flown.
+  const stbyRk = rocker("stbyBatt", "STBY\nBATT", "rk-stby");
+  const avSingle = rocker("avionics", "AVIONICS");
+  const avSplit = el(
+    "div",
+    { class: "rk-split", role: "group" },
+    rocker("avionics", "BUS 1"),
+    rocker("avionics2", "BUS 2"),
+  );
+  const avBox = el(
+    "div",
+    { class: "rk-master rk-avn" },
+    el("span", { class: "rk-mplac" }, "AVIONICS"),
+    avSplit,
+  );
+  relabel.push(() =>
+    attr(avSplit, "aria-label", lang() === "fr" ? "Avionique" : "Avionics"),
+  );
+  let glass = true;
+  const syncGlass = () => {
+    // the G1000 row is two rockers wider: the stylesheet folds it onto two rows sooner under a finger
+    attr(root, "data-glass", glass ? "1" : "0");
+    stbyRk.hidden = !glass;
+    avBox.hidden = !glass;
+    avSingle.hidden = glass;
+  };
+  syncGlass();
   const elecGroup = group(
     "elec",
+    stbyRk,
     masterBox,
     rocker("auxPump", "FUEL\nPUMP"),
     rocker("beacon", "BEACON"),
     rocker("landingLight", "LAND\nLIGHT"),
     rocker("pitotHeat", "PITOT\nHEAT"),
-    rocker("avionics", "AVIONICS"),
+    avSingle,
+    avBox,
   );
 
   // ---------------------------------------------------------------- magneto key
@@ -1050,6 +1083,12 @@ export function mountSystemsPanel(
     setGauges(v: boolean) {
       showGauges = v;
       gaugesRow.hidden = !v;
+      update();
+    },
+    setGlass(v: boolean) {
+      glass = v;
+      syncGlass();
+      stripSig = "";
       update();
     },
   };

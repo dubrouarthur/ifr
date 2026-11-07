@@ -260,6 +260,19 @@
 .rk-split .rk-plac {
   height: 11px;
 }
+/* the split AVIONICS rocker (G1000): same housing as the master, without the red paddles */
+.rk-avn {
+  padding-right: 0;
+  margin-right: 0;
+  padding-left: 4px;
+  margin-left: 3px;
+  border-right: 0;
+  border-left: 1px dashed #2f3439;
+}
+.sysp .rk[hidden],
+.rk-master[hidden] {
+  display: none;
+}
 
 /* ------------------------------------------------------------------ magneto key */
 .mag,
@@ -712,6 +725,34 @@
     border-radius: 0;
   }
 }
+/* the G1000 row (STBY BATT and the split AVIONICS BUS 1 | BUS 2 rocker) is two 44 px rockers wider under a finger:
+   on a panel just too narrow for it (e.g. iPad 1180 px landscape) the magneto and fuel-selector positions stack on
+   two short rows and their decorative pictures give way (the position buttons are the controls), so every control
+   keeps its 44 px and the row stays a single one — the instruments keep their size */
+@media (pointer: coarse) {
+  @container sysp (min-width: 1101px) and (max-width: 1300px) {
+    .sysp[data-glass="1"] .mag-dial,
+    .sysp[data-glass="1"] .fs-dial {
+      display: none;
+    }
+    .sysp[data-glass="1"] .mag-top,
+    .sysp[data-glass="1"] .fs-top {
+      height: auto;
+    }
+    /* the key positions on two short rows (OFF R L / BOTH START), the selector as a 2 × 2 block */
+    .sysp[data-glass="1"] .mag-row {
+      display: grid;
+      grid-template-columns: repeat(3, auto);
+    }
+    .sysp[data-glass="1"] .fs-row {
+      display: grid;
+      grid-template-columns: repeat(2, auto);
+    }
+    .sysp[data-glass="1"] .sysp-g {
+      padding: 2px 3px;
+    }
+  }
+}
 @container sysp (max-width: 700px) {
   .sysp-gauges {
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -746,3 +787,26 @@
     padding: 2px 4px;
   }
 }
+
+/* cabin smoke over the outside view: grey, uneven, drifting (no FIRE / SMOKE light on a C172S — the haze is the cue) */
+.otw > .cabin-smoke {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 1.2s linear;
+  background:
+    radial-gradient(60% 50% at 30% 35%, rgba(190, 188, 182, 0.85), rgba(190, 188, 182, 0) 70%),
+    radial-gradient(55% 60% at 75% 60%, rgba(170, 168, 162, 0.8), rgba(170, 168, 162, 0) 72%),
+    rgba(160, 158, 152, 0.55);
+  background-size: 160% 160%, 150% 150%, auto;
+  animation: cabin-smoke-drift 18s ease-in-out infinite alternate;
+}
+@keyframes cabin-smoke-drift {
+  from { background-position: 0% 0%, 100% 100%, 0 0; }
+  to { background-position: 100% 60%, 0% 30%, 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .otw > .cabin-smoke { animation: none; }
+}
+.cockpit.no-otw .otw > .cabin-smoke { display: none; }

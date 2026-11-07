@@ -30,6 +30,7 @@ export type FailureKey =
   | "fuelLeak" // left tank leaks (≈ 0.25 gal/min): LOW FUEL L, imbalance
   | "oilPressure" // oil pressure falls; the engine seizes about 10 min later
   | "engineFire" // fire in flight: goes out only with mixture cut-off, fuel selector OFF, aux pump OFF
+  | "fuelStarvation" // the selected tank runs dry (fuel mismanagement): the engine quits; selector BOTH + aux pump restart it
   // other
   | "flaps" // flaps stuck at their current position
   | "trimRunaway" // electric trim runs nose-down until the trim/AP circuit breaker is pulled (switches.trimCb)
@@ -44,7 +45,14 @@ export type FuelSelector = "LEFT" | "BOTH" | "RIGHT" | "OFF";
 export interface Switches {
   batMaster: boolean;
   altMaster: boolean;
+  /** AVIONICS (BUS 1 on the G1000 split rocker; the single avionics master of the classic panel) */
   avionics: boolean;
+  /** AVIONICS BUS 2 (G1000 split rocker): COM2 / NAV2 / ADF. The classic panel has one avionics master: there
+   *  bus 2 follows `avionics` and this switch is ignored (the panel does not show it) */
+  avionics2: boolean;
+  /** STBY BATT switch (G1000, C172S NAV III POH section 7): true = ARM — the standby battery feeds the essential
+   *  bus (PFD, COM1/NAV1) when the main bus fails; no effect in the classic cockpit */
+  stbyBatt: boolean;
   /** auxiliary (electric) fuel pump */
   auxPump: boolean;
   magnetos: Magnetos;
@@ -68,6 +76,8 @@ export const defaultSwitches = (): Switches => ({
   batMaster: true,
   altMaster: true,
   avionics: true,
+  avionics2: true,
+  stbyBatt: true,
   auxPump: false,
   magnetos: "BOTH",
   mixture: 1,
@@ -81,6 +91,10 @@ export const defaultSwitches = (): Switches => ({
   beacon: true,
 });
 
+/** The annunciations a C172S really has (C172S NAV III POH section 7, G1000 CAS; the classic panel shows the
+ *  first five on its annunciator panel). There is NO fire, smoke, door or fuel-pressure light on a C172S: a fire is
+ *  recognised by smoke, smell and the engine gauges, an open door by noise, an engine-driven fuel pump failure by the
+ *  fuel flow falling to zero — the simulator never does that recognition for the student. */
 export type Annunciator =
   | "LOW VOLTS"
   | "LOW VACUUM"
@@ -88,10 +102,8 @@ export type Annunciator =
   | "LOW FUEL L"
   | "LOW FUEL R"
   | "PITOT HEAT OFF"
-  | "FUEL PRESS"
-  | "SMOKE"
-  | "FIRE"
-  | "DOOR";
+  /** G1000: the standby battery is feeding the essential bus (main bus lost, or master OFF with STBY BATT ARM) */
+  | "STBY BATT";
 
 /** What the systems read (gauges, annunciators) and what the displays may rely on. */
 export interface SystemsReadout {
@@ -100,7 +112,7 @@ export interface SystemsReadout {
   battAmps: number;
   /** remaining battery charge 0..1 */
   battCharge: number;
-  /** essential bus powered (PFD / MFD / radios / GPS / AP / electric trim) */
+  /** main bus powered (battery or alternator): lights, flaps, electric trim, avionics buses */
   powered: boolean;
   /** the avionics bus (MFD, COM2, NAV2, GPS, AP) is powered */
   avionicsPowered: boolean;
@@ -154,6 +166,12 @@ export interface SystemsReadout {
   doorOpen?: boolean;
   /** magneto of the engineRough failure (null when none) */
   badMag?: "L" | "R" | null;
+  /** G1000 essential bus powered (PFD, AHRS / ADC, COM1 / NAV1): from the main bus, or from the standby battery */
+  essPowered?: boolean;
+  /** the standby battery is feeding the essential bus (STBY BATT annunciation) */
+  stbyBattFeeding?: boolean;
+  /** standby battery charge 0..1 (≥ 30 min on the essential bus from full: POH) */
+  stbyBattCharge?: number;
 }
 
 /** consumers powered by the electrical system (true = working) */
@@ -189,21 +207,20 @@ export type SystemsState = Required<SystemsReadout>;
 export const ANNUNCIATOR_LEVEL: Record<Annunciator, "warning" | "caution"> = {
   "LOW VOLTS": "warning",
   "OIL PRESSURE": "warning",
-  FIRE: "warning",
-  SMOKE: "warning",
   "LOW VACUUM": "caution",
   "LOW FUEL L": "caution",
   "LOW FUEL R": "caution",
   "PITOT HEAT OFF": "caution",
-  "FUEL PRESS": "caution",
-  DOOR: "caution",
+  "STBY BATT": "caution",
 };
 
 /** pilot-facing switch names (event log, debrief, checklists) */
 export const SWITCH_LABELS_EN: Record<keyof Switches, string> = {
   batMaster: "Master BAT",
   altMaster: "Master ALT",
-  avionics: "Avionics master",
+  avionics: "Avionics (bus 1)",
+  avionics2: "Avionics bus 2",
+  stbyBatt: "Standby battery (STBY BATT)",
   auxPump: "Aux fuel pump",
   magnetos: "Magnetos",
   mixture: "Mixture",
@@ -220,7 +237,9 @@ export const SWITCH_LABELS_EN: Record<keyof Switches, string> = {
 export const SWITCH_LABELS_FR: Record<keyof Switches, string> = {
   batMaster: "Batterie (BAT)",
   altMaster: "Alternateur (ALT)",
-  avionics: "Avionique",
+  avionics: "Avionique (barre 1)",
+  avionics2: "Avionique barre 2",
+  stbyBatt: "Batterie de secours (STBY BATT)",
   auxPump: "Pompe électrique",
   magnetos: "Magnétos",
   mixture: "Mélange",
@@ -242,6 +261,7 @@ export function switchValueText(k: keyof Switches, v: Switches[keyof Switches]):
   }
   if (k === "trimCb") return v ? "IN" : "PULLED";
   if (k === "altStatic") return v ? "OPEN" : "CLOSED";
+  if (k === "stbyBatt") return v ? "ARM" : "OFF";
   if (typeof v === "boolean") return v ? "ON" : "OFF";
   return String(v);
 }
@@ -254,6 +274,7 @@ export function switchValueTextFr(k: keyof Switches, v: Switches[keyof Switches]
   }
   if (k === "trimCb") return v ? "ENFONCÉ" : "TIRÉ";
   if (k === "altStatic") return v ? "OUVERTE" : "FERMÉE";
+  if (k === "stbyBatt") return v ? "ARM" : "OFF";
   if (k === "fuelSelector") return ({ LEFT: "GAUCHE", RIGHT: "DROITE", BOTH: "LES DEUX", OFF: "FERMÉ" } as Record<string, string>)[String(v)] ?? String(v);
   if (k === "magnetos") return ({ OFF: "ARRÊT", L: "G", R: "D", BOTH: "LES DEUX", START: "DÉMARRAGE" } as Record<string, string>)[String(v)] ?? String(v);
   if (typeof v === "boolean") return v ? "MARCHE" : "ARRÊT";
@@ -280,7 +301,8 @@ export const FAILURE_LABELS_EN: Record<FailureKey, string> = {
   fuelPump: "Engine-driven fuel pump failure",
   fuelLeak: "Fuel leak (left tank)",
   oilPressure: "Loss of oil pressure",
-  engineFire: "Engine fire in flight",
+  engineFire: "Engine fire",
+  fuelStarvation: "Fuel starvation (selected tank empty)",
   flaps: "Flaps jammed",
   trimRunaway: "Electric trim runaway",
   comms: "Radio failure (lost comms)",
@@ -308,7 +330,8 @@ export const FAILURE_LABELS_FR: Record<FailureKey, string> = {
   fuelPump: "Panne de pompe à carburant mécanique",
   fuelLeak: "Fuite de carburant (réservoir gauche)",
   oilPressure: "Perte de pression d’huile",
-  engineFire: "Feu moteur en vol",
+  engineFire: "Feu moteur",
+  fuelStarvation: "Panne sèche (réservoir sélectionné vide)",
   flaps: "Volets bloqués",
   trimRunaway: "Emballement du trim électrique",
   comms: "Panne radio",
@@ -330,6 +353,7 @@ export const FAILURE_GROUPS: {
       "fuelLeak",
       "oilPressure",
       "engineFire",
+      "fuelStarvation",
     ],
   },
   { id: "electrical", keys: ["alternator", "battery", "electricalFire"] },

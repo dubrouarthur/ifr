@@ -178,6 +178,10 @@ export class Sim {
   }
   /** pilot eye height above the wheels (ft): 7 for a C172, ~18 in the airliner cockpit */
   cockpitEyeFt = 7;
+  /** the instrument panel flown (the shell sets it with the cockpit): the systems model gives the G1000 its split
+   *  avionics rocker, essential bus and standby battery, the procedures pick the G1000 or the classic-panel
+   *  checklist (C172S NAV III POH vs the C172S POH of the steam-gauge aircraft) */
+  cockpit: 'g1000' | 'steam' | 'airliner' = 'g1000';
   rate = 1;
   /**
    * Garmin automatic GPS → LOC1 CDI switch on a localizer-based approach (G1000; GNS 'ILS CDI: Auto').
@@ -295,7 +299,8 @@ export class Sim {
     const dt = Math.min(0.1, dtReal) * this.rate;
     this.time += dt;
     if (terrainEpoch !== this.terrainSeen) this.reseatOnTerrain();
-    if (this.failures.engine) this.controls.throttle = 0;
+    // an engine failure leaves the throttle where the pilot put it (the RPM falls by itself): the simulator never
+    // moves a control for the pilot — it would read as a pilot input in the grading
     this.maybeRandomFailure();
     this.ac.step(dt, this.controls, this.weather);
     this.systems.step(dt, this);
@@ -441,6 +446,10 @@ export class Sim {
     const old = this.sw[k];
     if (k === 'mixture') v = Math.max(0, Math.min(1, Number(v))) as Switches[K];
     if (old === v) return;
+    // the split master rocker is interlocked (C172S POH section 7): BAT OFF takes ALT OFF with it, ALT ON pushes
+    // BAT ON with it — whoever flips it (panel, remote, instructor station, a script)
+    if (k === 'batMaster' && !v && this.sw.altMaster) this.setSwitch('altMaster', false);
+    if (k === 'altMaster' && v && !this.sw.batMaster) this.setSwitch('batMaster', true);
     this.sw[k] = v;
     if (k === 'mixture') {
       // a knob turned in small steps logs once it has settled; IDLE CUT-OFF and FULL RICH log at once

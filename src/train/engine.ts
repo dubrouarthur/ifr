@@ -142,7 +142,7 @@ export interface DrillFailureEvent {
 
 /** failures after which the flight follows the emergency procedure, not the clearance: the lesson's altitude /
  *  heading tolerances stop counting (the procedure runner grades the flight path instead) */
-export const LEAVES_CLEARANCE: ReadonlySet<FailureKey> = new Set<FailureKey>(['engine', 'enginePartial', 'engineFire', 'electricalFire', 'oilPressure', 'fuelPump']);
+export const LEAVES_CLEARANCE: ReadonlySet<FailureKey> = new Set<FailureKey>(['engine', 'enginePartial', 'engineFire', 'electricalFire', 'oilPressure', 'fuelPump', 'fuelStarvation']);
 
 export interface StepResult {
   text: string;

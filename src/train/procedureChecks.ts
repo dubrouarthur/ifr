@@ -9,7 +9,7 @@
 // The runner (procedures.ts) adds stickiness, order, memory and time limits on top.
 import type { CheckId, CheckRef, Lang } from "./procedureTypes";
 import type { ProcSimView } from "./procedures";
-import type { Switches } from "../sim/systemsTypes";
+import { ANNUNCIATOR_LEVEL, type Annunciator, type Switches } from "../sim/systemsTypes";
 
 export type ParamValue = string | number | boolean;
 type L10n = Record<Lang, string>;
@@ -66,7 +66,9 @@ export interface CheckDef {
 export const SWITCH_NAMES: Record<keyof Switches, L10n> = {
   batMaster: { en: "Master switch (BAT)", fr: "Interrupteur général (BAT)" },
   altMaster: { en: "Master switch (ALT)", fr: "Alternateur (ALT)" },
-  avionics: { en: "Avionics switch", fr: "Interrupteur avionique" },
+  avionics: { en: "Avionics switch (bus 1)", fr: "Interrupteur avionique (barre 1)" },
+  avionics2: { en: "Avionics bus 2", fr: "Avionique barre 2" },
+  stbyBatt: { en: "STBY BATT switch", fr: "Interrupteur STBY BATT" },
   auxPump: { en: "Auxiliary fuel pump", fr: "Pompe carburant électrique" },
   magnetos: { en: "Magnetos", fr: "Magnétos" },
   mixture: { en: "Mixture", fr: "Mélange" },
@@ -105,6 +107,10 @@ const BOOL_WORDS: Partial<Record<keyof Switches, [L10n, L10n]>> = {
   cabinHeat: [
     { en: "ON", fr: "OUVERTS" },
     { en: "OFF", fr: "FERMÉS" },
+  ],
+  stbyBatt: [
+    { en: "ARM", fr: "ARM" },
+    { en: "OFF", fr: "OFF" },
   ],
 };
 const ENUM_VALUES: Partial<Record<keyof Switches, CheckParamOption[]>> = {
@@ -199,9 +205,13 @@ function evalSwitch(
   const cur = view.sw[key];
   const want = p?.value;
   // magnetos on the GOOD one (rough engine): the single magneto that is not the faulty one. Selecting the bad
-  // magneto (engine very rough) is not credited; without a known faulty magneto, either single one counts.
+  // magneto (engine very rough) is not credited. Without a faulty magneto (partial power, plug fouling) the POH
+  // answer is BOTH after the L / R check (C172S POH section 3 amplified, rough engine operation): BOTH counts —
+  // a single magneto there only costs power.
   if (key === "magnetos" && want === "GOOD") {
     const bad = view.sys?.badMag ?? null;
+    // no systems model (editor preview, tests): the faulty one is unknown — either single one counts too
+    if (!bad) return cur === "BOTH" || (!view.sys && (cur === "L" || cur === "R"));
     return cur === "L" || cur === "R" ? cur !== bad : false;
   }
   if (key === "mixture") {
@@ -771,6 +781,69 @@ export const CHECKS: Record<CheckId, CheckDef> = {
           ? "Moteur — ARRÊTÉ"
           : "Engine — STOPPED",
     evaluate: (v, p) => v.engineRunning === truthy(p?.value ?? true),
+    holdS: () => 0,
+  },
+  annunciator: {
+    id: "annunciator",
+    kind: "action",
+    name: { en: "Annunciation", fr: "Alarme / voyant" },
+    params: [
+      {
+        name: "name",
+        type: "enum",
+        label: { en: "Annunciation", fr: "Alarme" },
+        default: "LOW VOLTS",
+        required: true,
+        options: (Object.keys(ANNUNCIATOR_LEVEL) as Annunciator[]).map((a) => ({
+          value: a,
+          label: { en: a, fr: a },
+        })),
+      },
+      {
+        name: "lit",
+        type: "boolean",
+        label: { en: "Lit", fr: "Allumée" },
+        default: false,
+      },
+    ],
+    label: (p, lang) => {
+      const n = String(p?.name ?? "LOW VOLTS");
+      return truthy(p?.lit ?? false)
+        ? lang === "fr"
+          ? `${n} — ALLUMÉE`
+          : `${n} — ON`
+        : lang === "fr"
+          ? `${n} — ÉTEINTE`
+          : `${n} — OFF`;
+    },
+    // a dark annunciator panel (no power) is not "the annunciation went out": an unpowered display shows nothing
+    evaluate: (v, p) => {
+      const anns = v.sys?.annunciators;
+      if (!anns) return false;
+      const lit = anns.includes(String(p?.name ?? "LOW VOLTS") as Annunciator);
+      const want = truthy(p?.lit ?? false);
+      if (want) return lit;
+      return !lit && !!(v.sys?.essPowered ?? v.sys?.powered);
+    },
+    holdS: () => 2,
+  },
+  brake: {
+    id: "brake",
+    kind: "action",
+    name: { en: "Wheel brakes", fr: "Freins" },
+    params: [
+      {
+        name: "min",
+        type: "number",
+        label: { en: "At least (0–1)", fr: "Au moins (0–1)" },
+        default: 0.8,
+        min: 0,
+        max: 1,
+        step: 0.05,
+      },
+    ],
+    label: (_p, lang) => (lang === "fr" ? "Freins — FREINER" : "Brakes — APPLY"),
+    evaluate: (v, p) => v.controls.brake >= num(p, "min", 0.8),
     holdS: () => 0,
   },
 };

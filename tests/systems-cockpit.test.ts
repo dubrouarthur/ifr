@@ -179,10 +179,19 @@ describe("G1000 annunciation window (pure)", () => {
   });
   it("colours follow ANNUNCIATOR_LEVEL for every annunciator", () => {
     const s = cruise();
+    // no FIRE, DOOR or FUEL PRESS annunciation exists on a C172S: these failures light nothing
     s.setFailure("engineFire", true);
     s.setFailure("door", true);
     s.setFailure("fuelPump", true);
     s.setSwitch("auxPump", false);
+    systemsFor(s, 8);
+    expect(casMessages(s).filter((m) => m.level !== "advisory")).toEqual([]);
+    s.setFailure("engineFire", false);
+    s.setFailure("door", false);
+    s.setFailure("fuelPump", false);
+    s.setFailure("alternator", true);
+    s.setFailure("vacuum", true);
+    s.systems.setTanks(s, 3, 3);
     systemsFor(s, 8);
     expect(casMessages(s).filter((m) => m.level !== "advisory").length).toBeGreaterThanOrEqual(3);
     for (const m of casMessages(s))
@@ -212,14 +221,45 @@ describe("G1000 annunciation window (pure)", () => {
 });
 
 describe("dark screens and reversionary mode", () => {
-  it("bus dead: PFD, MFD, airliner PFD and ND draw no data at all", () => {
+  it("G1000 master OFF with STBY BATT ARM: the PFD stays on the standby battery (STBY BATT), the MFD is dark", () => {
     const s = cruise();
+    s.setSwitch("altMaster", false);
+    s.setSwitch("batMaster", false);
+    systemsFor(s, 2);
+    expect(hasPower(s, "pfd")).toBe(true);
+    expect(hasPower(s, "mfd")).toBe(false);
+    const { ctx, texts } = textCtx();
+    drawPfd(ctx, s, newPfdState(), 0.1);
+    expect(texts).toContain("STBY BATT");
+    expect(texts).toContain("LOW VOLTS");
+  });
+  it("AHRS and ADC failures: the standby attitude, airspeed and altimeter are drawn apart from the red X", () => {
+    const s = cruise();
+    s.setFailure("ahrs", true);
+    s.setFailure("airData", true);
+    systemsFor(s, 1);
+    const { ctx, texts } = textCtx();
+    drawPfd(ctx, s, newPfdState(), 0.1);
+    expect(texts).toContain("AHRS FAIL");
+    expect(texts).toContain("ADC FAIL");
+    expect(texts).toContain("AIRSPEED"); // the standby airspeed indicator face
+    expect(texts.filter((t) => t === "N" || t === "E" || t === "S" || t === "W").length).toBeGreaterThan(0); // compass card
+  });
+  it("bus dead: PFD, MFD, airliner PFD and ND draw no data at all; the G1000 PFD area shows the standby instruments", () => {
+    const s = cruise();
+    s.setSwitch("stbyBatt", false); // the standby battery would keep the PFD alive
     s.setSwitch("batMaster", false); // takes the alternator off with it (no field)
     systemsFor(s, 2);
     expect(s.sys.powered).toBe(false);
     expect(hasPower(s, "pfd")).toBe(false);
+    // no G1000 data, only the standby airspeed / attitude / altimeter and the compass (POH: use the standby
+    // instruments)
+    const pfd = textCtx();
+    drawPfd(pfd.ctx, s, newPfdState(), 0.1);
+    expect(pfd.texts).toContain("STBY");
+    expect(pfd.texts).toContain("AIRSPEED");
+    expect(pfd.texts.some((t) => /ALERTS|NAV1|COM1|GS |TAS/.test(t))).toBe(false);
     for (const draw of [
-      (c: CanvasRenderingContext2D) => drawPfd(c, s, newPfdState(), 0.1),
       (c: CanvasRenderingContext2D) => drawMfd(c, s, mfdState()),
       (c: CanvasRenderingContext2D) => drawAirlinerPfd(c, s),
       (c: CanvasRenderingContext2D) => drawNd(c, s, 10),
@@ -334,9 +374,9 @@ describe("steam cockpit", () => {
     smokeHaze(b.ctx, s, 1024, 768, 1);
     expect(b.styles.length).toBeGreaterThan(0);
     const alpha = Number(/rgba\([^)]*,([0-9.]+)\)/.exec(b.styles[0])![1]);
-    // a veil, never an opaque screen: the instruments stay readable
-    expect(alpha).toBeGreaterThan(0.05);
-    expect(alpha).toBeLessThan(0.35);
+    // clearly visible (no SMOKE light on a C172S: the haze is the cue), yet a veil, never an opaque screen
+    expect(alpha).toBeGreaterThan(0.15);
+    expect(alpha).toBeLessThan(0.45);
     // drawn over the steam panel and the G1000 (the wrappers call it last)
     for (const draw of [
       (c: CanvasRenderingContext2D) => drawSixPack(c, s, 0.1),
@@ -361,6 +401,7 @@ describe("steam cockpit", () => {
   });
   it("the six-pack shows OFF on the turn coordinator and the stack blanks the radios without power", () => {
     const s = cruise();
+    s.cockpit = "steam"; // no standby battery on the classic panel
     const live = textCtx();
     drawStack(live.ctx, s);
     expect(live.texts.some((t) => /^\d{3}\.\d{3}$/.test(t))).toBe(true); // COM frequencies shown

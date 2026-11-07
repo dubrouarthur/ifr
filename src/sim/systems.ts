@@ -55,6 +55,7 @@ export const FAILURE_KEYS: readonly FailureKey[] = [
   "comms",
   "xpdr",
   "door",
+  "fuelStarvation",
 ];
 /** the active failures as a bit mask (bit i = FAILURE_KEYS[i]); every key of FAILURE_LABELS_EN must be listed
  *  (tests/systems-core.test.ts checks it) */
@@ -86,15 +87,17 @@ export function failureMask(
     (f.trimRunaway ? 2097152 : 0) |
     (f.comms ? 4194304 : 0) |
     (f.xpdr ? 8388608 : 0) |
-    (f.door ? 16777216 : 0)
+    (f.door ? 16777216 : 0) |
+    (f.fuelStarvation ? 33554432 : 0)
   );
 }
 const PA0 = 101325;
 
 /** Electrical system data (C172S, 28 V). Loads are the nominal currents at 28 V. */
 export const ELEC = {
-  /** battery: 24 V lead-acid, 35 Ah nameplate; the charge between full and a dead bus is ≈ 20 % of it in practice
-   *  (cold, ageing battery, the voltage knee): POH "≈ 30 min with load shedding" */
+  /** main battery: 24 V lead-acid, 35 Ah nameplate; the charge between full and a dead bus is ≈ 20 % of it in
+   *  practice (cold, ageing battery, the voltage knee): ≈ 16 min with every load ON, ≈ 40 min with the loads shed
+   *  (measured by tests/systems-core.test.ts). The "30 min" of the C172S NAV III POH is the STANDBY battery below. */
   battAh: 35,
   usableFraction: 0.215,
   /** internal resistance (Ω) */
@@ -105,9 +108,17 @@ export const ELEC = {
   lowVolts: 24.5,
   /** below this the bus no longer powers the avionics (screens go dark) */
   deadVolts: 20,
+  /** G1000 standby battery: feeds the essential bus for at least 30 minutes (C172S NAV III POH section 7,
+   *  "standby battery"); modelled as 35 min from full */
+  stbyEnduranceS: 35 * 60,
   load: {
-    essential: 8, // PFD, COM1/NAV1, transponder, turn coordinator, engine instruments (constant power)
-    avionics: 12, // MFD, COM2/NAV2, GPS, ADF, autopilot (constant power)
+    // Bus mapping, simplified and NOT verified against a specific aircraft's POH section 7 / 9 breaker list: on the
+    // G1000 the essential bus carries the PFD with its GIA 1 (COM1 / NAV1 / GPS1), the AHRS / ADC and the engine
+    // instruments — what the standby battery keeps alive; avionics bus 1 the MFD and the autopilot; bus 2 the second
+    // radios. The NAV III POH sheds bus 1 first, then bus 2 (LOW VOLTS / HIGH VOLTS checklists).
+    essential: 8, // PFD + GIA 1 (COM1/NAV1/GPS1), transponder, turn coordinator, engine instruments (constant power)
+    avionics: 8, // avionics bus 1: MFD, autopilot (classic panel: the GPS too) (constant power)
+    avionics2: 4, // avionics bus 2: COM2/NAV2, ADF (constant power)
     pitotHeat: 10,
     landingLight: 8,
     beacon: 2,
@@ -130,6 +141,8 @@ const VSI_LAG_S = 6;
 export const TANK_GAL = 26.5;
 /** fuel leak rate of the fuelLeak failure (gal/min) */
 export const LEAK_GPM = 0.25;
+/** LOW FUEL L / R annunciation threshold (gal usable in the tank) */
+export const LOW_FUEL_GAL = 5;
 
 /** static pressure (Pa) at a pressure altitude (ft) — ISA */
 export function staticPressure(pAltFt: number): number {
@@ -218,6 +231,9 @@ export function freshReadout(): SystemsState {
     trimRunning: false,
     doorOpen: false,
     badMag: null,
+    essPowered: true,
+    stbyBattFeeding: false,
+    stbyBattCharge: 1,
   };
 }
 
@@ -248,6 +264,7 @@ export class SystemsModel {
   private lastRichness = 1;
   private running = true;
   private battCharge = 1;
+  private stbyCharge = 1;
   private vac = 5;
   private gyroHealth = 1;
   private gErr = { pitch: 0, roll: 0, hdg: 0 };
@@ -297,6 +314,7 @@ export class SystemsModel {
     this.cylFuel = CYL_FUEL_S;
     this.running = true;
     this.battCharge = 1;
+    this.stbyCharge = 1;
     this.vac = 5;
     this.gyroHealth = 1;
     this.gErr = { pitch: 0, roll: 0, hdg: 0 };
@@ -329,6 +347,22 @@ export class SystemsModel {
       flapsHold: false,
       extraCd: 0,
     });
+  }
+
+  /** Fuel-starvation set-up, at the start of a drill (before the pilot flies): the selector was left on one tank
+   *  that holds about `runDryS` seconds of fuel at the cruise burn, so it runs dry by itself — LOW FUEL is lit
+   *  from the start, as in the real mismanagement (FAA-H-8083-3C ch.18). The injection later only takes the
+   *  residual. Returns the tank. */
+  prepareStarvation(sim: Sim, runDryS: number): "LEFT" | "RIGHT" {
+    const tank: "LEFT" | "RIGHT" = this.rnd("starvationSetup")() < 0.5 ? "LEFT" : "RIGHT";
+    // C172S at 65–75 % power: ≈ 9 gph (POH section 5 cruise table, rounded)
+    const gal = Math.max(0.1, (9 * Math.max(0, runDryS)) / 3600);
+    if (tank === "LEFT") this.fuelL = Math.min(this.fuelL, gal);
+    else this.fuelR = Math.min(this.fuelR, gal);
+    sim.ac.s.fuelGal = this.fuelL + this.fuelR;
+    this.lastTotal = sim.ac.s.fuelGal;
+    if (sim.sw) sim.sw.fuelSelector = tank;
+    return tank;
   }
 
   private rnd(key: string): () => number {
@@ -365,6 +399,22 @@ export class SystemsModel {
       case "trimRunaway":
         if (sim.ap.ap) sim.ap.disconnect();
         break;
+      case "fuelStarvation": {
+        // The injection never moves a control (the selector) and never empties a tank the pilot can see full: the
+        // cause was set up before the flight (prepareStarvation: the selector left on one tank holding a few
+        // minutes of fuel, LOW FUEL already lit), and the tank simply runs out about now. What is left of that
+        // tank (a residual by design) goes; with the selector on BOTH nothing can starve the engine.
+        const sel = sim.sw?.fuelSelector;
+        if (sel === "LEFT" || sel === "RIGHT") {
+          if (sel === "LEFT") this.fuelL = 0;
+          else this.fuelR = 0;
+          sim.ac.s.fuelGal = this.fuelL + this.fuelR;
+          this.lastTotal = sim.ac.s.fuelGal;
+          // the lines still hold a few seconds of fuel: the engine quits once they run dry
+          this.lineFuel = Math.min(this.lineFuel, 4);
+        }
+        break;
+      }
       default:
         break;
     }
@@ -473,6 +523,9 @@ export class SystemsModel {
           : this.fuelL + this.fuelR > 0.02;
 
     // ================================================================ electrical (needs the previous engine state)
+    // the G1000 cockpits (and the airliner, which shares the C172 systems) have the split avionics rocker, the
+    // essential bus and the standby battery; the classic panel has one avionics master and no standby battery
+    const glass = (sim.cockpit ?? "g1000") !== "steam";
     const ld = ELEC.load;
     const batAvail = sw.batMaster && !f.battery && this.battCharge > 0;
     const altOnline =
@@ -489,11 +542,14 @@ export class SystemsModel {
       this.battCharge > 0.03;
     const flapsMoving = Math.abs(s.flapPos - this.lastFlapPos) > 1e-5;
     this.lastFlapPos = s.flapPos;
-    // electrical fire: the fault sits on the avionics bus — it is fed while that bus is powered
+    // avionics bus 2 switch: its own rocker on the G1000, the single avionics master on the classic panel
+    const bus2Sw = glass ? sw.avionics2 : sw.avionics;
+    // electrical fire: the fault sits on one consumer of avionics bus 2 (a shorted radio): it is fed while that bus
+    // is powered. Restoring the power one bus at a time (POH: master, STBY BATT, avionics bus 1, bus 2) finds it.
     const elecFireFed =
       !!f.electricalFire &&
       busOn &&
-      sw.avionics &&
+      bus2Sw &&
       r.busVolts > ELEC.deadVolts - 2;
     // solve the bus voltage: constant-power avionics, resistive lights / heat
     let V = r.busVolts > 5 ? r.busVolts : 26;
@@ -513,6 +569,7 @@ export class SystemsModel {
       load =
         ld.essential * cp +
         (sw.avionics ? ld.avionics * cp : 0) +
+        (bus2Sw ? ld.avionics2 * cp : 0) +
         (sw.pitotHeat ? ld.pitotHeat * rs : 0) +
         (sw.landingLight ? ld.landingLight * rs : 0) +
         (sw.beacon ? ld.beacon * rs * 0.6 : 0) +
@@ -553,15 +610,29 @@ export class SystemsModel {
     }
     const powered = busOn && V > ELEC.deadVolts;
     const avionicsPowered = powered && sw.avionics;
+    const bus2Powered = powered && bus2Sw;
+    // G1000 essential bus (PFD, AHRS / ADC, COM1 / NAV1): fed by the main bus, else by the standby battery while
+    // STBY BATT is ARM — also with the master OFF, which is why the POH fire and forced-landing checklists say
+    // "STBY BATT — OFF" before "MASTER — OFF" (C172S NAV III POH section 3)
+    const stbyAvail = glass && sw.stbyBatt && this.stbyCharge > 0;
+    const stbyFeeding = !powered && stbyAvail;
+    const essPowered = powered || stbyFeeding;
+    if (dt > 0) {
+      if (stbyFeeding)
+        this.stbyCharge = Math.max(
+          0,
+          this.stbyCharge - dt / ELEC.stbyEnduranceS,
+        );
+      else if (powered && altCap > 1 && sw.stbyBatt)
+        this.stbyCharge = Math.min(1, this.stbyCharge + dt / 7200);
+    }
     const elec = r.elec; // updated in place: no allocation per frame
-    elec.pfd =
-      elec.com1 =
-      elec.nav1 =
-      elec.xpdr =
-      elec.flaps =
-      elec.turnCoord =
-        powered;
-    elec.mfd = elec.com2 = elec.nav2 = elec.gps = elec.adf = avionicsPowered;
+    elec.pfd = elec.com1 = elec.nav1 = essPowered;
+    elec.xpdr = elec.flaps = elec.turnCoord = powered;
+    elec.mfd = avionicsPowered;
+    // G1000: GPS1 is in the GIA 1 on the essential bus; the classic panel's GPS navigator is on the avionics master
+    elec.gps = glass ? essPowered : avionicsPowered;
+    elec.com2 = elec.nav2 = elec.adf = bus2Powered;
     elec.ap = avionicsPowered && sw.trimCb;
     elec.trim = powered && sw.trimCb;
     elec.stallHorn = true;
@@ -893,7 +964,9 @@ export class SystemsModel {
     // ================================================================ trim, radios
     const trimRunning = !!f.trimRunaway && elec.trim;
     if (trimRunning && dt > 0) {
-      sim.controls.trim = Math.max(-1, sim.controls.trim - (2 / 8) * dt); // full travel in 8 s, nose down
+      // a GA trim servo runs slowly: full travel in ≈ 16 s, nose down (audit: 10–20 s is realistic; at 8 s the
+      // runaway could not be held on a keyboard or touch yoke while pulling the breaker)
+      sim.controls.trim = Math.max(-1, sim.controls.trim - (2 / 16) * dt);
       if (sim.ap.ap) sim.ap.disconnect();
     }
 
@@ -901,18 +974,18 @@ export class SystemsModel {
     const prevAnn = r.annunciators;
     const annunciators = this.annScratch; // reused: a new array is published only when the list changes
     annunciators.length = 0;
-    if (powered) {
-      if (V < ELEC.lowVolts) annunciators.push("LOW VOLTS");
+    // only the real C172S annunciations (systemsTypes.ts Annunciator): no FIRE, SMOKE, DOOR or FUEL PRESS light.
+    // On the G1000 they are shown by the PFD, which the standby battery keeps alive with the main bus dead.
+    if (essPowered) {
+      if (V < ELEC.lowVolts || !powered) annunciators.push("LOW VOLTS");
       if (this.oilPress < 20) annunciators.push("OIL PRESSURE");
-      if (fireKind === "engine") annunciators.push("FIRE");
-      if (this.smoke > 0.2) annunciators.push("SMOKE");
       if (this.vac < 3.5) annunciators.push("LOW VACUUM"); // C172S: below 3.5 inHg
-      if (this.fuelL < 8) annunciators.push("LOW FUEL L");
-      if (this.fuelR < 8) annunciators.push("LOW FUEL R");
-      if (f.fuelPump && !elec.auxPump) annunciators.push("FUEL PRESS");
-      if (icingConditions && !elec.pitotHeat)
+      // LOW FUEL L / R: ≈ 5 gal usable in the tank (C172S NAV III POH section 7 — verify on your serial)
+      if (this.fuelL < LOW_FUEL_GAL) annunciators.push("LOW FUEL L");
+      if (this.fuelR < LOW_FUEL_GAL) annunciators.push("LOW FUEL R");
+      if (icingConditions && !elec.pitotHeat && powered)
         annunciators.push("PITOT HEAT OFF");
-      if (f.door) annunciators.push("DOOR");
+      if (stbyFeeding) annunciators.push("STBY BATT");
     }
     // the readout object is updated in place (no per-frame allocation)
     r.busVolts = busOn ? V : 0;
@@ -951,6 +1024,9 @@ export class SystemsModel {
     r.trimRunning = trimRunning;
     r.doorOpen = !!f.door;
     r.badMag = this.badMag;
+    r.essPowered = essPowered;
+    r.stbyBattFeeding = stbyFeeding;
+    r.stbyBattCharge = this.stbyCharge;
     let same = annunciators.length === prevAnn.length;
     for (let i = 0; same && i < annunciators.length; i++)
       same = annunciators[i] === prevAnn[i];

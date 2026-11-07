@@ -141,7 +141,13 @@ describe("failures and switches contract", () => {
     expect(FAILURE_GROUPS.flatMap((g) => g.keys).sort()).toEqual(
       [...ALL_KEYS].sort(),
     );
-    expect(Object.keys(ANNUNCIATOR_LEVEL)).toHaveLength(10);
+    // only the annunciations a C172S really has (NAV III CAS / classic annunciator panel): no FIRE, SMOKE, DOOR or
+    // FUEL PRESS light — recognising a fire, an open door or a dead fuel pump is the pilot's job
+    expect(Object.keys(ANNUNCIATOR_LEVEL).sort()).toEqual(
+      ["LOW FUEL L", "LOW FUEL R", "LOW VACUUM", "LOW VOLTS", "OIL PRESSURE", "PITOT HEAT OFF", "STBY BATT"].sort(),
+    );
+    for (const fake of ["FIRE", "SMOKE", "DOOR", "FUEL PRESS"])
+      expect(Object.keys(ANNUNCIATOR_LEVEL)).not.toContain(fake);
   });
 
   it("the failure bit mask lists every FailureKey once (a direct write to sim.failures is always seen)", () => {
@@ -160,10 +166,12 @@ describe("failures and switches contract", () => {
     run(s, 20);
     s.setSwitch("auxPump", true);
     s.setSwitch("mixture", 0);
+    s.setSwitch("altMaster", false);
     run(s, 4);
     const fr = s.rec.events.map((e) => e.fr).filter(Boolean);
     expect(fr).toContain("PANNE : Panne de pompe à carburant mécanique");
-    expect(fr).toContain("Voyant : FUEL PRESS");
+    expect(fr).toContain("Voyant : LOW VOLTS");
+    expect(fr).not.toContain("Voyant : FUEL PRESS");
     expect(fr).toContain(
       "Moteur arrêté (désamorçage : pas de pression carburant)",
     );
@@ -266,12 +274,14 @@ describe("failures and switches contract", () => {
 // =========================================================================== electrical
 describe("electrical system", () => {
   /** minutes until the bus dies after an alternator failure (systems only: the airframe holds cruise RPM) */
-  function endurance(shed: boolean) {
+  function endurance(shed: boolean, cockpit: Sim["cockpit"] = "steam") {
     const s = cruise();
+    s.cockpit = cockpit;
     run(s, 0.5);
     s.setFailure("alternator", true);
     if (shed) {
       s.setSwitch("avionics", false);
+      s.setSwitch("avionics2", false);
       s.setSwitch("beacon", false);
       s.setSwitch("pitotHeat", false);
       s.setSwitch("landingLight", false);
@@ -290,6 +300,41 @@ describe("electrical system", () => {
     }
     return { min: Infinity, low, trace, s };
   }
+
+  /** minutes of main battery after an alternator failure with exactly these switches turned OFF */
+  function enduranceOff(cockpit: Sim["cockpit"], off: (keyof Sim["sw"])[]) {
+    const s = cruise();
+    s.cockpit = cockpit;
+    run(s, 0.5);
+    s.setFailure("alternator", true);
+    for (const k of off) s.setSwitch(k, false as never);
+    for (let t = 1; t < 7200; t++) {
+      s.systems.step(1, s);
+      if (!s.sys.powered) return t / 60;
+    }
+    return Infinity;
+  }
+
+  it("the LOW VOLTS cards state the endurance of their own shed lists (C172S NAV III POH order)", () => {
+    // G1000 card: ALT OFF, AVIONICS BUS 1 OFF, landing light, beacon, pitot heat OFF, AVIONICS BUS 2 OFF: ≈ 40 min
+    const full = enduranceOff("g1000", ["altMaster", "avionics", "landingLight", "beacon", "pitotHeat", "avionics2"]);
+    // …with BUS 2 kept ON for the approach: ≈ 28 min
+    const bus2 = enduranceOff("g1000", ["altMaster", "avionics", "landingLight", "beacon", "pitotHeat"]);
+    // classic panel: shedding the lights alone (radios ON) ≈ 16 min; ≈ 40 min only with the avionics master OFF
+    const steamRadios = enduranceOff("steam", ["altMaster", "landingLight", "beacon", "pitotHeat"]);
+    const steamNoRadio = enduranceOff("steam", ["altMaster", "avionics", "landingLight", "beacon", "pitotHeat"]);
+    note(
+      `LOW VOLTS shed lists: G1000 full ${full.toFixed(1)} min, BUS 2 kept ${bus2.toFixed(1)} min; classic radios ON ${steamRadios.toFixed(1)} min, avionics OFF ${steamNoRadio.toFixed(1)} min`,
+    );
+    expect(full).toBeGreaterThanOrEqual(37);
+    expect(full).toBeLessThanOrEqual(45);
+    expect(bus2).toBeGreaterThanOrEqual(25);
+    expect(bus2).toBeLessThanOrEqual(31);
+    expect(steamRadios).toBeGreaterThanOrEqual(14);
+    expect(steamRadios).toBeLessThanOrEqual(19);
+    expect(steamNoRadio).toBeGreaterThanOrEqual(37);
+    expect(steamNoRadio).toBeLessThanOrEqual(45);
+  });
 
   it("alternator failure: LOW VOLTS at once, battery discharges; 15–20 min without shedding, 30–45 min with", () => {
     const a = endurance(false);
@@ -343,6 +388,68 @@ describe("electrical system", () => {
     expect(s.ac.s.flapPos).toBe(flaps0); // electric flaps dead
   });
 
+  it("G1000: the standby battery keeps the essential bus (PFD, COM1 / NAV1) ≥ 30 min after the main bus dies; STBY BATT OFF darkens it", () => {
+    // C172S NAV III POH section 7: STBY BATT ARM feeds the essential bus for at least 30 minutes
+    const a = endurance(false, "g1000");
+    expect(a.min).toBeGreaterThanOrEqual(15);
+    const s = a.s;
+    run(s, 1);
+    expect(s.sys.powered).toBe(false);
+    expect(s.sys.essPowered).toBe(true);
+    expect(s.sys.stbyBattFeeding).toBe(true);
+    expect(s.sys.elec.pfd && s.sys.elec.com1 && s.sys.elec.nav1).toBe(true);
+    expect(s.sys.elec.mfd || s.sys.elec.flaps || s.sys.elec.xpdr).toBe(false);
+    expect(s.sys.annunciators).toContain("STBY BATT");
+    expect(s.sys.annunciators).toContain("LOW VOLTS");
+    let t = 0;
+    while (s.sys.essPowered && t < 3600) {
+      s.systems.step(10, s);
+      t += 10;
+    }
+    note(`G1000 standby battery: essential bus for ${(t / 60).toFixed(1)} min after the main bus died`);
+    expect(t / 60).toBeGreaterThanOrEqual(30);
+    expect(t / 60).toBeLessThanOrEqual(45);
+    expect(s.sys.elec.pfd).toBe(false);
+    // master OFF with STBY BATT ARM: the PFD stays alive (why the POH fire checklists say STBY BATT — OFF first)
+    const g = cruise();
+    g.cockpit = "g1000";
+    run(g, 1);
+    g.setSwitch("altMaster", false);
+    g.setSwitch("batMaster", false);
+    run(g, 1);
+    expect(g.sys.powered).toBe(false);
+    expect(g.sys.elec.pfd).toBe(true);
+    expect(g.sys.elec.mfd).toBe(false);
+    g.setSwitch("stbyBatt", false);
+    run(g, 1);
+    expect(g.sys.elec.pfd).toBe(false);
+    expect(g.sys.annunciators).toEqual([]);
+    // the classic panel has no standby battery: master OFF is dark at once
+    const c = cruise();
+    c.cockpit = "steam";
+    c.setSwitch("altMaster", false);
+    c.setSwitch("batMaster", false);
+    run(c, 1);
+    expect(c.sys.elec.pfd).toBe(false);
+    expect(c.sys.stbyBattFeeding).toBe(false);
+  });
+
+  it("G1000 LOW VOLTS: cycling MASTER ALT only (POH NAV III) keeps the displays powered; BAT OFF would darken them without STBY BATT", () => {
+    const s = cruise();
+    s.cockpit = "g1000";
+    s.setFailure("alternator", true);
+    run(s, 2);
+    expect(s.sys.annunciators).toContain("LOW VOLTS");
+    s.setSwitch("altMaster", false);
+    run(s, 1);
+    expect(s.sys.elec.pfd && s.sys.elec.mfd).toBe(true);
+    expect(s.sys.stbyBattFeeding).toBe(false);
+    s.setSwitch("altMaster", true);
+    run(s, 2);
+    expect(s.sys.elec.pfd && s.sys.elec.mfd).toBe(true);
+    expect(s.sys.annunciators).toContain("LOW VOLTS"); // the alternator is really dead: the reset does not cure it
+  });
+
   it("ALT master OFF behaves as an alternator failure; ammeter sign: + charging, − discharging", () => {
     const s = cruise();
     run(s, 2);
@@ -381,13 +488,17 @@ describe("electrical system", () => {
 
   it("electrical fire: smoke and rising amps until the masters are OFF (out ≈ 10 s later); avionics OFF isolates it", () => {
     const s = cruise();
+    s.cockpit = "steam"; // one avionics master: the fault is behind it
     const P = new Pilot(s);
     s.setFailure("electricalFire", true);
     const a0 = s.sys.loadAmps;
     run(s, 15, () => P.fly({ alt: 5500 }));
     expect(s.sys.fire).toBe(true);
     expect(s.sys.fireKind).toBe("electrical");
-    expect(s.sys.annunciators).toContain("SMOKE");
+    // no SMOKE light on a C172S: the cue is the smoke itself (the displays draw the haze from smokeLevel)
+    expect(s.sys.smoke).toBe(true);
+    expect(s.sys.smokeLevel).toBeGreaterThan(0.2);
+    expect(s.sys.annunciators).not.toContain("SMOKE");
     expect(s.sys.loadAmps).toBeGreaterThan(a0 + 15);
     note(
       `electrical fire: load ${a0.toFixed(0)} A -> ${s.sys.loadAmps.toFixed(0)} A after 15 s, smoke ${s.sys.smokeLevel.toFixed(2)}`,
@@ -418,6 +529,42 @@ describe("electrical system", () => {
     note(
       `electrical fire: masters OFF -> out after ${tOut.toFixed(1)} s; master ON + avionics OFF safe; avionics ON re-ignites`,
     );
+  });
+
+  it("G1000 electrical fire: the POH restore (master, STBY BATT, avionics BUS 1, then BUS 2) finds the faulty bus", () => {
+    const s = cruise();
+    s.cockpit = "g1000";
+    const P = new Pilot(s);
+    s.setFailure("electricalFire", true);
+    run(s, 15, () => P.fly({ alt: 5500 }));
+    expect(s.sys.fire).toBe(true);
+    // POH NAV III: STBY BATT OFF, master OFF, avionics OFF (bus 1 and bus 2)
+    s.setSwitch("stbyBatt", false);
+    s.setSwitch("altMaster", false);
+    s.setSwitch("batMaster", false);
+    s.setSwitch("avionics", false);
+    s.setSwitch("avionics2", false);
+    const tOut = until(s, 30, () => !s.sys.fire, () => P.fly({ alt: 5500 }));
+    expect(tOut).toBeLessThan(12);
+    expect(s.sys.elec.pfd).toBe(false); // everything dark: the standby instruments only
+    // fire out, power needed: master ON, STBY BATT ARM, avionics BUS 1 ON — no smoke, MFD / GPS / AP back
+    s.setSwitch("batMaster", true);
+    s.setSwitch("altMaster", true);
+    s.setSwitch("stbyBatt", true);
+    s.setSwitch("avionics", true);
+    run(s, 20, () => P.fly({ alt: 5500 }));
+    expect(s.sys.fire).toBe(false);
+    expect(s.sys.elec.pfd && s.sys.elec.mfd && s.sys.elec.gps).toBe(true);
+    expect(s.sys.elec.com2).toBe(false);
+    // BUS 2 ON: the shorted radio smokes again — OFF and leave it OFF
+    s.setSwitch("avionics2", true);
+    run(s, 10, () => P.fly({ alt: 5500 }));
+    expect(s.sys.fire).toBe(true);
+    s.setSwitch("avionics2", false);
+    const t2 = until(s, 30, () => !s.sys.fire, () => P.fly({ alt: 5500 }));
+    expect(t2).toBeLessThan(12);
+    expect(s.sys.elec.pfd && s.sys.elec.mfd).toBe(true);
+    note(`G1000 electrical fire: restore bus 1 safe, bus 2 re-ignites; bus 2 OFF -> out after ${t2.toFixed(1)} s`);
   });
 });
 
@@ -818,19 +965,22 @@ describe("engine, fuel and oil", () => {
     );
   });
 
-  it("engine-driven fuel pump failure: FUEL PRESS, the engine quits unless the AUX PUMP is ON (then normal)", () => {
+  it("engine-driven fuel pump failure: the fuel flow falls (no FUEL PRESS light on a C172S), the engine quits unless the AUX PUMP is ON (then normal)", () => {
     const s = cruise();
     const P = new Pilot(s);
+    const ff0 = s.ac.data.fuelFlowGph;
     s.setFailure("fuelPump", true);
     run(s, 1);
-    expect(s.sys.annunciators).toContain("FUEL PRESS");
+    expect(s.sys.annunciators).toEqual([]);
+    expect(s.sys.fuelPressOk).toBe(false);
+    expect(ff0).toBeGreaterThan(5);
     const tq = until(s, 30, () => !s.sys.engineRunning, glide(s, P));
     expect(tq).toBeLessThan(16);
     s.setSwitch("auxPump", true);
     const tr = until(s, 20, () => s.sys.engineRunning, glide(s, P));
     run(s, 10, glide(s, P));
     expect(tr).toBeLessThan(5);
-    expect(s.sys.annunciators).not.toContain("FUEL PRESS");
+    expect(s.sys.fuelPressOk).toBe(true);
     expect(s.ac.s.rpm).toBeGreaterThan(1800);
     expect(s.sys.powerFactor).toBeGreaterThan(0.95);
     note(
@@ -920,7 +1070,7 @@ describe("engine, fuel and oil", () => {
     run(s, 5, () => P.fly({ alt: 5500 }));
     expect(s.sys.fire).toBe(true);
     expect(s.sys.fireKind).toBe("engine");
-    expect(s.sys.annunciators).toContain("FIRE");
+    expect(s.sys.annunciators).not.toContain("FIRE"); // the cues are smoke, smell and the EGT / CHT
     s.setSwitch("mixture", 0);
     run(s, 30, () => P.fly({ ias: 100 }));
     expect(s.sys.engineRunning).toBe(false);
@@ -950,10 +1100,50 @@ describe("engine, fuel and oil", () => {
     c.setSwitch("cabinHeat", true);
     c.setFailure("engineFire", true);
     run(c, 30);
-    expect(c.sys.annunciators).toContain("SMOKE");
+    expect(c.sys.smoke).toBe(true);
+    expect(c.sys.smokeLevel).toBeGreaterThan(0.5);
     note(
       `engine fire: mixture cut alone keeps it burning; + fuel selector OFF -> out after ${tOut.toFixed(1)} s at 100 KIAS (${tSlow.toFixed(1)} s at 68 KIAS); cabin heat ON -> SMOKE`,
     );
+  });
+
+  it("fuel starvation: set up before the flight (selector on a nearly empty tank), the injection never moves a control; the POH restart flow (BOTH, fuel pump) restarts it", () => {
+    const s = cruise();
+    const P = new Pilot(s);
+    // set-up (drill start): the selector left on one tank holding ≈ 2 min of fuel — LOW FUEL lit from the start
+    const tank = s.systems.prepareStarvation(s, 120);
+    expect(s.sw.fuelSelector).toBe(tank);
+    run(s, 1, () => P.fly({ alt: 5500 }));
+    expect(s.sys.annunciators).toContain(tank === "LEFT" ? "LOW FUEL L" : "LOW FUEL R");
+    const left = tank === "LEFT" ? s.sys.fuelGalL : s.sys.fuelGalR;
+    expect(left).toBeGreaterThan(0.1);
+    expect(left).toBeLessThan(0.5);
+    // the failure: the selector stays where the pilot left it, only the residual of that tank goes
+    s.setFailure("fuelStarvation", true);
+    expect(s.sw.fuelSelector).toBe(tank);
+    const tq = until(s, 30, () => !s.sys.engineRunning, glide(s, P));
+    expect(tq).toBeLessThan(10);
+    // the restart flow: fuel shutoff ON, selector BOTH, fuel pump ON, mixture RICH, magnetos BOTH
+    s.setSwitch("fuelSelector", "BOTH");
+    s.setSwitch("auxPump", true);
+    const tr = until(s, 30, () => s.sys.engineRunning, glide(s, P));
+    expect(tr).toBeLessThan(10);
+    // with the selector on BOTH nothing can starve the engine: the injection has no effect, moves nothing
+    const b = cruise();
+    b.setFailure("fuelStarvation", true);
+    run(b, 20);
+    expect(b.sw.fuelSelector).toBe("BOTH");
+    expect(b.sys.engineRunning).toBe(true);
+    note(`fuel starvation: engine quits after ${tq.toFixed(1)} s; selector BOTH + fuel pump -> restart after ${tr.toFixed(1)} s`);
+  });
+
+  it("an engine failure never moves the throttle (the RPM falls by itself)", () => {
+    const s = cruise();
+    const thr = s.controls.throttle;
+    s.setFailure("engine", true);
+    run(s, 3);
+    expect(s.controls.throttle).toBe(thr);
+    expect(s.sys.engineRunning).toBe(false);
   });
 
   it("legacy total engine failure stays unrecoverable", () => {
@@ -969,16 +1159,19 @@ describe("engine, fuel and oil", () => {
     expect(s.sys.engineRunning).toBe(false);
   });
 
-  it("fuel leak (left tank): ≈ 0.25 gal/min more from the left tank, LOW FUEL L when below 8 gal", () => {
+  it("fuel leak (left tank): ≈ 0.25 gal/min more from the left tank, LOW FUEL L when below 5 gal", () => {
     const s = cruise();
     s.setFailure("fuelLeak", true);
     level(s, 600, 0.1);
     const diff = s.sys.fuelGalR - s.sys.fuelGalL;
     expect(diff).toBeGreaterThan(2.3);
     expect(diff).toBeLessThan(2.7);
-    s.systems.setTanks(s, 8.1, 20);
+    s.systems.setTanks(s, 5.1, 20);
     level(s, 60, 0.1);
     expect(s.sys.annunciators).toContain("LOW FUEL L");
+    s.systems.setTanks(s, 7, 20);
+    run(s, 1);
+    expect(s.sys.annunciators).not.toContain("LOW FUEL L"); // C172S NAV III: ≈ 5 gal, not 8
     note(
       `fuel leak: after 10 min the left tank holds ${diff.toFixed(2)} gal less than the right`,
     );
@@ -1003,16 +1196,16 @@ describe("flaps, trim, radios, door", () => {
     expect(s.ac.s.flapPos).toBeCloseTo(1, 2);
   });
 
-  it("trim runaway: nose-down at full travel in ≈ 8 s, the AP disconnects; pulling the trim/AP breaker stops it", () => {
+  it("trim runaway: nose-down at full travel in ≈ 16 s (a GA trim servo), the AP disconnects; pulling the trim/AP breaker stops it", () => {
     const s = cruise();
     s.controls.trim = 1;
     s.ap.toggleAp(s.ac.data);
     expect(s.ap.ap).toBe(true);
     s.setFailure("trimRunaway", true);
     expect(s.ap.ap).toBe(false);
-    const t = until(s, 20, () => s.controls.trim <= -1);
-    expect(t).toBeGreaterThan(7);
-    expect(t).toBeLessThan(9);
+    const t = until(s, 30, () => s.controls.trim <= -1);
+    expect(t).toBeGreaterThan(14);
+    expect(t).toBeLessThan(18);
     s.controls.trim = 0;
     s.setSwitch("trimCb", false);
     run(s, 5);
@@ -1035,7 +1228,7 @@ describe("flaps, trim, radios, door", () => {
     expect(s.sys.comOk).toBe(true);
   });
 
-  it("door open: DOOR, a little drag (−1 to −4 KTAS), nothing else", () => {
+  it("door open: no light (noise and a draught are the cue), a little drag (−1 to −4 KTAS), nothing else", () => {
     const s = cruise();
     const P = new Pilot(s);
     s.controls.throttle = 0.6;
@@ -1044,7 +1237,7 @@ describe("flaps, trim, radios, door", () => {
     s.setFailure("door", true);
     run(s, 120, () => P.fly({ alt: 5500 }));
     const dv = v0 - s.ac.data.tasKt;
-    expect(s.sys.annunciators).toEqual(["DOOR"]);
+    expect(s.sys.annunciators).toEqual([]);
     expect(s.sys.doorOpen).toBe(true);
     expect(dv).toBeGreaterThan(0.8);
     expect(dv).toBeLessThan(4);
