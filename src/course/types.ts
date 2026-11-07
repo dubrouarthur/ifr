@@ -116,6 +116,9 @@ export interface Course {
   /** additive (unified library): the program(s) the course belongs to, first = its home shelf; a course without
    *  one is placed from its sample entry, its tags or its id (src/library/meta.ts) */
   program?: CourseProgram | CourseProgram[];
+  /** additive (unified library): the subject the course is filed in, its ONE home on its programme's shelf
+   *  (src/library/programs.ts SUBJECTS, e.g. 'ir.hold'); without one it is filed from its program and its words */
+  subject?: string;
   /** additive (unified library): 1 getting started · 2 core · 3 advanced (default: from the program) */
   level?: CourseLevel;
   /** 'course' (default), 'lesson' (briefing pages + a Fly-it, the briefing team's shape) or 'briefing' (Briefing) */
