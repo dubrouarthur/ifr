@@ -517,7 +517,7 @@ export function verifyLine(
     : fr
       ? `Réappliquée avec ${diffs.length} écart${diffs.length > 1 ? "s" : ""}`
       : `Re-applied with ${diffs.length} difference${diffs.length > 1 ? "s" : ""}`;
-  return { ok, text: `${head}: ${parts.join(" · ")}` };
+  return { ok, text: `${head}${fr ? " :" : ":"} ${parts.join(" · ")}` };
 }
 
 // ---------------------------------------------------------------- not captured
@@ -889,6 +889,17 @@ export function applyScene(sim: Sim, scene: SimScene): SceneDiff[] {
     sim.controls.trim = clamp(c.trim, -1, 1);
     sim.controls.flaps = clamp(Math.round(c.flaps), 0, 3);
     if (c.mixture !== undefined) sim.sw.mixture = clamp(c.mixture, 0, 1);
+  } else if (fields && !start.onGround && fields.iasKt >= 90) {
+    // a scene typed as numbers: trim for its speed (the load trim holds about 100 KIAS; ~7.5 kt per 0.1 of
+    // trim), so the stage does not zoom up or dive the moment it goes live
+    sim.controls.trim = clamp(-0.3 - (fields.iasKt - 100) / 75, -0.8, 0);
+    // and the power for level flight there (measured on the C172 model: 90 kt needs 0.48 at 3,000 ft and 0.72 at
+    // 12,000 ft; 105 kt needs 0.68 and 0.88+), so a stage that holds the speed for the student starts level
+    if (!fields.vsFpm) {
+      const v = clamp(fields.iasKt, 80, 110) - 90;
+      const thr = 0.4 + v * 0.0107 + (0.027 + v * 0.00087) * (Math.max(0, fields.altFt) / 1000);
+      sim.controls.throttle = clamp(thr, 0.3, 1);
+    }
   }
   // 3
   applyPlan(sim, scene.plan, diffs, scene.notCaptured?.includes(NOT_CAPTURED.hold) ? start.pos : null);

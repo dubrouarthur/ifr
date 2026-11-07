@@ -363,10 +363,14 @@ export function unitsNote(
   const fs = fullScale(source, gpsFullScaleNm);
   const perDot = fs.value / n;
   const three = 0.75 * n;
+  // a half dot is shown as is (1.5 dots on a 2-dot HSI); "about N" only when rounding is harmless (3.75 → about 4)
+  const half = Math.abs(three * 2 - Math.round(three * 2)) < 0.01;
   const threeTxt =
     Math.abs(three - Math.round(three)) < 0.01
       ? String(Math.round(three))
-      : `${fr ? "environ " : "about "}${Math.round(three)}`;
+      : half
+        ? fmtNum(three, 1, lang)
+        : `${fr ? "environ " : "about "}${Math.round(three)}`;
   const name: Record<DevSource, [string, string]> = {
     VOR: ["On a VOR", "Sur un VOR"],
     LOC: ["On a localizer", "Sur un localizer"],
@@ -377,10 +381,9 @@ export function unitsNote(
     GS: ["On the glideslope", "Sur le glide"],
     GP: ["On the glidepath", "Sur le glidepath"],
   };
-  const exact = Math.abs(three - Math.round(three)) < 0.01;
   let s = fr
-    ? `${name[source][1]}, 1 point = ${amount(perDot, fs.unit, lang)}. La limite du test en vol est ¾ d’échelle (${amount(0.75 * fs.value, fs.unit, lang)}, ${exact ? threeTxt + " points" : threeTxt + " points"}).`
-    : `${name[source][0]}, 1 dot = ${amount(perDot, fs.unit, lang)}. The checkride limit is ¾ scale (${amount(0.75 * fs.value, fs.unit, lang)}, ${threeTxt} dots).`;
+    ? `${name[source][1]}, 1 point = ${amount(perDot, fs.unit, lang)}. La limite du test en vol est ¾ d’échelle (${amount(0.75 * fs.value, fs.unit, lang)}, ${threeTxt} point${three >= 2 ? "s" : ""}).`
+    : `${name[source][0]}, 1 dot = ${amount(perDot, fs.unit, lang)}. The checkride limit is ¾ scale (${amount(0.75 * fs.value, fs.unit, lang)}, ${threeTxt} dot${three === 1 ? "" : "s"}).`;
   if (askedDots !== undefined && askedDots < three - 0.01)
     s += fr
       ? ` Cette étape demande ${fmtNum(askedDots, askedDots % 1 ? 1 : 0, lang)} point${askedDots >= 2 ? "s" : ""} pour apprendre à rester précis.`

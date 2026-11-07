@@ -573,7 +573,8 @@ describe("CourseStore (memory backend)", () => {
     const { s } = await store();
     await s.save(course());
     const d = await s.duplicate("vor-tracking");
-    expect(d.ok && d.course.id).toBe("vor-tracking-2");
+    expect(d.ok && d.course.id).toMatch(/^vor-tracking-[a-z0-9]{6}$/);
+    const dupId = d.ok ? d.course.id : "";
     expect(d.ok && d.course.rev).toBe(1);
     s.setAssigned("vor-tracking", true);
     expect(s.indexEntry("vor-tracking")!.assigned).toBe(true);
@@ -594,9 +595,9 @@ describe("CourseStore (memory backend)", () => {
     await s.delete("vor-tracking");
     expect(await s.get("vor-tracking")).toBeNull();
     expect(await s.getProgress("vor-tracking", "tom")).toBeNull();
-    expect(s.list().map((c) => c.id)).toEqual(["vor-tracking-2"]);
+    expect(s.list().map((c) => c.id)).toEqual([dupId]);
     expect(s.last()).toBeNull();
-    expect((await s.reindex()).map((c) => c.id)).toEqual(["vor-tracking-2"]);
+    expect((await s.reindex()).map((c) => c.id)).toEqual([dupId]);
   });
   it("stores images once by sha-256 and collects the unused ones", async () => {
     const { s } = await store();
@@ -737,6 +738,29 @@ describe(".ifrcourse files", () => {
     expect((await s.get("vor-tracking-2"))!.steps[0].title.en).toBe("Copy me");
     const broken = await importCourseFiles(s, [file({ ...course(), id: "" })]);
     expect(broken.skipped[0].reason).toMatch(/id is missing/);
+  });
+  it("never replaces another author's course that shares an id, nor shadows a sample", async () => {
+    const { s } = await store();
+    await s.save(course({ updated: "2026-11-01T10:00:00.000Z" }), { keepRev: true });
+    const file = (c: Course): CourseFile => ({ format: "ifr-course-file", version: 1, course: c, assets: {} });
+    const bob = course({ updated: "2026-11-05T10:00:00.000Z", author: { name: "B. Durand", club: "Aéroclub du Sud" } });
+    bob.steps[0].title = t("Bob's step");
+    const r = await importCourseFiles(s, [file(bob)]);
+    expect(r.replaced).toEqual([]);
+    expect(r.renamed.length).toBe(1);
+    expect(r.renamed[0].to).toMatch(/^vor-tracking-[a-z0-9]{6}$/);
+    expect((await s.get("vor-tracking"))!.steps[0].title.en).not.toBe("Bob's step");
+    expect((await s.get(r.renamed[0].to))!.steps[0].title.en).toBe("Bob's step");
+    // a file carrying a built-in sample's id comes in under a new id
+    const r2 = await importCourseFiles(s, [file(course({ id: "sample-vor" }))]);
+    expect(r2.renamed[0].from).toBe("sample-vor");
+    expect(await s.get("sample-vor")).toBeNull();
+    // new ids are unique and never a sample's
+    const a = await s.newId("my-course");
+    const b = await s.newId("sample-vor");
+    expect(a).not.toBe(await s.newId("my-course"));
+    expect(b.startsWith("sample-")).toBe(false);
+    expect(await s.freeId("sample-vor")).toBe("sample-vor-2");
   });
   it("checks imported images: sha-256 re-keyed, unsafe SVG and unknown types refused", async () => {
     const { s } = await store();

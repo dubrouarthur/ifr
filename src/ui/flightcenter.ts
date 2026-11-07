@@ -79,7 +79,8 @@ type View =
   | { type: "cat"; cat: CatId; sub: string | null }
   | { type: "path"; path: Path }
   | { type: "search" }
-  | { type: "club"; tab: ClubTab };
+  | { type: "club"; tab: ClubTab }
+  | { type: "courses" };
 
 type QuickKind = "approach" | "hold";
 
@@ -598,6 +599,35 @@ registerStrings("fr", {
 const uiL = (): Lang => (uiLang() === "fr" ? "fr" : "en");
 const CLUB_TAB_KEY = "ifr.fc.clubTab";
 
+/** the Ground school tile and crumb (FR / EN like the procedures page) */
+function groundSchoolLabel(): string {
+  return uiLang() === "fr" ? "Théorie" : "Ground school";
+}
+/** the tile's meta line, from the small course index (course/store.ts) without loading the store */
+function groundSchoolMeta(): string {
+  const fr = uiLang() === "fr";
+  try {
+    const raw = localStorage.getItem("ifr.course.index");
+    const d = raw ? (JSON.parse(raw) as { courses?: unknown }) : null;
+    const list = (Array.isArray(d?.courses) ? d.courses : []) as {
+      assigned?: boolean;
+      title?: { en?: string; fr?: string };
+    }[];
+    const a = list.find((c) => c && c.assigned);
+    if (a) {
+      const title = (fr ? a.title?.fr : undefined) ?? a.title?.en ?? "";
+      return fr ? `Assigné : ${title}` : `Assigned: ${title}`;
+    }
+    if (list.length)
+      return fr
+        ? `${list.length} cours sur cet appareil · exemples`
+        : `${list.length} ${list.length === 1 ? "course" : "courses"} on this device · samples`;
+  } catch {
+    /* storage blocked */
+  }
+  return fr ? "Maths IFR et VFR, VOR, attentes" : "Maths for IFR and VFR, VOR, holding";
+}
+
 export class FlightCenter extends Modal {
   private view: View = { type: "home" };
   /** where to go back to when the search is emptied */
@@ -802,7 +832,8 @@ export class FlightCenter extends Modal {
     const home =
       this.view.type === "home" ||
       this.view.type === "instructor" ||
-      this.view.type === "club";
+      this.view.type === "club" ||
+      this.view.type === "courses";
     this.gridEl.classList.toggle("home", home);
     this.box.classList.toggle("fc-is-home", home);
     this.searchClear.hidden = !this.q;
@@ -823,6 +854,8 @@ export class FlightCenter extends Modal {
         ? ""
         : v.type === "instructor"
           ? "Instructor"
+          : v.type === "courses"
+            ? groundSchoolLabel()
           : v.type === "club"
             ? t("ch.title")
           : v.type === "all"
@@ -1226,10 +1259,13 @@ export class FlightCenter extends Modal {
 
   // ------------------------------------------------------------------ main column
   private renderMain() {
+    this.courseLib?.destroy();
+    this.courseLib = null;
     clear(this.main);
     const v = this.view;
     if (v.type === "home") return this.renderHome();
     if (v.type === "instructor") return this.renderInstructor();
+    if (v.type === "courses") return this.renderCourses();
     if (v.type === "club") return this.renderClub(v.tab);
     if (v.type === "path") return this.renderPath(v.path);
     if (v.type === "search") {
@@ -1571,10 +1607,14 @@ export class FlightCenter extends Modal {
       }),
       this.tile({
         img: "steam",
-        title: "Academy",
-        desc: "Short interactive lessons: holds, intercepts, arcs, plates and minimums.",
-        meta: "Opens in a new tab",
-        href: "/academy.html",
+        title: groundSchoolLabel(),
+        desc:
+          uiLang() === "fr"
+            ? "Les cours de votre club : lire, essayer l’instrument, voler."
+            : "Courses from your club: read, try the instrument, fly it.",
+        meta: groundSchoolMeta(),
+        run: () => this.go({ type: "courses" }),
+        cls: "fc-tile-courses",
       }),
     );
     this.main.append(h("div", { class: "fc-home" }, hero, tools, tiles));
@@ -1858,6 +1898,27 @@ export class FlightCenter extends Modal {
   }
 
   // ------------------------------------------------------------------ instructor
+  // ------------------------------------------------------------------ Ground school (the course library)
+  private courseLib: { destroy(): void } | null = null;
+  /** the course library (course/ui/library.ts, loaded on demand); a course opens academy.html in this tab */
+  private renderCourses() {
+    const host = h("div", { class: "fc-courses" });
+    this.main.append(host);
+    void Promise.all([import("../course/ui/library"), import("../course/store")]).then(
+      ([m, st]) => {
+        if (!host.isConnected || this.view.type !== "courses") return;
+        this.courseLib?.destroy();
+        this.courseLib = m.mountLibrary(host, {
+          lang: uiLang(),
+          store: st.courseStore(),
+          embedded: true,
+          page: "academy.html",
+          navigate: (url) => this.leave(() => location.assign(url)),
+        });
+      },
+    );
+  }
+
   private renderInstructor() {
     const hk = this.hooks;
     type Act = {
@@ -1894,6 +1955,16 @@ export class FlightCenter extends Modal {
         desc: t("ch.sub"),
         label: t("ch.tab.drills"),
         run: () => this.goClub("drills"),
+      },
+      {
+        icon: I.learn,
+        title: uiLang() === "fr" ? "Des cours pour vos élèves" : "Courses for your students",
+        desc:
+          uiLang() === "fr"
+            ? "Des diapositives avec les vrais instruments, des exercices de calcul et un « À vous » dans le simulateur. Dupliquez un exemple ou partez de zéro."
+            : "Designed slides with the real instruments, calculation exercises and a Your turn in the simulator. Duplicate a sample or start from scratch.",
+        label: groundSchoolLabel(),
+        run: () => this.go({ type: "courses" }),
       },
       {
         icon: I.plan,

@@ -822,9 +822,9 @@ export const MAP_COL = {
 const pad3 = (n: number) =>
   String(Math.round(((n % 360) + 360) % 360) || 360).padStart(3, "0");
 const esc = (s: string) =>
-  s.replace(
-    /[&<>"]/g,
-    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!,
+  String(s).replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
   );
 const f1 = (v: number) => v.toFixed(1);
 
@@ -1941,8 +1941,8 @@ export function profileSvg(
     o.push(
       `<line class="rp-mins" x1="${f1(X(pr.mins.d0))}" x2="${f1(X(pr.mins.d1))}" y1="${f1(Y(pr.mins.alt))}" y2="${f1(Y(pr.mins.alt))}"/>${
         short
-          ? `<text class="rp-mins-t" style="text-anchor:end" x="${f1(mx)}" y="${f1(my)}">${pr.mins.label}</text>`
-          : `<text class="rp-mins-t" x="${f1(mx)}" y="${f1(my)}">${pr.mins.label}</text>`
+          ? `<text class="rp-mins-t" style="text-anchor:end" x="${f1(mx)}" y="${f1(my)}">${esc(pr.mins.label)}</text>`
+          : `<text class="rp-mins-t" x="${f1(mx)}" y="${f1(my)}">${esc(pr.mins.label)}</text>`
       }`,
     );
   }

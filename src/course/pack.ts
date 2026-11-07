@@ -29,7 +29,7 @@ import {
   validateCourse,
   type CourseIssue,
 } from "./validate";
-import type { CourseStore } from "./store";
+import { isReservedId, type CourseStore } from "./store";
 
 export const FILE_EXT = ".ifrcourse";
 export const FILE_MIME = "application/x-ifrcourse";
@@ -86,11 +86,45 @@ export async function compress(
 ): Promise<Uint8Array> {
   return pipe(bytes, new CompressionStream(format));
 }
+/** the most a course file or share link may inflate to (a small gzip bomb must not exhaust the tab's memory) */
+export const MAX_INFLATED_BYTES = 50 * 1024 * 1024;
+export class InflateLimitError extends Error {
+  constructor() {
+    super("inflate limit");
+    this.name = "InflateLimitError";
+  }
+}
+/** Inflate with a byte budget: stops (InflateLimitError) as soon as the output passes `limit`. */
 export async function decompress(
   bytes: Uint8Array,
   format: "gzip" | "deflate-raw",
+  limit = MAX_INFLATED_BYTES,
 ): Promise<Uint8Array> {
-  return pipe(bytes, new DecompressionStream(format));
+  const stream = new Blob([bytes as Uint8Array<ArrayBuffer>])
+    .stream()
+    .pipeThrough(
+      new DecompressionStream(format) as unknown as TransformStream<Uint8Array, Uint8Array>,
+    );
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel().catch(() => undefined);
+      throw new InflateLimitError();
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let o = 0;
+  for (const c of chunks) {
+    out.set(c, o);
+    o += c.byteLength;
+  }
+  return out;
 }
 const isGzip = (b: Uint8Array) =>
   b.length > 2 && b[0] === 0x1f && b[1] === 0x8b;
@@ -213,10 +247,15 @@ export async function readCourseFile(
     return {
       file: null,
       issues: [
-        L(
-          `Unreadable file (${(e as Error)?.message ?? e})`,
-          `Fichier illisible (${(e as Error)?.message ?? e})`,
-        ),
+        e instanceof InflateLimitError
+          ? L(
+              "This file is too large once uncompressed (over 50 MB): it was not opened.",
+              "Ce fichier est trop volumineux une fois décompressé (plus de 50 Mo) : il n’a pas été ouvert.",
+            )
+          : L(
+              `Unreadable file (${(e as Error)?.message ?? e})`,
+              `Fichier illisible (${(e as Error)?.message ?? e})`,
+            ),
       ],
       changes: [],
     };
@@ -402,8 +441,14 @@ export async function importCourseFiles(
       });
       continue;
     }
-    const cur = await store.get(file.course.id);
     let incoming = file.course;
+    // a file carrying a built-in sample's id (an edited copy exported by an older build) must not shadow the sample
+    if (isReservedId(incoming.id)) {
+      const to = await store.newId(incoming.id);
+      rep.renamed.push({ from: incoming.id, to });
+      incoming = { ...incoming, id: to };
+    }
+    const cur = await store.get(incoming.id);
     if (cur) {
       if (await sameContent(cur, incoming)) {
         rep.skipped.push({
@@ -412,8 +457,15 @@ export async function importCourseFiles(
         });
         continue;
       }
+      // same id, different author: another school's course that happens to share a (legacy) id, never an update
+      // of this one. It comes in as a copy, so nobody's work is replaced by an import.
+      const foreign =
+        policy === "newer" && !sameAuthor(cur.author, incoming.author);
       const newer = !cur.updated || incoming.updated > cur.updated;
-      if (policy === "keep" || (policy === "newer" && !newer)) {
+      if (
+        !foreign &&
+        (policy === "keep" || (policy === "newer" && !newer))
+      ) {
         rep.skipped.push({
           id: incoming.id,
           reason: tr(
@@ -425,8 +477,10 @@ export async function importCourseFiles(
         });
         continue;
       }
-      if (policy === "copy") {
-        const to = await store.freeId(incoming.id);
+      if (policy === "copy" || foreign) {
+        const to = foreign
+          ? await store.newId(incoming.id)
+          : await store.freeId(incoming.id);
         rep.renamed.push({ from: incoming.id, to });
         incoming = { ...incoming, id: to };
       }
@@ -444,7 +498,7 @@ export async function importCourseFiles(
     }
     rep.courseIssues[incoming.id] = r.issues;
     if (!cur) rep.added.push(incoming.id);
-    else if (policy !== "copy") rep.replaced.push(incoming.id);
+    else if (incoming.id === cur.id) rep.replaced.push(incoming.id);
   }
   return rep;
 }
@@ -670,4 +724,13 @@ export async function importCourseShare(
     policy,
     opts,
   );
+}
+
+function sameAuthor(
+  a: { name?: string; club?: string } | undefined,
+  b: { name?: string; club?: string } | undefined,
+): boolean {
+  const k = (x: typeof a) =>
+    `${(x?.name ?? "").trim().toLowerCase()}|${(x?.club ?? "").trim().toLowerCase()}`;
+  return k(a) === k(b);
 }

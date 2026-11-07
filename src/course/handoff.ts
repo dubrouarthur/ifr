@@ -231,6 +231,8 @@ export async function resolveHandoff(
   store: CourseStore,
   token: string,
   now: Date = new Date(),
+  /** courses that are not stored (the shipped samples) */
+  lookup?: (courseId: string) => Course | null | Promise<Course | null>,
 ): Promise<ResolvedHandoff> {
   const none: ResolvedHandoff = {
     state: "missing",
@@ -242,7 +244,9 @@ export async function resolveHandoff(
   if (!TOKEN_RE.test(token)) return none;
   const h = await store.getHandoff(token);
   if (!h) return none;
-  const course = await store.get(h.courseId);
+  const course =
+    (await store.get(h.courseId).catch(() => null)) ??
+    (lookup ? await lookup(h.courseId) : null);
   const step = course ? findStep(course.steps, h.stepId) : null;
   const age = (now.getTime() - Date.parse(h.created)) / 86_400_000;
   const state: HandoffState =

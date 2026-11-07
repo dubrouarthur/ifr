@@ -12,12 +12,22 @@ const pad3 = (n: number) =>
 const r1 = (v: number) => Math.round(v * 10) / 10;
 
 /** SVG of a hold (north up) with the three entry sectors; `courseToFix` adds the aircraft and its entry. */
+const escSvg = (s: string) =>
+  String(s).replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
+  );
+
 export function holdDiagramSvg(
   inbound: number,
   turn: Turn,
   fixIdent: string,
   courseToFix?: number,
+  lang: "en" | "fr" = "en",
 ): string {
+  // the ident comes from author or imported content: escaped before it is interpolated into SVG markup
+  fixIdent = escSvg(fixIdent);
+  const fr = lang === "fr";
   const W = 400,
     H = 360,
     fx = 200,
@@ -57,8 +67,8 @@ export function holdDiagramSvg(
     PARALLEL: {
       from: 0,
       to: 110,
-      name: "SECTOR 1",
-      entry: "PARALLEL",
+      name: fr ? "SECTEUR 1" : "SECTOR 1",
+      entry: fr ? "PARALLÈLE" : "PARALLEL",
       sub: "",
       label: 50,
       arc: "110°",
@@ -66,17 +76,17 @@ export function holdDiagramSvg(
     TEARDROP: {
       from: 290,
       to: 360,
-      name: "SECTOR 2",
-      entry: "OFFSET",
-      sub: "(teardrop)",
+      name: fr ? "SECTEUR 2" : "SECTOR 2",
+      entry: fr ? "DÉCALÉE" : "OFFSET",
+      sub: fr ? "(goutte d’eau)" : "(teardrop)",
       label: 325,
       arc: "70°",
     },
     DIRECT: {
       from: 110,
       to: 290,
-      name: "SECTOR 3",
-      entry: "DIRECT",
+      name: fr ? "SECTEUR 3" : "SECTOR 3",
+      entry: fr ? "DIRECTE" : "DIRECT",
       sub: "",
       label: 240,
       arc: "180°",
@@ -142,7 +152,7 @@ export function holdDiagramSvg(
     const p = at(absB(ang), r);
     const on = entry === k;
     const col = on ? "#b54708" : "#1d2833";
-    return `<text x="${r1(p[0])}" y="${r1(p[1]) - 14}" text-anchor="middle" font-family="Inter, sans-serif" fill="${col}" font-weight="800"><tspan x="${r1(p[0])}" font-size="11">${S.name}</tspan><tspan x="${r1(p[0])}" dy="13" font-size="11">${S.entry}</tspan><tspan x="${r1(p[0])}" dy="13" font-size="11">ENTRY</tspan>${S.sub ? `<tspan x="${r1(p[0])}" dy="12" font-size="10" font-weight="600">${S.sub}</tspan>` : ""}</text>`;
+    return `<text x="${r1(p[0])}" y="${r1(p[1]) - 14}" text-anchor="middle" font-family="Inter, sans-serif" fill="${col}" font-weight="800"><tspan x="${r1(p[0])}" font-size="11">${S.name}</tspan><tspan x="${r1(p[0])}" dy="13" font-size="11">${fr ? "ENTRÉE" : S.entry}</tspan><tspan x="${r1(p[0])}" dy="13" font-size="11">${fr ? S.entry : "ENTRY"}</tspan>${S.sub ? `<tspan x="${r1(p[0])}" dy="12" font-size="10" font-weight="600">${S.sub}</tspan>` : ""}</text>`;
   };
   const arcLabel = (k: keyof typeof SECT) => {
     const S = SECT[k];
@@ -150,6 +160,11 @@ export function holdDiagramSvg(
     return `<text x="${r1(p[0])}" y="${r1(p[1]) + 4}" text-anchor="middle" font-size="11" font-style="italic" fill="#475467" font-family="Inter, sans-serif">${S.arc}</text>`;
   };
   const fixLab = at(I - 90 * s + 20 * s, 18);
+  const CARD_FR: Record<string, string> = { north: "au nord", northeast: "au nord-est", east: "à l’est", southeast: "au sud-est", south: "au sud", southwest: "au sud-ouest", west: "à l’ouest", northwest: "au nord-ouest" };
+  const ENTRY_FR = { DIRECT: "DIRECTE", TEARDROP: "DÉCALÉE", PARALLEL: "PARALLÈLE" } as const;
+  const foot = fr
+    ? `Attente ${CARD_FR[cardinal(O)] ?? cardinal(O)} de ${fixIdent} · rapprochement ${pad3(I)}° · virages à ${turn === "R" ? "droite" : "gauche"} · nord en haut`
+    : `Hold ${cardinal(O)} of ${fixIdent} · inbound ${pad3(I)}° · ${turn === "R" ? "right" : "left"} turns · north up`;
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" class="hold-diagram north-up" role="img" aria-label="Hold ${cardinal(O)} of ${fixIdent}, inbound ${pad3(I)}°, ${turn === "R" ? "right" : "left"} turns${entry ? `, ${entry.toLowerCase()} entry` : ""}">
   <style>.hold-diagram text{paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round}</style><defs><marker id="hd-ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b54708"/></marker></defs>
   <rect class="hd-bg" width="${W}" height="${H}" rx="10" fill="#ffffff" stroke="#e2e7ed"/>
@@ -166,7 +181,7 @@ export function holdDiagramSvg(
   <text x="${r1(fixLab[0])}" y="${r1(fixLab[1]) + 4}" text-anchor="middle" font-size="12" font-weight="800" fill="#1d2833" font-family="Inter, sans-serif">${fixIdent}</text>
   ${aircraft}
   <g transform="translate(26 30)"><path d="M0,-14 L5,2 L0,-2 L-5,2 Z" fill="#1d2833"/><text x="0" y="16" text-anchor="middle" font-size="11" font-weight="800" fill="#1d2833" font-family="Inter, sans-serif">N</text></g>
-  <text x="${W / 2}" y="${H - 10}" fill="#475467" font-size="11" text-anchor="middle" font-family="Inter, sans-serif">Hold ${cardinal(O)} of ${fixIdent} · inbound ${pad3(I)}° · ${turn === "R" ? "right" : "left"} turns · north up</text>
-  ${entry ? `<rect x="${W - 168}" y="12" width="156" height="24" rx="6" fill="#fff4e0" stroke="#f5c27a"/><text x="${W - 90}" y="29" text-anchor="middle" fill="#b54708" font-size="12" font-weight="800" font-family="Inter, sans-serif">YOUR ENTRY: ${entry}</text>` : ""}
+  <text x="${W / 2}" y="${H - 10}" fill="#475467" font-size="11" text-anchor="middle" font-family="Inter, sans-serif">${foot}</text>
+  ${entry ? `<rect x="${W - 168}" y="12" width="156" height="24" rx="6" fill="#fff4e0" stroke="#f5c27a"/><text x="${W - 90}" y="29" text-anchor="middle" fill="#b54708" font-size="12" font-weight="800" font-family="Inter, sans-serif">${fr ? `VOTRE ENTRÉE : ${ENTRY_FR[entry]}` : `YOUR ENTRY: ${entry}`}</text>` : ""}
 </svg>`;
 }

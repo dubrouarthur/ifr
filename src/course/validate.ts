@@ -1301,15 +1301,20 @@ function diagram(
     );
   switch (d.kind) {
     case "hold":
-      if (!isNum(d.inbound) || !["L", "R"].includes(d.turn) || !isStr(d.fix))
+      if (
+        !isNum(d.inbound) ||
+        !["L", "R"].includes(d.turn) ||
+        !isStr(d.fix) ||
+        !/^[A-Z0-9]{1,5}$/.test(d.fix)
+      )
         push(
           cx,
           "error",
           "shape",
           path,
           L(
-            "A hold diagram needs inbound, turn and fix",
-            "Un schéma d’attente demande route, virage et point",
+            "A hold diagram needs inbound, turn and a fix ident (1–5 capitals or digits)",
+            "Un schéma d’attente demande route, virage et un indicatif de point (1 à 5 majuscules ou chiffres)",
           ),
           ids,
         );

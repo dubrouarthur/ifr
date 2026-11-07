@@ -85,7 +85,7 @@ describe("units: dots AND degrees / NM for the active source (SPEC §9.5)", () =
       "On a VOR, 1 dot = 2°. The checkride limit is ¾ scale (7.5°, about 4 dots). This step asks for 1 dot so you learn to keep it tight.",
     );
     expect(unitsNote("VOR", "g1000", "en")).toBe(
-      "On a VOR, 1 dot = 5°. The checkride limit is ¾ scale (7.5°, about 2 dots).",
+      "On a VOR, 1 dot = 5°. The checkride limit is ¾ scale (7.5°, 1.5 dots).",
     );
     expect(unitsNote("LOC", "g1000", "fr")).toContain(
       "Sur un localizer, 1 point = 1,25°",

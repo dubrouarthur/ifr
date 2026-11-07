@@ -3,16 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#ffffff" />
-    <meta name="description" content="IFR Academy: understand holds, entries, VOR and course intercepts, DME arcs, ILS and RNAV approaches, approach plates and minimums with short interactive lessons — then fly them in the simulator." />
-    <title>IFR Academy — learn instrument procedures by doing</title>
+    <meta name="theme-color" content="#eef1f5" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Ground school" />
+    <meta name="description" content="Ground school: interactive courses for instrument and VFR pilots — designed slides with live instruments, generated calculation exercises, Your turn on the real instrument, then fly it in the simulator." />
+    <title>Ground school — IFR Trainer</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Condensed:wght@400;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Condensed:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+    <style>
+      html, body { margin: 0; height: 100%; background: #eef1f5; }
+      #academy { height: 100%; }
+    </style>
   </head>
   <body>
     <div id="academy"></div>
+    <noscript>Ground school needs JavaScript.</noscript>
     <script type="module" src="/src/learn/main.ts"></script>
   </body>
 </html>

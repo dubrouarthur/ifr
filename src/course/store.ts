@@ -412,25 +412,36 @@ export class CourseStore {
     this.emit({ store: "courses", key: id });
   }
 
-  /** a free course id from a base ("holding" → "holding", "holding-2", …) */
-  async freeId(base: string): Promise<string> {
-    const stem =
-      base
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/[̀-ͯ]/g, "")
-        .replace(/[^a-z0-9._-]+/g, "-")
-        .replace(/^-+|-+$/g, "")
-        .slice(0, 60) || "course";
-    const taken = new Set([
+  private async takenIds(): Promise<Set<string>> {
+    return new Set([
       ...(await this.db.keys("courses")).map(String),
       ...this.readIndex().courses.map((c) => c.id),
     ]);
-    if (!taken.has(stem)) return stem;
+  }
+
+  /** a free course id from a base ("holding" → "holding", "holding-2", …). Built-in sample ids ("sample-…") are
+   *  never stored but are always taken: a copy must not shadow the shipped sample. */
+  async freeId(base: string): Promise<string> {
+    const stem = slugId(base);
+    const taken = await this.takenIds();
+    // the stem itself must not be a sample's id; a numbered copy ("sample-vor-2") is never one
+    const free = (id: string) => !taken.has(id);
+    if (free(stem) && !isReservedId(stem)) return stem;
     const m = /^(.*?)(?:-(\d+))?$/.exec(stem)!;
     let n = Math.max(2, Number(m[2] ?? 1) + 1);
-    while (taken.has(`${m[1]}-${n}`)) n++;
+    while (!free(`${m[1]}-${n}`)) n++;
     return `${m[1]}-${n}`;
+  }
+
+  /** a globally unique id for a NEW course (create, duplicate): the slug plus a random suffix, so two schools'
+   *  first courses never share an id and an import never mistakes one for the other ("vor" → "vor-k3x9q2"). */
+  async newId(base: string): Promise<string> {
+    const stem = slugId(base).replace(/^sample-/, "").slice(0, 50) || "course";
+    const taken = await this.takenIds();
+    for (;;) {
+      const id = `${stem}-${randomSuffix()}`;
+      if (!taken.has(id) && !isReservedId(id)) return id;
+    }
   }
 
   /** Library → Duplicate (and "Duplicate a sample"): a new id, rev 0, `sample` kept or set. */
@@ -450,7 +461,7 @@ export class CourseStore {
         issues: [],
       };
     const c = structuredClone(src);
-    c.id = await this.freeId(src.id);
+    c.id = await this.newId(src.id);
     c.rev = 0;
     delete c.hash;
     c.title = opts.title ?? src.title;
@@ -713,4 +724,25 @@ let shared: Promise<CourseStore> | null = null;
 export function courseStore(): Promise<CourseStore> {
   shared ??= CourseStore.open();
   return shared;
+}
+
+function slugId(base: string): string {
+  return (
+    base
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "course"
+  );
+}
+
+/** built-in sample ids are not stored, but a stored course must never take one */
+export const isReservedId = (id: string): boolean => id.startsWith("sample-");
+
+function randomSuffix(): string {
+  const a = new Uint8Array(6);
+  globalThis.crypto.getRandomValues(a);
+  return Array.from(a, (b) => "abcdefghijklmnopqrstuvwxyz0123456789"[b % 36]).join("");
 }
