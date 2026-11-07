@@ -1,13 +1,21 @@
-// Full-screen start page shown at launch: one photo, the product name, one promise and ONE way in. Everything
-// starts from the Flight Center, so the only action here opens it (Enter, Esc or F2 do the same). "Skip this screen"
-// is kept in localStorage (ifr.intro.skip).
+// Full-screen start page shown at launch: the product name, one promise and a short slide deck about the product,
+// played by our slide player (the slides are the product's flagship, SPEC slides v2 §12). Everything starts from
+// the Flight Center, so the main action opens it (Enter, Esc or F2 do the same); the second opens its courses.
+// "Skip this screen" is kept in localStorage (ifr.intro.skip).
+import { BRAND, brandTagline } from "../brand";
 import { h, store } from "./dom";
 import { svgIcon, I } from "./icons";
+import { lang as uiLang } from "./i18n";
+import type { DeckStage } from "../course/ui/deckStage";
 
 export interface IntroHooks {
   /** the single way in: the Flight Center (where every flight, lesson and path starts) */
   enter: () => void;
+  /** the Flight Center's courses (every slide deck); hidden when not wired */
+  courses?: () => void;
 }
+
+const AUTO_MS = 6500;
 
 export const INTRO_SKIP_KEY = "ifr.intro.skip";
 
@@ -33,6 +41,11 @@ export class Intro {
   el: HTMLElement;
   isOpen = false;
   private onKey = (e: KeyboardEvent) => this.key(e);
+  private deck: DeckStage | null = null;
+  private deckSeq = 0;
+  private timer = 0;
+  private auto = true;
+  private bar: HTMLElement | null = null;
 
   constructor(private hooks: IntroHooks) {
     this.el = h("div", {
@@ -65,6 +78,7 @@ export class Intro {
   hide() {
     if (!this.isOpen) return;
     this.isOpen = false;
+    this.stopDeck();
     window.removeEventListener("keydown", this.onKey, true);
     document.body.classList.remove("intro-open");
     this.el.classList.remove("open");
@@ -88,6 +102,12 @@ export class Intro {
       t !== document.body &&
       this.el.contains(t) &&
       (t.tagName === "BUTTON" || t.tagName === "INPUT");
+    if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && this.deck && !(t && t.tagName === "INPUT")) {
+      e.preventDefault();
+      this.userMove(e.key === "ArrowRight" ? 1 : -1);
+      e.stopPropagation();
+      return;
+    }
     if (
       (e.key === "Enter" && !onControl) ||
       e.key === "F2" ||
@@ -99,13 +119,80 @@ export class Intro {
     e.stopPropagation();
   }
 
+  // ---------------------------------------------------------------- the deck about the product
+  private stopDeck() {
+    this.deckSeq++;
+    window.clearTimeout(this.timer);
+    this.deck?.destroy();
+    this.deck = null;
+  }
+  private schedule() {
+    window.clearTimeout(this.timer);
+    if (!this.auto || !this.deck || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    this.timer = window.setTimeout(() => {
+      const d = this.deck;
+      if (!d || !this.isOpen) return;
+      d.go(d.atEnd ? 0 : d.index + 1);
+      this.schedule();
+    }, AUTO_MS);
+  }
+  /** a move by the viewer stops the slideshow (it never moves under their eyes again) */
+  private userMove(dir: 1 | -1 | number, abs = false) {
+    const d = this.deck;
+    if (!d) return;
+    this.auto = false;
+    window.clearTimeout(this.timer);
+    if (abs) d.go(dir);
+    else if (dir > 0) {
+      if (!d.next()) d.go(0);
+    } else d.prev();
+  }
+  private renderBar() {
+    const d = this.deck;
+    const bar = this.bar;
+    if (!bar || !d) return;
+    const fr = uiLang() === "fr";
+    bar.replaceChildren(
+      d.segments((i) => this.userMove(i, true)),
+      h("span", { class: "intro-deck-n num" }, `${d.index + 1} / ${d.count}`),
+      h("span", { class: "intro-deck-sp" }),
+      h("button", { class: "intro-deck-b", type: "button", "aria-label": fr ? "Diapositive précédente" : "Previous slide", disabled: d.index === 0, onclick: () => this.userMove(-1) }, svgIcon(I.arrow, 18)),
+      h("button", { class: "intro-deck-b next", type: "button", "aria-label": fr ? "Diapositive suivante" : "Next slide", onclick: () => this.userMove(1) }, svgIcon(I.arrow, 18)),
+    );
+  }
+  private mountDeck(stage: HTMLElement) {
+    this.stopDeck();
+    this.auto = true;
+    const seq = this.deckSeq;
+    const l = uiLang() === "fr" ? "fr" : "en";
+    void Promise.all([import("../course/ui/deckStage"), import("../course/samples/productDeck")])
+      .then(([m, p]) => {
+        if (seq !== this.deckSeq || !this.isOpen) return;
+        this.deck = m.mountDeck(stage, {
+          lang: l,
+          slides: p.productDeck(),
+          theme: "cockpit",
+          revealAll: true,
+          onChange: () => this.renderBar(),
+        });
+        stage.classList.add("ready");
+        this.renderBar();
+        this.schedule();
+      })
+      .catch(() => stage.closest(".intro-deck")?.remove());
+  }
+
   private render() {
+    const fr = uiLang() === "fr";
+    const L = (en: string, frText: string) => (fr ? frText : en);
     const skip = h("input", {
       type: "checkbox",
       checked: store.get(INTRO_SKIP_KEY, false),
       onchange: (e: Event) =>
         store.set(INTRO_SKIP_KEY, (e.target as HTMLInputElement).checked),
     });
+    const stage = h("div", { class: "intro-stage", role: "group", "aria-label": L("A short tour of the product, in slides", "Un court aperçu du produit, en diapositives") });
+    this.bar = h("div", { class: "intro-deck-bar" });
     this.el.replaceChildren(
       h("img", {
         class: "intro-photo",
@@ -120,30 +207,40 @@ export class Intro {
         { class: "intro-main" },
         h(
           "div",
-          { class: "intro-brand" },
-          h("img", { src: "/favicon.svg", alt: "", width: 36, height: 36 }),
-          h("span", {}, "Instrument flight training"),
-        ),
-        h("h1", { id: "intro-title" }, "IFR Trainer"),
-        h(
-          "p",
-          { class: "intro-lead" },
-          "Real procedures, real weather and a coach in the right seat\u00a0— from your first hold to the checkride.",
-        ),
-        h(
-          "div",
-          { class: "intro-acts" },
+          { class: "intro-txt" },
           h(
-            "button",
-            {
-              class: "intro-go",
-              type: "button",
-              onclick: () => this.go(this.hooks.enter),
-              title:
-                "Open the Flight Center: plan a flight, pick a lesson or a learning path (Enter)",
-            },
-            "Get started",
-            svgIcon(I.arrow, 18),
+            "div",
+            { class: "intro-brand" },
+            h("img", { src: "/favicon.svg", alt: "", width: 36, height: 36 }),
+            h("span", {}, L("Instrument flight training", "Formation au vol aux instruments")),
+          ),
+          h("h1", { id: "intro-title" }, BRAND.name),
+          h("p", { class: "intro-lead" }, brandTagline(fr ? "fr" : "en")),
+          h(
+            "div",
+            { class: "intro-acts" },
+            h(
+              "button",
+              {
+                class: "intro-go",
+                type: "button",
+                onclick: () => this.go(this.hooks.enter),
+                title: L(
+                  "Open the Flight Center: courses, lessons, flights and paths (Enter)",
+                  "Ouvrir le Flight Center : cours, leçons, vols et parcours (Entrée)",
+                ),
+              },
+              L("Get started", "Commencer"),
+              svgIcon(I.arrow, 18),
+            ),
+            this.hooks.courses
+              ? h(
+                  "button",
+                  { class: "intro-alt", type: "button", onclick: () => this.go(this.hooks.courses!) },
+                  svgIcon(I.slides, 18),
+                  L("Browse the courses", "Voir les cours"),
+                )
+              : null,
           ),
           // the keyboard hint only where there is a keyboard (not on a touch-only tablet)
           matchMedia("(pointer: coarse)").matches
@@ -151,10 +248,11 @@ export class Intro {
             : h(
                 "span",
                 { class: "intro-keys" },
-                "or press ",
-                h("kbd", {}, "Enter"),
+                L("or press ", "ou appuyez sur "),
+                h("kbd", {}, L("Enter", "Entrée")),
               ),
         ),
+        h("section", { class: "intro-deck", "aria-label": L("The slides", "Les diapositives") }, stage, this.bar),
       ),
       h(
         "footer",
@@ -163,7 +261,7 @@ export class Intro {
           "label",
           { class: "intro-skip" },
           skip,
-          h("span", {}, "Skip this screen next time"),
+          h("span", {}, L("Skip this screen next time", "Ne plus afficher cet écran")),
         ),
         h(
           "a",
@@ -177,5 +275,6 @@ export class Intro {
         ),
       ),
     );
+    this.mountDeck(stage);
   }
 }

@@ -1,26 +1,33 @@
 // Ground school stage — navigation calc diagrams: the 60:1 rule (track error and closing angle, IFH ch. 9) and
 // the TVMDC strip (true course → true heading → magnetic → compass, PHAK ch. 16: "East is least, West is best").
+// Drawn in slide units (SPEC slides v2 §5): the viewBox is the block's size, labels 24 / 28 / 32 × u, strokes per
+// role, theme tokens only, labels placed without overlaps, and the worked numbers outside the drawing on a slide.
 import type { CalcDiagram, Lang } from "../types";
 import { sixtyToOne, tvmdc, variationText } from "./diagramMath";
 import {
   aircraftIcon,
-  arrow,
   clamp,
   dec,
-  DEG,
+  dimLine,
   dragHandle,
+  FS,
+  fixMark,
   hdg3,
+  head,
   L,
-  label,
-  PALETTES,
-  rootSvg,
+  lab,
+  Labels,
+  makeWidget,
+  num,
   s,
   signed,
-  wrap180,
+  SW,
+  tint,
+  wpt,
   type DiagramOptions,
-  type DiagramTheme,
   type DiagramWidget,
 } from "./svgkit";
+import { textWidth } from "../canvas/text";
 
 export type SixtyToOneSpec = Extract<CalcDiagram, { kind: "sixtyToOne" }>;
 export type CompassSpec = Extract<CalcDiagram, { kind: "compass" }>;
@@ -29,709 +36,617 @@ export type CompassSpec = Extract<CalcDiagram, { kind: "compass" }>;
 /**
  * The 1-in-60 triangle, course to the right: departure point, intended course (dashed), the track actually
  * flown (magenta) to the aircraft `offNm` off after `flownNm`, the track error, and with `toGoNm` the closing
- * angle and the heading change to go direct. Honest scale (no vertical exaggeration). Drag: 'aircraft'.
- * `offNm` + = right of the course.
+ * angle at the destination. The vertical scale is exaggerated to fill the block (note() says by how much).
+ * Drag: 'aircraft'. `offNm` + = right of the course.
  */
 export function createSixtyToOne(
   spec0: SixtyToOneSpec,
   o: DiagramOptions = {},
 ): DiagramWidget<SixtyToOneSpec> {
-  const W = 720;
-  const H = 405;
   const lang: Lang = o.lang ?? "en";
   const drag = new Set(o.drag ?? spec0.drag ?? []);
-  let theme: DiagramTheme = o.theme ?? "dark";
-  let spec: SixtyToOneSpec = { ...spec0 };
-  const svg = rootSvg(W, H, "cs-sixty");
-  const desc = s("desc");
-  let p = PALETTES[theme];
-  let layer = s("g");
-  let handle: ReturnType<typeof dragHandle> | null = null;
-  // the scale is fixed at build (so the handle stays under the finger while dragging)
-  let totalNm = 1;
-  const ax = 64;
-  const ay = 170;
-  const span = 590;
-  const k = () => span / totalNm;
-  const build = () => {
-    p = PALETTES[theme];
-    totalNm = Math.max(10, spec.flownNm + (spec.toGoNm ?? spec.flownNm * 0.6));
-    svg.replaceChildren(desc, s("rect", { width: W, height: H, fill: p.bg }));
-    layer = s("g");
-    svg.append(layer);
-    handle = drag.has("aircraft")
-      ? dragHandle(svg, p, {
-          color: p.track,
-          name: L(lang, "Aircraft position", "Position de l'avion"),
-          onDrag: (x, y) => {
-            const flown = clamp(
-              (x - ax) / k(),
-              1,
-              totalNm - (spec.toGoNm !== undefined ? 1 : 0),
-            );
-            const off = clamp((y - ay) / k(), -totalNm * 0.2, totalNm * 0.2);
-            const next: SixtyToOneSpec = {
-              ...spec,
-              flownNm: Math.round(flown * 2) / 2,
-              offNm: Math.round(off * 10) / 10,
-            };
-            if (spec.toGoNm !== undefined)
-              next.toGoNm = Math.max(
-                1,
-                Math.round((totalNm - next.flownNm) * 2) / 2,
-              );
-            set(next);
-          },
-          onKey: (dx, dy, big) => {
-            const next: SixtyToOneSpec = {
-              ...spec,
-              flownNm: clamp(spec.flownNm + dx * (big ? 5 : 1), 1, totalNm - 1),
-              offNm: Math.round((spec.offNm + dy * (big ? 1 : 0.1)) * 10) / 10,
-            };
-            if (spec.toGoNm !== undefined)
-              next.toGoNm = Math.max(1, totalNm - next.flownNm);
-            set(next);
-          },
-        })
-      : null;
-    draw();
+  // the geometry is fixed at build so the handle stays under the finger while dragging
+  let g = {
+    x0: 0,
+    x1: 0,
+    yc: 0,
+    kx: 1,
+    ex: 1,
+    side: 1,
+    total: 1,
+    offMin: -1,
+    offMax: 1,
+    yDim: 0,
   };
-  const draw = () => {
-    layer.replaceChildren();
-    const r = sixtyToOne(spec.flownNm, spec.offNm, spec.toGoNm);
-    const cx = ax + spec.flownNm * k();
-    const cy = ay + spec.offNm * k();
-    const bx = spec.toGoNm !== undefined ? cx + spec.toGoNm * k() : ax + span;
-    // course line and destination
-    layer.append(
-      s("line", {
-        x1: ax,
-        y1: ay,
-        x2: bx + (spec.toGoNm !== undefined ? 0 : 20),
-        y2: ay,
-        stroke: p.text,
-        "stroke-width": 1.8,
-        "stroke-dasharray": "8 7",
-        opacity: 0.85,
-      }),
-    );
-    layer.append(
-      s("circle", {
-        cx: ax,
-        cy: ay,
-        r: 6,
-        fill: p.bg,
-        stroke: p.text,
-        "stroke-width": 2.2,
-      }),
-    );
-    layer.append(
-      label(ax, ay - 16, L(lang, "Departure", "Départ"), p, {
-        size: 13,
-        color: p.muted,
-        anchor: "middle",
-      }),
-    );
-    layer.append(
-      label(
-        ax + 120,
-        // on the side away from the track flown (the TE label sits on the track side)
-        spec.offNm < 0 ? ay + 24 : ay - 12,
-        `${L(lang, "Course", "Route")} ${hdg3(spec.course)}°`,
-        p,
-        { size: 14, weight: 700 },
-      ),
-    );
-    if (spec.toGoNm !== undefined) {
-      layer.append(
-        s("path", {
-          d: `M${bx} ${ay - 10}L${bx + 9} ${ay + 6}L${bx - 9} ${ay + 6}Z`,
-          fill: p.bg,
-          stroke: p.nav,
-          "stroke-width": 2.2,
-        }),
+  let hd: ReturnType<typeof dragHandle> | null = null;
+  return makeWidget<SixtyToOneSpec>(spec0, o, [960, 520], "cs-sixty", {
+    build(sh, get, set) {
+      const { W, H, u } = sh.c;
+      const spec = get();
+      const total = Math.max(
+        10,
+        spec.flownNm + (spec.toGoNm ?? spec.flownNm * 0.6),
       );
-      layer.append(
-        label(bx, ay - 18, L(lang, "Destination", "Destination"), p, {
-          size: 13,
-          color: p.nav,
-          anchor: "middle",
-          weight: 700,
-        }),
-      );
-    }
-    // track flown
-    layer.append(
-      s("line", {
-        x1: ax,
-        y1: ay,
-        x2: cx,
-        y2: cy,
-        stroke: p.track,
-        "stroke-width": 3.2,
-      }),
-    );
-    const trk = spec.course + r.teExact;
-    layer.append(aircraftIcon(cx, cy, 90 + r.teExact, p.track, 1.15));
-    // off-course bracket
-    if (Math.abs(spec.offNm) > 0.05) {
-      layer.append(
+      const mx = Math.max(40 * u, W * 0.04);
+      const x0 = mx;
+      const x1 = W - mx;
+      const kx = (x1 - x0) / total;
+      const side = spec.offNm < 0 ? -1 : 1;
+      const top = 96 * u; // course labels above the line
+      const bottom = (sh.o.card ? 200 : 120) * u; // distances (and the worked numbers in a pane)
+      // course line near the top when the aircraft is right of course (below), near the bottom otherwise
+      const yc = side > 0 ? top : H - bottom - 64 * u;
+      const room = side > 0 ? H - bottom - 56 * u - yc : yc - 56 * u;
+      const off = Math.max(0.5, Math.abs(spec.offNm));
+      // exaggerate the offset to use the block, but keep the drawn angle under ~27° so it still reads as small
+      const cap = (Math.tan((27 * Math.PI) / 180) * Math.max(1, spec.flownNm)) / off;
+      const ex = clamp(Math.floor(Math.min(room / (off * kx), cap)), 1, 8);
+      // centre the drawing in the block when the angle cap leaves height unused (right of course: the dimensions
+      // follow the aircraft down, the whole drawing moves to the middle)
+      const used = off * kx * ex + 56 * u;
+      const spare = side > 0 ? Math.max(0, room - used) : 0;
+      const ycc = yc + spare / 2;
+      g = {
+        x0,
+        x1,
+        yc: ycc,
+        kx,
+        ex,
+        side,
+        total,
+        offMin: side > 0 ? -((ycc - 48 * u) / (kx * ex)) : -room / (kx * ex),
+        offMax: side > 0 ? (room - spare) / (kx * ex) : (H - bottom - yc) / (kx * ex),
+        yDim: H - bottom + 36 * u - spare / 2,
+      };
+      hd = drag.has("aircraft")
+        ? dragHandle(sh.svg, sh.c.p, {
+            u,
+            color: sh.c.p.accent,
+            dot: "transparent",
+            name: L(lang, "Aircraft position", "Position de l'avion"),
+            onDrag: (x, y) => {
+              const sp = get();
+              const flown = clamp(
+                (x - g.x0) / g.kx,
+                1,
+                g.total - (sp.toGoNm !== undefined ? 1 : 0),
+              );
+              const offv = clamp(
+                (y - g.yc) / (g.kx * g.ex),
+                g.offMin,
+                g.offMax,
+              );
+              const next: SixtyToOneSpec = {
+                ...sp,
+                flownNm: Math.round(flown * 2) / 2,
+                offNm: Math.round(offv * 10) / 10,
+              };
+              if (sp.toGoNm !== undefined)
+                next.toGoNm = Math.max(
+                  1,
+                  Math.round((g.total - next.flownNm) * 2) / 2,
+                );
+              set(next);
+            },
+            onKey: (dx, dy, big) => {
+              const sp = get();
+              const next: SixtyToOneSpec = {
+                ...sp,
+                flownNm: clamp(sp.flownNm + dx * (big ? 5 : 1), 1, g.total - 1),
+                offNm: clamp(
+                  Math.round((sp.offNm + dy * (big ? 1 : 0.1)) * 10) / 10,
+                  g.offMin,
+                  g.offMax,
+                ),
+              };
+              if (sp.toGoNm !== undefined)
+                next.toGoNm = Math.max(1, g.total - next.flownNm);
+              set(next);
+            },
+          })
+        : null;
+      if (hd) sh.top.append(hd.g);
+    },
+    draw(sh, spec) {
+      const c = sh.c;
+      const { u, p } = c;
+      const ly = sh.layer;
+      const lb = new Labels(c, ly);
+      const r = sixtyToOne(spec.flownNm, spec.offNm, spec.toGoNm);
+      const { x0, yc, kx, ex, side } = g;
+      const ax = x0 + spec.flownNm * kx;
+      const ay = yc + spec.offNm * kx * ex;
+      const x1 = spec.toGoNm !== undefined ? ax + spec.toGoNm * kx : g.x1;
+      const hasDest = spec.toGoNm !== undefined;
+      const above = (y: number) => (side > 0 ? y - 34 * u : y + 56 * u);
+      // planned course
+      ly.append(
         s("line", {
-          x1: cx,
-          y1: ay,
-          x2: cx,
-          y2: cy,
-          stroke: p.wind,
-          "stroke-width": 2,
-          "stroke-dasharray": "4 4",
+          x1: x0,
+          y1: yc,
+          x2: x1,
+          y2: yc,
+          stroke: p.muted,
+          "stroke-width": SW.planned * u,
+          "stroke-dasharray": `${16 * u} ${12 * u}`,
         }),
       );
-      layer.append(
-        label(
-          cx + 10,
-          // beside the bracket when it is tall enough, else outside the aircraft, away from the closing angle
-          Math.abs(cy - ay) > 40 ? (ay + cy) / 2 + 5 : spec.offNm < 0 ? cy - 16 : cy + 28,
-          `${dec(Math.abs(spec.offNm), 1, lang)} NM ${spec.offNm > 0 ? L(lang, "right", "à droite") : L(lang, "left", "à gauche")}`,
-          p,
-          { size: 13, color: p.wind, weight: 700 },
-        ),
-      );
-    }
-    // flown / to go dimensions
-    const dimY = Math.max(ay, cy) + 46;
-    const dim = (x1: number, x2: number, t: string, c: string) => {
-      layer.append(
-        s("path", {
-          d: `M${x1} ${dimY - 6}V${dimY + 6}M${x2} ${dimY - 6}V${dimY + 6}M${x1} ${dimY}H${x2}`,
-          stroke: c,
-          "stroke-width": 1.4,
-          fill: "none",
-        }),
-      );
-      layer.append(
-        label((x1 + x2) / 2, dimY + 22, t, p, {
-          size: 13,
-          color: c,
-          anchor: "middle",
-          weight: 600,
-        }),
-      );
-    };
-    dim(
-      ax,
-      cx,
-      `${dec(spec.flownNm, spec.flownNm % 1 ? 1 : 0, lang)} NM ${L(lang, "flown", "parcourus")}`,
-      p.muted,
-    );
-    if (spec.toGoNm !== undefined)
-      dim(
-        cx,
-        bx,
-        `${dec(spec.toGoNm, spec.toGoNm % 1 ? 1 : 0, lang)} NM ${L(lang, "to go", "restants")}`,
-        p.muted,
-      );
-    // track-error angle at the departure point
-    const arcR = 86;
-    const a1 = r.teExact * DEG;
-    if (Math.abs(r.teExact) > 0.3) {
-      layer.append(
-        s("path", {
-          d: `M${ax + arcR} ${ay}A${arcR} ${arcR} 0 0 ${a1 > 0 ? 1 : 0} ${ax + arcR * Math.cos(a1)} ${ay + arcR * Math.sin(a1)}`,
-          fill: "none",
-          stroke: p.track,
-          "stroke-width": 2,
-        }),
-      );
-      layer.append(
-        label(
-          ax + arcR + 8,
-          ay + (a1 > 0 ? 22 : -10),
-          `TE ${dec(Math.abs(r.te), 1, lang).replace(/[.,]0$/, "")}°`,
-          p,
-          { size: 13.5, color: p.track, weight: 700 },
-        ),
-      );
-    }
-    // direct to the destination: closing angle at the aircraft
-    if (spec.toGoNm !== undefined && Math.abs(spec.offNm) > 0.05) {
-      layer.append(
+      lb.stroke(x0, yc, x1, yc);
+      // the track flown and the closing course
+      const aTE = Math.atan2(ay - yc, ax - x0);
+      ly.append(
         s("line", {
-          x1: cx,
-          y1: cy,
-          x2: bx,
+          x1: x0,
+          y1: yc,
+          x2: ax,
           y2: ay,
-          stroke: p.heading,
-          "stroke-width": 2.4,
-          "stroke-dasharray": "6 5",
+          stroke: p.track,
+          "stroke-width": SW.hero * u,
+          "stroke-linecap": "round",
         }),
       );
-      layer.append(
-        s("line", {
-          x1: cx,
-          y1: cy,
-          x2: cx + 110,
-          y2: cy,
-          stroke: p.line,
-          "stroke-width": 1.2,
-          "stroke-dasharray": "3 4",
-        }),
-      );
-      const cr = 64;
-      const b = -Math.atan2(cy - ay, bx - cx);
-      layer.append(
-        s("path", {
-          d: `M${cx + cr} ${cy}A${cr} ${cr} 0 0 ${b > 0 ? 1 : 0} ${cx + cr * Math.cos(b)} ${cy + cr * Math.sin(b)}`,
-          fill: "none",
-          stroke: p.heading,
-          "stroke-width": 2,
-        }),
-      );
-      layer.append(
-        label(
-          cx + cr + 8,
-          b > 0 ? cy + 20 : cy - 10,
-          `CA ${dec(Math.abs(r.ca ?? 0), 1, lang).replace(/[.,]0$/, "")}°`,
-          p,
-          { size: 13.5, color: p.heading, weight: 700 },
+      lb.stroke(x0, yc, ax, ay);
+      let aCA = 0;
+      if (hasDest && Math.abs(spec.offNm) > 0.05) {
+        aCA = Math.atan2(ay - yc, x1 - ax);
+        ly.append(
+          s("line", {
+            x1: ax,
+            y1: ay,
+            x2: x1,
+            y2: yc,
+            stroke: p.heading,
+            "stroke-width": SW.second * u,
+            "stroke-dasharray": `${18 * u} ${12 * u}`,
+            "stroke-linecap": "round",
+          }),
+        );
+        lb.stroke(ax, ay, x1, yc);
+        const t = 0.62;
+        ly.append(
+          head(
+            c,
+            ax + (x1 - ax) * t,
+            ay + (yc - ay) * t,
+            Math.atan2(yc - ay, x1 - ax),
+            p.heading,
+            26,
+          ),
+        );
+      }
+      // off-course dimension
+      if (Math.abs(spec.offNm) > 0.05) {
+        const yEnd = ay - Math.sign(ay - yc) * 52 * u;
+        if (Math.abs(yEnd - yc) > 8 * u)
+          ly.append(dimLine(c, ax, yc, ax, yEnd, p.ink2));
+        lb.stroke(ax, yc, ax, yEnd);
+      }
+      // aircraft (a target ring when it can be dragged)
+      lb.circle(ax, ay, 46 * u);
+      if (!hd)
+        ly.append(
+          s("circle", { cx: ax, cy: ay, r: 40 * u, fill: tint(p.track, 0.12) }),
+        );
+      ly.append(
+        aircraftIcon(
+          ax,
+          ay,
+          90 + (aTE * 180) / Math.PI,
+          hd ? p.accent : p.track,
+          2.0 * u,
         ),
       );
-    }
-    // the rule card
-    const card = s("g", { transform: `translate(24 ${H - 92})` });
-    const teTxt = `TE = 60 × ${dec(Math.abs(spec.offNm), 1, lang)} ÷ ${dec(spec.flownNm, spec.flownNm % 1 ? 1 : 0, lang)} ≈ ${dec(Math.abs(r.te), 1, lang)}°`;
-    card.append(
-      label(0, 0, teTxt, p, {
-        size: 14.5,
-        color: p.track,
-        weight: 700,
-        mono: true,
-      }),
-    );
-    card.append(
-      label(
-        0,
-        22,
-        `${L(lang, "exact atan: ", "atan exact : ")}${dec(Math.abs(r.teExact), 2, lang)}° · ${L(lang, "track", "route suivie")} ${hdg3(trk)}°`,
-        p,
-        { size: 12.5, color: p.muted, weight: 500 },
-      ),
-    );
-    if (r.correction !== null && Math.abs(spec.offNm) > 0.05) {
-      const dir =
-        spec.offNm > 0
-          ? L(lang, "left", "à gauche")
-          : L(lang, "right", "à droite");
-      card.append(
-        label(
-          0,
-          48,
-          `CA = 60 × ${dec(Math.abs(spec.offNm), 1, lang)} ÷ ${dec(spec.toGoNm!, spec.toGoNm! % 1 ? 1 : 0, lang)} ≈ ${dec(Math.abs(r.ca!), 1, lang)}° → ${L(lang, "turn", "virez de")} ${dec(Math.abs(r.correction), 0, lang)}° ${dir} (TE + CA)`,
-          p,
-          { size: 14.5, color: p.heading, weight: 700, mono: true },
-        ),
+      // points
+      ly.append(wpt(c, x0, yc, p.text));
+      lb.circle(x0, yc, 14 * u);
+      if (hasDest) {
+        ly.append(fixMark(c, x1, yc, p.text));
+        lb.circle(x1, yc, 18 * u);
+      }
+      // angle arcs and their numbers, inside their wedge past the arc
+      if (Math.abs(r.teExact) > 0.3) {
+        const R = Math.min(150 * u, (ax - x0) * 0.5);
+        ly.append(
+          s("path", {
+            d: `M${x0 + R} ${yc}A${R} ${R} 0 0 ${aTE > 0 ? 1 : 0} ${x0 + R * Math.cos(aTE)} ${yc + R * Math.sin(aTE)}`,
+            fill: "none",
+            stroke: p.wind,
+            "stroke-width": 4 * u,
+          }),
+        );
+        const mid = aTE / 2;
+        const lx = x0 + (R + 22 * u) * Math.cos(mid);
+        const lyy = yc + (R + 22 * u) * Math.sin(mid) + side * 10 * u;
+        lb.put(
+          `${num(Math.abs(r.te), lang)}°`,
+          [
+            [lx, lyy + side * 18 * u],
+            [lx + 30 * u, lyy + side * 30 * u],
+            [lx, lyy + side * 60 * u],
+          ],
+          {
+            role: "key",
+            color: p.wind,
+            sub: L(lang, "track error", "d’erreur"),
+          },
+        );
+      }
+      if (hasDest && Math.abs(spec.offNm) > 0.05 && r.ca !== null) {
+        const R = Math.min(150 * u, (x1 - ax) * 0.5);
+        ly.append(
+          s("path", {
+            d: `M${x1 - R} ${yc}A${R} ${R} 0 0 ${aCA > 0 ? 0 : 1} ${x1 - R * Math.cos(aCA)} ${yc + R * Math.sin(aCA)}`,
+            fill: "none",
+            stroke: p.heading,
+            "stroke-width": 4 * u,
+          }),
+        );
+        const lx = x1 - R - 24 * u;
+        lb.put(
+          `${num(Math.abs(r.ca), lang)}°`,
+          [
+            [lx, yc + side * 44 * u, "end"],
+            [lx - 30 * u, yc + side * 64 * u, "end"],
+            [lx, yc + side * 90 * u, "end"],
+          ],
+          {
+            role: "key",
+            color: p.heading,
+            sub: L(lang, "to close", "pour rejoindre"),
+          },
+        );
+      }
+      if (Math.abs(spec.offNm) > 0.05) {
+        const my = (yc + ay) / 2 + 8 * u;
+        lb.put(
+          `${num(Math.abs(spec.offNm), lang)} NM`,
+          [
+            [ax - 20 * u, my, "end"],
+            [ax + 20 * u, my, "start"],
+            [ax + 56 * u, ay + side * 8 * u, "start"],
+          ],
+          {
+            role: "pri",
+            sub:
+              spec.offNm > 0
+                ? L(lang, "right", "à droite")
+                : L(lang, "left", "à gauche"),
+            subColor: p.muted,
+          },
+        );
+      }
+      // course labels
+      lb.put(
+        L(lang, "Departure", "Départ"),
+        [
+          [x0, above(yc)],
+          [x0, above(yc) - side * 30 * u],
+        ],
+        { role: "pri" },
       );
-      card.append(
-        label(
-          0,
-          70,
-          `${L(lang, "To parallel the course: turn TE only", "Pour revenir parallèle à la route : virez de TE seulement")}`,
-          p,
-          { size: 12.5, color: p.muted, weight: 500 },
-        ),
+      if (hasDest)
+        lb.put("Destination", [[x1, above(yc), "end"]], { role: "pri" });
+      const cl = `${L(lang, "Planned course", "Route prévue")} ${hdg3(spec.course)}°`;
+      const mxl = (x0 + x1) / 2;
+      lb.put(
+        cl,
+        [
+          [mxl, above(yc), "middle"],
+          [x0 + (x1 - x0) * 0.32, above(yc), "middle"],
+          [x0 + (x1 - x0) * 0.7, above(yc), "middle"],
+        ],
+        {
+          role: "sec",
+        },
       );
-    }
-    layer.append(card);
-    if (handle) {
-      layer.append(handle.g);
-      handle.move(cx, cy);
-      handle.g.setAttribute(
-        "aria-valuetext",
-        `${dec(spec.flownNm, 1, lang)} NM, ${dec(spec.offNm, 1, lang)} NM`,
+      // distances along the bottom
+      const yb = g.yDim;
+      const dim = (xa: number, xb: number, t: string) => {
+        if (xb - xa < 40 * u) return;
+        ly.append(dimLine(c, xa, yb, xb, yb, p.line));
+        lb.put(t, [[(xa + xb) / 2, yb + 44 * u, "middle"]], {
+          role: "sec",
+          color: p.ink2,
+        });
+      };
+      dim(
+        x0,
+        ax,
+        `${num(spec.flownNm, lang)} NM ${L(lang, "flown", "parcourus")}`,
       );
-    }
-    const a11y =
-      o.label ??
-      L(
+      if (hasDest)
+        dim(
+          ax,
+          x1,
+          `${num(spec.toGoNm!, lang)} NM ${L(lang, "to go", "restants")}`,
+        );
+      // the worked numbers (stage panes only)
+      if (sh.o.card) {
+        const y = yb + 96 * u;
+        ly.append(
+          lab(
+            c,
+            x0,
+            y,
+            `TE = 60 × ${dec(Math.abs(spec.offNm), 1, lang)} ÷ ${num(spec.flownNm, lang)} ≈ ${dec(Math.abs(r.te), 1, lang)}°`,
+            {
+              role: "sec",
+              color: p.wind,
+              weight: 600,
+            },
+          ),
+        );
+        if (r.correction !== null && Math.abs(spec.offNm) > 0.05)
+          ly.append(
+            lab(
+              c,
+              x0,
+              y + 36 * u,
+              `CA = 60 × ${dec(Math.abs(spec.offNm), 1, lang)} ÷ ${num(spec.toGoNm!, lang)} ≈ ${dec(Math.abs(r.ca!), 1, lang)}° → ${L(lang, "turn", "virez de")} ${dec(Math.abs(r.correction), 0, lang)}° ${spec.offNm > 0 ? L(lang, "left", "à gauche") : L(lang, "right", "à droite")}`,
+              { role: "sec", color: p.heading, weight: 600 },
+            ),
+          );
+      }
+      if (hd) {
+        hd.move(ax, ay);
+        hd.g.setAttribute(
+          "aria-valuetext",
+          `${dec(spec.flownNm, 1, lang)} NM, ${dec(spec.offNm, 1, lang)} NM`,
+        );
+      }
+    },
+    note: () =>
+      g.ex > 1
+        ? L(
+            lang,
+            `vertical scale × ${num(g.ex, lang)}`,
+            `échelle verticale × ${num(g.ex, lang)}`,
+          )
+        : null,
+    label(_sh, spec) {
+      const r = sixtyToOne(spec.flownNm, spec.offNm, spec.toGoNm);
+      return L(
         lang,
         `60 to 1 rule: ${spec.offNm.toFixed(1)} NM off course after ${spec.flownNm} NM, track error about ${r.te.toFixed(1)} degrees${r.correction !== null ? `, closing angle ${r.ca!.toFixed(1)}, total correction ${r.correction.toFixed(0)} degrees` : ""}.`,
         `Règle du 1 sur 60 : ${spec.offNm.toFixed(1)} NM d'écart après ${spec.flownNm} NM, erreur de route d'environ ${r.te.toFixed(1)} degrés${r.correction !== null ? `, angle de ralliement ${r.ca!.toFixed(1)}, correction totale ${r.correction.toFixed(0)} degrés` : ""}.`,
       );
-    svg.setAttribute("aria-label", a11y);
-    desc.textContent = a11y;
-  };
-  const set = (next: SixtyToOneSpec) => {
-    spec = next;
-    draw();
-    o.onChange?.({ ...spec });
-  };
-  build();
-  return {
-    el: svg,
-    spec: () => ({ ...spec }),
-    update(next) {
-      spec = { ...next };
-      build();
     },
-    setTheme(t) {
-      theme = t;
-      build();
-    },
-    destroy() {
-      svg.remove();
-    },
-  };
+  });
 }
 
 // ------------------------------------------------------------------ TVMDC strip
 /**
  * TVMDC on a heading tape: the four headings as markers (TC, TH, MH, CH) with the step between each (WCA,
- * variation, deviation), then the written line a pilot keeps on the log. `variation` + = East (subtract),
+ * variation, deviation); in a pane, the written log line a pilot keeps. `variation` + = East (subtract),
  * `deviation` = the compass card's correction (add). Drag: 'wca' (TH marker), 'variation' (MH), 'deviation' (CH).
  */
 export function createTvmdc(
   spec0: CompassSpec,
   o: DiagramOptions = {},
 ): DiagramWidget<CompassSpec> {
-  const W = 960;
-  const H = 370;
   const lang: Lang = o.lang ?? "en";
   const fr = lang === "fr";
   const drag = new Set(o.drag ?? spec0.drag ?? []);
-  let theme: DiagramTheme = o.theme ?? "dark";
-  let spec: CompassSpec = { ...spec0 };
-  const svg = rootSvg(W, H, "cs-tvmdc");
-  const desc = s("desc");
-  let p = PALETTES[theme];
-  let layer = s("g");
-  const x0 = 60;
-  const x1 = W - 60;
-  const tapeY = 92;
   let lo = 0;
   let span = 40;
+  let x0 = 0;
+  let x1 = 1;
+  let tapeY = 0;
   const hs: Partial<
     Record<"wca" | "variation" | "deviation", ReturnType<typeof dragHandle>>
   > = {};
-  const relX = (rel: number) => x0 + ((rel - lo) / span) * (x1 - x0);
-  const xRel = (x: number) => lo + ((x - x0) / (x1 - x0)) * span;
-  const fit = () => {
-    const rels = [
-      0,
-      spec.wca,
-      spec.wca - spec.variation,
-      spec.wca - spec.variation + spec.deviation,
-    ];
-    const mn = Math.min(...rels);
-    const mx = Math.max(...rels);
-    span = Math.max(36, Math.ceil((mx - mn + 24) / 10) * 10);
+  const rels = (sp: CompassSpec) => [
+    0,
+    sp.wca,
+    sp.wca - sp.variation,
+    sp.wca - sp.variation + sp.deviation,
+  ];
+  const fit = (sp: CompassSpec) => {
+    const r = rels(sp);
+    const mn = Math.min(...r);
+    const mx = Math.max(...r);
+    span = Math.max(30, Math.ceil((mx - mn + 20) / 10) * 10);
     lo = Math.floor((mn + mx) / 2 - span / 2);
   };
-  const build = () => {
-    p = PALETTES[theme];
-    fit();
-    svg.replaceChildren(desc, s("rect", { width: W, height: H, fill: p.bg }));
-    layer = s("g");
-    svg.append(layer);
-    const mk = (
-      key: "wca" | "variation" | "deviation",
-      name: string,
-      color: string,
-    ) => {
-      if (!drag.has(key)) return;
-      hs[key] = dragHandle(svg, p, {
-        color,
-        name,
-        onDrag: (x) => {
-          const rel = Math.round(clamp(xRel(x), lo, lo + span));
-          if (key === "wca") set({ ...spec, wca: clamp(rel, -45, 45) });
-          else if (key === "variation")
-            set({ ...spec, variation: clamp(spec.wca - rel, -30, 30) });
-          else
-            set({
-              ...spec,
-              deviation: clamp(rel - (spec.wca - spec.variation), -10, 10),
-            });
-        },
-        onKey: (dx) => {
-          if (key === "wca")
-            set({ ...spec, wca: clamp(spec.wca + dx, -45, 45) });
-          else if (key === "variation")
-            set({ ...spec, variation: clamp(spec.variation - dx, -30, 30) });
-          else set({ ...spec, deviation: clamp(spec.deviation + dx, -10, 10) });
-        },
-      });
-    };
-    mk(
-      "wca",
-      L(
-        lang,
-        "True heading (wind correction)",
-        "Cap vrai (correction de dérive)",
-      ),
-      p.heading,
-    );
-    mk(
-      "variation",
-      L(lang, "Magnetic heading (variation)", "Cap magnétique (déclinaison)"),
-      p.nav,
-    );
-    mk(
-      "deviation",
-      L(lang, "Compass heading (deviation)", "Cap compas (déviation)"),
-      p.wind,
-    );
-    draw();
-  };
-  const draw = () => {
-    layer.replaceChildren();
-    const r = tvmdc(spec.tc, spec.wca, spec.variation, spec.deviation);
-    // tape
-    layer.append(
-      s("rect", {
-        x: x0 - 16,
-        y: tapeY - 40,
-        width: x1 - x0 + 32,
-        height: 64,
-        rx: 8,
-        fill: p.fill,
-        stroke: p.line,
-        "stroke-width": 1,
-      }),
-    );
-    for (let d = Math.ceil(lo); d <= lo + span; d++) {
-      const x = relX(d);
-      const abs = Math.round(spec.tc + d);
-      const big = abs % 10 === 0;
-      const mid = abs % 5 === 0;
-      layer.append(
-        s("line", {
-          x1: x,
-          y1: tapeY + 24,
-          x2: x,
-          y2: tapeY + 24 - (big ? 18 : mid ? 11 : 6),
-          stroke: p.line,
-          "stroke-width": big ? 1.6 : 1,
+  const relX = (rel: number) => x0 + ((rel - lo) / span) * (x1 - x0);
+  const xRel = (x: number) => lo + ((x - x0) / (x1 - x0)) * span;
+  return makeWidget<CompassSpec>(spec0, o, [1104, 432], "cs-tvmdc", {
+    build(sh, get, set) {
+      const { W, u, p } = sh.c;
+      fit(get());
+      x0 = 72 * u;
+      x1 = W - 72 * u;
+      tapeY = 104 * u;
+      const mk = (key: "wca" | "variation" | "deviation", name: string) => {
+        delete hs[key];
+        if (!drag.has(key)) return;
+        const h = dragHandle(sh.svg, p, {
+          u,
+          color: p.accent,
+          name,
+          onDrag: (x) => {
+            const sp = get();
+            const rel = Math.round(clamp(xRel(x), lo, lo + span));
+            if (key === "wca") set({ ...sp, wca: clamp(rel, -45, 45) });
+            else if (key === "variation")
+              set({ ...sp, variation: clamp(sp.wca - rel, -30, 30) });
+            else
+              set({
+                ...sp,
+                deviation: clamp(rel - (sp.wca - sp.variation), -10, 10),
+              });
+          },
+          onKey: (dx) => {
+            const sp = get();
+            if (key === "wca") set({ ...sp, wca: clamp(sp.wca + dx, -45, 45) });
+            else if (key === "variation")
+              set({ ...sp, variation: clamp(sp.variation - dx, -30, 30) });
+            else set({ ...sp, deviation: clamp(sp.deviation + dx, -10, 10) });
+          },
+        });
+        hs[key] = h;
+        sh.top.append(h.g);
+      };
+      mk(
+        "wca",
+        L(
+          lang,
+          "True heading (wind correction)",
+          "Cap vrai (correction de dérive)",
+        ),
+      );
+      mk(
+        "variation",
+        L(lang, "Magnetic heading (variation)", "Cap magnétique (déclinaison)"),
+      );
+      mk(
+        "deviation",
+        L(lang, "Compass heading (deviation)", "Cap compas (déviation)"),
+      );
+    },
+    draw(sh, spec) {
+      const c = sh.c;
+      const { u, p, H } = c;
+      const ly = sh.layer;
+      const r = tvmdc(spec.tc, spec.wca, spec.variation, spec.deviation);
+      // refit only when a marker leaves the tape (keeps it steady while dragging)
+      const rr = rels(spec);
+      if (!rr.every((v) => v >= lo + 2 && v <= lo + span - 2)) fit(spec);
+      // tape
+      ly.append(
+        s("rect", {
+          x: x0 - 20 * u,
+          y: tapeY - 48 * u,
+          width: x1 - x0 + 40 * u,
+          height: 72 * u,
+          rx: 12 * u,
+          fill: tint(p.heading, 0.08),
         }),
       );
-      if (big)
-        layer.append(
-          label(x, tapeY - 6, hdg3(abs), p, {
-            size: 13,
-            color: p.muted,
-            anchor: "middle",
-            weight: 600,
-            halo: false,
+      for (let d = Math.ceil(lo); d <= lo + span; d++) {
+        const x = relX(d);
+        const abs = Math.round(spec.tc + d);
+        const big = abs % 10 === 0;
+        const mid = abs % 5 === 0;
+        ly.append(
+          s("line", {
+            x1: x,
+            y1: tapeY + 24 * u,
+            x2: x,
+            y2: tapeY + 24 * u - (big ? 22 : mid ? 14 : 8) * u,
+            stroke: p.line,
+            "stroke-width": (big ? 2.5 : 1.5) * u,
           }),
         );
-    }
-    // markers
-    const marks: {
-      key: string;
-      rel: number;
-      name: string;
-      v: number;
-      color: string;
-      row: number;
-    }[] = [
-      { key: "tc", rel: 0, name: "TC", v: r.tc, color: p.text, row: 0 },
-      {
-        key: "th",
-        rel: spec.wca,
-        name: "TH",
-        v: r.th,
-        color: p.heading,
-        row: 1,
-      },
-      {
-        key: "mh",
-        rel: spec.wca - spec.variation,
-        name: "MH",
-        v: r.mh,
-        color: p.nav,
-        row: 2,
-      },
-      {
-        key: "ch",
-        rel: spec.wca - spec.variation + spec.deviation,
-        name: "CH",
-        v: r.ch,
-        color: p.wind,
-        row: 3,
-      },
-    ];
-    const rowY = (i: number) => tapeY + 54 + i * 34;
-    for (const m of marks) {
-      const x = relX(m.rel);
-      layer.append(
-        s("line", {
-          x1: x,
-          y1: tapeY - 30,
-          x2: x,
-          y2: rowY(m.row) - 4,
-          stroke: m.color,
-          "stroke-width": 2,
-          opacity: 0.9,
-        }),
+        if (big)
+          ly.append(
+            lab(c, x, tapeY - 12 * u, hdg3(abs), {
+              role: "sec",
+              anchor: "middle",
+            }),
+          );
+      }
+      // markers and their rows
+      const marks = [
+        { rel: 0, name: fr ? "Rv" : "TC", v: r.tc, color: p.text },
+        { rel: spec.wca, name: fr ? "Cv" : "TH", v: r.th, color: p.heading },
+        {
+          rel: spec.wca - spec.variation,
+          name: fr ? "Cm" : "MH",
+          v: r.mh,
+          color: p.nav,
+        },
+        {
+          rel: spec.wca - spec.variation + spec.deviation,
+          name: fr ? "Cc" : "CH",
+          v: r.ch,
+          color: p.wind,
+        },
+      ];
+      // one row per heading: the step arrow from the previous heading, its words behind it, the heading at its tip
+      // (no long vertical lines: they would cross the rows above)
+      const rowH = Math.min(64 * u, (H - tapeY - 64 * u - (sh.o.card ? 110 * u : 0)) / 4);
+      const rowY = (i: number) => tapeY + 88 * u + i * rowH;
+      const stepTxt = [
+        "",
+        `${spec.wca >= 0 ? "+" : "−"} ${fr ? "dérive" : "WCA"} ${Math.abs(Math.round(spec.wca))}°`,
+        `${spec.variation > 0 ? "−" : "+"} ${fr ? "décl." : "var"} ${variationText(spec.variation, fr)}`,
+        `${spec.deviation >= 0 ? "+" : "−"} ${fr ? "dév." : "dev"} ${Math.abs(Math.round(spec.deviation * 10) / 10)}°`,
+      ];
+      marks.forEach((m, i) => {
+        const x = relX(m.rel);
+        ly.append(s("path", { d: `M${x} ${tapeY + 30 * u}l${-10 * u} ${-16 * u}h${20 * u}z`, fill: m.color }));
+        ly.append(s("line", { x1: x, y1: tapeY - 40 * u, x2: x, y2: tapeY + 24 * u, stroke: m.color, "stroke-width": SW.constr * u }));
+        const y = rowY(i);
+        const t = `${m.name} ${hdg3(m.v)}°`;
+        const xa = i ? relX(marks[i - 1].rel) : x;
+        const dir = x >= xa ? 1 : -1;
+        if (i && Math.abs(x - xa) > 12 * u) {
+          ly.append(s("line", { x1: xa, y1: y - 9 * u, x2: x - dir * 14 * u, y2: y - 9 * u, stroke: m.color, "stroke-width": SW.constr * u }));
+          ly.append(head(c, x, y - 9 * u, dir > 0 ? 0 : Math.PI, m.color, 18));
+          ly.append(s("line", { x1: xa, y1: y - 22 * u, x2: xa, y2: y + 4 * u, stroke: marks[i - 1].color, "stroke-width": 2 * u }));
+        }
+        // the heading past the tip, the step's words behind the tail
+        const fits = (xx: number, w: number, a: "start" | "end") => (a === "start" ? xx + w < c.W - 8 * u : xx - w > 8 * u);
+        let a1: "start" | "end" = dir > 0 ? "start" : "end";
+        const w1 = textWidth(t, FS.pri * u, 600);
+        if (!fits(x + (a1 === "start" ? 16 : -16) * u, w1, a1)) a1 = a1 === "start" ? "end" : "start";
+        ly.append(lab(c, x + (a1 === "start" ? 16 : -16) * u, y, t, { role: "pri", color: m.color, anchor: a1 }));
+        if (i) {
+          const a2: "start" | "end" = dir > 0 ? "end" : "start";
+          ly.append(lab(c, Math.min(xa, x) * (dir > 0 ? 1 : 0) + Math.max(xa, x) * (dir > 0 ? 0 : 1) + (dir > 0 ? -16 : 16) * u, y, stepTxt[i], { role: "sec", color: m.color, anchor: a2 }));
+        }
+      });
+      // the log line (panes only: on a slide the text beside the diagram carries it)
+      if (sh.o.card) {
+        const logY = H - 52 * u;
+        const cells: [string, string, string][] = [
+          [fr ? "Rv" : "TC", hdg3(r.tc), p.text],
+          [fr ? "Dérive" : "WCA", signed(spec.wca), p.heading],
+          [fr ? "Cv" : "TH", hdg3(r.th), p.heading],
+          [fr ? "Décl." : "VAR", variationText(spec.variation, fr), p.nav],
+          [fr ? "Cm" : "MH", hdg3(r.mh), p.nav],
+          [fr ? "Dév." : "DEV", signed(spec.deviation), p.wind],
+          [fr ? "Cc" : "CH", hdg3(r.ch), p.wind],
+        ];
+        const cw = (x1 - x0 + 40 * u) / cells.length;
+        cells.forEach(([k, v, col], i) => {
+          const x = x0 - 20 * u + i * cw + cw / 2;
+          ly.append(
+            lab(c, x, logY - 22 * u, k, { role: "sec", anchor: "middle" }),
+          );
+          ly.append(
+            lab(c, x, logY + 12 * u, v, {
+              role: "pri",
+              anchor: "middle",
+              color: col,
+            }),
+          );
+        });
+      }
+      for (const [key, rel] of [
+        ["wca", spec.wca],
+        ["variation", spec.wca - spec.variation],
+        ["deviation", spec.wca - spec.variation + spec.deviation],
+      ] as const) {
+        const h = hs[key];
+        if (!h) continue;
+        h.move(relX(rel), tapeY + 24 * u);
+      }
+      hs.wca?.g.setAttribute("aria-valuetext", `TH ${hdg3(r.th)}`);
+      hs.variation?.g.setAttribute(
+        "aria-valuetext",
+        `MH ${hdg3(r.mh)}, ${variationText(spec.variation, fr)}`,
       );
-      layer.append(
-        s("path", { d: `M${x} ${tapeY + 26}l-7 -11h14z`, fill: m.color }),
-      );
-      layer.append(
-        label(x + 8, rowY(m.row) + 5, `${m.name} ${hdg3(m.v)}°`, p, {
-          size: 15,
-          color: m.color,
-          weight: 700,
-        }),
-      );
-    }
-    // steps between markers
-    const steps: [number, number, string, string, number][] = [
-      [
-        0,
-        spec.wca,
-        `${spec.wca >= 0 ? "+" : "−"} WCA ${Math.abs(Math.round(spec.wca))}° ${spec.wca >= 0 ? L(lang, "R", "D") : L(lang, "L", "G")}`,
-        p.heading,
-        1,
-      ],
-      [
-        spec.wca,
-        spec.wca - spec.variation,
-        `${spec.variation > 0 ? "−" : "+"} ${L(lang, "VAR", "DÉCL")} ${variationText(spec.variation, fr)} · ${spec.variation > 0 ? L(lang, "East is least", "Est : on retranche") : spec.variation < 0 ? L(lang, "West is best", "Ouest : on ajoute") : ""}`,
-        p.nav,
-        2,
-      ],
-      [
-        spec.wca - spec.variation,
-        spec.wca - spec.variation + spec.deviation,
-        `${spec.deviation >= 0 ? "+" : "−"} DEV ${Math.abs(Math.round(spec.deviation * 10) / 10)}°`,
-        p.wind,
-        3,
-      ],
-    ];
-    for (const [a, b, t, c, row] of steps) {
-      const xa = relX(a);
-      const xb = relX(b);
-      const y = rowY(row) - 16;
-      if (Math.abs(xb - xa) > 4) layer.append(arrow(xa, y, xb, y, c, 2, 9));
-      // the step's words sit on the side away from the marker label
-      const right = xb >= xa;
-      const tx = right ? Math.min(xa, xb) - 12 : Math.max(xa, xb) + 12;
-      layer.append(label(tx, y + 5, t, p, { size: 12.5, color: c, anchor: right ? "end" : "start", weight: 600 }));
-    }
-    // the log line
-    const logY = H - 48;
-    const cells: [string, string, string][] = [
-      ["TC", hdg3(r.tc), p.text],
-      [L(lang, "WCA", "Dérive"), `${signed(spec.wca)}`, p.heading],
-      ["TH", hdg3(r.th), p.heading],
-      [
-        L(lang, "VAR", "Décl."),
-        `${variationText(spec.variation, fr)} ${spec.variation > 0 ? "−" : spec.variation < 0 ? "+" : ""}`.trim(),
-        p.nav,
-      ],
-      ["MH", hdg3(r.mh), p.nav],
-      ["DEV", `${signed(spec.deviation)}`, p.wind],
-      ["CH", hdg3(r.ch), p.wind],
-    ];
-    const cw = (x1 - x0 + 32) / cells.length;
-    cells.forEach(([k, v, c], i) => {
-      const x = x0 - 16 + i * cw;
-      const head = i % 2 === 0;
-      layer.append(
-        s("rect", {
-          x: x + 3,
-          y: logY - 30,
-          width: cw - 6,
-          height: 56,
-          rx: 7,
-          fill: head ? p.fill : "none",
-          stroke: head ? c : p.line,
-          "stroke-width": head ? 1.6 : 1,
-          "stroke-dasharray": head ? undefined : "4 3",
-        }),
-      );
-      layer.append(
-        label(x + cw / 2, logY - 12, k, p, {
-          size: 11.5,
-          color: p.muted,
-          anchor: "middle",
-          weight: 700,
-          halo: false,
-        }),
-      );
-      layer.append(
-        label(x + cw / 2, logY + 12, v, p, {
-          size: head ? 19 : 15,
-          color: c,
-          anchor: "middle",
-          weight: 700,
-          halo: false,
-          mono: true,
-        }),
-      );
-    });
-    for (const [key, rel] of [
-      ["wca", spec.wca],
-      ["variation", spec.wca - spec.variation],
-      ["deviation", spec.wca - spec.variation + spec.deviation],
-    ] as const) {
-      const h = hs[key];
-      if (!h) continue;
-      layer.append(h.g);
-      h.move(relX(rel), tapeY + 24);
-    }
-    hs.wca?.g.setAttribute("aria-valuetext", `TH ${hdg3(r.th)}`);
-    hs.variation?.g.setAttribute(
-      "aria-valuetext",
-      `MH ${hdg3(r.mh)}, ${variationText(spec.variation, fr)}`,
-    );
-    hs.deviation?.g.setAttribute("aria-valuetext", `CH ${hdg3(r.ch)}`);
-    const a11y =
-      o.label ??
-      L(
+      hs.deviation?.g.setAttribute("aria-valuetext", `CH ${hdg3(r.ch)}`);
+    },
+    label(_sh, spec) {
+      const r = tvmdc(spec.tc, spec.wca, spec.variation, spec.deviation);
+      return L(
         lang,
         `TVMDC: true course ${hdg3(r.tc)}, wind correction ${signed(spec.wca)}, true heading ${hdg3(r.th)}, variation ${variationText(spec.variation)}, magnetic heading ${hdg3(r.mh)}, deviation ${signed(spec.deviation)}, compass heading ${hdg3(r.ch)}.`,
         `Route vraie ${hdg3(r.tc)}, dérive ${signed(spec.wca)}, cap vrai ${hdg3(r.th)}, déclinaison ${variationText(spec.variation, true)}, cap magnétique ${hdg3(r.mh)}, déviation ${signed(spec.deviation)}, cap compas ${hdg3(r.ch)}.`,
       );
-    svg.setAttribute("aria-label", a11y);
-    desc.textContent = a11y;
-    void wrap180;
-  };
-  const set = (next: CompassSpec) => {
-    spec = next;
-    const before = [lo, span];
-    fit();
-    if (before[0] !== lo || before[1] !== span) {
-      // keep the tape steady while dragging: only refit when a marker leaves it
-      const rels = [
-        0,
-        spec.wca,
-        spec.wca - spec.variation,
-        spec.wca - spec.variation + spec.deviation,
-      ];
-      if (
-        rels.every((v) => v >= before[0] + 2 && v <= before[0] + before[1] - 2)
-      ) {
-        lo = before[0];
-        span = before[1];
-      }
-    }
-    draw();
-    o.onChange?.({ ...spec });
-  };
-  build();
-  return {
-    el: svg,
-    spec: () => ({ ...spec }),
-    update(next) {
-      spec = { ...next };
-      build();
     },
-    setTheme(t) {
-      theme = t;
-      build();
-    },
-    destroy() {
-      svg.remove();
-    },
-  };
+  });
 }

@@ -188,39 +188,61 @@ export interface Guide {
   /** extent along the other axis (for drawing) */
   from: number;
   to: number;
-  kind: "edge" | "center" | "slide";
+  /** edge / centre of another block, the slide (edges, centre, safe margins), the 12-column grid, or an equal gap */
+  kind: "edge" | "center" | "slide" | "column" | "gap";
+  /** "gap" guides: the equal gaps along `axis`, drawn as dimension lines at `at` on the other axis */
+  segs?: [number, number][];
+  /** "gap" guides: the gap, in slide units (shown on the dimension lines) */
+  gap?: number;
 }
 export interface SnapResult {
   dx: number;
   dy: number;
   guides: Guide[];
 }
-/**
- * Snap a moving box to the other boxes' edges and centres and to the slide's edges, centre and safe margins,
- * within `threshold` logical units; otherwise to the grid (its top-left corner). Returns the correction to apply
- * and the guides to draw.
- */
-export function snapMove(
-  moving: Box,
-  others: readonly Box[],
-  o: { threshold?: number; grid?: number; margin?: number } = {},
-): SnapResult {
-  const th = o.threshold ?? 10;
-  const margin = o.margin ?? 96;
-  const xs: { v: number; kind: Guide["kind"]; span: [number, number] }[] = [];
-  const ys: { v: number; kind: Guide["kind"]; span: [number, number] }[] = [];
+/** The design system's frame (SPEC slides v2 §1): 12 columns, margin 120, column 96, gutter 48. */
+export const COLUMNS = { margin: 120, col: 96, gutter: 48, n: 12 } as const;
+/** x of column c (0–11) and the right edge of an n-column span starting at c. */
+export const colX = (c: number): number =>
+  COLUMNS.margin + (COLUMNS.col + COLUMNS.gutter) * c;
+export const colEnd = (c: number): number => colX(c) + COLUMNS.col;
+/** The horizontal lines of the frame: top margin, header, body top, body bottom, footer. */
+export const ROWS: readonly number[] = [96, 136, 288, 312, 984, 1008];
+
+type Cand = { v: number; kind: Guide["kind"]; span: [number, number] };
+
+/** Slide lines: edges, centre and the projector-safe margins (120 left / right, 96 top / bottom). */
+function slideCands(): { xs: Cand[]; ys: Cand[] } {
   const full: [number, number] = [0, SLIDE_H];
   const fullX: [number, number] = [0, SLIDE_W];
-  for (const v of [0, margin, SLIDE_W / 2, SLIDE_W - margin, SLIDE_W])
-    xs.push({ v, kind: "slide", span: full });
-  for (const v of [
-    0,
-    margin * 0.75,
-    SLIDE_H / 2,
-    SLIDE_H - margin * 0.75,
-    SLIDE_H,
-  ])
-    ys.push({ v, kind: "slide", span: fullX });
+  return {
+    xs: [0, COLUMNS.margin, SLIDE_W / 2, SLIDE_W - COLUMNS.margin, SLIDE_W].map(
+      (v) => ({ v, kind: "slide" as const, span: full }),
+    ),
+    ys: [0, 96, SLIDE_H / 2, SLIDE_H - 96, SLIDE_H].map((v) => ({
+      v,
+      kind: "slide" as const,
+      span: fullX,
+    })),
+  };
+}
+/** The 12-column grid lines (weaker than block and slide lines: used only when nothing else is near). */
+function columnCands(): { xs: Cand[]; ys: Cand[] } {
+  const xs: Cand[] = [];
+  for (let c = 0; c < COLUMNS.n; c++) {
+    xs.push({ v: colX(c), kind: "column", span: [0, SLIDE_H] });
+    xs.push({ v: colEnd(c), kind: "column", span: [0, SLIDE_H] });
+  }
+  const ys: Cand[] = ROWS.map((v) => ({
+    v,
+    kind: "column" as const,
+    span: [0, SLIDE_W] as [number, number],
+  }));
+  return { xs, ys };
+}
+function blockCands(others: readonly Box[]): { xs: Cand[]; ys: Cand[] } {
+  const xs: Cand[] = [];
+  const ys: Cand[] = [];
   for (const b of others) {
     const sy: [number, number] = [b.y, b.y + b.h];
     const sx: [number, number] = [b.x, b.x + b.w];
@@ -235,56 +257,243 @@ export function snapMove(
       { v: b.y + b.h / 2, kind: "center", span: sx },
     );
   }
+  return { xs, ys };
+}
+function nearest(cands: readonly Cand[], mine: readonly number[], th: number) {
+  let d = Infinity;
+  let hit: Cand | null = null;
+  for (const c of cands)
+    for (const m of mine) {
+      const dd = c.v - m;
+      if (Math.abs(dd) <= th && Math.abs(dd) < Math.abs(d) - 1e-9) {
+        d = dd;
+        hit = c;
+      }
+    }
+  return hit ? { d, hit } : null;
+}
+
+interface GapSnap {
+  d: number;
+  guide: Guide;
+}
+/**
+ * Equal spacing along one axis (Canva / Keynote "smart spacing"): the moving box centred between its two
+ * neighbours, or at a gap that already separates two other blocks of the same row (column), from either
+ * neighbour. `axis` "x" works on rows (boxes that overlap the moving box vertically); "y" on columns.
+ */
+export function gapSnap(
+  moving: Box,
+  others: readonly Box[],
+  axis: "x" | "y",
+  th: number,
+): GapSnap | null {
+  const P = axis === "x" ? "x" : "y";
+  const S = axis === "x" ? "w" : "h";
+  const Q = axis === "x" ? "y" : "x";
+  const T = axis === "x" ? "h" : "w";
+  const band = others.filter(
+    (b) => b[Q] < moving[Q] + moving[T] && b[Q] + b[T] > moving[Q],
+  );
+  if (!band.length) return null;
+  const lo = moving[P];
+  const hi = moving[P] + moving[S];
+  const before = band.filter((b) => b[P] + b[S] <= lo + th);
+  const after = band.filter((b) => b[P] >= hi - th);
+  const A = before.sort((p, q) => q[P] + q[S] - (p[P] + p[S]))[0];
+  const B = after.sort((p, q) => p[P] - q[P])[0];
+  // gaps that already exist between neighbours in the band
+  const sorted = [...band].sort((p, q) => p[P] - q[P]);
+  const gaps: { g: number; seg: [number, number]; cross: [number, number] }[] = [];
+  for (let i = 0; i + 1 < sorted.length; i++) {
+    const a = sorted[i];
+    const b = sorted[i + 1];
+    const g = b[P] - (a[P] + a[S]);
+    if (g > 4)
+      gaps.push({
+        g,
+        seg: [a[P] + a[S], b[P]],
+        cross: [Math.max(a[Q], b[Q]), Math.min(a[Q] + a[T], b[Q] + b[T])],
+      });
+  }
+  const opts: { pos: number; gap: number; segs: [number, number][] }[] = [];
+  if (A && B) {
+    const room = B[P] - (A[P] + A[S]) - moving[S];
+    if (room > 0) {
+      const pos = A[P] + A[S] + room / 2;
+      opts.push({
+        pos,
+        gap: room / 2,
+        segs: [
+          [A[P] + A[S], pos],
+          [pos + moving[S], B[P]],
+        ],
+      });
+    }
+  }
+  for (const e of gaps) {
+    if (A && Math.abs(e.seg[0] - (A[P] + A[S])) > 0.5) {
+      const pos = A[P] + A[S] + e.g;
+      opts.push({ pos, gap: e.g, segs: [e.seg, [A[P] + A[S], pos]] });
+    }
+    if (B && Math.abs(e.seg[1] - B[P]) > 0.5) {
+      const pos = B[P] - e.g - moving[S];
+      opts.push({ pos, gap: e.g, segs: [e.seg, [pos + moving[S], B[P]]] });
+    }
+  }
+  let best: GapSnap | null = null;
+  for (const o of opts) {
+    const d = o.pos - lo;
+    if (Math.abs(d) > th || o.gap < 4) continue;
+    if (best && Math.abs(d) >= Math.abs(best.d)) continue;
+    // the dimension lines sit across the middle of what the moving box shares with its row
+    const cross = moving[Q] + moving[T] / 2;
+    best = {
+      d,
+      guide: {
+        axis,
+        at: cross,
+        from: o.segs.reduce((m, s) => Math.min(m, s[0]), Infinity),
+        to: o.segs.reduce((m, s) => Math.max(m, s[1]), -Infinity),
+        kind: "gap",
+        segs: o.segs.map((s) => [Math.round(s[0]), Math.round(s[1])] as [number, number]),
+        gap: Math.round(o.gap),
+      },
+    };
+  }
+  return best;
+}
+
+/**
+ * Snap a moving box to the other boxes' edges and centres, to the slide's edges, centre and safe margins, and to
+ * equal gaps between blocks, within `threshold` logical units; then to the 12-column grid; otherwise to the grid
+ * (its top-left corner). Returns the correction to apply and the guides to draw.
+ */
+export function snapMove(
+  moving: Box,
+  others: readonly Box[],
+  o: { threshold?: number; grid?: number; columns?: boolean } = {},
+): SnapResult {
+  const th = o.threshold ?? 10;
+  const sc = slideCands();
+  const bc = blockCands(others);
+  const xs = [...sc.xs, ...bc.xs];
+  const ys = [...sc.ys, ...bc.ys];
   const mx = [moving.x, moving.x + moving.w / 2, moving.x + moving.w];
   const my = [moving.y, moving.y + moving.h / 2, moving.y + moving.h];
-  const best = (cands: typeof xs, mine: number[]) => {
-    let d = Infinity;
-    let hit: (typeof xs)[number] | null = null;
-    for (const c of cands)
-      for (const m of mine) {
-        const dd = c.v - m;
-        if (Math.abs(dd) <= th && Math.abs(dd) < Math.abs(d) - 1e-9) {
-          d = dd;
-          hit = c;
-        }
-      }
-    return hit ? { d, hit } : null;
-  };
-  const bx = best(xs, mx);
-  const by = best(ys, my);
+  let bx = nearest(xs, mx, th);
+  let by = nearest(ys, my, th);
+  // equal spacing competes with alignment (the closer wins; alignment on a tie)
+  const gx = gapSnap(moving, others, "x", th);
+  const gy = gapSnap(moving, others, "y", th);
+  const useGx = !!gx && (!bx || Math.abs(gx.d) < Math.abs(bx.d) - 0.5);
+  const useGy = !!gy && (!by || Math.abs(gy.d) < Math.abs(by.d) - 0.5);
+  if (useGx) bx = null;
+  if (useGy) by = null;
+  if (o.columns !== false) {
+    const cc = columnCands();
+    if (!bx && !useGx) bx = nearest(cc.xs, [moving.x, moving.x + moving.w], th);
+    if (!by && !useGy) by = nearest(cc.ys, [moving.y, moving.y + moving.h], th);
+  }
   const grid = o.grid ?? 0;
-  const dx = bx ? bx.d : grid ? snap(moving.x, grid) - moving.x : 0;
-  const dy = by ? by.d : grid ? snap(moving.y, grid) - moving.y : 0;
+  const dx = useGx
+    ? gx!.d
+    : bx
+      ? bx.d
+      : grid
+        ? snap(moving.x, grid) - moving.x
+        : 0;
+  const dy = useGy
+    ? gy!.d
+    : by
+      ? by.d
+      : grid
+        ? snap(moving.y, grid) - moving.y
+        : 0;
   const guides: Guide[] = [];
   const m2: Box = { ...moving, x: moving.x + dx, y: moving.y + dy };
-  if (bx) {
-    // every candidate on the snapped line is drawn (two boxes aligned at once)
-    const at = bx.hit.v;
-    const lines = xs.filter((c) => Math.abs(c.v - at) < 0.5);
-    const lo = Math.min(m2.y, ...lines.map((l) => l.span[0]));
-    const hi = Math.max(m2.y + m2.h, ...lines.map((l) => l.span[1]));
-    guides.push({
-      axis: "x",
+  const line = (axis: "x" | "y", hit: Cand, cands: readonly Cand[]): Guide => {
+    const at = hit.v;
+    const lines = cands.filter((c) => Math.abs(c.v - at) < 0.5);
+    const own: [number, number] = axis === "x" ? [m2.y, m2.y + m2.h] : [m2.x, m2.x + m2.w];
+    const lo = Math.min(own[0], ...lines.map((l) => l.span[0]));
+    const hi = Math.max(own[1], ...lines.map((l) => l.span[1]));
+    const whole = hit.kind === "slide" || hit.kind === "column";
+    return {
+      axis,
       at,
-      from: bx.hit.kind === "slide" ? 0 : lo,
-      to: bx.hit.kind === "slide" ? SLIDE_H : hi,
-      kind: bx.hit.kind,
-    });
-  }
-  if (by) {
-    const at = by.hit.v;
-    const lines = ys.filter((c) => Math.abs(c.v - at) < 0.5);
-    const lo = Math.min(m2.x, ...lines.map((l) => l.span[0]));
-    const hi = Math.max(m2.x + m2.w, ...lines.map((l) => l.span[1]));
-    guides.push({
-      axis: "y",
-      at,
-      from: by.hit.kind === "slide" ? 0 : lo,
-      to: by.hit.kind === "slide" ? SLIDE_W : hi,
-      kind: by.hit.kind,
-    });
-  }
+      from: whole ? 0 : lo,
+      to: whole ? (axis === "x" ? SLIDE_H : SLIDE_W) : hi,
+      kind: hit.kind,
+    };
+  };
+  if (useGx) guides.push({ ...gx!.guide, at: m2.y + m2.h / 2 });
+  else if (bx) guides.push(line("x", bx.hit, bx.hit.kind === "column" ? columnCands().xs : xs));
+  if (useGy) guides.push({ ...gy!.guide, at: m2.x + m2.w / 2 });
+  else if (by) guides.push(line("y", by.hit, by.hit.kind === "column" ? columnCands().ys : ys));
   return { dx, dy, guides };
+}
+
+/**
+ * Snap the edges a resize moves (the handle's sides) to the other boxes' edges and centres, the slide lines and
+ * the 12-column grid. Returns the corrected box and its guides. Aspect-locked and rotated frames are not
+ * snapped (the caller keeps resizeFrame's result).
+ */
+export function snapResize(
+  box: Box,
+  handle: Handle,
+  others: readonly Box[],
+  o: { threshold?: number; min?: number } = {},
+): { box: Box; guides: Guide[] } {
+  const th = o.threshold ?? 10;
+  const min = o.min ?? MIN_SIZE;
+  const [hx, hy] = HANDLE_POS[handle];
+  const sc = slideCands();
+  const bc = blockCands(others);
+  const cc = columnCands();
+  const out = { ...box };
+  const guides: Guide[] = [];
+  const pick = (cands: Cand[], cols: Cand[], v: number) =>
+    nearest(cands, [v], th) ?? nearest(cols, [v], th);
+  if (hx !== 0.5) {
+    const edge = hx === 0 ? box.x : box.x + box.w;
+    const r = pick([...sc.xs, ...bc.xs], cc.xs, edge);
+    if (r) {
+      if (hx === 0) {
+        const nx = Math.min(box.x + box.w - min, box.x + r.d);
+        out.w = box.x + box.w - nx;
+        out.x = nx;
+      } else out.w = Math.max(min, box.w + r.d);
+      const whole = r.hit.kind === "slide" || r.hit.kind === "column";
+      guides.push({
+        axis: "x",
+        at: r.hit.v,
+        from: whole ? 0 : Math.min(out.y, r.hit.span[0]),
+        to: whole ? SLIDE_H : Math.max(out.y + out.h, r.hit.span[1]),
+        kind: r.hit.kind,
+      });
+    }
+  }
+  if (hy !== 0.5) {
+    const edge = hy === 0 ? box.y : box.y + box.h;
+    const r = pick([...sc.ys, ...bc.ys], cc.ys, edge);
+    if (r) {
+      if (hy === 0) {
+        const ny = Math.min(box.y + box.h - min, box.y + r.d);
+        out.h = box.y + box.h - ny;
+        out.y = ny;
+      } else out.h = Math.max(min, box.h + r.d);
+      const whole = r.hit.kind === "slide" || r.hit.kind === "column";
+      guides.push({
+        axis: "y",
+        at: r.hit.v,
+        from: whole ? 0 : Math.min(out.x, r.hit.span[0]),
+        to: whole ? SLIDE_W : Math.max(out.x + out.w, r.hit.span[1]),
+        kind: r.hit.kind,
+      });
+    }
+  }
+  return { box: out, guides };
 }
 
 // ------------------------------------------------------------------ resize and rotate

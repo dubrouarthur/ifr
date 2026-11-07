@@ -1,30 +1,35 @@
 // Ground school stage — the wind diagrams: the wind triangle (E6B face, north up) and the hold in wind
 // (racetrack with the inbound correction and the tripled outbound correction, AIM 5-3-8). Both take a wind dial:
 // put the handle where the wind comes FROM, its distance from the centre is the speed.
+// Slide units (SPEC slides v2 §5): viewBox = the block, labels 24 / 28 / 32 × u, theme tokens only.
 import type { CalcDiagram, Lang } from "../types";
 import { solveHoldWind, solveWind, trackFromHeading } from "./diagramMath";
 import {
-  arcPath,
   aircraftIcon,
-  arrow,
+  arcPath,
   bearingVec,
   clamp,
   dragHandle,
+  fixMark,
+  FS,
   hdg3,
+  head,
   L,
-  label,
+  lab,
+  Labels,
+  makeWidget,
   norm360,
-  PALETTES,
-  rootSvg,
   s,
   signed,
+  SW,
   vecBearing,
   wrap180,
+  type Ctx,
   type DiagramOptions,
-  type DiagramPalette,
-  type DiagramTheme,
   type DiagramWidget,
+  type Shell,
 } from "./svgkit";
+import { textWidth } from "../canvas/text";
 
 export type WindTriangleSpec = Extract<
   CalcDiagram,
@@ -32,14 +37,42 @@ export type WindTriangleSpec = Extract<
 > & { heading?: number };
 export type HoldWindSpec = Extract<CalcDiagram, { kind: "holdWind" }>;
 
+/** A vector with a head proportionate to its length. */
+function vector(
+  c: Ctx,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  color: string,
+  w: number,
+): SVGGElement {
+  const len = Math.hypot(x2 - x1, y2 - y1);
+  const g = s("g");
+  if (len < 2) return g;
+  const hl = Math.min(30 * c.u, len * 0.35);
+  const a = Math.atan2(y2 - y1, x2 - x1);
+  g.append(
+    s("line", {
+      x1,
+      y1,
+      x2: x2 - Math.cos(a) * hl * 0.8,
+      y2: y2 - Math.sin(a) * hl * 0.8,
+      stroke: color,
+      "stroke-width": w,
+      "stroke-linecap": "round",
+    }),
+    head(c, x2, y2, a, color, hl / c.u),
+  );
+  return g;
+}
+
 // ------------------------------------------------------------------ wind dial (shared)
 interface WindDial {
-  g: SVGGElement;
   set(dir: number, kt: number): void;
 }
 function windDial(
-  svg: SVGSVGElement,
-  p: DiagramPalette,
+  sh: Shell,
   lang: Lang,
   cx: number,
   cy: number,
@@ -48,52 +81,45 @@ function windDial(
   interactive: boolean,
   onSet: (dir: number, kt: number) => void,
   get: () => { dir: number; kt: number },
+  capBelow = false,
 ): WindDial {
+  const c = sh.c;
+  const { u, p } = c;
   const g = s("g", { class: "cs-wdial" });
-  const face = s("circle", {
-    cx,
-    cy,
-    r,
-    fill: p.bg,
-    stroke: p.line,
-    "stroke-width": 1.2,
-  });
-  const rings = s("g");
-  for (const k of [0.5, 1])
-    rings.append(
-      s("circle", {
-        cx,
-        cy,
-        r: r * k,
-        fill: "none",
-        stroke: p.grid,
-        "stroke-width": 1,
-      }),
-    );
-  for (const [b, t] of [
-    [0, "N"],
-    [90, "E"],
-    [180, "S"],
-    [270, L(lang, "W", "O")],
-  ] as [number, string][]) {
-    const [x, y] = bearingVec(b);
-    rings.append(
-      label(cx + x * (r + 11), cy + y * (r + 11) + 4, t, p, {
-        size: 11,
-        color: p.muted,
-        anchor: "middle",
-        weight: 700,
-      }),
-    );
-  }
+  g.append(
+    s("circle", {
+      cx,
+      cy,
+      r,
+      fill: "none",
+      stroke: p.line,
+      "stroke-width": SW.grid * u,
+    }),
+  );
+  g.append(
+    s("circle", {
+      cx,
+      cy,
+      r: r * 0.5,
+      fill: "none",
+      stroke: p.grid,
+      "stroke-width": SW.grid * u,
+    }),
+  );
+  g.append(
+    lab(c, cx, cy - r - 14 * u, "N", {
+      role: "sec",
+      anchor: "middle",
+      weight: 600,
+    }),
+  );
   const arr = s("g");
-  const cap = label(cx, cy + r + 30, "", p, {
-    size: 13,
-    anchor: "middle",
-    color: p.wind,
-    weight: 700,
-  });
-  g.append(face, rings, arr, cap);
+  // the readout sits left of the dial (never under it, where the labels of the drawing go)
+  const cap = capBelow
+    ? lab(c, cx, cy + r + 40 * u, "", { role: "pri", anchor: "middle", color: p.wind })
+    : lab(c, cx - r - 24 * u, cy + 10 * u, "", { role: "pri", anchor: "end", color: p.wind });
+  g.append(arr, cap);
+  sh.layer.parentNode?.insertBefore(g, sh.layer.nextSibling);
   let h: ReturnType<typeof dragHandle> | null = null;
   if (interactive) {
     const toWind = (x: number, y: number): [number, number] => {
@@ -102,17 +128,15 @@ function windDial(
       const kt = clamp((Math.hypot(dx, dy) / r) * maxKt, 0, maxKt);
       return [Math.round(vecBearing(dx, dy) / 5) * 5 || 360, Math.round(kt)];
     };
-    h = dragHandle(svg, p, {
-      color: p.wind,
+    h = dragHandle(sh.svg, p, {
+      u: u * 0.8,
+      color: p.accent,
       name: L(
         lang,
         "Wind: drag to where the wind comes from",
         "Vent : placez la poignée d'où vient le vent",
       ),
-      onDrag: (x, y) => {
-        const [d, k] = toWind(x, y);
-        onSet(d, k);
-      },
+      onDrag: (x, y) => onSet(...toWind(x, y)),
       onKey: (dx, dy, big) => {
         const w = get();
         onSet(
@@ -121,10 +145,9 @@ function windDial(
         );
       },
     });
-    g.append(h.g);
+    sh.top.append(h.g);
   }
   return {
-    g,
     set(dir: number, kt: number) {
       arr.replaceChildren();
       const [ux, uy] = bearingVec(dir);
@@ -132,14 +155,14 @@ function windDial(
       // the arrow flies downwind: from the upwind side through the centre
       if (kt > 0.5)
         arr.append(
-          arrow(
+          vector(
+            c,
             cx + ux * rr,
             cy + uy * rr,
-            cx - ux * rr * 0.55,
-            cy - uy * rr * 0.55,
+            cx - ux * rr * 0.6,
+            cy - uy * rr * 0.6,
             p.wind,
-            3,
-            11,
+            SW.second * u,
           ),
         );
       cap.textContent =
@@ -162,379 +185,385 @@ export function createWindTriangle(
   spec0: WindTriangleSpec,
   o: DiagramOptions = {},
 ): DiagramWidget<WindTriangleSpec> {
-  const W = 560;
-  const H = 560;
   const lang: Lang = o.lang ?? "en";
+  const fr = lang === "fr";
   const drag = new Set(o.drag ?? spec0.drag ?? []);
-  let theme: DiagramTheme = o.theme ?? "dark";
-  let spec: WindTriangleSpec = { ...spec0 };
-  if (drag.has("heading") && spec.heading === undefined)
-    spec.heading = spec.course;
-  const svg = rootSvg(W, H, "cs-wind");
-  const cx = 250;
-  const cy = 290;
-  const R = 205;
-  let maxKt = Math.max(
-    60,
-    Math.ceil((spec.tasKt + Math.max(30, spec.windKt)) / 10) * 10,
-  );
-  let p = PALETTES[theme];
-  let layer = s("g");
+  let maxKt = 60;
+  let cx = 0;
+  let cy = 0;
+  let R = 1;
   let dial: WindDial | null = null;
-  const desc = s("desc");
-  const build = () => {
-    p = PALETTES[theme];
-    svg.replaceChildren(desc);
-    svg.append(s("rect", { width: W, height: H, fill: p.bg, rx: 0 }));
-    // rose
-    const rose = s("g", { class: "cs-rose" });
-    rose.append(
-      s("circle", {
-        cx,
-        cy,
-        r: R,
-        fill: "none",
-        stroke: p.line,
-        "stroke-width": 1.2,
-      }),
-    );
-    for (let b = 0; b < 360; b += 10) {
-      const [x, y] = bearingVec(b);
-      const big = b % 30 === 0;
-      rose.append(
-        s("line", {
-          x1: cx + x * R,
-          y1: cy + y * R,
-          x2: cx + x * (R - (big ? 12 : 6)),
-          y2: cy + y * (R - (big ? 12 : 6)),
-          stroke: p.line,
-          "stroke-width": big ? 1.6 : 1,
-        }),
-      );
-      if (big) {
-        const t =
-          b === 0
-            ? "N"
-            : b === 90
-              ? "E"
-              : b === 180
-                ? "S"
-                : b === 270
-                  ? L(lang, "W", "O")
-                  : String(b / 10);
-        rose.append(
-          label(cx + x * (R + 16), cy + y * (R + 16) + 5, t, p, {
-            size: 13,
-            color: b % 90 === 0 ? p.text : p.muted,
-            anchor: "middle",
-            weight: b % 90 === 0 ? 700 : 500,
-          }),
-        );
-      }
-    }
-    // speed rings every 20 kt (scale)
-    for (let k = 20; k < maxKt; k += 20)
-      rose.append(
-        s("circle", {
-          cx,
-          cy,
-          r: (k / maxKt) * (R - 14),
-          fill: "none",
-          stroke: p.grid,
-          "stroke-width": 1,
-        }),
-      );
-    svg.append(rose);
-    layer = s("g");
-    svg.append(layer);
-    dial = windDial(
-      svg,
-      p,
-      lang,
-      495,
-      78,
-      46,
-      Math.max(40, Math.ceil(Math.max(spec.windKt, 30) / 10) * 10 + 10),
-      drag.has("wind"),
-      (dir, kt) => set({ ...spec, windDir: dir, windKt: kt }),
-      () => ({ dir: spec.windDir, kt: spec.windKt }),
-    );
-    svg.append(dial.g);
-    handles();
-    draw();
-  };
-  const scale = () => (R - 14) / maxKt;
+  let dialArea = { x: 0, y: 0, w: 0, h: 0 };
+  let hHead: ReturnType<typeof dragHandle> | null = null;
+  let hCourse: ReturnType<typeof dragHandle> | null = null;
+  const scale = () => (R - 18) / maxKt;
   const pt = (b: number, kt: number): [number, number] => {
     const [x, y] = bearingVec(b);
     return [cx + x * kt * scale(), cy + y * kt * scale()];
   };
-  let hHead: ReturnType<typeof dragHandle> | null = null;
-  let hCourse: ReturnType<typeof dragHandle> | null = null;
-  const handles = () => {
-    hHead = null;
-    hCourse = null;
-    if (drag.has("heading") || drag.has("tas")) {
-      hHead = dragHandle(svg, p, {
-        color: p.heading,
-        name: L(lang, "Heading and true airspeed", "Cap et vitesse propre"),
-        onDrag: (x, y) => {
-          const b = vecBearing(x - cx, y - cy);
-          const kt = Math.hypot(x - cx, y - cy) / scale();
-          const next = { ...spec };
-          if (drag.has("heading")) next.heading = Math.round(b) || 360;
-          if (drag.has("tas"))
-            next.tasKt = Math.round(clamp(kt, 40, maxKt - 5));
-          set(next);
-        },
-        onKey: (dx, dy, big) => {
-          const next = { ...spec };
-          if (drag.has("heading"))
-            next.heading =
-              norm360((next.heading ?? solve().th) + dx * (big ? 5 : 1)) || 360;
-          if (drag.has("tas"))
-            next.tasKt = clamp(next.tasKt - dy * (big ? 10 : 1), 40, maxKt - 5);
-          set(next);
-        },
-      });
-    }
-    if (drag.has("course")) {
-      hCourse = dragHandle(svg, p, {
-        color: p.text,
-        name: L(lang, "True course", "Route vraie"),
-        onDrag: (x, y) =>
-          set({
-            ...spec,
-            course: Math.round(vecBearing(x - cx, y - cy)) || 360,
-          }),
-        onKey: (dx, _dy, big) =>
-          set({
-            ...spec,
-            course: norm360(spec.course + dx * (big ? 10 : 1)) || 360,
-          }),
-      });
-    }
-  };
-  const solve = () =>
-    solveWind(spec.course, spec.tasKt, spec.windDir, spec.windKt);
-  const draw = () => {
-    layer.replaceChildren();
-    const sol = solve();
-    const heading = drag.has("heading")
-      ? (spec.heading ?? spec.course)
-      : sol.th;
-    const fl = trackFromHeading(heading, spec.tasKt, spec.windDir, spec.windKt);
-    const Hp = pt(heading, spec.tasKt);
-    const Gp = pt(fl.trk, fl.gs);
-    const C = pt(spec.course, maxKt);
-    // course line (dashed, to the rose)
-    layer.append(
-      s("line", {
-        x1: cx,
-        y1: cy,
-        x2: C[0],
-        y2: C[1],
-        stroke: p.text,
-        "stroke-width": 1.6,
-        "stroke-dasharray": "7 6",
-        opacity: 0.8,
-      }),
-    );
-    const Cl = pt(spec.course, maxKt * 0.93);
-    layer.append(
-      label(Cl[0] + 10, Cl[1] - 8, `TC ${hdg3(spec.course)}°`, p, {
-        size: 14,
-        weight: 700,
-      }),
-    );
-    // WCA arc
-    const wca = wrap180(heading - spec.course);
-    if (Math.abs(wca) >= 0.5) {
-      layer.append(
-        s("path", {
-          d: arcPath(cx, cy, 70, spec.course, heading),
+  const norm = (sp: WindTriangleSpec) =>
+    drag.has("heading") && sp.heading === undefined
+      ? { ...sp, heading: sp.course }
+      : sp;
+  const solve = (sp: WindTriangleSpec) =>
+    solveWind(sp.course, sp.tasKt, sp.windDir, sp.windKt);
+  return makeWidget<WindTriangleSpec>(spec0, o, [1008, 696], "cs-wind", {
+    norm,
+    build(sh, get, set) {
+      const c = sh.c;
+      const { W, H, u, p } = c;
+      const spec = get();
+      // the TAS vector spans about 80 % of the rose
+      maxKt = Math.max(60, Math.ceil(Math.max(spec.tasKt * 1.22, spec.tasKt + spec.windKt * 0.8) / 10) * 10);
+      // the rose on the left two thirds, the wind dial top right
+      const dialR = clamp(Math.min(W, H) * 0.09, 44 * u, 72 * u);
+      const dialW = 2 * dialR + 120 * u;
+      R = Math.max(80 * u, Math.min(H / 2 - 52 * u, (W - dialW) / 2 - 40 * u));
+      cx = Math.min(W - dialW - R - 20 * u, W / 2);
+      cx = Math.max(R + 44 * u, cx);
+      cy = H / 2 + (sh.o.card ? -30 * u : 0);
+      // rose
+      const rose = s("g", { class: "cs-rose" });
+      rose.append(
+        s("circle", {
+          cx,
+          cy,
+          r: R,
           fill: "none",
-          stroke: p.heading,
-          "stroke-width": 2,
+          stroke: p.line,
+          "stroke-width": SW.grid * u,
         }),
       );
-      const mid = pt(spec.course + wca / 2, 92 / scale());
-      layer.append(
-        label(
-          mid[0],
-          mid[1] + 5,
-          `${L(lang, "WCA", "Dérive")} ${signed(wca)}°`,
-          p,
-          { size: 13, color: p.heading, anchor: "middle", weight: 700 },
-        ),
+      for (let b = 0; b < 360; b += 10) {
+        const [x, y] = bearingVec(b);
+        const big = b % 30 === 0;
+        rose.append(
+          s("line", {
+            x1: cx + x * R,
+            y1: cy + y * R,
+            x2: cx + x * (R - (big ? 18 : 9) * u),
+            y2: cy + y * (R - (big ? 18 : 9) * u),
+            stroke: p.line,
+            "stroke-width": (big ? 2.5 : 1.5) * u,
+          }),
+        );
+      }
+      for (const [b, t] of [
+        [0, "N"],
+        [90, "E"],
+        [180, "S"],
+        [270, L(lang, "W", "O")],
+      ] as [number, string][]) {
+        const [x, y] = bearingVec(b);
+        rose.append(
+          lab(c, cx + x * (R + 26 * u), cy + y * (R + 26 * u) + 9 * u, t, {
+            role: "sec",
+            anchor: "middle",
+            weight: 600,
+            color: p.ink2,
+          }),
+        );
+      }
+      for (let k = 20; k < maxKt; k += 20)
+        rose.append(
+          s("circle", {
+            cx,
+            cy,
+            r: (k / maxKt) * (R - 18),
+            fill: "none",
+            stroke: p.grid,
+            "stroke-width": 1.5 * u,
+          }),
+        );
+      sh.layer.parentNode?.insertBefore(rose, sh.layer);
+      // the dial and its readout (left of it): the drawing's labels keep off
+      dialArea = { x: W - 2 * dialR - 60 * u - 260 * u, y: 48 * u - 8 * u, w: 2 * dialR + 260 * u, h: 2 * dialR + 16 * u };
+      dial = windDial(
+        sh,
+        lang,
+        W - dialR - 60 * u,
+        dialR + 48 * u,
+        dialR,
+        Math.max(40, Math.ceil(Math.max(spec.windKt, 30) / 10) * 10 + 10),
+        drag.has("wind"),
+        (dir, kt) => set({ ...get(), windDir: dir, windKt: kt }),
+        () => ({ dir: get().windDir, kt: get().windKt }),
       );
-    }
-    // vectors
-    layer.append(arrow(cx, cy, Gp[0], Gp[1], p.track, 4, 14));
-    layer.append(arrow(Hp[0], Hp[1], Gp[0], Gp[1], p.wind, 3, 12));
-    layer.append(arrow(cx, cy, Hp[0], Hp[1], p.heading, 4, 14));
-    layer.append(s("circle", { cx, cy, r: 4.5, fill: p.text }));
-    // labels at the vector midpoints, pushed off the line
-    const off = (
-      a: [number, number],
-      b: [number, number],
-      d: number,
-    ): [number, number] => {
-      const mx = (a[0] + b[0]) / 2;
-      const my = (a[1] + b[1]) / 2;
-      const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-      return [mx + (-(b[1] - a[1]) / len) * d, my + ((b[0] - a[0]) / len) * d];
-    };
-    const side = wca >= 0 ? -1 : 1;
-    const lh = off([cx, cy], Hp, 22 * side);
-    layer.append(
-      label(
-        lh[0],
-        lh[1],
-        `TH ${hdg3(heading)}° · TAS ${Math.round(spec.tasKt)}`,
-        p,
-        { size: 13, color: p.heading, anchor: "middle", weight: 700 },
-      ),
-    );
-    const lg = off([cx, cy], Gp, -22 * side);
-    layer.append(
-      label(
-        lg[0],
-        lg[1],
-        `${L(lang, "TRK", "Route")} ${hdg3(fl.trk)}° · GS ${Math.round(fl.gs)}`,
-        p,
-        { size: 13, color: p.track, anchor: "middle", weight: 700 },
-      ),
-    );
-    if (spec.windKt > 0.5) {
-      const lw = off(Hp, Gp, 18 * side);
-      layer.append(
-        label(
-          lw[0],
-          lw[1],
-          `${hdg3(spec.windDir)}/${Math.round(spec.windKt)}`,
-          p,
-          { size: 12.5, color: p.wind, anchor: "middle", weight: 700 },
-        ),
+      hHead = null;
+      hCourse = null;
+      if (drag.has("heading") || drag.has("tas")) {
+        hHead = dragHandle(sh.svg, p, {
+          u,
+          color: p.accent,
+          name: L(lang, "Heading and true airspeed", "Cap et vitesse propre"),
+          onDrag: (x, y) => {
+            const next = { ...get() };
+            if (drag.has("heading"))
+              next.heading = Math.round(vecBearing(x - cx, y - cy)) || 360;
+            if (drag.has("tas"))
+              next.tasKt = Math.round(
+                clamp(Math.hypot(x - cx, y - cy) / scale(), 40, maxKt - 5),
+              );
+            set(next);
+          },
+          onKey: (dx, dy, big) => {
+            const next = { ...get() };
+            if (drag.has("heading"))
+              next.heading =
+                norm360(
+                  (next.heading ?? solve(next).th) + dx * (big ? 5 : 1),
+                ) || 360;
+            if (drag.has("tas"))
+              next.tasKt = clamp(
+                next.tasKt - dy * (big ? 10 : 1),
+                40,
+                maxKt - 5,
+              );
+            set(next);
+          },
+        });
+        sh.top.append(hHead.g);
+      }
+      if (drag.has("course")) {
+        hCourse = dragHandle(sh.svg, p, {
+          u,
+          color: p.accent,
+          name: L(lang, "True course", "Route vraie"),
+          onDrag: (x, y) =>
+            set({
+              ...get(),
+              course: Math.round(vecBearing(x - cx, y - cy)) || 360,
+            }),
+          onKey: (dx, _dy, big) =>
+            set({
+              ...get(),
+              course: norm360(get().course + dx * (big ? 10 : 1)) || 360,
+            }),
+        });
+        sh.top.append(hCourse.g);
+      }
+    },
+    draw(sh, spec) {
+      const c = sh.c;
+      const { u, p } = c;
+      const ly = sh.layer;
+      const lb = new Labels(c, ly);
+      const sol = solve(spec);
+      const heading = drag.has("heading")
+        ? (spec.heading ?? spec.course)
+        : sol.th;
+      const fl = trackFromHeading(
+        heading,
+        spec.tasKt,
+        spec.windDir,
+        spec.windKt,
       );
-    }
-    // readout card
-    const onCourse = Math.abs(wrap180(fl.trk - spec.course)) < 0.75;
-    const rows: [string, string, string][] = [
-      [
-        L(lang, "WCA", "Correction de dérive"),
-        `${signed(sol.wca)}° ${sol.wca >= 0 ? L(lang, "R", "D") : L(lang, "L", "G")}`,
-        p.heading,
-      ],
-      [L(lang, "True heading", "Cap vrai"), `${hdg3(sol.th)}°`, p.heading],
-      [
-        L(lang, "Ground speed", "Vitesse sol"),
-        `${Math.round(sol.gs)} kt`,
-        p.track,
-      ],
-    ];
-    const card = s("g", {
-      transform: `translate(18 ${H - 18 - rows.length * 24 - (drag.has("heading") ? 26 : 0)})`,
-    });
-    rows.forEach(([k, v, c], i) => {
-      card.append(
-        label(0, i * 24, k, p, { size: 13, color: p.muted, weight: 600 }),
-        label(196, i * 24, v, p, {
-          size: 14,
-          color: c,
-          anchor: "end",
-          weight: 700,
+      const Hp = pt(heading, spec.tasKt);
+      const Gp = pt(fl.trk, fl.gs);
+      const C = pt(spec.course, maxKt);
+      // the rim labels and the dial stay clear
+      lb.circle(cx, cy, 8 * u);
+      lb.block(dialArea);
+      // the rose's N / E / S / W letters
+      for (const b of [0, 90, 180, 270]) {
+        const [x, y] = bearingVec(b);
+        lb.circle(cx + x * (R + 26 * u), cy + y * (R + 26 * u), 20 * u);
+      }
+      ly.append(
+        s("line", {
+          x1: cx,
+          y1: cy,
+          x2: C[0],
+          y2: C[1],
+          stroke: p.text,
+          "stroke-width": SW.planned * u,
+          "stroke-dasharray": `${16 * u} ${12 * u}`,
         }),
       );
-    });
-    if (drag.has("heading")) {
-      const e = wrap180(fl.trk - spec.course);
-      const t = onCourse
-        ? L(
-            lang,
-            "On course: the track is the course",
-            "Sur la route : la route suivie est la route prévue",
-          )
-        : `${L(lang, "Track", "Route")} ${Math.abs(Math.round(e))}° ${e > 0 ? L(lang, "right of", "à droite de") : L(lang, "left of", "à gauche de")} ${L(lang, "course", "la route")}`;
-      card.append(
-        label(0, rows.length * 24 + 2, t, p, {
-          size: 13,
-          color: onCourse ? p.ok : p.wind,
-          weight: 700,
-        }),
+      lb.stroke(cx, cy, C[0], C[1]);
+      const wca = wrap180(heading - spec.course);
+      if (Math.abs(wca) >= 0.5)
+        ly.append(
+          s("path", {
+            d: arcPath(cx, cy, R * 0.3, spec.course, heading),
+            fill: "none",
+            stroke: p.heading,
+            "stroke-width": SW.constr * u,
+          }),
+        );
+      // vectors
+      ly.append(vector(c, cx, cy, Gp[0], Gp[1], p.track, SW.hero * u));
+      ly.append(vector(c, Hp[0], Hp[1], Gp[0], Gp[1], p.wind, SW.second * u));
+      ly.append(vector(c, cx, cy, Hp[0], Hp[1], p.heading, SW.hero * u));
+      ly.append(s("circle", { cx, cy, r: 7 * u, fill: p.text }));
+      lb.stroke(cx, cy, Gp[0], Gp[1]);
+      lb.stroke(Hp[0], Hp[1], Gp[0], Gp[1]);
+      lb.stroke(cx, cy, Hp[0], Hp[1]);
+      // labels beside the vectors, pushed off the line on both sides
+      const beside = (
+        a: [number, number],
+        b: [number, number],
+        t: number,
+        d: number,
+      ): [number, number] => {
+        const mx = a[0] + (b[0] - a[0]) * t;
+        const my = a[1] + (b[1] - a[1]) * t;
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+        return [
+          mx + (-(b[1] - a[1]) / len) * d,
+          my + ((b[0] - a[0]) / len) * d + 9 * u,
+        ];
+      };
+      const cands = (
+        a: [number, number],
+        b: [number, number],
+      ): [number, number, "middle"][] =>
+        [0.5, 0.7, 0.35, 0.85].flatMap((t) => [
+          [...beside(a, b, t, 40 * u), "middle"] as [number, number, "middle"],
+          [...beside(a, b, t, -40 * u), "middle"] as [number, number, "middle"],
+          [...beside(a, b, t, 64 * u), "middle"] as [number, number, "middle"],
+          [...beside(a, b, t, -64 * u), "middle"] as [number, number, "middle"],
+        ]);
+      // beside a vector's tip, on the side away from the other tip (the two tips are close in a light wind)
+      const tipCands = (
+        tip: [number, number],
+        other: [number, number],
+        dy: number,
+      ): [number, number, "start" | "end"][] => {
+        const left = tip[0] < other[0] || (tip[0] === other[0] && dy < 0);
+        const a: "start" | "end" = left ? "end" : "start";
+        const dx = (left ? -1 : 1) * 30 * u;
+        return [
+          [tip[0] + dx, tip[1] + (dy < 0 ? -18 : 40) * u, a],
+          [tip[0] + dx, tip[1] + (dy < 0 ? 40 : -18) * u, a],
+          [tip[0] + dx * 2, tip[1] + 10 * u, a],
+        ];
+      };
+      const Cl = pt(spec.course, maxKt * 1.02);
+      const [ux] = bearingVec(spec.course);
+      lb.put(
+        `${fr ? "Rv" : "TC"} ${hdg3(spec.course)}°`,
+        [
+          [
+            Cl[0] + (ux >= 0 ? 16 : -16) * u,
+            Cl[1] - 12 * u,
+            ux >= 0 ? "start" : "end",
+          ],
+          [Cl[0], Cl[1] - 30 * u, "middle"],
+          [Cl[0], Cl[1] + 46 * u, "middle"],
+          ...cands([cx, cy], C).slice(4),
+        ],
+        { role: "pri" },
       );
-    }
-    if (!sol.ok)
-      card.append(
-        label(
-          0,
-          -24,
-          L(
-            lang,
-            "Crosswind stronger than TAS: no solution",
-            "Vent traversier plus fort que la TAS : pas de solution",
+      if (Math.abs(wca) >= 0.5) {
+        const mid = pt(spec.course + wca / 2, (R * 0.3 + 40 * u) / scale());
+        lb.put(
+          `${fr ? "Dérive" : "WCA"} ${signed(wca)}°`,
+          [
+            [mid[0], mid[1] + 9 * u, "middle"],
+            [mid[0] + 30 * u, mid[1] + 40 * u, "start"],
+            [mid[0] - 30 * u, mid[1] + 40 * u, "end"],
+            [mid[0] + 30 * u, mid[1] - 24 * u, "start"],
+            [mid[0] - 30 * u, mid[1] - 24 * u, "end"],
+          ],
+          {
+            role: "sec",
+            color: p.heading,
+            weight: 600,
+          },
+        );
+      }
+      lb.put(
+        `${fr ? "Cv" : "TH"} ${hdg3(heading)}° · ${fr ? "Vp" : "TAS"} ${Math.round(spec.tasKt)}`,
+        [...tipCands(Hp, Gp, -1), ...cands([cx, cy], Hp)],
+        { role: "pri", color: p.heading },
+      );
+      lb.put(
+        `${fr ? "Route" : "TRK"} ${hdg3(fl.trk)}° · ${fr ? "Vs" : "GS"} ${Math.round(fl.gs)}`,
+        [...tipCands(Gp, Hp, 1), ...cands([cx, cy], Gp)],
+        { role: "pri", color: p.track },
+      );
+      if (sh.o.card) {
+        const y0 = c.H - 96 * u;
+        const rows: [string, string, string][] = [
+          [
+            L(lang, "WCA", "Correction de dérive"),
+            `${signed(sol.wca)}° ${sol.wca >= 0 ? L(lang, "R", "D") : L(lang, "L", "G")}`,
+            p.heading,
+          ],
+          [L(lang, "True heading", "Cap vrai"), `${hdg3(sol.th)}°`, p.heading],
+          [
+            L(lang, "Ground speed", "Vitesse sol"),
+            `${Math.round(sol.gs)} kt`,
+            p.track,
+          ],
+        ];
+        rows.forEach(([k, v, col], i) => {
+          ly.append(lab(c, 24 * u, y0 + i * 32 * u, k, { role: "sec" }));
+          ly.append(
+            lab(
+              c,
+              24 * u + textWidth(k, FS.sec * u, 500) + 16 * u,
+              y0 + i * 32 * u,
+              v,
+              { role: "sec", color: col, weight: 600 },
+            ),
+          );
+        });
+      }
+      if (drag.has("heading")) {
+        const e = wrap180(fl.trk - spec.course);
+        const onCourse = Math.abs(e) < 0.75;
+        const t = onCourse
+          ? L(lang, "On course", "Sur la route")
+          : `${L(lang, "Track", "Route")} ${Math.abs(Math.round(e))}° ${e > 0 ? L(lang, "right", "à droite") : L(lang, "left", "à gauche")}`;
+        ly.append(
+          lab(c, c.W - 24 * u, c.H - 28 * u, t, {
+            role: "pri",
+            anchor: "end",
+            color: onCourse ? p.ok : p.wind,
+          }),
+        );
+      }
+      if (!sol.ok)
+        ly.append(
+          lab(
+            c,
+            24 * u,
+            40 * u,
+            L(
+              lang,
+              "Crosswind stronger than TAS: no solution",
+              "Vent traversier plus fort que la Vp : pas de solution",
+            ),
+            { role: "pri", color: p.bad },
           ),
-          p,
-          { size: 13, color: p.bad, weight: 700 },
-        ),
-      );
-    layer.append(card);
-    dial?.set(spec.windDir, spec.windKt);
-    if (hHead) {
-      layer.append(hHead.g);
-      hHead.move(Hp[0], Hp[1]);
-      hHead.g.setAttribute(
-        "aria-valuetext",
-        `${L(lang, "heading", "cap")} ${hdg3(heading)}, TAS ${Math.round(spec.tasKt)} kt`,
-      );
-    }
-    if (hCourse) {
-      layer.append(hCourse.g);
-      hCourse.move(C[0], C[1]);
-      hCourse.g.setAttribute(
-        "aria-valuetext",
-        `${L(lang, "course", "route")} ${hdg3(spec.course)}`,
-      );
-    }
-    const a11y =
-      o.label ??
-      L(
+        );
+      dial?.set(spec.windDir, spec.windKt);
+      if (hHead) {
+        hHead.move(Hp[0], Hp[1]);
+        hHead.g.setAttribute(
+          "aria-valuetext",
+          `${L(lang, "heading", "cap")} ${hdg3(heading)}, TAS ${Math.round(spec.tasKt)} kt`,
+        );
+      }
+      if (hCourse) {
+        hCourse.move(C[0], C[1]);
+        hCourse.g.setAttribute(
+          "aria-valuetext",
+          `${L(lang, "course", "route")} ${hdg3(spec.course)}`,
+        );
+      }
+    },
+    label(_sh, spec) {
+      const sol = solve(spec);
+      return L(
         lang,
         `Wind triangle: true course ${hdg3(spec.course)}, TAS ${Math.round(spec.tasKt)} kt, wind ${hdg3(spec.windDir)} at ${Math.round(spec.windKt)} kt. Wind correction ${signed(sol.wca)} degrees, true heading ${hdg3(sol.th)}, ground speed ${Math.round(sol.gs)} kt.`,
-        `Triangle des vitesses : route vraie ${hdg3(spec.course)}, TAS ${Math.round(spec.tasKt)} kt, vent ${hdg3(spec.windDir)} pour ${Math.round(spec.windKt)} kt. Correction ${signed(sol.wca)} degrés, cap vrai ${hdg3(sol.th)}, vitesse sol ${Math.round(sol.gs)} kt.`,
+        `Triangle des vitesses : route vraie ${hdg3(spec.course)}, Vp ${Math.round(spec.tasKt)} kt, vent ${hdg3(spec.windDir)} pour ${Math.round(spec.windKt)} kt. Correction ${signed(sol.wca)} degrés, cap vrai ${hdg3(sol.th)}, vitesse sol ${Math.round(sol.gs)} kt.`,
       );
-    svg.setAttribute("aria-label", a11y);
-    desc.textContent = a11y;
-  };
-  const set = (next: WindTriangleSpec) => {
-    spec = next;
-    draw();
-    o.onChange?.({ ...spec });
-  };
-  build();
-  return {
-    el: svg,
-    spec: () => ({ ...spec }),
-    update(next) {
-      spec = { ...next };
-      if (drag.has("heading") && spec.heading === undefined)
-        spec.heading = spec.course;
-      const m = Math.max(
-        60,
-        Math.ceil((spec.tasKt + Math.max(30, spec.windKt)) / 10) * 10,
-      );
-      if (m !== maxKt) {
-        maxKt = m;
-        build();
-      } else draw();
     },
-    setTheme(t) {
-      theme = t;
-      build();
-    },
-    destroy() {
-      svg.remove();
-    },
-  };
+  });
 }
 
 // ------------------------------------------------------------------ hold in wind
@@ -547,226 +576,259 @@ export function createHoldWind(
   spec0: HoldWindSpec,
   o: DiagramOptions = {},
 ): DiagramWidget<HoldWindSpec> {
-  const W = 640;
-  const H = 480;
   const lang: Lang = o.lang ?? "en";
+  const fr = lang === "fr";
   const drag = new Set(o.drag ?? spec0.drag ?? []);
-  let theme: DiagramTheme = o.theme ?? "dark";
-  let spec: HoldWindSpec = { ...spec0 };
-  const svg = rootSvg(W, H, "cs-holdwind");
-  const desc = s("desc");
-  let p = PALETTES[theme];
-  let layer = s("g");
   let dial: WindDial | null = null;
-  const build = () => {
-    p = PALETTES[theme];
-    svg.replaceChildren(desc, s("rect", { width: W, height: H, fill: p.bg }));
-    layer = s("g");
-    svg.append(layer);
-    dial = windDial(
-      svg,
-      p,
-      lang,
-      566,
-      84,
-      46,
-      Math.max(40, Math.ceil(Math.max(spec.windKt, 30) / 10) * 10 + 10),
-      drag.has("wind"),
-      (dir, kt) => set({ ...spec, windDir: dir, windKt: kt }),
-      () => ({ dir: spec.windDir, kt: spec.windKt }),
-    );
-    svg.append(dial.g);
-    draw();
-  };
-  const draw = () => {
-    layer.replaceChildren();
-    const sol = solveHoldWind(
-      spec.inbound,
-      spec.windDir,
-      spec.windKt,
-      spec.tasKt,
-      60,
-    );
-    const t = spec.turn === "R" ? 1 : -1;
-    // inbound-course-up frame: the inbound leg flies up the screen and ends at the fix (top); right turns put the
-    // holding side on the right, left turns on the left
-    const fx = 250 - t * 40;
-    const fy = 122;
-    const leg = 190;
-    const rad = 58;
-    const ox = fx + t * 2 * rad;
-    const sw = t > 0 ? 1 : 0;
-    const track = `M${fx} ${fy + leg}L${fx} ${fy}A${rad} ${rad} 0 0 ${sw} ${ox} ${fy}L${ox} ${fy + leg}A${rad} ${rad} 0 0 ${sw} ${fx} ${fy + leg}`;
-    layer.append(s("path", { d: track, fill: "none", stroke: p.track, "stroke-width": 3 }));
-    // direction arrows on the legs: inbound up, outbound down
-    layer.append(arrow(fx, fy + leg * 0.7, fx, fy + leg * 0.34, p.track, 3, 12));
-    layer.append(arrow(ox, fy + leg * 0.3, ox, fy + leg * 0.66, p.track, 3, 12));
-    // fix (end of the inbound leg)
-    layer.append(s("path", { d: `M${fx} ${fy - 9}L${fx + 9} ${fy + 7}L${fx - 9} ${fy + 7}Z`, fill: p.bg, stroke: p.nav, "stroke-width": 2.2 }));
-    layer.append(label(fx - t * 16, fy + 4, L(lang, "FIX", "REPÈRE"), p, { size: 12, color: p.nav, anchor: t > 0 ? "end" : "start", weight: 700 }));
-    // aircraft crabbed on each leg: the screen is inbound-up, so a heading h shows rotated by h − inbound
-    const crabIn = wrap180(sol.inboundHdg - spec.inbound);
-    const crabOut = wrap180(sol.outboundHdg - spec.inbound);
-    layer.append(aircraftIcon(fx, fy + leg * 0.5, crabIn, p.heading, 1.25));
-    layer.append(aircraftIcon(ox, fy + leg * 0.5, crabOut, p.heading, 1.25));
-    // legend boxes
-    const inX = fx - t * 26;
-    const anchorIn = t > 0 ? "end" : "start";
-    const anchorOut = t > 0 ? "start" : "end";
-    const outX = ox + t * 26;
-    const mm = (sec: number) =>
-      `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, "0")}`;
-    const outS = Math.round(spec.outboundS ?? sol.outboundS);
-    layer.append(
-      label(
-        inX,
-        fy + leg * 0.5 - 22,
-        L(lang, "INBOUND", "RAPPROCHEMENT"),
-        p,
-        { size: 11.5, color: p.muted, anchor: anchorIn, weight: 700 },
-      ),
-      label(
-        inX,
-        fy + leg * 0.5,
-        `${L(lang, "HDG", "Cap")} ${hdg3(sol.inboundHdg)}°`,
-        p,
-        { size: 16, color: p.heading, anchor: anchorIn, weight: 700 },
-      ),
-      label(
-        inX,
-        fy + leg * 0.5 + 20,
-        `${L(lang, "crs", "route")} ${hdg3(spec.inbound)} · WCA ${signed(sol.wcaIn)}°`,
-        p,
-        { size: 12.5, color: p.muted, anchor: anchorIn, weight: 600 },
-      ),
-      label(
-        inX,
-        fy + leg * 0.5 + 40,
-        `1:00 · GS ${Math.round(sol.gsIn)} kt`,
-        p,
-        { size: 12.5, color: p.muted, anchor: anchorIn, weight: 600 },
-      ),
-      label(outX, fy + leg * 0.5 - 22, L(lang, "OUTBOUND", "ÉLOIGNEMENT"), p, {
-        size: 11.5,
-        color: p.muted,
-        anchor: anchorOut,
-        weight: 700,
-      }),
-      label(
-        outX,
-        fy + leg * 0.5,
-        `${L(lang, "HDG", "Cap")} ${hdg3(sol.outboundHdg)}°`,
-        p,
-        { size: 16, color: p.heading, anchor: anchorOut, weight: 700 },
-      ),
-      label(
-        outX,
-        fy + leg * 0.5 + 20,
-        `3 × ${Math.abs(Math.round(sol.wcaIn))}° = ${Math.abs(Math.round(3 * sol.wcaIn))}° ${L(lang, "into the wind", "face au vent")}`,
-        p,
-        { size: 12.5, color: p.muted, anchor: anchorOut, weight: 600 },
-      ),
-      label(
-        outX,
-        fy + leg * 0.5 + 40,
-        `${mm(outS)} · GS ${Math.round(sol.gsOut)} kt`,
-        p,
-        { size: 12.5, color: p.wind, anchor: anchorOut, weight: 700 },
-      ),
-    );
-    // wind arrow over the pattern, in the inbound-up frame
-    if (spec.windKt > 0.5) {
-      const rel = wrap180(spec.windDir - spec.inbound);
-      const [ux, uy] = bearingVec(rel);
-      const mx = (fx + ox) / 2;
-      const my = fy + leg / 2;
-      layer.append(
-        arrow(
-          mx + ux * 70,
-          my + uy * 70,
-          mx + ux * 18,
-          my + uy * 18,
+  let dialBox = { x: 0, y: 0, w: 0, h: 0 };
+  const mm = (sec: number) =>
+    `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, "0")}`;
+  return makeWidget<HoldWindSpec>(spec0, o, [1008, 696], "cs-holdwind", {
+    build(sh, get, set) {
+      const { W, H, u } = sh.c;
+      const spec = get();
+      const dialR = clamp(Math.min(W, H) * 0.075, 40 * u, 64 * u);
+      dialBox = { x: W - 2 * dialR - 40 * u, y: 44 * u, w: 2 * dialR, h: 2 * dialR };
+      dial = windDial(
+        sh,
+        lang,
+        W - dialR - 40 * u,
+        dialR + 44 * u,
+        dialR,
+        Math.max(40, Math.ceil(Math.max(spec.windKt, 30) / 10) * 10 + 10),
+        drag.has("wind"),
+        (dir, kt) =>
+          set({ ...get(), windDir: dir, windKt: kt, outboundS: undefined }),
+        () => ({ dir: get().windDir, kt: get().windKt }),
+        true,
+      );
+      void H;
+    },
+    draw(sh, spec) {
+      const c = sh.c;
+      const { W, H, u, p } = c;
+      const ly = sh.layer;
+      const sol = solveHoldWind(
+        spec.inbound,
+        spec.windDir,
+        spec.windKt,
+        spec.tasKt,
+        60,
+      );
+      const t = spec.turn === "R" ? 1 : -1;
+      // the two label columns beside the racetrack
+      const outS = Math.round(spec.outboundS ?? sol.outboundS);
+      const inLines: [string, "sec" | "key", string][] = [
+        [L(lang, "INBOUND", "RAPPROCHEMENT"), "sec", p.muted],
+        [`${fr ? "Cap" : "HDG"} ${hdg3(sol.inboundHdg)}°`, "key", p.heading],
+        [`${fr ? "dérive" : "WCA"} ${signed(sol.wcaIn)}°`, "sec", p.muted],
+        [
+          `1:00 · ${fr ? "Vs" : "GS"} ${Math.round(sol.gsIn)} kt`,
+          "sec",
+          p.muted,
+        ],
+      ];
+      const outLines: [string, "sec" | "key", string][] = [
+        [L(lang, "OUTBOUND", "ÉLOIGNEMENT"), "sec", p.muted],
+        [`${fr ? "Cap" : "HDG"} ${hdg3(sol.outboundHdg)}°`, "key", p.heading],
+        [
+          `3 × ${Math.abs(Math.round(sol.wcaIn))}° = ${Math.abs(Math.round(3 * sol.wcaIn))}°`,
+          "sec",
+          p.muted,
+        ],
+        [
+          `${mm(outS)} · ${fr ? "Vs" : "GS"} ${Math.round(sol.gsOut)} kt`,
+          "sec",
           p.wind,
-          3,
-          12,
+        ],
+      ];
+      const colW = (ls: [string, "sec" | "key", string][]) =>
+        Math.max(
+          ...ls.map(([s0, r]) =>
+            textWidth(
+              s0,
+              FS[r] * u,
+              600,
+              r === "sec" && s0 === s0.toUpperCase() ? 0.08 : 0,
+              false,
+            ),
+          ),
+        );
+      const leftW = colW(t > 0 ? inLines : outLines);
+      const rightW = colW(t > 0 ? outLines : inLines);
+      const gap = 28 * u;
+      const dialSpace = 0; // the dial sits top right, above the right column
+      const avail = W - leftW - rightW - 2 * gap - 48 * u - dialSpace;
+      const top = 96 * u;
+      const bottom = (sh.o.card ? 110 : 56) * u;
+      const leg = Math.max(120 * u, H - top - bottom - 0);
+      const rad = clamp(Math.min(avail / 2, leg * 0.32), 40 * u, 140 * u);
+      const legL = Math.max(80 * u, leg - 2 * rad);
+      const mid = 24 * u + leftW + gap + (avail - 2 * rad) / 2;
+      const fxX = t > 0 ? mid : mid + 2 * rad;
+      const ox = fxX + t * 2 * rad;
+      const fy = top + rad;
+      const by = fy + legL;
+      const sw = t > 0 ? 1 : 0;
+      const track = `M${fxX} ${by}L${fxX} ${fy}A${rad} ${rad} 0 0 ${sw} ${ox} ${fy}L${ox} ${by}A${rad} ${rad} 0 0 ${sw} ${fxX} ${by}`;
+      ly.append(
+        s("path", {
+          d: track,
+          fill: "none",
+          stroke: p.track,
+          "stroke-width": SW.hero * u,
+          "stroke-linejoin": "round",
+        }),
+      );
+      ly.append(head(c, fxX, fy + legL * 0.3, -Math.PI / 2, p.track, 26));
+      ly.append(head(c, ox, fy + legL * 0.72, Math.PI / 2, p.track, 26));
+      ly.append(fixMark(c, fxX, fy, p.nav));
+      ly.append(
+        lab(c, fxX - t * 26 * u, fy - 22 * u, L(lang, "FIX", "REPÈRE"), {
+          role: "sec",
+          color: p.nav,
+          weight: 600,
+          anchor: t > 0 ? "end" : "start",
+          spacing: 0.08,
+        }),
+      );
+      // aircraft crabbed on each leg: the screen is inbound-up, so a heading h shows rotated by h − inbound
+      const ym = fy + legL * 0.5;
+      ly.append(
+        aircraftIcon(
+          fxX,
+          ym,
+          wrap180(sol.inboundHdg - spec.inbound),
+          p.heading,
+          1.7 * u,
         ),
       );
-    }
-    // north reference: the screen is rotated (inbound up)
-    const [nx, ny] = bearingVec(-spec.inbound);
-    layer.append(
-      arrow(
-        44 - nx * 14,
-        60 - ny * 14,
-        44 + nx * 16,
-        60 + ny * 16,
-        p.muted,
-        2,
-        8,
-      ),
-      label(44 + nx * 30, 60 + ny * 30 + 4, "N", p, {
-        size: 12,
-        color: p.muted,
-        anchor: "middle",
-        weight: 700,
-      }),
-    );
-    layer.append(
-      label(
-        18,
-        H - 46,
-        L(
-          lang,
-          "Triple the inbound correction outbound (AIM 5-3-8)",
-          "Triplez la correction en éloignement (AIM 5-3-8)",
+      ly.append(
+        aircraftIcon(
+          ox,
+          ym,
+          wrap180(sol.outboundHdg - spec.inbound),
+          p.heading,
+          1.7 * u,
         ),
-        p,
-        { size: 13, color: p.text, weight: 600 },
-      ),
-    );
-    layer.append(
-      label(
-        18,
-        H - 24,
-        L(
-          lang,
-          `Outbound time for a 1:00 inbound leg (turns not counted)`,
-          `Temps d'éloignement pour 1:00 en rapprochement (virages non comptés)`,
+      );
+      // the label columns
+      const col = (
+        x: number,
+        anchor: "start" | "end",
+        ls: [string, "sec" | "key", string][],
+      ) => {
+        // below the fix label, and below the wind dial when the column runs under it
+        const w0 = Math.max(...ls.map(([s0, r]) => textWidth(s0, FS[r] * u, 600)));
+        const x0 = anchor === "start" ? x : x - w0;
+        const underDial = x0 < dialBox.x + dialBox.w && x0 + w0 > dialBox.x - 260 * u;
+        let y = Math.max(ym - 54 * u, fy + 40 * u, underDial ? dialBox.y + dialBox.h + 84 * u : 0);
+        const room = Math.floor((H - 12 * u - y) / (36 * u)) + 1;
+        ls = ls.slice(0, Math.max(2, room));
+        for (const [s0, r, colr] of ls) {
+          ly.append(
+            lab(c, x, y, s0, {
+              role: r,
+              color: colr,
+              anchor,
+              weight: 600,
+              spacing:
+                r === "sec" && s0 === s0.toUpperCase() ? 0.08 : undefined,
+            }),
+          );
+          y += (r === "key" ? 40 : 34) * u;
+        }
+      };
+      const inX = fxX - t * gap;
+      const outX = ox + t * gap;
+      col(inX, t > 0 ? "end" : "start", inLines);
+      col(outX, t > 0 ? "start" : "end", outLines);
+      // the wind over the pattern, in the inbound-up frame
+      if (spec.windKt > 0.5) {
+        const rel = wrap180(spec.windDir - spec.inbound);
+        const [vx, vy] = bearingVec(rel);
+        const mx = (fxX + ox) / 2;
+        const my = fy + legL / 2;
+        const k = Math.min(rad * 0.9, 90 * u);
+        ly.append(
+          vector(
+            c,
+            mx + vx * k,
+            my + vy * k,
+            mx + vx * 12 * u,
+            my + vy * 12 * u,
+            p.wind,
+            SW.second * u,
+          ),
+        );
+      }
+      // north reference (the screen is rotated: inbound up)
+      const [nx, ny] = bearingVec(-spec.inbound);
+      const nX = 48 * u;
+      const nY = 64 * u;
+      ly.append(
+        vector(
+          c,
+          nX - nx * 22 * u,
+          nY - ny * 22 * u,
+          nX + nx * 22 * u,
+          nY + ny * 22 * u,
+          p.ink2,
+          SW.constr * u,
         ),
-        p,
-        { size: 12.5, color: p.muted, weight: 500 },
-      ),
-    );
-    dial?.set(spec.windDir, spec.windKt);
-    const a11y =
-      o.label ??
-      L(
+      );
+      ly.append(
+        lab(c, nX + nx * 50 * u, nY + ny * 50 * u + 9 * u, "N", {
+          role: "sec",
+          anchor: "middle",
+          weight: 600,
+          color: p.ink2,
+        }),
+      );
+      if (sh.o.card) {
+        ly.append(
+          lab(
+            c,
+            24 * u,
+            H - 64 * u,
+            L(
+              lang,
+              "Triple the inbound correction outbound (AIM 5-3-8)",
+              "Triplez la correction en éloignement (AIM 5-3-8)",
+            ),
+            { role: "sec", color: p.text, weight: 600 },
+          ),
+        );
+        ly.append(
+          lab(
+            c,
+            24 * u,
+            H - 28 * u,
+            L(
+              lang,
+              "Outbound time for a 1:00 inbound leg (turns not counted)",
+              "Temps d'éloignement pour 1:00 en rapprochement (virages non comptés)",
+            ),
+            { role: "sec" },
+          ),
+        );
+      }
+      dial?.set(spec.windDir, spec.windKt);
+    },
+    label(_sh, spec) {
+      const sol = solveHoldWind(
+        spec.inbound,
+        spec.windDir,
+        spec.windKt,
+        spec.tasKt,
+        60,
+      );
+      const outS = Math.round(spec.outboundS ?? sol.outboundS);
+      return L(
         lang,
         `Hold in wind: inbound ${hdg3(spec.inbound)}, ${spec.turn === "R" ? "right" : "left"} turns, wind ${hdg3(spec.windDir)} at ${Math.round(spec.windKt)} kt. Inbound heading ${hdg3(sol.inboundHdg)}, outbound heading ${hdg3(sol.outboundHdg)}, outbound time ${mm(outS)}.`,
         `Attente avec vent : rapprochement ${hdg3(spec.inbound)}, virages à ${spec.turn === "R" ? "droite" : "gauche"}, vent ${hdg3(spec.windDir)} pour ${Math.round(spec.windKt)} kt. Cap en rapprochement ${hdg3(sol.inboundHdg)}, cap en éloignement ${hdg3(sol.outboundHdg)}, temps d'éloignement ${mm(outS)}.`,
       );
-    svg.setAttribute("aria-label", a11y);
-    desc.textContent = a11y;
-  };
-  const set = (next: HoldWindSpec) => {
-    spec = { ...next, outboundS: undefined };
-    draw();
-    o.onChange?.({ ...spec });
-  };
-  build();
-  return {
-    el: svg,
-    spec: () => ({ ...spec }),
-    update(next) {
-      spec = { ...next };
-      draw();
     },
-    setTheme(t) {
-      theme = t;
-      build();
-    },
-    destroy() {
-      svg.remove();
-    },
-  };
+  });
 }

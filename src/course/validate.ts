@@ -153,6 +153,11 @@ const TEXT_STYLES = keys<TextStyle>({
   number: 1,
   quote: 1,
   mono: 1,
+  lead: 1,
+  small: 1,
+  eyebrow: 1,
+  foot: 1,
+  formula: 1,
 });
 const COLOR_NAMES = keys<Exclude<ColorToken, `#${string}`>>({
   bg: 1,
@@ -170,6 +175,16 @@ const COLOR_NAMES = keys<Exclude<ColorToken, `#${string}`>>({
   green: 1,
   amber: 1,
   white: 1,
+  ink2: 1,
+  rule: 1,
+  ruleStrong: 1,
+  raise: 1,
+  path: 1,
+  sel: 1,
+  nav: 1,
+  key: 1,
+  stop: 1,
+  accentInk: 1,
 });
 const CONTROLS = keys<StageControl>({
   obs1: 1,
@@ -213,6 +228,13 @@ const READOUTS = keys<ReadoutId>({
   wca: 1,
 });
 const LAYOUTS = keys<SlideLayoutId>({
+  cover: 1,
+  bigNumber: 1,
+  heroDiagram: 1,
+  formula: 1,
+  quiz: 1,
+  recap: 1,
+  ready: 1,
   title: 1,
   section: 1,
   twoColumn: 1,

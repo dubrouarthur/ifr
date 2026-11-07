@@ -25,9 +25,11 @@
   background: var(--sl-bg);
   color: var(--sl-text);
   font-family: var(--sl-font-body);
+  /* Inter: l with a tail (no l / 1 / I confusion on altitudes), optical sizes for display text (SPEC v2 §2) */
   font-feature-settings:
-    "tnum" 0,
-    "cv11" 1;
+    "cv05" 1,
+    "ss03" 1;
+  font-optical-sizing: auto;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -67,11 +69,15 @@
 }
 
 /* ---------------------------------------------------------------- reveal */
+/* one idea per reveal: opacity 0 → 1 and 16 px up, 240 ms (SPEC v2 §9) */
 .sl-mode-play .sl-b {
-  transition: opacity 0.32s ease;
+  transition:
+    opacity 0.24s cubic-bezier(0.2, 0.7, 0.2, 1),
+    translate 0.24s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 .sl-mode-play .sl-b.sl-pending {
   opacity: 0;
+  translate: 0 16px;
   visibility: hidden;
   transition: none;
 }
@@ -96,6 +102,52 @@
 .sl-text-in {
   overflow-wrap: break-word;
   hyphens: manual;
+  text-wrap: pretty;
+}
+.sl-st-display .sl-text-in,
+.sl-st-title .sl-text-in,
+.sl-st-heading .sl-text-in,
+.sl-st-lead .sl-text-in,
+.sl-st-subtitle .sl-text-in,
+/* the cover title rule: "Main: subtitle" → a 56 / 500 ink-2 subtitle under the display main part */
+.sl-cover-sub {
+  display: block;
+  margin-top: 0.17em;
+  font-size: 0.4667em;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.012em;
+  color: var(--sl-ink2);
+  text-wrap: balance;
+}
+.sl-cover-sub p {
+  margin: 0;
+}
+.sl-st-quote .sl-text-in {
+  text-wrap: balance;
+}
+.sl-st-number .sl-text-in,
+.sl-st-eyebrow .sl-text-in,
+.sl-st-label .sl-text-in,
+.sl-st-foot .sl-text-in {
+  font-variant-numeric: tabular-nums;
+}
+/* editor: a text frame that cannot fit its words, even at the 24 px floor */
+.sl-mode-edit .sl-text.sl-overflow {
+  outline: 3px solid var(--sl-danger);
+  outline-offset: 4px;
+}
+.sl-mode-edit .sl-text.sl-overflow::after {
+  content: attr(data-overflow);
+  position: absolute;
+  right: 0;
+  bottom: -40px;
+  font: 600 22px/1 var(--sl-font-body);
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: #fff;
+  background: var(--sl-danger);
+  white-space: nowrap;
 }
 .sl-text-in p,
 .sl-text-in ul,
@@ -124,27 +176,23 @@
   font-weight: 700;
 }
 .sl-text-in strong {
-  font-weight: 700;
+  font-weight: 600;
+  color: var(--sl-text);
 }
 .sl-st-display .sl-text-in strong,
 .sl-st-title .sl-text-in strong,
 .sl-st-number .sl-text-in strong {
   color: var(--sl-accent);
 }
+/* no monospace on slides: `code` is a value in tabular figures */
 .sl-text-in code,
 .sl-callout-text code,
 .sl-card code {
-  font-family: var(--sl-font-mono);
-  font-size: 0.92em;
-  padding: 0.04em 0.28em;
-  border-radius: 6px;
-  background: var(--sl-surface);
-  border: 1px solid var(--sl-line);
-}
-.sl-st-mono .sl-text-in code {
-  background: none;
-  border: 0;
-  padding: 0;
+  font-family: var(--sl-font-body);
+  font-size: 1em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--sl-text);
 }
 .sl-term {
   color: var(--sl-accent);
@@ -164,11 +212,94 @@
 }
 .sl-st-quote .sl-text-in {
   border-left: 6px solid var(--sl-accent);
-  padding-left: 0.7em;
+  padding-left: 44px;
 }
-.sl-st-mono .sl-text-in {
+
+/* ---------------------------------------------------------------- formula (SPEC v2 §3): italic variables, real
+   operators with air, stacked fractions, tabular figures, derivations aligned on "=" */
+.sl-st-formula .sl-text-in {
   font-variant-numeric: tabular-nums;
-  white-space: pre-wrap;
+}
+.fx {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.fx-line,
+.fx-expr {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: 0;
+  row-gap: 8px;
+}
+.fx.fx-grid {
+  display: grid;
+  grid-template-columns: minmax(200px, max-content) 1fr;
+  column-gap: 16px;
+  row-gap: 20px;
+  align-items: center;
+}
+.fx-label {
+  font-weight: 600;
+  color: var(--sl-text);
+}
+.fx-var {
+  font-style: italic;
+  font-weight: 500;
+}
+.fx-op {
+  color: var(--sl-muted);
+  padding: 0 0.28em;
+}
+.fx-unit {
+  font-size: 0.62em;
+  color: var(--sl-muted);
+  margin-left: 0.18em;
+}
+.fx-num {
+  font-variant-numeric: tabular-nums;
+}
+.fx-result {
+  color: var(--sl-accent);
+  font-weight: 600;
+}
+.fx-frac {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  vertical-align: middle;
+  margin: 0 0.12em;
+  text-align: center;
+}
+.fx-top,
+.fx-bot {
+  display: block;
+  padding: 0 0.18em;
+  line-height: 1.12;
+}
+.fx-top {
+  border-bottom: max(3px, 0.05em) solid currentColor;
+  padding-bottom: 0.06em;
+}
+.fx-bot {
+  padding-top: 0.06em;
+}
+.fx.fx-table {
+  font-size: 0.72em;
+  display: grid;
+  grid-template-columns: repeat(var(--fx-cols, 2), auto);
+  justify-content: start;
+  column-gap: 1.1em;
+  row-gap: 0.28em;
+}
+.fx-cell.is-num {
+  text-align: right;
+}
+.fx-cell.is-hrow {
+  color: var(--sl-muted);
+  font-size: 0.8em;
+  align-self: end;
 }
 .sl-en {
   position: absolute;
@@ -253,26 +384,21 @@
 .sl-callout {
   display: flex;
 }
+/* no card for text (SPEC v2 §7): a callout is its text with a rule on the left */
 .sl-callout-card {
   position: relative;
   flex: 1;
   display: flex;
-  gap: 18px;
+  gap: 20px;
   align-items: flex-start;
-  padding: 20px 24px;
-  border-radius: 14px;
-  background: var(--sl-surface);
-  border: 2px solid var(--sl-line);
+  padding: 4px 0 4px 28px;
+  border-left: 3px solid var(--sl-ruleStrong);
   overflow: hidden;
 }
 .sl-callout.tone-accent .sl-callout-card {
-  background: var(--sl-accent-soft);
-  border-color: transparent;
   border-left: 6px solid var(--sl-accent);
 }
 .sl-callout.tone-warn .sl-callout-card {
-  background: var(--sl-warn-soft);
-  border-color: transparent;
   border-left: 6px solid var(--sl-warn);
 }
 .sl-callout-text {
@@ -295,12 +421,12 @@
 }
 .sl-num {
   flex: none;
-  width: 46px;
-  height: 46px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   display: grid;
   place-items: center;
-  font: 700 24px/1 var(--sl-font-display);
+  font: 600 28px/1 var(--sl-font-display);
   font-variant-numeric: tabular-nums;
   color: var(--sl-on-accent);
   background: var(--sl-accent);
@@ -310,13 +436,12 @@
   background: var(--sl-warn);
   color: #000;
 }
+/* the marker: the only numbering device, accent fill with a 6 px ring in the background colour */
 .sl-marker {
   display: grid;
   place-items: center;
   background: var(--mk);
-  border: 4px solid var(--sl-bg);
-  outline: 2px solid var(--mk);
-  outline-offset: -1px;
+  box-shadow: 0 0 0 6px var(--sl-bg);
 }
 .sl-marker.ci {
   border-radius: 50%;
@@ -326,9 +451,9 @@
 }
 .sl-marker-n {
   font-family: var(--sl-font-display);
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1;
-  color: #fff;
+  color: var(--sl-on-accent);
   font-variant-numeric: tabular-nums;
 }
 
@@ -337,14 +462,16 @@
   display: flex;
   flex-direction: column;
 }
+/* a diagram has no frame, no card, no letterbox (SPEC v2 §5.3): it is drawn at the block's size */
 .sl-diagram-box {
   position: relative;
-  flex: 1 1 auto;
+  flex: none;
   min-height: 0;
-  border-radius: 14px;
-  overflow: hidden;
-  background: var(--sl-surface);
-  border: 2px solid var(--sl-line);
+  overflow: visible;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
 }
 .sl-diagram-box > svg,
 .sl-diagram-box > img,
@@ -358,32 +485,45 @@
   object-fit: contain;
 }
 .sl-diagram-box .cs-dpane {
-  display: grid;
-  place-items: center;
-  padding: 12px;
+  display: block;
+  padding: 0;
+  background: none;
 }
-.sl-diagram-box .cs-dpane svg {
-  max-width: 100%;
-  max-height: 100%;
+.sl-diagram-box svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
-.sl-diagram.is-paper .sl-diagram-box {
-  background: #fff;
-  border-color: var(--sl-line);
+.sl-diagram-box .cs-diagram text,
+.sl-diagram-box .hold-diagram text {
+  font-family: var(--sl-font-body);
 }
 .sl-diagram-box.is-svg {
-  padding: 18px 12px 6px;
+  padding: 0;
 }
 .sl-diagram-box.is-svg > svg {
   position: static;
 }
+/* the hint row under a diagram: 24 px, mute, with a 28 px glyph */
 .sl-diagram-cap {
   flex: none;
-  max-height: 96px;
-  padding-top: 14px;
+  height: 48px;
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  white-space: nowrap;
   overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  text-overflow: ellipsis;
+}
+.sl-diagram-cap > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sl-hint-ic {
+  flex: none;
+  color: var(--sl-muted);
+  margin-bottom: -2px;
 }
 
 /* ---------------------------------------------------------------- live instruments */
@@ -523,17 +663,21 @@
   border-color: transparent transparent transparent #fff;
 }
 
-/* ---------------------------------------------------------------- cards: quiz, calc, checklist */
+/* ---------------------------------------------------------------- quiz, calc, checklist (SPEC v2 §7): no outer
+   card, rule-separated rows; surfaces only for the quiz options. Sizes are logical px × --q (the block's fit,
+   never under 24 px). */
 .sl-card {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding: 32px 36px;
-  border-radius: 18px;
-  background: var(--sl-surface);
-  border: 2px solid var(--sl-line);
+  gap: 24px;
+  padding: 0;
   font-family: var(--sl-font-body);
   overflow: hidden;
+}
+.sl-calc-in {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 .sl-card-head {
   display: flex;
@@ -542,8 +686,8 @@
   gap: 16px;
 }
 .sl-card-label {
-  font: 700 19px/1.2 var(--sl-font-body);
-  letter-spacing: 0.12em;
+  font: 600 24px/1.3 var(--sl-font-body);
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--sl-accent);
 }
@@ -552,101 +696,39 @@
   letter-spacing: 0.08em;
 }
 .sl-chip {
-  font: 600 18px/1 var(--sl-font-body);
-  padding: 8px 12px;
+  font: 600 24px/1 var(--sl-font-body);
+  padding: 8px 14px;
   border-radius: 8px;
   color: var(--sl-accent);
   background: var(--sl-accent-soft);
 }
 .sl-card-prompt {
-  font: 500 30px/1.4 var(--sl-font-body);
+  font: 500 34px/1.42 var(--sl-font-body);
   color: var(--sl-text);
+  text-wrap: pretty;
 }
 .sl-card-prompt p {
-  margin: 0;
-}
-.sl-card-hint {
-  font: 500 22px/1.4 var(--sl-font-body);
-  color: var(--sl-muted);
-}
-.sl-opts {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.sl-opt {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  min-height: 72px;
-  padding: 12px 20px;
-  border-radius: 12px;
-  border: 2px solid var(--sl-line);
-  background: var(--sl-bg);
-  color: var(--sl-text);
-  font: 500 26px/1.3 var(--sl-font-body);
-  text-align: left;
-  width: 100%;
-}
-button.sl-opt {
-  cursor: pointer;
-}
-button.sl-opt:hover {
-  border-color: var(--sl-accent);
-}
-.sl-opt-k {
-  flex: none;
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
-  font: 700 22px/1 var(--sl-font-body);
-  color: var(--sl-muted);
-  border: 2px solid var(--sl-line);
-}
-.sl-opt.is-right {
-  border-color: var(--sl-ok);
-}
-.sl-opt.is-right .sl-opt-k {
-  background: var(--sl-ok);
-  border-color: var(--sl-ok);
-  color: #fff;
-}
-.sl-opt.is-wrong {
-  border-color: var(--sl-danger);
-}
-.sl-opt.is-wrong .sl-opt-k {
-  background: var(--sl-danger);
-  border-color: var(--sl-danger);
-  color: #fff;
-}
-.sl-card-why {
-  font: 400 24px/1.45 var(--sl-font-body);
-  color: var(--sl-text);
-  border-left: 5px solid var(--sl-accent);
-  padding-left: 18px;
-}
-.sl-card-why p {
   margin: 0;
 }
 .sl-givens {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 10px 28px;
+  gap: 0 32px;
   margin: 0;
-  padding: 20px 24px;
-  border-radius: 12px;
-  background: var(--sl-bg);
-  border: 1px solid var(--sl-line);
+  padding: 0;
+}
+.sl-givens dt,
+.sl-givens dd {
+  padding: 14px 0;
+  border-top: 2px solid var(--sl-rule);
 }
 .sl-givens dt {
-  font: 500 23px/1.3 var(--sl-font-body);
+  font: 400 28px/1.3 var(--sl-font-body);
   color: var(--sl-muted);
 }
 .sl-givens dd {
   margin: 0;
-  font: 600 24px/1.3 var(--sl-font-mono);
+  font: 600 30px/1.3 var(--sl-font-body);
   color: var(--sl-text);
   font-variant-numeric: tabular-nums;
 }
@@ -655,44 +737,45 @@ button.sl-opt:hover {
   grid-template-columns: max-content 1fr;
   gap: 10px 20px;
   align-items: baseline;
-  font: 500 24px/1.35 var(--sl-font-body);
+  font: 500 28px/1.35 var(--sl-font-body);
 }
 .sl-formula code {
-  font-size: 24px;
+  font-size: 28px;
 }
 .sl-answer {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
 }
 .sl-answer-in {
   width: 260px;
-  height: 72px;
-  padding: 0 18px;
-  border-radius: 12px;
-  border: 2px solid var(--sl-line);
-  background: var(--sl-bg);
+  height: 80px;
+  padding: 0 20px;
+  border-radius: 14px;
+  border: 2px solid var(--sl-ruleStrong);
+  background: var(--sl-raise);
   color: var(--sl-text);
-  font: 600 30px/1 var(--sl-font-mono);
+  font: 600 34px/1 var(--sl-font-body);
+  font-variant-numeric: tabular-nums;
 }
 .sl-answer-in:focus {
   outline: none;
   border-color: var(--sl-accent);
 }
 .sl-answer-unit {
-  font: 600 26px/1 var(--sl-font-body);
+  font: 500 28px/1 var(--sl-font-body);
   color: var(--sl-muted);
   min-width: 70px;
 }
 .sl-btn {
-  height: 72px;
-  padding: 0 30px;
+  height: 80px;
+  padding: 0 34px;
   margin-left: auto;
-  border-radius: 12px;
+  border-radius: 14px;
   border: 0;
   background: var(--sl-accent);
   color: var(--sl-on-accent);
-  font: 600 26px/1 var(--sl-font-body);
+  font: 600 30px/1 var(--sl-font-body);
   cursor: pointer;
 }
 .sl-btn:disabled {
@@ -700,7 +783,7 @@ button.sl-opt:hover {
   cursor: default;
 }
 .sl-verdict {
-  font: 500 24px/1.4 var(--sl-font-body);
+  font: 500 30px/1.4 var(--sl-font-body);
   min-height: 0;
 }
 .sl-verdict.ok {
@@ -710,33 +793,206 @@ button.sl-opt:hover {
   color: var(--sl-danger);
 }
 .sl-answer-shown {
-  font: 700 28px/1.3 var(--sl-font-body);
+  font: 600 30px/1.3 var(--sl-font-body);
   color: var(--sl-ok);
 }
 .sl-solution {
   margin: 0;
   padding-left: 1.2em;
-  font: 400 23px/1.45 var(--sl-font-body);
+  font: 400 28px/1.45 var(--sl-font-body);
+  color: var(--sl-ink2);
+}
+
+/* quiz on a slide (A9): eyebrow, question, tiles (short answers) or rows, feedback */
+.sl-quiz {
+  overflow: hidden;
+}
+.sl-q-in {
+  --q: 1;
+  display: flex;
+  flex-direction: column;
+  gap: calc(24px * var(--q));
+}
+.sl-q-eyebrow {
+  font: 600 max(24px, calc(24px * var(--q))) / 1.3 var(--sl-font-body);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--sl-muted);
+}
+.sl-q-prompt {
+  font: 600 calc(44px * var(--q)) / 1.18 var(--sl-font-display);
+  letter-spacing: -0.012em;
   color: var(--sl-text);
+  text-wrap: balance;
+  margin-top: calc(-14px * var(--q));
+}
+.sl-q-prompt p {
+  margin: 0;
+}
+.sl-q-opts {
+  display: flex;
+  flex-direction: column;
+  gap: calc(16px * var(--q));
+}
+.is-tiles .sl-q-opts {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: calc(24px * var(--q));
+}
+.sl-q-opt {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: calc(24px * var(--q));
+  min-height: max(88px, calc(104px * var(--q)));
+  padding: calc(12px * var(--q)) calc(28px * var(--q));
+  border-radius: calc(20px * var(--q));
+  border: 2px solid var(--sl-rule);
+  background: var(--sl-raise);
+  color: var(--sl-text);
+  font: 500 calc(36px * var(--q)) / 1.25 var(--sl-font-body);
+  text-align: left;
+  width: 100%;
+}
+.is-tiles .sl-q-opt {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  min-height: calc(200px * var(--q));
+  padding: calc(24px * var(--q));
+  border-radius: calc(24px * var(--q));
+}
+.sl-q-v {
+  flex: 1;
+  min-width: 0;
+}
+.is-tiles .sl-q-v {
+  flex: none;
+  font: 600 calc(72px * var(--q)) / 1 var(--sl-font-display);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+button.sl-q-opt {
+  cursor: pointer;
+}
+button.sl-q-opt:hover {
+  border-color: var(--sl-accent);
+}
+button.sl-q-opt:focus-visible {
+  outline: 4px solid var(--sl-accent);
+  outline-offset: 4px;
+}
+.sl-q-k {
+  flex: none;
+  width: max(44px, calc(52px * var(--q)));
+  height: max(44px, calc(52px * var(--q)));
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font: 600 max(24px, calc(28px * var(--q))) / 1 var(--sl-font-body);
+  color: var(--sl-ink2);
+  border: 2px solid var(--sl-ruleStrong);
+}
+.sl-q-state {
+  position: absolute;
+  right: calc(24px * var(--q));
+  top: calc(24px * var(--q));
+  font: 600 max(24px, calc(28px * var(--q))) / 1.3 var(--sl-font-body);
+}
+.is-rows .sl-q-state {
+  position: static;
+  flex: none;
+}
+.sl-quiz.answered .sl-q-opt {
+  color: var(--sl-muted);
+}
+.sl-q-opt.is-right {
+  color: var(--sl-text) !important;
+  border: 4px solid var(--sl-ok);
+  background: var(--sl-ok-soft);
+}
+.sl-q-opt.is-right .sl-q-k {
+  background: var(--sl-ok);
+  border-color: var(--sl-ok);
+  color: var(--sl-bg);
+}
+.sl-q-opt.is-right .sl-q-state {
+  color: var(--sl-ok);
+}
+.sl-q-opt.is-wrong {
+  color: var(--sl-text) !important;
+  border: 4px solid var(--sl-danger);
+}
+.sl-q-opt.is-wrong .sl-q-state {
+  color: var(--sl-danger);
+}
+.sl-q-why {
+  font: 400 max(24px, calc(34px * var(--q))) / 1.42 var(--sl-font-body);
+  color: var(--sl-ink2);
+  text-wrap: pretty;
+}
+.sl-q-why.is-reserve {
+  visibility: hidden;
+}
+.sl-mode-edit .sl-q-why.is-reserve,
+.sl-mode-thumb .sl-q-why.is-reserve {
+  display: none;
+}
+.sl-q-why p {
+  margin: 0;
+}
+.sl-q-why strong {
+  color: var(--sl-text);
+  font-weight: 600;
+}
+.sl-q-hint {
+  font: 500 28px/1.4 var(--sl-font-body);
+  color: var(--sl-muted);
+}
+
+/* check rows (A10 / "Do this"): a 40 px tick, 34 px ink text, 2 px rules; never clipped */
+.sl-checklist {
+  overflow: hidden;
+}
+.sl-ck-in {
+  --q: 1;
+  display: flex;
+  flex-direction: column;
+  gap: calc(12px * var(--q));
+}
+.sl-ck-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+.sl-ck-title {
+  font: 600 max(24px, calc(24px * var(--q))) / 1.3 var(--sl-font-body);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--sl-muted);
+}
+.sl-ck-live {
+  font: 500 24px/1.3 var(--sl-font-body);
+  color: var(--sl-ok);
+}
+.sl-ck-live::before {
+  content: "● ";
 }
 .sl-rows {
   list-style: none;
-  margin: 0 -36px -32px;
+  margin: 0;
   padding: 0;
-  border-top: 1px solid var(--sl-line);
 }
 .sl-row {
   display: flex;
   align-items: center;
-  gap: 20px;
-  min-height: 84px;
-  padding: 14px 36px;
-  border-bottom: 1px solid var(--sl-line);
-  font: 400 27px/1.35 var(--sl-font-body);
+  gap: calc(24px * var(--q));
+  min-height: calc(80px * var(--q));
+  padding: calc(14px * var(--q)) 0;
+  border-top: 2px solid var(--sl-rule);
+  font: 400 max(24px, calc(34px * var(--q))) / 1.35 var(--sl-font-body);
   color: var(--sl-text);
-}
-.sl-row:last-child {
-  border-bottom: 0;
 }
 .sl-row-t {
   flex: 1;
@@ -747,28 +1003,32 @@ button.sl-opt:hover {
 }
 .sl-row-v {
   flex: none;
-  font: 700 24px/1 var(--sl-font-body);
+  font: 600 max(24px, calc(30px * var(--q))) / 1 var(--sl-font-body);
   color: var(--sl-ok);
   font-variant-numeric: tabular-nums;
 }
 .sl-tick {
   flex: none;
   position: relative;
-  width: 38px;
-  height: 38px;
+  width: calc(40px * var(--q));
+  height: calc(40px * var(--q));
   border-radius: 50%;
-  border: 2.5px solid var(--sl-line);
+  border: 3px solid var(--sl-ruleStrong);
 }
 .sl-row.plain .sl-tick {
-  width: 12px;
-  height: 12px;
-  border: 0;
-  border-radius: 3px;
-  background: var(--sl-accent);
-  margin: 0 13px;
+  border-color: var(--sl-ok);
 }
-.sl-row.current {
-  background: var(--sl-accent-soft);
+.sl-row.plain .sl-tick::after,
+.sl-row.done .sl-tick::after {
+  content: "";
+  position: absolute;
+  left: 32%;
+  top: 14%;
+  width: 26%;
+  height: 50%;
+  border: solid var(--sl-ok);
+  border-width: 0 3.5px 3.5px 0;
+  transform: rotate(45deg);
 }
 .sl-row.current .sl-tick {
   border-color: var(--sl-accent);
@@ -776,7 +1036,7 @@ button.sl-opt:hover {
 .sl-row.current .sl-tick::after {
   content: "";
   position: absolute;
-  inset: 7px;
+  inset: 25%;
   border-radius: 50%;
   background: var(--sl-accent);
 }
@@ -788,15 +1048,7 @@ button.sl-opt:hover {
   background: var(--sl-ok);
 }
 .sl-row.done .sl-tick::after {
-  content: "";
-  position: absolute;
-  left: 11px;
-  top: 6px;
-  width: 9px;
-  height: 17px;
-  border: solid #fff;
-  border-width: 0 3.5px 3.5px 0;
-  transform: rotate(45deg);
+  border-color: var(--sl-bg);
 }
 .sl-row.done .sl-row-t {
   color: var(--sl-muted);

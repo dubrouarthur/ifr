@@ -1,4 +1,4 @@
-# IFR Trainer — browser IFR simulator
+# Wingdeck — the platform for aviation education (courses with live instruments + an integrated IFR simulator)
 
 G1000-style glass cockpit (PFD + MFD with bezel knobs/softkeys), GFC700-class autopilot, every approach type with generated approach plates, joystick support and scored debriefs. Built for flight-school use.
 

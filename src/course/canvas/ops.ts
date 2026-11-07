@@ -323,8 +323,51 @@ export function reorder(
 }
 
 export type Align = "left" | "hcenter" | "right" | "top" | "vcenter" | "bottom";
-/** Align blocks to each other (2+), or to the slide (1). */
+/**
+ * Align blocks to each other (2+), or to the slide (1, or `to: "slide"`). A group moves as one piece: its members
+ * keep their places relative to each other.
+ */
 export function alignBlocks(
+  c: SlideCanvas,
+  ids: readonly string[],
+  how: Align,
+  to: "auto" | "slide" | "selection" = "auto",
+): SlideCanvas {
+  const sel = c.blocks.filter((b) => ids.includes(b.id) && !b.frame.locked);
+  if (!sel.length) return c;
+  // units: whole groups, and single blocks
+  const units = new Map<string, SlideBlock[]>();
+  for (const b of sel) {
+    const key = b.frame.group ?? `#${b.id}`;
+    units.set(key, [...(units.get(key) ?? []), b]);
+  }
+  const unitBox = (u: SlideBlock[]) => union(u.map((b) => aabb(b.frame)))!;
+  const toSlide = to === "slide" || (to === "auto" && units.size === 1);
+  const ref: Box = toSlide
+    ? { x: 0, y: 0, w: SLIDE_W, h: SLIDE_H }
+    : union(sel.map((b) => aabb(b.frame)))!;
+  let out = c;
+  for (const u of units.values()) {
+    const bb = unitBox(u);
+    let dx = 0;
+    let dy = 0;
+    if (how === "left") dx = ref.x - bb.x;
+    if (how === "right") dx = ref.x + ref.w - (bb.x + bb.w);
+    if (how === "hcenter") dx = ref.x + ref.w / 2 - (bb.x + bb.w / 2);
+    if (how === "top") dy = ref.y - bb.y;
+    if (how === "bottom") dy = ref.y + ref.h - (bb.y + bb.h);
+    if (how === "vcenter") dy = ref.y + ref.h / 2 - (bb.y + bb.h / 2);
+    out = moveBlocks(
+      out,
+      u.map((b) => b.id),
+      Math.round(dx),
+      Math.round(dy),
+    );
+  }
+  return out;
+}
+/** @deprecated kept for callers of the per-block behaviour: align each block on its own (groups are split). */
+export function alignEach(
   c: SlideCanvas,
   ids: readonly string[],
   how: Align,
@@ -350,15 +393,23 @@ export function alignBlocks(
   }
   return out;
 }
-/** Distribute 3+ blocks with equal gaps, horizontally or vertically. */
+/** Distribute 3+ blocks (whole groups count as one) with equal gaps, horizontally or vertically. */
 export function distributeBlocks(
   c: SlideCanvas,
   ids: readonly string[],
   axis: "h" | "v",
 ): SlideCanvas {
   const sel = c.blocks.filter((b) => ids.includes(b.id) && !b.frame.locked);
-  if (sel.length < 3) return c;
-  const boxes = sel.map((b) => ({ b, bb: aabb(b.frame) }));
+  const units = new Map<string, SlideBlock[]>();
+  for (const b of sel) {
+    const key = b.frame.group ?? `#${b.id}`;
+    units.set(key, [...(units.get(key) ?? []), b]);
+  }
+  if (units.size < 3) return c;
+  const boxes = [...units.values()].map((u) => ({
+    ids: u.map((b) => b.id),
+    bb: union(u.map((b) => aabb(b.frame)))!,
+  }));
   const key = axis === "h" ? "x" : "y";
   const size = axis === "h" ? "w" : "h";
   boxes.sort((p, q) => p.bb[key] - q.bb[key]);
@@ -373,8 +424,8 @@ export function distributeBlocks(
     const d = Math.round(at - p.bb[key]);
     out =
       axis === "h"
-        ? moveBlocks(out, [p.b.id], d, 0)
-        : moveBlocks(out, [p.b.id], 0, d);
+        ? moveBlocks(out, p.ids, d, 0)
+        : moveBlocks(out, p.ids, 0, d);
     at += p.bb[size] + gap;
   }
   return out;
@@ -418,4 +469,56 @@ export function revealSteps(c: SlideCanvas): number[] {
         .filter((n): n is number => typeof n === "number" && n > 0),
     ),
   ].sort((a, b) => a - b);
+}
+
+/**
+ * Make blocks the same width, height or both as the reference block (the first of `ids`, usually the one
+ * selected first). Each block keeps its top-left corner; aspect-locked blocks (instruments, markers) scale both
+ * sides from the matched one.
+ */
+export function matchSize(
+  c: SlideCanvas,
+  ids: readonly string[],
+  dim: "w" | "h" | "both",
+  keepAspect: (b: SlideBlock) => boolean = () => false,
+): SlideCanvas {
+  const ref = c.blocks.find((b) => b.id === ids[0]);
+  if (!ref || ids.length < 2) return c;
+  return map(
+    c,
+    ids.filter((id) => id !== ref.id),
+    (b) => {
+      if (b.frame.locked) return b;
+      let w = dim === "h" ? b.frame.w : ref.frame.w;
+      let hh = dim === "w" ? b.frame.h : ref.frame.h;
+      if (keepAspect(b) && dim !== "both") {
+        const ar = b.frame.w / Math.max(1, b.frame.h);
+        if (dim === "w") hh = w / ar;
+        else w = hh * ar;
+      }
+      return reframeBlock(b, {
+        ...b.frame,
+        w: Math.round(w),
+        h: Math.round(hh),
+      });
+    },
+  );
+}
+
+/** Centre the selection on the slide, both ways (one undo step; the selection keeps its layout). */
+export function centerOnSlide(
+  c: SlideCanvas,
+  ids: readonly string[],
+): SlideCanvas {
+  const box = selectionBox(
+    c,
+    c.blocks.filter((b) => ids.includes(b.id) && !b.frame.locked).map((b) => b.id),
+  );
+  if (!box) return c;
+  return moveBlocks(
+    c,
+    ids,
+    Math.round(SLIDE_W / 2 - (box.x + box.w / 2)),
+    Math.round(SLIDE_H / 2 - (box.y + box.h / 2)),
+  );
 }

@@ -42,8 +42,10 @@ export type { SlideMode, SlideSlots } from "./blocks";
 export interface SlideRenderOptions {
   mode: SlideMode;
   lang?: Lang;
-  /** the course theme (SlideCanvas.theme overrides it) */
+  /** the course theme: one per course (a slide's own `theme` is ignored, SPEC slides v2 §4) */
   theme?: ThemeId;
+  /** the presenter's "Bright projector" toggle: heavier type, mute → ink-2, white paper */
+  boost?: boolean;
   brand?: SchoolBrand;
   /** Course.scenes (the demo scene is added for blocks that name none) */
   scenes?: Record<string, SimScene>;
@@ -62,6 +64,8 @@ export interface SlideRenderOptions {
   onYourTurn?: (b: SlideBlock, yt: YourTurn) => void;
   /** Next was pressed past the last reveal */
   onEnd?: () => void;
+  /** an event happened on the slide (a quiz "answered", a goal met): the cockpit briefing gates Start on it */
+  onEvent?: (when: string) => void;
   /** presenter console: presenterOnly blocks show */
   presenter?: boolean;
   /** play: reveals already shown (default 0) */
@@ -157,7 +161,7 @@ export class SlideView {
     this.mode = o.mode;
     this.lang = o.lang ?? "en";
     this.slide = slide;
-    this.theme = resolveTheme(slide.theme ?? o.theme, o.brand);
+    this.theme = resolveTheme(o.theme, o.brand, { boost: o.boost });
     const scenes = {
       [DEMO_SCENE_ID]: demoScene(o.cockpit ?? "g1000"),
       ...(o.scenes ?? {}),
@@ -472,6 +476,7 @@ export class SlideView {
     if (this.events.has(when)) return;
     this.events.add(when);
     this.applyReveal();
+    this.o.onEvent?.(when);
   }
   resetEvents() {
     this.events.clear();
@@ -542,14 +547,13 @@ export class SlideView {
   /** Re-render with a changed slide (only changed blocks are rebuilt). */
   update(slide: SlideCanvas) {
     const themeChanged =
-      slide.theme !== this.slide.theme ||
       JSON.stringify(slide.background) !==
         JSON.stringify(this.slide.background) ||
       slide.hideBrand !== this.slide.hideBrand;
     const sceneChanged = slide.scene !== this.slide.scene;
     this.slide = slide;
     if (themeChanged || sceneChanged) {
-      this.theme = resolveTheme(slide.theme ?? this.o.theme, this.o.brand);
+      this.theme = resolveTheme(this.o.theme, this.o.brand, { boost: this.o.boost });
       this.applyTheme();
       this.rebuildAll();
       return;
@@ -576,9 +580,9 @@ export class SlideView {
     this.lang = l;
     this.rebuildAll();
   }
-  setTheme(theme: ThemeId | undefined, brand?: SchoolBrand) {
-    this.o = { ...this.o, theme, brand };
-    this.theme = resolveTheme(this.slide.theme ?? theme, brand);
+  setTheme(theme: ThemeId | undefined, brand?: SchoolBrand, boost = this.o.boost) {
+    this.o = { ...this.o, theme, brand, boost };
+    this.theme = resolveTheme(theme, brand, { boost });
     this.applyTheme();
     this.rebuildAll();
   }

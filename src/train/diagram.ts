@@ -185,3 +185,156 @@ export function holdDiagramSvg(
   ${entry ? `<rect x="${W - 168}" y="12" width="156" height="24" rx="6" fill="#fff4e0" stroke="#f5c27a"/><text x="${W - 90}" y="29" text-anchor="middle" fill="#b54708" font-size="12" font-weight="800" font-family="Inter, sans-serif">${fr ? `VOTRE ENTRÉE : ${ENTRY_FR[entry]}` : `YOUR ENTRY: ${entry}`}</text>` : ""}
 </svg>`;
 }
+
+// ------------------------------------------------------------------ the hold in slide units (SPEC slides v2 §5)
+/** Theme colours for the slide hold (the slide theme's tokens: the diagram follows the slide, no white card). */
+export interface HoldColors {
+  bg: string;
+  ink: string;
+  ink2: string;
+  mute: string;
+  ruleStrong: string;
+  accent: string;
+  sel: string;
+  key: string;
+  nav: string;
+}
+export interface HoldSlideOptions {
+  /** the drawing size: viewBox 0 0 w h (on a slide, the block's logical size: 1 unit = 1 px) */
+  w: number;
+  h: number;
+  /** type unit (labels 24 / 28 / 32 × u) */
+  u?: number;
+  lang?: "en" | "fr";
+  colors: HoldColors;
+  /** cover mode: the racetrack in accent, the aircraft, no sector labels */
+  quiet?: boolean;
+  /** the aircraft's course to the fix: its sector stands out and its entry is drawn dashed */
+  courseToFix?: number;
+}
+const f2 = (v: number) => Math.round(v * 10) / 10;
+/** The slide-unit hold with the three entry sectors tinted in their colours (AIM FIG 5-3-8), north up. */
+export function holdSlideSvg(
+  inbound: number,
+  turn: Turn,
+  fixIdent: string,
+  o: HoldSlideOptions,
+): string {
+  const fix = escSvg(fixIdent);
+  const fr = (o.lang ?? "en") === "fr";
+  const u = o.u ?? 1;
+  const C = o.colors;
+  const { w, h } = o;
+  const quiet = !!o.quiet;
+  const I = inbound;
+  const s = turn === "R" ? 1 : -1;
+  const cx = w / 2 + (quiet ? 0 : 12 * u);
+  const cy = h / 2 + (quiet ? 0 : 8 * u);
+  const RC = Math.max(60 * u, Math.min(w / 2 - 92 * u, h / 2 - 64 * u));
+  const L = RC * (quiet ? 0.7 : 0.56);
+  const R = RC * (quiet ? 0.2 : 0.17);
+  const at = (b: number, r: number, x0 = cx, y0 = cy): [number, number] => {
+    const a = (b * Math.PI) / 180;
+    return [x0 + Math.sin(a) * r, y0 - Math.cos(a) * r];
+  };
+  const P = (p: [number, number]) => `${f2(p[0])},${f2(p[1])}`;
+  const O = I + 180;
+  const side = I + 90 * s;
+  const pIn = at(O, L);
+  const pTurn = at(side, 2 * R);
+  const pOutEnd = at(O, L, ...pTurn);
+  const sw = s > 0 ? 1 : 0;
+  const track = `M${P(pIn)} L${f2(cx)},${f2(cy)} A${f2(R)},${f2(R)} 0 0 ${sw} ${P(pTurn)} L${P(pOutEnd)} A${f2(R)},${f2(R)} 0 0 ${sw} ${P(pIn)}`;
+  type K = "PARALLEL" | "TEARDROP" | "DIRECT";
+  const SECT: Record<K, { from: number; to: number; n: number; name: string; col: string; lab: number; lr: number; arc: string }> = {
+    PARALLEL: { from: 0, to: 110, n: 1, name: fr ? "Parallèle" : "Parallel", col: C.sel, lab: 52, lr: 0.62, arc: "110°" },
+    TEARDROP: { from: 290, to: 360, n: 2, name: fr ? "Décalée" : "Offset", col: C.key, lab: 325, lr: 0.66, arc: "70°" },
+    DIRECT: { from: 110, to: 290, n: 3, name: fr ? "Directe" : "Direct", col: C.nav, lab: 236, lr: 0.6, arc: "180°" },
+  };
+  const absB = (rel: number) => I + rel * s;
+  const wedge = (k: K) => {
+    const { from, to } = SECT[k];
+    const a = at(absB(from), RC);
+    const b = at(absB(to), RC);
+    return `M${f2(cx)},${f2(cy)} L${P(a)} A${f2(RC)},${f2(RC)} 0 ${to - from > 180 ? 1 : 0} ${sw} ${P(b)} Z`;
+  };
+  const entry: K | null = o.courseToFix !== undefined ? holdEntry(I, turn, o.courseToFix) : null;
+  const text = (x: number, y: number, t: string, size: number, fill: string, extra = "") =>
+    `<text x="${f2(x)}" y="${f2(y)}" font-size="${f2(size * u)}" fill="${fill}" font-family="Inter, system-ui, sans-serif" font-variant-numeric="tabular-nums" ${extra}>${t}</text>`;
+  const arrowHead = (p: [number, number], ang: number, size: number, fill: string) =>
+    `<path d="M${-size},${-size * 0.62} L${size * 0.55},0 L${-size},${size * 0.62} Z" transform="translate(${P(p)}) rotate(${f2(ang)})" fill="${fill}"/>`;
+  const mid = (a: [number, number], b: [number, number]): [number, number] => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const ang = (a: [number, number], b: [number, number]) => (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI;
+  let out = "";
+  if (!quiet)
+    for (const k of Object.keys(SECT) as K[])
+      out += `<path d="${wedge(k)}" fill="${SECT[k].col}" fill-opacity="${entry ? (entry === k ? 0.24 : 0.07) : 0.13}" stroke="none"/>`;
+  out += `<circle cx="${f2(cx)}" cy="${f2(cy)}" r="${f2(RC)}" fill="none" stroke="${C.ruleStrong}" stroke-width="${2 * u}"/>`;
+  const b70 = I + 110 * s;
+  out += `<path d="M${P(at(b70, RC))} L${P(at(b70 + 180, RC))} M${f2(cx)},${f2(cy)} L${P(at(I, RC))}" stroke="${quiet ? C.ruleStrong : C.mute}" stroke-width="${3 * u}" fill="none"/>`;
+  const tc = quiet ? C.accent : C.ink;
+  out += `<path d="${track}" fill="none" stroke="${tc}" stroke-width="${(quiet ? 8 : 6) * u}" stroke-linejoin="round" stroke-linecap="round"/>`;
+  out += arrowHead(mid(pIn, [cx, cy]), ang(pIn, [cx, cy]), (quiet ? 20 : 17) * u, tc);
+  if (!quiet) out += arrowHead(mid(pTurn, pOutEnd), ang(pTurn, pOutEnd), 17 * u, tc);
+  const plane = (p: [number, number], hdg: number, k: number, fill: string) =>
+    `<g transform="translate(${P(p)}) rotate(${f2(hdg)}) scale(${f2(k * u)})"><path d="M0,-11 L2.2,-3 L12,1.5 L12,4 L2,2.6 L1.4,8.5 L5,10.5 L5,12 L-5,12 L-5,10.5 L-1.4,8.5 L-2,2.6 L-12,4 L-12,1.5 L-2.2,-3 Z" fill="${fill}"/></g>`;
+  if (quiet) {
+    const pa: [number, number] = [pTurn[0] + (pOutEnd[0] - pTurn[0]) * 0.64, pTurn[1] + (pOutEnd[1] - pTurn[1]) * 0.64];
+    out += `<circle cx="${f2(pa[0])}" cy="${f2(pa[1])}" r="${f2(34 * u)}" fill="${C.bg}"/>`;
+    out += plane(pa, O, 2.3, C.ink);
+  }
+  // the aircraft arriving and the entry it must fly
+  if (entry && o.courseToFix !== undefined) {
+    const crs = o.courseToFix;
+    const pos = at(crs + 180, RC + 40 * u);
+    const near = at(crs + 180, 26 * u);
+    out += `<line x1="${f2(pos[0])}" y1="${f2(pos[1])}" x2="${f2(near[0])}" y2="${f2(near[1])}" stroke="${C.accent}" stroke-width="${4 * u}" stroke-dasharray="${14 * u} ${10 * u}"/>`;
+    out += arrowHead(near, ang(pos, near), 14 * u, C.accent);
+    out += `<circle cx="${f2(pos[0])}" cy="${f2(pos[1])}" r="${f2(30 * u)}" fill="${C.bg}"/>`;
+    out += plane(pos, crs, 2.1, C.accent);
+    let path = "";
+    if (entry === "TEARDROP") {
+      const leg = at(O - 30 * s, L * 0.95);
+      const join = at(O, L * 0.55);
+      const ctrl = at(O - 15 * s, L * 1.35);
+      path = `M${f2(cx)},${f2(cy)} L${P(leg)} Q${P(ctrl)} ${P(join)}`;
+    } else if (entry === "PARALLEL") {
+      const off = at(O, L, ...at(I - 90 * s, 14 * u));
+      const ctrl = at(O, L * 1.25, ...at(side, 3 * R));
+      path = `M${f2(cx)},${f2(cy)} L${P(off)} Q${P(ctrl)} ${f2(cx)},${f2(cy)}`;
+    } else path = `M${f2(cx)},${f2(cy)} A${f2(R)},${f2(R)} 0 0 ${sw} ${P(pTurn)} L${P(at(O, L * 0.6, ...pTurn))}`;
+    out += `<path d="${path}" fill="none" stroke="${C.accent}" stroke-width="${5 * u}" stroke-dasharray="${18 * u} ${12 * u}" stroke-linecap="round"/>`;
+  }
+  // the fix, its label between the two boundaries next to it (never on a line)
+  const k = 15 * u;
+  out += `<path d="M${f2(cx)},${f2(cy - k * 1.13)} L${f2(cx + k)},${f2(cy + k * 0.67)} L${f2(cx - k)},${f2(cy + k * 0.67)} Z" fill="${C.bg}" stroke="${C.ink}" stroke-width="${4 * u}" stroke-linejoin="round"/>`;
+  const fl = at(I - 35 * s, 78 * u);
+  out += text(fl[0], fl[1] + 10 * u, fix, 28, C.ink, `text-anchor="middle" font-weight="600"`);
+  if (!quiet) {
+    for (const kk of Object.keys(SECT) as K[]) {
+      const S = SECT[kk];
+      const p = at(absB(S.lab), RC * S.lr);
+      out += text(p[0], p[1] - 10 * u, `${fr ? "SECTEUR" : "SECTOR"} ${S.n}`, 24, C.mute, `text-anchor="middle" font-weight="500" letter-spacing="${2.5 * u}"`);
+      out += text(p[0], p[1] + 30 * u, S.name, 32, S.col, `text-anchor="middle" font-weight="600"`);
+      if (entry === kk) out += text(p[0], p[1] + 64 * u, fr ? "votre entrée" : "your entry", 24, C.ink2, `text-anchor="middle" font-weight="600"`);
+      const q = at(absB((S.from + S.to) / 2), RC + 44 * u);
+      out += text(q[0], q[1] + 9 * u, S.arc, 24, C.mute, `text-anchor="middle" font-style="italic" font-weight="500"`);
+    }
+  }
+  // north arrow, just outside the circle, top left
+  const nx = cx - RC * 0.8 - 34 * u;
+  const ny = cy - RC * 0.8 - 20 * u;
+  out += `<g transform="translate(${f2(nx)} ${f2(ny)}) scale(${u})"><path d="M0,-26 L11,8 L0,0 L-11,8 Z" fill="${C.ink2}"/></g>`;
+  out += text(nx, ny + 44 * u, "N", 24, C.ink2, `text-anchor="middle" font-weight="600"`);
+  const label = `Hold ${cardinal(O)} of ${fix}, inbound ${pad3(I)}°, ${turn === "R" ? "right" : "left"} turns${entry ? `, ${entry.toLowerCase()} entry` : ""}`;
+  return `<svg viewBox="0 0 ${f2(w)} ${f2(h)}" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" class="hold-diagram hold-slide" role="img" aria-label="${label}">${out}</svg>`;
+}
+
+/** The line under a hold diagram: where it is, inbound course, turns, north up (the slide's hint / foot line). */
+export function holdFootText(inbound: number, turn: Turn, fixIdent: string, lang: "en" | "fr" = "en"): string {
+  const O = inbound + 180;
+  const CARD_FR: Record<string, string> = { north: "au nord", northeast: "au nord-est", east: "à l’est", southeast: "au sud-est", south: "au sud", southwest: "au sud-ouest", west: "à l’ouest", northwest: "au nord-ouest" };
+  return lang === "fr"
+    ? `Attente ${CARD_FR[cardinal(O)] ?? cardinal(O)} de ${fixIdent} · rapprochement ${pad3(inbound)}° · virages à ${turn === "R" ? "droite" : "gauche"} · nord en haut`
+    : `Hold ${cardinal(O)} of ${fixIdent} · inbound ${pad3(inbound)}° · ${turn === "R" ? "right" : "left"} turns · north up`;
+}

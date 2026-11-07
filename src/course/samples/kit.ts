@@ -6,6 +6,7 @@
 //
 // Content rules (SPEC §1, VISION): restrained aviation design (theme tokens only, no decoration), FR / EN for
 // every author text, every rule taught cites its source, hold entries come from holdEntry() (nav/holding.ts).
+import { BRAND } from "../../brand";
 import type {
   Cockpit,
   Course,
@@ -42,7 +43,7 @@ export {
 /** The date the built-in samples carry (stable: a sample's hash must not change between page loads). */
 export const SAMPLE_DATE = "2026-11-06T00:00:00.000Z";
 /** The built-in samples' author line ("Built in" in the library). */
-export const SAMPLE_AUTHOR: { name: string; club?: string } = { name: "IFR Trainer" };
+export const SAMPLE_AUTHOR: { name: string; club?: string } = { name: BRAND.name };
 
 // ------------------------------------------------------------------ scenes
 export interface SceneOpts {

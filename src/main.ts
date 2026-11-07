@@ -22,7 +22,7 @@ import { ViewDock, layoutName, nextLayout, shellKeyIntent, lessonZone, lessonCol
 import { ChartsDrawer } from './ui/charts';
 import { InstructorDrawer, HistoryModal } from './ui/instructor';
 import { LearnModal, BriefingModal, LessonResultModal, HoldDrillModal } from './ui/learn';
-import { FlightCenter } from './ui/flightcenter';
+import { FlightCenter, coursesTopbarButton } from './ui/flightcenter';
 import { FlightSetup } from './ui/flightsetup';
 import { SettingsModal } from './ui/settings';
 import { WeatherStation } from './ui/weather';
@@ -294,6 +294,7 @@ const setup = new FlightSetup({
 setup.toast = (m) => toast(m, 'good');
 /** full-screen start page at launch: its one action opens the Flight Center, the single place every flight starts */
 const intro = new Intro({
+  courses: () => fc.openCourses(),
   enter: () => {
     fc.open();
     // "Start a flight" is ready: one more Enter plans a flight
@@ -699,6 +700,8 @@ const topbar = h('header', { class: 'topbar' },
   tbViews,
   h('div', { class: 'tb-actions' },
     // the single way home: every flight, lesson and path starts in the Flight Center (Shift N still plans directly)
+    // the slide courses lead the product: one click from the cockpit to every deck (open, create, present)
+    coursesTopbarButton(() => fc.openCourses()),
     h('button', { class: 'btn tb-fc', onclick: () => fc.open(), title: 'Flight Center — plan a flight, lessons, paths and records (F2)' }, icon(I.plane), h('span', { class: 'lbl' }, 'Flight Center')),
     h('button', { class: 'btn tb-efb', onclick: () => charts.toggle(), title: 'EFB — charts, airport, navlog, weather, checklists (K)' }, icon(I.tablet), h('span', { class: 'lbl' }, 'EFB')),
     cduBtn,

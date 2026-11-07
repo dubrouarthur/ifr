@@ -27,9 +27,9 @@ import {
   type Mods,
 } from "./editorCore";
 import { SlideView, type SlideRenderOptions } from "./render";
-import { typeCss } from "./themes";
+import { typeCss, color as themeColor } from "./themes";
 import { loc } from "./text";
-import { tx, type CanvasString } from "./strings";
+import { tx } from "./strings";
 import { blockLabel } from "./blocks";
 import type { BlockDraft } from "./factory";
 
@@ -43,7 +43,75 @@ export interface CanvasEditorOptions extends Omit<
   onSelect?: (ids: string[], blocks: SlideBlock[]) => void;
   /** padding round the slide inside the surface (CSS px, default 28) */
   pad?: number;
+  /** the zoom changed (1 = the slide fits the surface) */
+  onZoom?: (z: number) => void;
+  /** a right-click or a long press on the empty slide: the host's slide menu items (background, layout…) */
+  slideMenu?: () => CanvasMenuItem[];
 }
+/** An item of the canvas context menu (right click, long press). */
+export interface CanvasMenuItem {
+  label: string;
+  icon?: string;
+  kbd?: string;
+  danger?: boolean;
+  disabled?: boolean;
+  run: () => void;
+}
+/** Words of the studio's canvas chrome that the engine's string table does not hold. */
+const W = {
+  style: ["Text style", "Style du texte"],
+  bold: ["Bold", "Gras"],
+  italic: ["Italic", "Italique"],
+  align: ["Text alignment", "Alignement du texte"],
+  color: ["Colour", "Couleur"],
+  arrange: ["Position", "Position"],
+  alignTo: ["Align", "Aligner"],
+  toSlide: ["On the slide", "Sur la diapo"],
+  spread: ["Spread evenly", "Répartir"],
+  sameSize: ["Same size", "Même taille"],
+  sameW: ["Same width", "Même largeur"],
+  sameH: ["Same height", "Même hauteur"],
+  center: ["Centre on the slide", "Centrer sur la diapo"],
+  left: ["Left", "Gauche"],
+  hcenter: ["Centre", "Centre"],
+  right: ["Right", "Droite"],
+  top: ["Top", "Haut"],
+  vcenter: ["Middle", "Milieu"],
+  bottom: ["Bottom", "Bas"],
+  distH: ["Spread across", "Répartir en largeur"],
+  distV: ["Spread down", "Répartir en hauteur"],
+  more: ["More", "Plus"],
+  copy: ["Copy", "Copier"],
+  paste: ["Paste", "Coller"],
+  cut: ["Cut", "Couper"],
+  selectAll: ["Select all", "Tout sélectionner"],
+  multi: ["Select several", "Sélection multiple"],
+  multiOff: ["End the selection", "Terminer la sélection"],
+  forward: ["Forward", "Avancer"],
+  backward: ["Backward", "Reculer"],
+  done: ["Done", "Terminé"],
+  list: ["Bulleted list", "Liste à puces"],
+  zoomIn: ["Zoom in", "Zoom avant"],
+  zoomOut: ["Zoom out", "Zoom arrière"],
+  fit: ["Fit", "Ajuster"],
+} as const;
+type WKey = keyof typeof W;
+/** Text roles offered in the format bar (SPEC slides v2 §2), most used first. */
+const STYLES: [string, string, string][] = [
+  ["display", "Cover title", "Titre de couverture"],
+  ["title", "Title", "Titre"],
+  ["heading", "Heading", "Intertitre"],
+  ["lead", "Lead", "Chapeau"],
+  ["body", "Body", "Texte"],
+  ["small", "Small", "Petit"],
+  ["eyebrow", "Eyebrow", "Surtitre"],
+  ["number", "Big number", "Grand chiffre"],
+  ["quote", "Quote", "Citation"],
+  ["formula", "Formula", "Formule"],
+  ["foot", "Source line", "Ligne de source"],
+];
+/** Colours offered in the format bar: the theme's tokens (they follow the course theme). */
+const COLOR_TOKENS = ["text", "ink2", "muted", "accent", "path", "sel", "nav", "key", "stop"] as const;
 
 const mk = <K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -69,6 +137,31 @@ const ICON: Record<string, string> = {
   front: "M9 9h11v11H9z M4 15V4h11",
   back: "M4 4h11v11H4z M20 9v11H9",
   edit: "M4 20h4L19 9l-4-4L4 16z M13 7l4 4",
+  bold: "M7 5h6a3.5 3.5 0 0 1 0 7H7z M7 12h7a3.5 3.5 0 0 1 0 7H7z",
+  italic: "M10 5h8 M6 19h8 M14 5l-4 14",
+  alignL: "M4 6h16 M4 10h10 M4 14h16 M4 18h10",
+  alignC: "M4 6h16 M7 10h10 M4 14h16 M7 18h10",
+  alignR: "M4 6h16 M10 10h10 M4 14h16 M10 18h10",
+  list: "M9 6h11 M9 12h11 M9 18h11 M4.5 6h.5 M4.5 12h.5 M4.5 18h.5",
+  arrange: "M4 4v16 M8 7h10v4H8z M8 14h6v4H8z",
+  more: "M5 12h.5 M12 12h.5 M19 12h.5",
+  aL: "M4 3v18 M8 6h10v4H8z M8 14h6v4H8z",
+  aC: "M12 3v18 M6 6h12v4H6z M8 14h8v4H8z",
+  aR: "M20 3v18 M6 6h10v4H6z M10 14h6v4h-6z",
+  aT: "M3 4h18 M6 8h4v10H6z M14 8h4v6h-4z",
+  aM: "M3 12h18 M6 6h4v12H6z M14 8h4v8h-4z",
+  aB: "M3 20h18 M6 6h4v10H6z M14 10h4v6h-4z",
+  dH: "M4 4v16 M20 4v16 M9 8h6v8H9z",
+  dV: "M4 4h16 M4 20h16 M8 9h8v6H8z",
+  sameW: "M4 8h16v3H4z M4 15h16v3H4z M4 4v18 M20 4v18",
+  sameH: "M8 4v16h3V4z M15 4v16h3V4z",
+  center: "M12 3v4 M12 17v4 M3 12h4 M17 12h4 M8 8h8v8H8z",
+  copy: "M8 8h11v11H8z M5 16V5h11",
+  paste: "M8 5h8v3H8z M6 6.5H5v14h14v-14h-1",
+  multi: "M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M15 15l2 2 4-4",
+  forward: "M9 9h11v11H9z M4 15V4h11 M14 13v4 M12 15h4",
+  backward: "M4 4h11v11H4z M20 9v11H9",
+  check: "M5 12l5 5 9-10",
 };
 function icon(name: string): SVGSVGElement {
   const s = document.createElementNS(SVGNS, "svg");
@@ -100,6 +193,15 @@ export class CanvasEditor {
   private pointer: number | null = null;
   private ro: ResizeObserver | null = null;
   private raf = 0;
+  private menu: HTMLDivElement | null = null;
+  private pop: HTMLDivElement | null = null;
+  private pressTimer = 0;
+  private touches = new Map<number, Pt>();
+  /** the selection before the first finger landed (a pinch restores it: two fingers never select) */
+  private preSel: string[] = [];
+  private pinch: { d0: number; z0: number; c0: Pt; sx: number; sy: number } | null = null;
+  /** 1 = the slide fits the surface; up to 4 */
+  zoom = 1;
   constructor(
     host: HTMLElement,
     canvas: SlideCanvas,
@@ -227,8 +329,50 @@ export class CanvasEditor {
   focus() {
     this.el.focus({ preventScroll: true });
   }
+  /** Touch: taps add to the selection (Shift's job with a keyboard). */
+  setMultiSelect(on: boolean) {
+    this.core.multiSelect = on;
+    this.el.classList.toggle("is-multiselect", on);
+    this.schedule();
+  }
+  get multiSelect(): boolean {
+    return this.core.multiSelect;
+  }
+  /**
+   * Zoom the slide (1 = fit the surface, up to 4). The surface grows inside its host, which scrolls; `about` is a
+   * client point that stays put (the pointer, the pinch centre), else the visible centre.
+   */
+  setZoom(z: number, about?: Pt) {
+    const host = this.el.parentElement;
+    const nz = Math.round(Math.max(1, Math.min(4, z)) * 100) / 100;
+    if (!host || Math.abs(nz - this.zoom) < 0.005) return;
+    const hr = host.getBoundingClientRect();
+    const ax = about ? about[0] - hr.left : hr.width / 2;
+    const ay = about ? about[1] - hr.top : hr.height / 2;
+    const fx = (host.scrollLeft + ax) / Math.max(1, this.el.offsetWidth);
+    const fy = (host.scrollTop + ay) / Math.max(1, this.el.offsetHeight);
+    this.zoom = nz;
+    host.classList.toggle("sle-zoomed", nz > 1);
+    if (nz > 1) {
+      this.el.style.width = `${Math.round(hr.width * nz)}px`;
+      this.el.style.height = `${Math.round(hr.height * nz)}px`;
+    } else {
+      this.el.style.width = "";
+      this.el.style.height = "";
+    }
+    this.view.measure();
+    host.scrollLeft = fx * this.el.offsetWidth - ax;
+    host.scrollTop = fy * this.el.offsetHeight - ay;
+    this.closeText();
+    this.draw();
+    this.o.onZoom?.(nz);
+  }
   destroy() {
     cancelAnimationFrame(this.raf);
+    clearTimeout(this.pressTimer);
+    document.removeEventListener("pointerdown", this.onDocDown, true);
+    this.closeMenu();
+    this.closePop();
     this.ro?.disconnect();
     this.view.destroy();
     this.el.remove();
@@ -249,7 +393,33 @@ export class CanvasEditor {
     });
     // no native drag of images / text selection inside the surface
     el.addEventListener("dragstart", (e) => e.preventDefault());
+    // right click: the context menu (long press on touch, see onDown)
+    el.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      if (this.core.gesture) return;
+      const b = this.hitAt(e.clientX, e.clientY);
+      if (b && !this.core.selection.includes(b.id)) this.core.select([b.id]);
+      if (!b && this.core.selection.length) this.core.setSelection([]);
+      this.draw();
+      this.openMenu(e.clientX, e.clientY);
+    });
+    // Ctrl / ⌘ + wheel (and a trackpad pinch) zooms about the pointer
+    el.addEventListener(
+      "wheel",
+      (e) => {
+        if (!(e.ctrlKey || e.metaKey)) return;
+        e.preventDefault();
+        this.setZoom(this.zoom * Math.exp(-e.deltaY / 240), [e.clientX, e.clientY]);
+      },
+      { passive: false },
+    );
+    document.addEventListener("pointerdown", this.onDocDown, true);
   }
+  private onDocDown = (e: PointerEvent) => {
+    const t = e.target as Node;
+    if (this.menu && !this.menu.contains(t)) this.closeMenu();
+    if (this.pop && !this.pop.contains(t) && !this.bar.contains(t)) this.closePop();
+  };
   private mods(e: PointerEvent | KeyboardEvent): Mods {
     return {
       shift: e.shiftKey,
@@ -281,7 +451,55 @@ export class CanvasEditor {
   private onDown(e: PointerEvent) {
     if (e.button !== 0 && e.pointerType === "mouse") return;
     const t = e.target as HTMLElement;
-    if (t.closest(".sle-bar") || t.closest(".sle-text")) return;
+    if (t.closest(".sle-bar") || t.closest(".sle-text") || t.closest(".sle-menu") || t.closest(".sle-pop")) return;
+    this.closeMenu();
+    this.closePop();
+    if (e.pointerType === "touch") {
+      this.touches.set(e.pointerId, [e.clientX, e.clientY]);
+      if (this.touches.size === 1) this.preSel = [...this.core.selection];
+      if (this.touches.size === 2) {
+        // a second finger: the gesture becomes a pinch (zoom + pan), the first finger's drag is undone
+        clearTimeout(this.pressTimer);
+        if (this.core.gesture) this.core.cancel();
+        this.core.setSelection(this.preSel);
+        this.lastTap = null;
+        this.pointer = null;
+        this.el.classList.remove("is-dragging");
+        const [a, b] = [...this.touches.values()];
+        const host = this.el.parentElement;
+        this.pinch = {
+          d0: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1,
+          z0: this.zoom,
+          c0: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2],
+          sx: host?.scrollLeft ?? 0,
+          sy: host?.scrollTop ?? 0,
+        };
+        try {
+          this.el.setPointerCapture(e.pointerId);
+        } catch {
+          /* synthetic */
+        }
+        e.preventDefault();
+        this.draw();
+        return;
+      }
+      // a long press without moving opens the context menu (an iPad has no right click)
+      const x0 = e.clientX;
+      const y0 = e.clientY;
+      clearTimeout(this.pressTimer);
+      this.pressTimer = window.setTimeout(() => {
+        const p = this.touches.get(e.pointerId);
+        if (!p || Math.hypot(p[0] - x0, p[1] - y0) > 10 || this.touches.size !== 1) return;
+        if (this.core.gesture) this.core.cancel();
+        this.pointer = null;
+        this.el.classList.remove("is-dragging");
+        this.lastTap = null;
+        const b = this.hitAt(x0, y0);
+        if (b && !this.core.selection.includes(b.id)) this.core.select([b.id]);
+        this.draw();
+        this.openMenu(x0, y0);
+      }, 520);
+    }
     if (this.textEd) this.closeText();
     this.el.focus({ preventScroll: true });
     const p = this.view.toSlide(e.clientX, e.clientY);
@@ -327,6 +545,23 @@ export class CanvasEditor {
     this.draw();
   }
   private onMove(e: PointerEvent) {
+    if (e.pointerType === "touch" && this.touches.has(e.pointerId)) {
+      this.touches.set(e.pointerId, [e.clientX, e.clientY]);
+      if (this.pinch && this.touches.size >= 2) {
+        const [a, b] = [...this.touches.values()];
+        const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+        const c: Pt = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+        const pz = this.pinch;
+        this.setZoom(pz.z0 * (d / pz.d0), pz.c0);
+        const host = this.el.parentElement;
+        if (host) {
+          host.scrollLeft += pz.c0[0] - c[0];
+          host.scrollTop += pz.c0[1] - c[1];
+          pz.c0 = c;
+        }
+        return;
+      }
+    }
     if (this.core.gesture && e.pointerId === this.pointer) {
       this.core.pointerMove(
         this.view.toSlide(e.clientX, e.clientY),
@@ -338,6 +573,14 @@ export class CanvasEditor {
       this.drawHover(this.hitAt(e.clientX, e.clientY));
   }
   private onUp(e: PointerEvent, cancelled = false) {
+    if (e.pointerType === "touch") {
+      this.touches.delete(e.pointerId);
+      clearTimeout(this.pressTimer);
+      if (this.pinch) {
+        if (this.touches.size < 2) this.pinch = null;
+        return;
+      }
+    }
     if (e.pointerId !== this.pointer) return;
     this.pointer = null;
     if (cancelled) this.core.cancel();
@@ -469,6 +712,8 @@ export class CanvasEditor {
     if (dragging) this.hover.hidden = true;
     this.drawBar();
     if (this.textEd) this.placeText();
+    if (this.zoom > 1) this.el.classList.add("is-zoomed");
+    else this.el.classList.remove("is-zoomed");
   }
   /** Reveal order badges (one per group and order), just outside each block's top-left corner. */
   private drawReveals() {
@@ -533,18 +778,86 @@ export class CanvasEditor {
   private drawGuides() {
     const g = this.guidesSvg;
     g.replaceChildren();
-    for (const gd of this.core.guides) {
+    const k = this.view.k;
+    const line = (x1: number, y1: number, x2: number, y2: number, cls: string) => {
       const l = document.createElementNS(SVGNS, "line");
-      const a: Pt = gd.axis === "x" ? [gd.at, gd.from] : [gd.from, gd.at];
-      const z: Pt = gd.axis === "x" ? [gd.at, gd.to] : [gd.to, gd.at];
-      const [x1, y1] = this.view.toView(a);
-      const [x2, y2] = this.view.toView(z);
       l.setAttribute("x1", String(x1));
       l.setAttribute("y1", String(y1));
       l.setAttribute("x2", String(x2));
       l.setAttribute("y2", String(y2));
-      l.setAttribute("class", `k-${gd.kind}`);
+      l.setAttribute("class", cls);
       g.append(l);
+    };
+    for (const gd of this.core.guides) {
+      if (gd.kind === "gap" && gd.segs) {
+        // equal spacing: a dimension line with end ticks in each gap, and its size in slide units
+        for (const [s0, s1] of gd.segs) {
+          const a: Pt = gd.axis === "x" ? [s0, gd.at] : [gd.at, s0];
+          const z: Pt = gd.axis === "x" ? [s1, gd.at] : [gd.at, s1];
+          const [x1, y1] = this.view.toView(a);
+          const [x2, y2] = this.view.toView(z);
+          line(x1, y1, x2, y2, "k-gap");
+          const t = 6;
+          if (gd.axis === "x") {
+            line(x1, y1 - t, x1, y1 + t, "k-gap");
+            line(x2, y2 - t, x2, y2 + t, "k-gap");
+          } else {
+            line(x1 - t, y1, x1 + t, y1, "k-gap");
+            line(x2 - t, y2, x2 + t, y2, "k-gap");
+          }
+          if (Math.abs(s1 - s0) * k > 28) {
+            const tx0 = document.createElementNS(SVGNS, "g");
+            tx0.setAttribute("class", "k-gap-label");
+            const cx = (x1 + x2) / 2;
+            const cy = (y1 + y2) / 2;
+            const label = String(gd.gap ?? Math.round(s1 - s0));
+            const r = document.createElementNS(SVGNS, "rect");
+            const wpx = 10 + label.length * 7;
+            r.setAttribute("x", String(cx - wpx / 2));
+            r.setAttribute("y", String(cy - 9));
+            r.setAttribute("width", String(wpx));
+            r.setAttribute("height", "18");
+            r.setAttribute("rx", "9");
+            const tt = document.createElementNS(SVGNS, "text");
+            tt.setAttribute("x", String(cx));
+            tt.setAttribute("y", String(cy + 4));
+            tt.setAttribute("text-anchor", "middle");
+            tt.textContent = label;
+            tx0.append(r, tt);
+            g.append(tx0);
+          }
+        }
+        continue;
+      }
+      const a: Pt = gd.axis === "x" ? [gd.at, gd.from] : [gd.from, gd.at];
+      const z: Pt = gd.axis === "x" ? [gd.at, gd.to] : [gd.to, gd.at];
+      const [x1, y1] = this.view.toView(a);
+      const [x2, y2] = this.view.toView(z);
+      line(x1, y1, x2, y2, `k-${gd.kind}`);
+    }
+    // a size readout next to the box while it is resized (W × H in slide units)
+    if (this.core.gesture === "resize") {
+      const box = this.core.selectionBox;
+      if (box) {
+        const [x, y] = this.view.toView([box.x + box.w / 2, box.y + box.h]);
+        const label = `${Math.round(box.w)} × ${Math.round(box.h)}`;
+        const gr = document.createElementNS(SVGNS, "g");
+        gr.setAttribute("class", "k-size-label");
+        const r = document.createElementNS(SVGNS, "rect");
+        const wpx = 16 + label.length * 7;
+        r.setAttribute("x", String(x - wpx / 2));
+        r.setAttribute("y", String(y + 12));
+        r.setAttribute("width", String(wpx));
+        r.setAttribute("height", "22");
+        r.setAttribute("rx", "6");
+        const tt = document.createElementNS(SVGNS, "text");
+        tt.setAttribute("x", String(x));
+        tt.setAttribute("y", String(y + 27));
+        tt.setAttribute("text-anchor", "middle");
+        tt.textContent = label;
+        gr.append(r, tt);
+        g.append(gr);
+      }
     }
   }
   private drawGrid(on: boolean) {
@@ -579,80 +892,478 @@ export class CanvasEditor {
     g.append(defs, r);
   }
 
-  // ---------------------------------------------------------------- context toolbar
+  // ---------------------------------------------------------------- context toolbar (the floating format bar)
+  private w(key: WKey): string {
+    return W[key][this.lang === "fr" ? 1 : 0];
+  }
+  private tbtn(
+    label: string,
+    ic: string,
+    run: (b: HTMLButtonElement) => void,
+    o: { text?: string; on?: boolean; danger?: boolean; cls?: string } = {},
+  ): HTMLButtonElement {
+    const b = mk(
+      "button",
+      `sle-tb${o.text ? " has-text" : ""}${o.on ? " on" : ""}${o.danger ? " is-danger" : ""}${o.cls ? ` ${o.cls}` : ""}`,
+    );
+    b.type = "button";
+    b.title = label;
+    b.setAttribute("aria-label", label);
+    if (o.on !== undefined) b.setAttribute("aria-pressed", String(!!o.on));
+    if (ic) b.append(icon(ic));
+    if (o.text) {
+      const sp = mk("span");
+      sp.textContent = o.text;
+      b.append(sp);
+    }
+    b.addEventListener("pointerdown", (e) => e.preventDefault()); // keep the text editor's focus and selection
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      run(b);
+    });
+    return b;
+  }
+  private sep(): HTMLElement {
+    return mk("span", "sle-tb-sep");
+  }
   private drawBar() {
     const sel = this.core.selected;
     const bar = this.bar;
-    if (!sel.length || this.core.gesture || this.textEd) {
+    if (!sel.length || this.core.gesture) {
       bar.hidden = true;
+      if (!sel.length) this.closePop();
       return;
     }
     bar.replaceChildren();
-    const btn = (
-      key: CanvasString,
-      ic: string,
-      cmd: EditorCommand | (() => void),
-      label = false,
-    ) => {
-      const b = mk("button", `sle-tb${label ? " has-label" : ""}`);
-      b.type = "button";
-      b.title = tx(key, this.lang);
-      b.setAttribute("aria-label", tx(key, this.lang));
-      b.append(icon(ic));
-      if (label) {
-        const sp = mk("span");
-        sp.textContent = tx(key, this.lang);
-        b.append(sp);
-      }
-      b.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (typeof cmd === "function") cmd();
-        else this.run(cmd);
-        this.focus();
-      });
-      bar.append(b);
-      return b;
-    };
     const one = this.core.single();
     const allLocked = sel.every((b) => b.frame.locked);
-    if (
-      one &&
-      (one.kind === "text" || one.kind === "callout") &&
-      !one.frame.locked
-    )
-      btn("editText", "edit", () => this.openText(one.id), true);
-    if (!allLocked) {
-      btn("duplicate", "duplicate", { k: "duplicate" });
-      if (
-        sel.length > 1 &&
-        !sel.every((b) => b.frame.group && b.frame.group === sel[0].frame.group)
-      )
-        btn("group", "group", { k: "group" });
-      else if (sel.some((b) => b.frame.group))
-        btn("ungroup", "ungroup", { k: "ungroup" });
-      btn("front", "front", { k: "z", how: "front" });
-      btn("back", "back", { k: "z", how: "back" });
+    const run = (c: EditorCommand) => () => {
+      this.run(c);
+      this.focus();
+    };
+    const isText = !!one && (one.kind === "text" || one.kind === "callout") && !one.frame.locked;
+    if (this.textEd && one && isText) {
+      // editing the words: inline marks on the selection, then Done
+      bar.append(
+        this.tbtn(this.w("bold"), "bold", () => this.markSelection("**")),
+        this.tbtn(this.w("italic"), "italic", () => this.markSelection("*")),
+        this.tbtn(this.w("list"), "list", () => this.toggleList()),
+        this.sep(),
+        this.tbtn(this.w("done"), "check", () => {
+          this.closeText();
+          this.focus();
+        }, { text: this.w("done"), cls: "is-primary" }),
+      );
+    } else {
+      if (isText && one) {
+        bar.append(
+          this.tbtn(tx("editText", this.lang), "edit", () => this.openText(one.id), { text: tx("editText", this.lang), cls: "has-label" }),
+        );
+        if (one.kind === "text") {
+          const cur = STYLES.find((x) => x[0] === one.style) ?? STYLES.find((x) => x[0] === "body")!;
+          bar.append(
+            this.tbtn(this.w("style"), "", (b) => this.stylePop(b, one.id), {
+              text: cur[this.lang === "fr" ? 2 : 1],
+              cls: "is-drop",
+            }),
+          );
+          const plain = (one.text[this.lang === "fr" ? "fr" : "en"] ?? one.text.en ?? "").trim();
+          const boldAll = /^\*\*[\s\S]*\*\*$/.test(plain);
+          bar.append(
+            this.tbtn(this.w("bold"), "bold", () => this.wrapAll(one.id, "**"), { on: boldAll }),
+            this.tbtn(this.w("italic"), "italic", () => this.wrapAll(one.id, "*"), { on: !boldAll && /^\*[^*][\s\S]*\*$/.test(plain) }),
+          );
+          const al = one.align ?? "left";
+          const nextAl = al === "left" ? "center" : al === "center" ? "right" : "left";
+          bar.append(
+            this.tbtn(this.w("align"), al === "left" ? "alignL" : al === "center" ? "alignC" : "alignR", () => {
+              this.core.updateBlock(one.id, { align: nextAl } as Partial<SlideBlock>);
+              this.focus();
+            }),
+          );
+          const sw = this.tbtn(this.w("color"), "", (b) => this.colorPop(b, one.id), { cls: "is-swatch" });
+          const dot = mk("i", "sle-sw");
+          dot.style.background = themeColor(one.color ?? null, this.view.theme, "text");
+          sw.append(dot);
+          bar.append(sw);
+        }
+        bar.append(this.sep());
+      }
+      if (!allLocked) {
+        bar.append(
+          this.tbtn(this.w("arrange"), "arrange", (b) => this.arrangePop(b)),
+          this.tbtn(tx("duplicate", this.lang), "duplicate", run({ k: "duplicate" })),
+        );
+        if (sel.length > 1 && !sel.every((b) => b.frame.group && b.frame.group === sel[0].frame.group))
+          bar.append(this.tbtn(tx("group", this.lang), "group", run({ k: "group" })));
+        else if (sel.some((b) => b.frame.group))
+          bar.append(this.tbtn(tx("ungroup", this.lang), "ungroup", run({ k: "ungroup" })));
+      }
+      bar.append(
+        this.tbtn(tx(allLocked ? "unlock" : "lock", this.lang), allLocked ? "unlock" : "lock", run({ k: "toggleLock" }), { on: allLocked }),
+      );
+      if (!allLocked) bar.append(this.tbtn(tx("delete", this.lang), "delete", run({ k: "delete" }), { danger: true }));
+      bar.append(
+        this.tbtn(this.w("more"), "more", (b) => {
+          const r = b.getBoundingClientRect();
+          this.openMenu(r.left, r.bottom + 6);
+        }),
+      );
     }
-    btn(allLocked ? "unlock" : "lock", allLocked ? "unlock" : "lock", {
-      k: "toggleLock",
-    });
-    if (!allLocked)
-      btn("delete", "delete", { k: "delete" }).classList.add("is-danger");
     bar.hidden = false;
-    // above the selection, else below it; kept inside the surface
-    const box = this.core.selectionBox!;
-    const k = this.view.k;
+    this.placeBar();
+  }
+  /** Above the selection, else below it; kept inside the visible part of the surface. */
+  private placeBar() {
+    const bar = this.bar;
+    const box = this.core.selectionBox;
+    if (!box || bar.hidden) return;
+    const host = this.el.parentElement;
+    const vx0 = host && this.zoom > 1 ? host.scrollLeft : 0;
+    const vy0 = host && this.zoom > 1 ? host.scrollTop : 0;
+    const vw = host && this.zoom > 1 ? host.clientWidth : this.el.clientWidth;
+    const vh = host && this.zoom > 1 ? host.clientHeight : this.el.clientHeight;
     const [x, y] = this.view.toView([box.x + box.w / 2, box.y]);
-    const W = this.el.clientWidth;
     const bw = bar.offsetWidth || 300;
     const bh = bar.offsetHeight || 52;
     let top = y - bh - 30;
-    if (top < 6) top = this.view.toView([0, box.y + box.h])[1] + 14;
-    top = Math.min(top, this.el.clientHeight - bh - 6);
-    const left = Math.max(6, Math.min(W - bw - 6, x - bw / 2));
+    if (top < vy0 + 6) top = this.view.toView([0, box.y + box.h])[1] + 18;
+    top = Math.min(top, vy0 + vh - bh - 6);
+    const left = Math.max(vx0 + 6, Math.min(vx0 + vw - bw - 6, x - bw / 2));
     bar.style.left = `${left}px`;
-    bar.style.top = `${Math.max(6, top)}px`;
-    void k;
+    bar.style.top = `${Math.max(vy0 + 6, top)}px`;
+  }
+
+  // ---------------------------------------------------------------- popovers of the format bar
+  private openPopAt(anchor: HTMLElement, body: HTMLElement, cls = "") {
+    this.closePop();
+    this.closeMenu();
+    const p = mk("div", `sle-pop${cls ? ` ${cls}` : ""}`);
+    p.append(body);
+    this.el.append(p);
+    this.pop = p;
+    const er = this.el.getBoundingClientRect();
+    const ar = anchor.getBoundingClientRect();
+    const pw = p.offsetWidth;
+    const ph = p.offsetHeight;
+    let left = ar.left - er.left;
+    let top = ar.bottom - er.top + 8;
+    left = Math.max(6, Math.min(this.el.clientWidth - pw - 6, left));
+    if (top + ph > this.el.clientHeight - 6) top = ar.top - er.top - ph - 8;
+    p.style.left = `${left}px`;
+    p.style.top = `${Math.max(6, top)}px`;
+    anchor.setAttribute("aria-expanded", "true");
+  }
+  closePop() {
+    this.pop?.remove();
+    this.pop = null;
+    this.bar.querySelectorAll('[aria-expanded="true"]').forEach((x) => x.setAttribute("aria-expanded", "false"));
+  }
+  private stylePop(anchor: HTMLElement, id: string) {
+    const b = this.core.canvas.blocks.find((x) => x.id === id);
+    if (!b || b.kind !== "text") return;
+    const list = mk("div", "sle-pop-list");
+    list.setAttribute("role", "listbox");
+    for (const [style, en, fr] of STYLES) {
+      const it = mk("button", `sle-pop-it${b.style === style ? " on" : ""}`);
+      it.type = "button";
+      it.setAttribute("role", "option");
+      it.setAttribute("aria-selected", String(b.style === style));
+      const css = typeCss(this.view.theme, style as never);
+      const sample = mk("span", "sle-pop-sample");
+      sample.textContent = this.lang === "fr" ? fr : en;
+      sample.style.fontWeight = css["font-weight"];
+      sample.style.fontSize = `${Math.max(13, Math.min(26, parseFloat(css["font-size"]) * 0.3))}px`;
+      if (css["text-transform"] === "uppercase") {
+        sample.style.textTransform = "uppercase";
+        sample.style.letterSpacing = "0.1em";
+      }
+      if (style === "formula" || style === "quote") sample.style.fontStyle = "italic";
+      const size = mk("small");
+      size.textContent = `${Math.round(parseFloat(css["font-size"]))}`;
+      it.append(sample, size);
+      it.addEventListener("click", () => {
+        this.core.updateBlock(id, { style } as Partial<SlideBlock>);
+        this.closePop();
+        this.focus();
+      });
+      list.append(it);
+    }
+    this.openPopAt(anchor, list, "is-styles");
+  }
+  private colorPop(anchor: HTMLElement, id: string) {
+    const b = this.core.canvas.blocks.find((x) => x.id === id);
+    if (!b || b.kind !== "text") return;
+    const grid = mk("div", "sle-pop-sw");
+    const names: Record<string, [string, string]> = {
+      text: ["Ink", "Encre"],
+      ink2: ["Body", "Texte"],
+      muted: ["Muted", "Discret"],
+      accent: ["Accent", "Accent"],
+      path: ["Path (magenta)", "Trajectoire (magenta)"],
+      sel: ["Selected (cyan)", "Sélection (cyan)"],
+      nav: ["Nav (green)", "Nav (vert)"],
+      key: ["Key (amber)", "Clé (ambre)"],
+      stop: ["Limit (red)", "Limite (rouge)"],
+    };
+    for (const tok of COLOR_TOKENS) {
+      const it = mk("button", `sle-sw-b${(b.color ?? "text") === tok ? " on" : ""}`);
+      it.type = "button";
+      const nm = names[tok][this.lang === "fr" ? 1 : 0];
+      it.title = nm;
+      it.setAttribute("aria-label", nm);
+      it.style.setProperty("--sw", themeColor(tok, this.view.theme, "text"));
+      it.addEventListener("click", () => {
+        this.core.updateBlock(id, (x) => {
+          if (x.kind !== "text") return x;
+          if (tok === "text") delete x.color;
+          else x.color = tok;
+          return x;
+        });
+        this.closePop();
+        this.focus();
+      });
+      grid.append(it);
+    }
+    const note = mk("p", "sle-pop-note");
+    note.textContent =
+      this.lang === "fr"
+        ? "Les couleurs suivent le thème du cours. Magenta = trajectoire, cyan = sélection, vert = nav, ambre = à retenir."
+        : "Colours follow the course theme. Magenta = path, cyan = selected, green = nav, amber = remember.";
+    const box = mk("div");
+    box.append(grid, note);
+    this.openPopAt(anchor, box, "is-colors");
+  }
+  /** Position: align (to each other, or the slide), spread evenly, same size, layer order. */
+  private arrangePop(anchor: HTMLElement) {
+    const sel = this.core.selected;
+    const n = new Set(sel.map((b) => b.frame.group ?? b.id)).size;
+    const box = mk("div", "sle-arrange");
+    const row = (title: string, items: [WKey, string, EditorCommand, boolean?][]) => {
+      const h3 = mk("div", "sle-pop-h");
+      h3.textContent = title;
+      const r = mk("div", "sle-pop-row");
+      for (const [key, ic, cmd, off] of items) {
+        const b = this.tbtn(this.w(key), ic, () => {
+          this.run(cmd);
+          this.closePop();
+          this.focus();
+        });
+        if (off) b.disabled = true;
+        r.append(b);
+      }
+      box.append(h3, r);
+    };
+    const to = n > 1 ? undefined : ("slide" as const);
+    row(n > 1 ? this.w("alignTo") : `${this.w("alignTo")} · ${this.w("toSlide").toLowerCase()}`, [
+      ["left", "aL", { k: "align", how: "left", to }],
+      ["hcenter", "aC", { k: "align", how: "hcenter", to }],
+      ["right", "aR", { k: "align", how: "right", to }],
+      ["top", "aT", { k: "align", how: "top", to }],
+      ["vcenter", "aM", { k: "align", how: "vcenter", to }],
+      ["bottom", "aB", { k: "align", how: "bottom", to }],
+    ]);
+    if (n > 1) {
+      row(this.w("spread"), [
+        ["distH", "dH", { k: "distribute", axis: "h" }, n < 3],
+        ["distV", "dV", { k: "distribute", axis: "v" }, n < 3],
+        ["sameW", "sameW", { k: "match", dim: "w" }],
+        ["sameH", "sameH", { k: "match", dim: "h" }],
+        ["center", "center", { k: "center" }],
+      ]);
+    } else row(this.w("center"), [["center", "center", { k: "center" }]]);
+    row(tx("front", this.lang), [
+      ["forward", "forward", { k: "z", how: "forward" }],
+      ["backward", "backward", { k: "z", how: "backward" }],
+    ]);
+    const fb = box.querySelector(".sle-pop-row:last-child");
+    if (fb) {
+      const f = this.tbtn(tx("front", this.lang), "front", () => {
+        this.run({ k: "z", how: "front" });
+        this.closePop();
+      });
+      const bk = this.tbtn(tx("back", this.lang), "back", () => {
+        this.run({ k: "z", how: "back" });
+        this.closePop();
+      });
+      fb.prepend(f);
+      fb.append(bk);
+    }
+    this.openPopAt(anchor, box, "is-arrange");
+  }
+
+  // ---------------------------------------------------------------- context menu (right click, long press)
+  /** The items for the current selection (or the empty slide). Exposed for tests and the host. */
+  menuItems(): CanvasMenuItem[] {
+    const sel = this.core.selected;
+    const fr = this.lang === "fr";
+    const k = (mac: string) => (isMac ? mac : mac.replace("⌘", "Ctrl+"));
+    const cmd = (c: EditorCommand) => () => {
+      this.run(c);
+      this.focus();
+    };
+    if (!sel.length) {
+      return [
+        { label: this.w("paste"), icon: "paste", kbd: k("⌘V"), run: cmd({ k: "paste" }) },
+        { label: this.w("selectAll"), icon: "multi", kbd: k("⌘A"), run: cmd({ k: "selectAll" }) },
+        {
+          label: this.core.multiSelect ? this.w("multiOff") : this.w("multi"),
+          icon: "multi",
+          run: () => this.setMultiSelect(!this.core.multiSelect),
+        },
+        ...(this.o.slideMenu?.() ?? []),
+      ];
+    }
+    const locked = sel.every((b) => b.frame.locked);
+    const one = this.core.single();
+    const grouped = sel.some((b) => b.frame.group);
+    const out: CanvasMenuItem[] = [];
+    if (one && (one.kind === "text" || one.kind === "callout") && !locked)
+      out.push({ label: tx("editText", this.lang), icon: "edit", kbd: "↵", run: () => this.openText(one.id) });
+    out.push(
+      { label: this.w("copy"), icon: "copy", kbd: k("⌘C"), run: cmd({ k: "copy" }) },
+      { label: this.w("cut"), icon: "delete", kbd: k("⌘X"), disabled: locked, run: cmd({ k: "cut" }) },
+      { label: this.w("paste"), icon: "paste", kbd: k("⌘V"), run: cmd({ k: "paste" }) },
+      { label: tx("duplicate", this.lang), icon: "duplicate", kbd: k("⌘D"), disabled: locked, run: cmd({ k: "duplicate" }) },
+    );
+    if (sel.length > 1 && !grouped) out.push({ label: tx("group", this.lang), icon: "group", kbd: k("⌘G"), run: cmd({ k: "group" }) });
+    if (grouped) out.push({ label: tx("ungroup", this.lang), icon: "ungroup", kbd: k("⇧⌘G"), run: cmd({ k: "ungroup" }) });
+    out.push(
+      { label: tx("front", this.lang), icon: "front", kbd: k("⌘]"), disabled: locked, run: cmd({ k: "z", how: "front" }) },
+      { label: tx("back", this.lang), icon: "back", kbd: k("⌘["), disabled: locked, run: cmd({ k: "z", how: "back" }) },
+      { label: this.w("center"), icon: "center", disabled: locked, run: cmd({ k: "center" }) },
+      {
+        label: tx(locked ? "unlock" : "lock", this.lang),
+        icon: locked ? "unlock" : "lock",
+        kbd: k("⌘L"),
+        run: cmd({ k: "toggleLock" }),
+      },
+      {
+        label: this.core.multiSelect ? this.w("multiOff") : this.w("multi"),
+        icon: "multi",
+        run: () => this.setMultiSelect(!this.core.multiSelect),
+      },
+      { label: tx("delete", this.lang), icon: "delete", kbd: fr ? "Suppr" : "Del", danger: true, disabled: locked, run: cmd({ k: "delete" }) },
+    );
+    return out;
+  }
+  openMenu(clientX: number, clientY: number) {
+    this.closeMenu();
+    this.closePop();
+    const items = this.menuItems();
+    if (!items.length) return;
+    const m = mk("div", "sle-menu");
+    m.setAttribute("role", "menu");
+    for (const it of items) {
+      const b = mk("button", `sle-menu-it${it.danger ? " is-danger" : ""}`);
+      b.type = "button";
+      b.setAttribute("role", "menuitem");
+      b.disabled = !!it.disabled;
+      if (it.icon && ICON[it.icon]) b.append(icon(it.icon));
+      else b.append(mk("span", "sle-ic"));
+      const l = mk("span", "sle-menu-l");
+      l.textContent = it.label;
+      b.append(l);
+      if (it.kbd) {
+        const kb = mk("kbd");
+        kb.textContent = it.kbd;
+        b.append(kb);
+      }
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.closeMenu();
+        it.run();
+        this.draw();
+      });
+      m.append(b);
+    }
+    m.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      const list = [...m.querySelectorAll<HTMLButtonElement>(".sle-menu-it:not(:disabled)")];
+      const i = list.indexOf(document.activeElement as HTMLButtonElement);
+      if (e.key === "Escape") {
+        e.preventDefault();
+        this.closeMenu();
+        this.focus();
+      } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const j = (i + (e.key === "ArrowDown" ? 1 : -1) + list.length) % list.length;
+        list[j]?.focus();
+      }
+    });
+    this.el.append(m);
+    this.menu = m;
+    const er = this.el.getBoundingClientRect();
+    const host = this.el.parentElement;
+    const vx0 = host && this.zoom > 1 ? host.scrollLeft : 0;
+    const vy0 = host && this.zoom > 1 ? host.scrollTop : 0;
+    const vw = host && this.zoom > 1 ? host.clientWidth : this.el.clientWidth;
+    const vh = host && this.zoom > 1 ? host.clientHeight : this.el.clientHeight;
+    let x = clientX - er.left;
+    let y = clientY - er.top;
+    x = Math.max(vx0 + 6, Math.min(vx0 + vw - m.offsetWidth - 6, x));
+    if (y + m.offsetHeight > vy0 + vh - 6) y = Math.max(vy0 + 6, y - m.offsetHeight);
+    m.style.left = `${x}px`;
+    m.style.top = `${y}px`;
+    requestAnimationFrame(() => m.querySelector<HTMLButtonElement>(".sle-menu-it:not(:disabled)")?.focus({ preventScroll: true }));
+  }
+  closeMenu() {
+    this.menu?.remove();
+    this.menu = null;
+  }
+
+  // ---------------------------------------------------------------- text marks
+  /** Bold / italic for the whole block (no text editor open): wrap or unwrap the words in **…** or *…*. */
+  private wrapAll(id: string, mark: "**" | "*") {
+    const b = this.core.canvas.blocks.find((x) => x.id === id);
+    if (!b || (b.kind !== "text" && b.kind !== "callout")) return;
+    const lang = this.lang === "fr" ? "fr" : "en";
+    const cur = (b.text[lang] ?? (lang === "fr" ? b.text.en : "") ?? "").trim();
+    const isBold = /^\*\*[\s\S]*\*\*$/.test(cur);
+    const isItal = !isBold && /^\*[^*][\s\S]*\*$/.test(cur);
+    let next: string;
+    if (mark === "**") next = isBold ? cur.slice(2, -2) : `**${cur}**`;
+    else next = isItal ? cur.slice(1, -1) : `*${cur}*`;
+    this.core.updateBlock(id, { text: { ...b.text, [lang]: next } } as Partial<SlideBlock>);
+    this.focus();
+  }
+  /** Bold / italic on the text editor's selection (or the word at the caret). */
+  private markSelection(mark: string) {
+    const ta = this.textEd?.ta;
+    if (!ta) return;
+    let { selectionStart: s0, selectionEnd: s1 } = ta;
+    const v = ta.value;
+    if (s0 === s1) {
+      while (s0 > 0 && /\S/.test(v[s0 - 1])) s0--;
+      while (s1 < v.length && /\S/.test(v[s1])) s1++;
+    }
+    const inner = v.slice(s0, s1);
+    const wrapped = v.slice(s0 - mark.length, s0) === mark && v.slice(s1, s1 + mark.length) === mark;
+    if (wrapped) {
+      ta.value = v.slice(0, s0 - mark.length) + inner + v.slice(s1 + mark.length);
+      ta.setSelectionRange(s0 - mark.length, s1 - mark.length);
+    } else {
+      ta.value = v.slice(0, s0) + mark + inner + mark + v.slice(s1);
+      ta.setSelectionRange(s0 + mark.length, s1 + mark.length);
+    }
+    ta.dispatchEvent(new Event("input"));
+    ta.focus({ preventScroll: true });
+  }
+  /** Bulleted list on the lines of the selection ("- " in front of each line, or off again). */
+  private toggleList() {
+    const ta = this.textEd?.ta;
+    if (!ta) return;
+    const v = ta.value;
+    const a = v.lastIndexOf("\n", ta.selectionStart - 1) + 1;
+    let z = v.indexOf("\n", ta.selectionEnd);
+    if (z < 0) z = v.length;
+    const lines = v.slice(a, z).split("\n");
+    const on = lines.every((l) => /^\s*[-•]\s/.test(l));
+    const next = lines.map((l) => (on ? l.replace(/^\s*[-•]\s/, "") : `- ${l}`)).join("\n");
+    ta.value = v.slice(0, a) + next + v.slice(z);
+    ta.setSelectionRange(a, a + next.length);
+    ta.dispatchEvent(new Event("input"));
+    ta.focus({ preventScroll: true });
   }
 
   // ---------------------------------------------------------------- in-place text editing
@@ -740,8 +1451,17 @@ export class CanvasEditor {
       letterSpacing: css["letter-spacing"],
       textAlign: b.kind === "text" ? (b.align ?? "left") : "left",
       textTransform: css["text-transform"],
+      background: this.view.theme.colors.bg,
+      color: this.view.theme.colors.text,
     });
     ta.classList.toggle("on-dark", this.view.theme.dark);
+    // the raw words can be longer than the rendered ones (a cover title split at its colon, list marks): the
+    // editor shrinks its type until they fit the frame, never under 12 px
+    let size = Math.max(12, fs);
+    for (let i = 0; i < 14 && ta.scrollHeight > ta.clientHeight + 2 && size > 12; i++) {
+      size = Math.max(12, size * 0.88);
+      ta.style.fontSize = `${size}px`;
+    }
   }
   closeText() {
     const ed = this.textEd;

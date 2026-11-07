@@ -1,4 +1,5 @@
 // Open-format exports so flights and plans can be used in EFBs and other simulators.
+import { BRAND } from '../brand';
 import type { FlightPlan, Waypoint } from '../nav/flightplan';
 import type { Sample } from '../sim/recorder';
 import { findFix } from '../nav/data';
@@ -79,8 +80,8 @@ ${items}
 export function routeGpx(fp: FlightPlan): string {
   const wps = plan(fp);
   return `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="IFR Trainer" xmlns="http://www.topografix.com/GPX/1/1">
- <rte><name>IFR Trainer route</name>
+<gpx version="1.1" creator="${BRAND.name}" xmlns="http://www.topografix.com/GPX/1/1">
+ <rte><name>${BRAND.name} route</name>
 ${wps.map((w) => `  <rtept lat="${R(w).lat.toFixed(6)}" lon="${R(w).lon.toFixed(6)}"><name>${esc(w.ident)}</name>${w.altMin ? `<ele>${(w.altMin * 0.3048).toFixed(0)}</ele>` : ''}</rtept>`).join('\n')}
  </rte>
 </gpx>
@@ -88,11 +89,11 @@ ${wps.map((w) => `  <rtept lat="${R(w).lat.toFixed(6)}" lon="${R(w).lon.toFixed(
 }
 
 /** GPX track of the recorded flight (CloudAhoy, ForeFlight, Google Earth…). */
-export function trackGpx(samples: Sample[], startIso: string, name = 'IFR Trainer flight'): string {
+export function trackGpx(samples: Sample[], startIso: string, name = `${BRAND.name} flight`): string {
   const t0 = Date.parse(startIso);
   const s0 = samples[0]?.t ?? 0;
   return `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="IFR Trainer" xmlns="http://www.topografix.com/GPX/1/1">
+<gpx version="1.1" creator="${BRAND.name}" xmlns="http://www.topografix.com/GPX/1/1">
  <trk><name>${esc(name)}</name><trkseg>
 ${samples.map((s) => `  <trkpt lat="${R(s).lat.toFixed(6)}" lon="${R(s).lon.toFixed(6)}"><ele>${(s.alt * 0.3048).toFixed(1)}</ele><time>${new Date(t0 + (s.t - s0) * 1000).toISOString()}</time><course>${s.hdg.toFixed(0)}</course></trkpt>`).join('\n')}
  </trkseg></trk>
@@ -100,7 +101,7 @@ ${samples.map((s) => `  <trkpt lat="${R(s).lat.toFixed(6)}" lon="${R(s).lon.toFi
 `;
 }
 
-export function trackKml(samples: Sample[], name = 'IFR Trainer flight'): string {
+export function trackKml(samples: Sample[], name = `${BRAND.name} flight`): string {
   const coords = samples.map((s) => `${R(s).lon.toFixed(6)},${R(s).lat.toFixed(6)},${(s.alt * 0.3048).toFixed(1)}`).join(' ');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${esc(name)}</name>

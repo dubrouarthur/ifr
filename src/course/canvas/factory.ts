@@ -120,13 +120,18 @@ export function textDraft(
       display: 264,
       title: 168,
       subtitle: 120,
-      heading: 96,
+      lead: 120,
+      heading: 64,
       body: 216,
-      caption: 72,
-      label: 48,
-      number: 192,
-      quote: 192,
+      caption: 88,
+      small: 88,
+      label: 32,
+      eyebrow: 32,
+      foot: 32,
+      number: 176,
+      quote: 200,
       mono: 120,
+      formula: 120,
     }[style];
   return { kind: "text", style, text, frame: { w, h: hh } };
 }
