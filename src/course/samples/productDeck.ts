@@ -1,9 +1,13 @@
-// The first-run intro's deck (ui/intro.ts): five slides about the product, drawn by our slide renderer on the
-// design-system frames, FR and EN. It shows what a school gets — a cover, a live instrument with callouts, a
-// formula worked line by line, a question on the slide — then the simulator that flies the lesson. No claims
-// beyond what the app does.
-import { BRAND } from "../../brand";
-import { G, INST, L, MARK, SHAPE, T, layoutCanvas } from "../canvas/layouts";
+// The start page's slide (ui/intro.ts): one real course slide, drawn by our slide renderer on the design-system
+// frames, FR and EN, in the light classroom theme. It shows what an instructor builds and teaches, for a PPL student
+// first: the simulator's own airspeed indicator on the slide, its arcs called out (C172S POH section 2). The page
+// itself is the cover (its headline would repeat a cover slide's title), so the slide carries no eyebrow, label or
+// source line: it is drawn at hero size, about a third of the 1920 canvas, and every text on it stays at or above
+// HERO_MIN_CSS_PX there (tests/slide-readability.test.ts checks it at HERO_MIN_SCALE). No claims beyond what the
+// app does.
+import { INST, L, MARK, SHAPE, T } from "../canvas/layouts";
+import { onInstrument } from "./kit";
+import { STEAM_GAUGE_LAYOUT } from "../../avionics/steam";
 import type { L10n, SlideBlock, SlideCanvas } from "../types";
 
 export interface ProductSlide {
@@ -12,264 +16,92 @@ export interface ProductSlide {
   slide: SlideCanvas;
 }
 
+/** The smallest scale the start page draws its slide at, with a margin (1280 × 720: a 672 px wide screen for the
+ *  1920 canvas, 0.35; 1024 × 768 and an iPad mini in portrait: about 640 px, 0.33). */
+export const HERO_MIN_SCALE = 0.32;
+/** The smallest text, in CSS px, the slide may show at that scale. */
+export const HERO_MIN_CSS_PX = 12;
+/** …so the smallest logical size a text of the slide may have. */
+export const HERO_MIN_TEXT = HERO_MIN_CSS_PX / HERO_MIN_SCALE;
+
 const canvas = (
   blocks: SlideBlock[],
   layout: SlideCanvas["layout"],
 ): SlideCanvas => ({ size: { w: 1920, h: 1080 }, grid: 8, layout, blocks });
 const rule = (x: number, y: number, w: number): SlideBlock =>
   SHAPE("line", x, y - 8, w, 16, { stroke: "line", strokeW: 2 });
-/** an archetype with its own eyebrow and title replaced (the template's header: eyebrow at 96, title at 136) */
-function retitle(c: SlideCanvas, eyebrow: L10n, title?: L10n): SlideCanvas {
-  let e = false;
-  let t = false;
-  return {
-    ...c,
-    blocks: c.blocks.map((b) => {
-      if (b.kind !== "text") return b;
-      if (
-        !e &&
-        (b.style === "eyebrow" || b.style === "label") &&
-        b.frame.y <= 128
-      ) {
-        e = true;
-        return { ...b, text: eyebrow };
-      }
-      if (title && !t && b.style === "title" && b.frame.y <= 176) {
-        t = true;
-        return { ...b, text: title };
-      }
-      return b;
-    }),
-  };
+
+/** a point of the ASI drawn at (x, y, s, s), from the dial's centre in radii (dx right, dy down) */
+function asiPoint(x: number, y: number, s: number, dx: number, dy: number) {
+  const g = STEAM_GAUGE_LAYOUT.asi;
+  return onInstrument({ kind: "gauge", gauge: "asi" }, x, y, s, s, [
+    g.cx + dx * g.r,
+    g.cy + dy * g.r,
+  ]);
 }
 
 export function productDeck(): ProductSlide[] {
-  const HSI = { kind: "gauge" as const, gauge: "hsi" as const };
-  const out: ProductSlide[] = [];
-
-  // 1 · cover
-  out.push({
-    id: "p-cover",
-    title: L("From the classroom to the cockpit", "De la salle au cockpit"),
-    slide: canvas(
-      [
-        T(
-          "eyebrow",
-          {
-            en: `${BRAND.name} · Aviation education`,
-            fr: `${BRAND.name} · Éducation aéronautique`,
-          },
-          G.left,
-          G.eyebrowY,
-          816,
-          32,
-        ),
-        T(
-          "display",
-          L(
-            "One lesson, from the classroom to the cockpit",
-            "Une leçon, de la salle au cockpit",
-          ),
-          G.left,
-          232,
-          864,
-          408,
-          { valign: "bottom" },
-        ),
-        T(
-          "lead",
-          L(
-            "Build the course with live instruments, teach it in class, then fly it in the built-in IFR simulator.",
-            "Créez le cours avec instruments en direct, enseignez-le en salle, puis volez-le dans le simulateur IFR intégré.",
-          ),
-          G.left,
-          672,
-          816,
-          176,
-        ),
-        T(
-          "foot",
-          L(
-            "Holding · VOR · Maths for IFR and VFR · your own courses",
-            "Attentes · VOR · Maths IFR et VFR · vos propres cours",
-          ),
-          G.left,
-          912,
-          840,
-          32,
-        ),
-        {
-          id: "hold",
-          frame: { x: 984, y: 96, w: 816, h: 888, z: 1 },
-          kind: "diagram",
-          d: { kind: "hold", inbound: 270, turn: "R", fix: "ARD", quiet: true },
-          alt: L("A holding pattern at ARD", "Une attente à ARD"),
-        },
-      ],
-      "cover",
-    ),
-  });
-
-  // 2 · the real instrument, live, with numbered callouts
-  out.push({
-    id: "p-inst",
-    title: L("The real instrument, live", "Le vrai instrument, en direct"),
-    slide: canvas(
-      [
-        INST(HSI, L("HSI", "HSI"), G.left, 120, 840, 840),
-        T(
-          "eyebrow",
-          L("Live instruments", "Instruments en direct"),
-          1128,
-          120,
-          672,
-          32,
-        ),
-        T(
-          "title",
-          L("The instrument is on the slide", "L’instrument est dans la diapo"),
-          1128,
-          160,
-          672,
-          168,
-        ),
-        ...(
-          [
-            [
-              L("The cockpit’s own gauges", "Les instruments du cockpit"),
-              L(
-                "Drawn by the simulator, not a picture",
-                "Dessinés par le simulateur, pas une image",
-              ),
-            ],
-            [
-              L("Numbered callouts", "Des repères numérotés"),
-              L(
-                "Revealed one at a time, in class",
-                "Révélés un par un, en classe",
-              ),
-            ],
-            [
-              L("Your turn", "À vous"),
-              L(
-                "The student sets it on the slide",
-                "L’élève le règle dans la diapo",
-              ),
-            ],
-          ] as [L10n, L10n][]
-        ).flatMap(([a, b], i): SlideBlock[] => {
-          const y = 392 + i * 176;
-          return [
-            rule(1128, y, 672),
-            MARK(i + 1, 1156, y + 52, { size: 56 }),
-            T("heading", a, 1208, y + 24, 592, 56),
-            T("body", b, 1208, y + 88, 592, 80, { color: "ink2" }),
-          ];
-        }),
-      ],
-      "instrumentNotes",
-    ),
-  });
-
-  // 3 · a formula worked line by line (the template's 1-in-60 derivation, real numbers)
-  out.push({
-    id: "p-formula",
-    title: L(
-      "Calculations, worked line by line",
-      "Des calculs, ligne par ligne",
-    ),
-    slide: retitle(
-      layoutCanvas("formula"),
-      L("Generated exercises", "Exercices générés"),
-    ),
-  });
-
-  // 4 · a question on the slide
-  out.push({
-    id: "p-quiz",
-    title: L("A question on the slide", "Une question dans la diapo"),
-    slide: retitle(
-      layoutCanvas("quiz"),
-      L("Check understanding", "Vérifier la compréhension"),
-    ),
-  });
-
-  // 5 · then the simulator flies it
-  const pillars: [L10n, L10n][] = [
-    [
-      L("Every approach", "Toutes les approches"),
-      L(
-        "ILS, LOC, VOR, NDB, RNAV, circling",
-        "ILS, LOC, VOR, NDB, RNAV, indirecte",
-      ),
-    ],
-    [
-      L("Holds and arcs", "Attentes et arcs"),
-      L(
-        "Entries, timing, wind, ATC clearances",
-        "Entrées, chrono, vent, clairances ATC",
-      ),
-    ],
-    [
-      L("A graded debrief", "Un débrief noté"),
-      L(
-        "Each step scored against its standard",
-        "Chaque étape notée selon son critère",
-      ),
-    ],
+  const [x, y, s] = [120, 120, 840];
+  // the arcs, and where each mark sits on the dial: on the arc itself (radius 0.94), clear of the numerals and the
+  // needle (white near 60 kt, green near 120, the red line's mark just short of 163 so the line stays visible)
+  const rows: { at: [number, number]; head: L10n; line: L10n }[] = [
+    {
+      at: [0.83, -0.44],
+      head: L("White arc", "Arc blanc"),
+      line: L("Flaps extended: 40–85 kt", "Volets sortis : 40 à 85 kt"),
+    },
+    {
+      at: [0, 0.94],
+      head: L("Green arc", "Arc vert"),
+      line: L("Normal use: 48–129 kt", "Usage normal : 48 à 129 kt"),
+    },
+    {
+      at: [-0.883, 0.32],
+      head: L("Red line", "Trait rouge"),
+      line: L("Never exceed: 163 kt", "Ne jamais dépasser : 163 kt"),
+    },
   ];
-  out.push({
-    id: "p-fly",
-    title: L("Then they fly it", "Puis l’élève le vole"),
-    slide: canvas(
-      [
-        T(
-          "eyebrow",
-          L("The simulator", "Le simulateur"),
-          G.left,
-          G.eyebrowY,
-          1392,
-          32,
-        ),
-        T(
-          "title",
-          L("Then they fly it", "Puis l’élève le vole"),
-          G.left,
-          G.titleY,
-          1392,
-          152,
-        ),
-        T(
-          "lead",
-          L(
-            "The built-in IFR simulator flies every course, and also works on its own, in the browser.",
-            "Le simulateur IFR intégré fait voler chaque cours et s’utilise aussi seul, dans le navigateur.",
-          ),
-          G.left,
-          264,
-          1392,
-          112,
-        ),
-        ...pillars.flatMap(([a, b], i): SlideBlock[] => {
-          const x = G.left + i * 576;
-          return [
-            rule(x, 480, 528),
-            T(
-              "number",
-              L(String(i + 1).padStart(2, "0"), String(i + 1).padStart(2, "0")),
-              x,
-              512,
-              528,
-              184,
-              { color: "accent" },
+  return [
+    {
+      id: "p-asi",
+      title: L("The airspeed indicator’s arcs", "Les arcs de l’anémomètre"),
+      slide: canvas(
+        [
+          INST(
+            { kind: "gauge", gauge: "asi" },
+            L(
+              "C172S airspeed indicator: white arc 40–85, green 48–129, yellow 129–163, red line 163 KIAS",
+              "Anémomètre du C172S : arc blanc 40–85, vert 48–129, jaune 129–163, trait rouge 163 KIAS",
             ),
-            T("heading", a, x, 720, 528, 64),
-            T("body", b, x, 792, 528, 120, { color: "ink2" }),
-          ];
-        }),
-      ],
-      "recap",
-    ),
-  });
-  return out;
+            x,
+            y,
+            s,
+            s,
+          ),
+          ...rows.map((r, i) => {
+            const p = asiPoint(x, y, s, r.at[0], r.at[1]);
+            return MARK(i + 1, p[0], p[1], { size: 80 });
+          }),
+          T(
+            "title",
+            L("The airspeed indicator’s arcs", "Les arcs de l’anémomètre"),
+            1128,
+            136,
+            672,
+            168,
+          ),
+          ...rows.flatMap((r, i): SlideBlock[] => {
+            const ry = 384 + i * 192;
+            return [
+              rule(1128, ry, 672),
+              MARK(i + 1, 1168, ry + 64, { size: 80 }),
+              T("heading", r.head, 1240, ry + 32, 560, 56),
+              T("lead", r.line, 1240, ry + 96, 560, 64, { color: "ink2" }),
+            ];
+          }),
+        ],
+        "instrumentNotes",
+      ),
+    },
+  ];
 }

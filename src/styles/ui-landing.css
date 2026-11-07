@@ -1,0 +1,522 @@
+/* ------------------------------------------------------------------ start page (src/ui/intro.ts)
+   "Story": one reading order, one object, one action. Light chart-room paper, one accent blue. A strict grid on a 1440 × 900 artboard (--u = 1 px there): 80 side margin, 12 columns,
+   40 gutter. The text sits on columns 1–4, the screen on 5–12 (840 × 472.5 at 16:9); the h1's cap top sits on the
+   screen's top edge and the CTA's bottom on its bottom edge, so the two columns read as one block. The screen is
+   one course slide, a still picture (no autoplay, no tabs). Small text has px floors. Tokens: the classroom slide
+   theme (SPEC slides v2 §4). */
+.intro {
+  --in-bg: #fbfaf7;
+  --in-raise: #f1f0eb;
+  --in-rule: #e2e0d9;
+  --in-rule-strong: #c9c6bd;
+  --in-ink: #14181f;
+  --in-ink-2: #353c47;
+  --in-mute: #5d6671;
+  --in-accent: #1d5fd1;
+  --in-accent-hover: #174fb0;
+  --in-accent-ink: #ffffff;
+  --in-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --u: min(calc(100vw / 1440), calc(100dvh / 900));
+  --m: calc(80 * var(--u));
+  --g: calc(40 * var(--u));
+  --screen-h: calc(472.5 * var(--u));
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  overflow: hidden;
+  background: var(--in-bg);
+  color: var(--in-ink);
+  color-scheme: light;
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  font-feature-settings:
+    "cv05" 1,
+    "ss03" 1;
+  -webkit-font-smoothing: antialiased;
+  opacity: 0;
+  transition: opacity 0.24s var(--in-ease);
+}
+.intro.open {
+  opacity: 1;
+}
+.intro.closing {
+  opacity: 0;
+  pointer-events: none;
+}
+.intro:focus {
+  outline: none;
+}
+.intro *,
+.intro *::before,
+.intro *::after {
+  box-sizing: border-box;
+}
+/* resets at zero specificity: every component rule below wins over them */
+:where(.intro) :where(h1, p) {
+  margin: 0;
+}
+:where(.intro) :where(button) {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.intro .num {
+  font-feature-settings:
+    "tnum" 1,
+    "case" 1,
+    "cv05" 1;
+}
+.intro :is(button, input):focus-visible {
+  outline: 2px solid var(--in-accent);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* the page: the artboard centred, extra width becomes side margin */
+.intro-page {
+  position: absolute;
+  inset: 0;
+  width: calc(1440 * var(--u));
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 0 var(--m);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+/* ------------------------------------------------------------------ top bar: the mark and the name · FR / EN */
+.intro-top {
+  grid-row: 1;
+  height: calc(88 * var(--u));
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.intro-brand {
+  display: flex;
+  align-items: center;
+  gap: calc(12 * var(--u));
+  color: var(--in-ink);
+}
+.intro-mark {
+  display: inline-flex;
+}
+.intro-mark svg {
+  width: max(24px, calc(28 * var(--u)));
+  height: max(24px, calc(28 * var(--u)));
+}
+.intro-brand b {
+  font-family: "Inter Display", "Inter", sans-serif;
+  font-weight: 600;
+  font-size: max(17px, calc(20 * var(--u)));
+  letter-spacing: -0.01em;
+}
+.intro-lang {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--in-rule);
+  border-radius: 9px;
+}
+.intro-lang button {
+  min-width: calc(40 * var(--u));
+  height: max(30px, calc(30 * var(--u)));
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: max(12px, calc(13 * var(--u)));
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--in-mute);
+  transition:
+    background 0.15s var(--in-ease),
+    color 0.15s var(--in-ease);
+}
+.intro-lang button:hover {
+  color: var(--in-ink);
+}
+.intro-lang button[aria-pressed="true"] {
+  background: var(--in-raise);
+  color: var(--in-ink);
+}
+
+/* ------------------------------------------------------------------ hero: text on columns 1–4, screen on 5–12 */
+.intro-hero {
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--g);
+  align-content: center;
+  padding-bottom: calc(8 * var(--u));
+  min-height: 0;
+}
+.intro-txt {
+  grid-column: 1 / span 4;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  min-height: var(--screen-h);
+}
+.intro-txt h1 {
+  margin-top: calc(-6 * var(--u));
+  font-family: "Inter Display", "Inter", sans-serif;
+  font-weight: 600;
+  font-size: max(40px, calc(58 * var(--u)));
+  line-height: 1.03;
+  letter-spacing: -0.032em;
+  text-wrap: balance;
+  color: var(--in-ink);
+}
+.intro-lead {
+  margin-top: calc(24 * var(--u));
+  font-size: max(16px, calc(19 * var(--u)));
+  line-height: 1.5;
+  color: var(--in-ink-2);
+  text-wrap: balance;
+}
+/* who it is for: the people, then the programmes, both at body contrast */
+.intro-who {
+  margin-top: calc(24 * var(--u));
+  padding-top: calc(20 * var(--u));
+  border-top: 1px solid var(--in-rule);
+  font-size: max(14px, calc(15.5 * var(--u)));
+  line-height: 1.45;
+  text-wrap: balance;
+}
+.intro-who b {
+  display: block;
+  font-weight: 600;
+  color: var(--in-ink);
+}
+.intro-who span {
+  display: block;
+  margin-top: calc(4 * var(--u));
+  color: var(--in-ink-2);
+  letter-spacing: 0.01em;
+}
+/* one filled button, one text link */
+.intro-acts {
+  margin-top: auto;
+  padding-top: calc(32 * var(--u));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: calc(12 * var(--u));
+}
+.intro-go,
+.intro-more {
+  height: max(44px, calc(52 * var(--u)));
+  display: inline-flex;
+  align-items: center;
+  border-radius: 10px;
+  font-size: max(15px, calc(16.5 * var(--u)));
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+}
+.intro-go {
+  gap: calc(10 * var(--u));
+  padding: 0 calc(24 * var(--u));
+  background: var(--in-accent);
+  color: var(--in-accent-ink);
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.18) inset,
+    0 1px 2px rgb(20 24 31 / 0.12);
+  transition: background 0.15s var(--in-ease);
+}
+.intro-go:hover {
+  background: var(--in-accent-hover);
+}
+.intro-go svg {
+  width: max(16px, calc(18 * var(--u)));
+  height: max(16px, calc(18 * var(--u)));
+  transition: transform 0.15s var(--in-ease);
+}
+.intro-go:hover svg {
+  transform: translateX(2px);
+}
+.intro-more {
+  gap: calc(6 * var(--u));
+  padding: 0 calc(6 * var(--u));
+  color: var(--in-accent);
+}
+.intro-more:hover > span:first-child {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1.5px;
+}
+.intro-chev {
+  display: inline-flex;
+}
+.intro-chev svg {
+  width: max(14px, calc(16 * var(--u)));
+  height: max(14px, calc(16 * var(--u)));
+}
+
+/* ------------------------------------------------------------------ the screen: one object, one course slide */
+.intro-show {
+  grid-column: 5 / span 8;
+  min-width: 0;
+  /* the text column is as tall as the screen; if a language makes it taller, the screen centres on it */
+  align-self: center;
+}
+.intro-screen {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--in-bg);
+  box-shadow:
+    0 0 0 1px var(--in-rule),
+    0 1px 2px rgb(20 24 31 / 0.05),
+    0 18px 40px -18px rgb(20 24 31 / 0.22);
+}
+/* the slide fades in once drawn (never a half-drawn frame) */
+.intro-stage {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.32s var(--in-ease);
+}
+.intro.ready .intro-stage {
+  opacity: 1;
+}
+
+/* ------------------------------------------------------------------ footer */
+.intro-foot {
+  grid-row: 3;
+  height: calc(64 * var(--u));
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 24px;
+  border-top: 1px solid var(--in-rule);
+  font-size: max(12.5px, calc(13.5 * var(--u)));
+  color: var(--in-mute);
+}
+.intro-skip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  color: var(--in-ink-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.intro-skip input {
+  appearance: none;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid var(--in-rule-strong);
+  border-radius: 4px;
+  background: var(--in-bg);
+  cursor: pointer;
+}
+.intro-skip input:checked {
+  background: var(--in-ink);
+  border-color: var(--in-ink);
+}
+.intro-skip input:checked::after {
+  content: "";
+  width: 9px;
+  height: 5px;
+  border: 2px solid #fff;
+  border-top: 0;
+  border-right: 0;
+  transform: translateY(-1px) rotate(-45deg);
+}
+/* the sources sit on the right, next to the FSTD note (never centred between the two: that drifts with the
+   language); each authority's group never breaks inside (Part-FCL stays whole) */
+.intro-refs {
+  margin-left: auto;
+}
+.intro-refs b {
+  font-weight: 500;
+  color: var(--in-ink-2);
+  white-space: nowrap;
+}
+.intro-note {
+  white-space: nowrap;
+  padding-left: 24px;
+  border-left: 1px solid var(--in-rule);
+}
+
+/* ------------------------------------------------------------------ motion: a short staggered rise and the slide's
+   fade-in. Nothing rotates, bounces or zooms. */
+@media (prefers-reduced-motion: no-preference) {
+  .intro.open
+    :is(.intro-txt h1, .intro-lead, .intro-who, .intro-show, .intro-acts) {
+    animation: intro-rise 0.42s var(--in-ease) both;
+  }
+  .intro.open .intro-lead {
+    animation-delay: 0.06s;
+  }
+  .intro.open :is(.intro-who, .intro-show) {
+    animation-delay: 0.12s;
+  }
+  .intro.open .intro-acts {
+    animation-delay: 0.18s;
+  }
+}
+@keyframes intro-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .intro,
+  .intro-stage,
+  .intro-go svg {
+    transition: none;
+  }
+}
+
+/* touch: every control at least 44 px */
+@media (pointer: coarse) {
+  .intro-lang button {
+    height: 44px;
+    min-width: 48px;
+  }
+  .intro-go,
+  .intro-more {
+    min-height: 48px;
+  }
+  .intro-skip {
+    min-height: 44px;
+  }
+}
+
+/* ------------------------------------------------------------------ tablet landscape, aspect under 3:2 (iPad 1180 × 820) */
+@media (max-aspect-ratio: 3/2) and (min-aspect-ratio: 1/1) and (min-width: 761px) {
+  .intro {
+    --u: min(calc(100vw / 1280), calc(100dvh / 900));
+    /* 56 margin, 32 gutter: a 68 column; text 368 wide, the screen 768 × 432 */
+    --m: calc(56 * var(--u));
+    --g: calc(32 * var(--u));
+    --screen-h: calc(432 * var(--u));
+  }
+  .intro-page {
+    width: calc(1280 * var(--u));
+  }
+  .intro-txt h1 {
+    font-size: max(40px, calc(52 * var(--u)));
+  }
+  .intro-lead,
+  .intro-who {
+    margin-top: calc(20 * var(--u));
+  }
+  .intro-acts {
+    padding-top: calc(24 * var(--u));
+  }
+}
+
+/* a narrow tablet (1024 × 768): tighter margins and gutters, so "Commencer" and its link share one line and the
+   slide stays at least a third of its size */
+@media (max-aspect-ratio: 3/2) and (min-aspect-ratio: 1/1) and (min-width: 761px) and (max-width: 1100px) {
+  .intro {
+    /* 32 margin, 24 gutter on the 1280 artboard: the screen is 802.7 × 451.5 */
+    --m: calc(32 * var(--u));
+    --g: calc(24 * var(--u));
+    --screen-h: calc(451.5 * var(--u));
+  }
+  .intro-go {
+    padding: 0 16px;
+  }
+  .intro-more {
+    padding: 0 2px;
+  }
+}
+
+/* ------------------------------------------------------------------ portrait (iPad 820 × 1180) and narrow: one column */
+@media (max-aspect-ratio: 1/1), (max-width: 760px) {
+  .intro {
+    --u: min(calc(100vw / 820), calc(100dvh / 1180));
+    --m: calc(56 * var(--u));
+  }
+  .intro-page {
+    width: 100%;
+    max-width: calc(820 * var(--u));
+    min-width: 0;
+    padding: 0 max(16px, var(--m));
+  }
+  .intro-hero {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: calc(44 * var(--u));
+    padding: calc(16 * var(--u)) 0 calc(28 * var(--u));
+  }
+  .intro-txt,
+  .intro-show {
+    grid-column: 1;
+  }
+  .intro-txt {
+    max-width: calc(600 * var(--u));
+    min-height: 0;
+  }
+  .intro-txt h1 {
+    margin-top: 0;
+    font-size: max(36px, calc(58 * var(--u)));
+  }
+  .intro-acts {
+    margin-top: 0;
+    padding-top: calc(32 * var(--u));
+  }
+  /* the sources take their own line, above the skip box and the FSTD note */
+  .intro-foot {
+    height: auto;
+    flex-wrap: wrap;
+    padding: 12px 0 14px;
+    row-gap: 4px;
+  }
+  .intro-refs {
+    flex-basis: 100%;
+    order: -1;
+    margin-left: 0;
+  }
+  .intro-note {
+    padding-left: 0;
+    border-left: 0;
+  }
+}
+
+/* phones: the page scrolls; the slide would be drawn at a fifth of its size (5 px text), so the phone shows the
+   words and the actions only */
+@media (max-width: 560px) {
+  .intro {
+    overflow-y: auto;
+  }
+  .intro-page {
+    position: relative;
+    inset: auto;
+    min-height: 100dvh;
+  }
+  .intro-hero {
+    padding: 24px 0 32px;
+  }
+  .intro-txt h1 {
+    font-size: 36px;
+  }
+  .intro-show {
+    display: none;
+  }
+  .intro-note {
+    white-space: normal;
+  }
+}

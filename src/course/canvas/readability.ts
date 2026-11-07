@@ -62,6 +62,9 @@ export interface ReadOptions {
   /** build the diagrams and measure their SVG (needs a DOM; off for a cheap check) */
   diagrams?: boolean;
   calcProblem?: (stepId: string) => CalcProblem | null;
+  /** the smallest logical size a text may have (default MIN_TEXT_PX: a projected slide; a slide drawn smaller, such
+   *  as the start page's, asks for more) */
+  minPx?: number;
 }
 /** Kinds that fail the guard (the others are advisories). */
 export const READ_FAILS: ReadonlySet<ReadIssueKind> = new Set<ReadIssueKind>([
@@ -127,7 +130,13 @@ export function textBlockFit(
   const e = estimateText(input, k);
   const overflow =
     k <= min + 1e-6 && (e.height > b.frame.h + 1 || e.widest > b.frame.w + 1);
-  return { size: st.size, px: st.size * k, overflow, k, height: Math.min(b.frame.h, e.height) };
+  return {
+    size: st.size,
+    px: st.size * k,
+    overflow,
+    k,
+    height: Math.min(b.frame.h, e.height),
+  };
 }
 
 /** Text elements of an SVG (a DOM tree or a string): font-size, position, anchor, text. */
@@ -220,7 +229,8 @@ export function diagramTexts(
   const d =
     b.d ?? (b.fromCalc ? o.calcProblem?.(b.fromCalc)?.diagram : undefined);
   if (!d) return null;
-  const hasHint = !!b.caption || (d.kind === "hold" && !d.quiet) || d.kind === "calc";
+  const hasHint =
+    !!b.caption || (d.kind === "hold" && !d.quiet) || d.kind === "calc";
   const W = b.frame.w;
   const H = Math.max(80, b.frame.h - (hasHint ? HINT_H : 0));
   const palette = slidePalette(o.theme);
@@ -271,8 +281,9 @@ export function slideReadability(
 ): ReadIssue[] {
   const out: ReadIssue[] = [];
   const th = o.theme;
+  const floor = o.minPx ?? MIN_TEXT_PX;
   const small = (blockId: string, px: number, what: string) => {
-    if (px < MIN_TEXT_PX - 0.05)
+    if (px < floor - 0.05)
       out.push({ kind: "small", blockId, px: Math.round(px * 10) / 10, what });
   };
   for (const b of slide.blocks) {
@@ -287,6 +298,11 @@ export function slideReadability(
     )
       out.push({ kind: "offCanvas", blockId: b.id });
     switch (b.kind) {
+      // a marker's numeral is half its size (blocks.ts); measured only against a raised floor (a slide drawn small)
+      case "marker":
+        if (o.minPx !== undefined)
+          small(b.id, Math.round(Math.min(f.w, f.h) * 0.5), "marker");
+        break;
       case "text": {
         if (!loc(b.text, o.lang).trim()) break;
         const r = textBlockFit(b, th, o.lang);
@@ -491,11 +507,19 @@ export function slideReadability(
     if (b.kind !== "text") return b.frame;
     const h = textBlockFit(b, th, o.lang).height;
     const f = b.frame;
-    const y = b.valign === "bottom" ? f.y + f.h - h : b.valign === "middle" ? f.y + (f.h - h) / 2 : f.y;
+    const y =
+      b.valign === "bottom"
+        ? f.y + f.h - h
+        : b.valign === "middle"
+          ? f.y + (f.h - h) / 2
+          : f.y;
     return { x: f.x, y, w: f.w, h };
   };
   const list = slide.blocks.filter(
-    (b) => CONTENT.has(b.kind) && !b.presenterOnly && (b.kind !== "text" || !!loc(b.text, o.lang).trim()),
+    (b) =>
+      CONTENT.has(b.kind) &&
+      !b.presenterOnly &&
+      (b.kind !== "text" || !!loc(b.text, o.lang).trim()),
   );
   for (let i = 0; i < list.length; i++)
     for (let j = i + 1; j < list.length; j++) {
@@ -510,7 +534,8 @@ export function slideReadability(
       const minA = Math.min(ra.w * ra.h, rc.w * rc.h);
       const ih = Math.min(ra.y + ra.h, rc.y + rc.h) - Math.max(ra.y, rc.y);
       const iw = Math.min(ra.x + ra.w, rc.x + rc.w) - Math.max(ra.x, rc.x);
-      if (ov > 0.04 * minA && ih >= 12 && iw >= 12) out.push({ kind: "overlap", blockId: a.id, otherId: c.id });
+      if (ov > 0.04 * minA && ih >= 12 && iw >= 12)
+        out.push({ kind: "overlap", blockId: a.id, otherId: c.id });
     }
   return out;
 }

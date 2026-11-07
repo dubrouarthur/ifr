@@ -11,7 +11,8 @@ function puffAtlas(): THREE.CanvasTexture {
   const S = 256;
   const c = document.createElement("canvas");
   c.width = c.height = S * 2;
-  const g = c.getContext("2d")!;
+  // a CPU canvas: the alpha noise below reads the pixels back, which on a GPU canvas stalls for seconds
+  const g = c.getContext("2d", { willReadFrequently: true })!;
   let seed = 9;
   const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   for (let k = 0; k < 4; k++) {
@@ -29,7 +30,13 @@ function puffAtlas(): THREE.CanvasTexture {
       gr.addColorStop(0.6, "rgba(255,255,255,0.22)");
       gr.addColorStop(1, "rgba(255,255,255,0)");
       g.fillStyle = gr;
-      g.fillRect(ox, oy, S, S);
+      // only the blob's square, clipped to its tile: the gradient is transparent past its radius, so this paints
+      // the same pixels as filling the whole tile, at a fraction of the cost (it runs at the 3D world's boot)
+      const x0 = Math.max(ox, Math.floor(x - rad));
+      const y0 = Math.max(oy, Math.floor(y - rad));
+      const x1 = Math.min(ox + S, Math.ceil(x + rad));
+      const y1 = Math.min(oy + S, Math.ceil(y + rad));
+      if (x1 > x0 && y1 > y0) g.fillRect(x0, y0, x1 - x0, y1 - y0);
     }
   }
   // fine noise in the alpha for texture

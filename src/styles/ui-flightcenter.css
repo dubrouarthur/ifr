@@ -2557,36 +2557,12 @@
   box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
-/* a graduated top edge, as on a chart's neatline (decoration: faint hairline ticks) */
-.fc-sh::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: 6px;
-  background: repeating-linear-gradient(
-    90deg,
-    var(--line-strong) 0 1px,
-    transparent 1px 24px
-  );
-  opacity: 0.8;
-  pointer-events: none;
-}
 .fc-sh-txt {
   min-width: 0;
   /* prose: no tabular figures (the page-wide 'tnum' spaces out hyphens in "Enseignez-les", "built-in") */
   font-feature-settings:
     "cv11" 1,
     "ss01" 1;
-}
-.fc-sh-k {
-  margin: 0 0 12px;
-  font-size: 12.5px;
-  font-weight: 650;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--accent);
 }
 .fc-sh-txt > h1 {
   margin: 0 0 12px;
@@ -2634,24 +2610,6 @@
 .fc-sh-b:hover {
   background: var(--surface-2);
   border-color: var(--muted);
-}
-/* who it is for: one quiet line under the pitch, led by a short magenta course rule */
-.fc-sh-txt > p.fc-sh-aud {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin: -10px 0 22px;
-  font-size: 13.5px;
-  line-height: 1.45;
-  color: var(--muted);
-}
-.fc-sh-aud::before {
-  content: "";
-  flex: 0 0 auto;
-  width: 18px;
-  height: 1px;
-  transform: translateY(-4px);
-  background: #a8238f;
 }
 /* the quieter ways in, under the two buttons */
 .fc-sh-more {
