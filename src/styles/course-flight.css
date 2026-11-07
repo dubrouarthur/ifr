@@ -1,0 +1,536 @@
+/* =================================================================== course flight (src/ui/courseFlight.ts)
+   The cockpit side of the Ground school: the course strip (a second row of the situation bar: capture mode, a
+   course flight) and the brief card of a course flight (over the outside view, never over an instrument). */
+
+/* ------------------------------------------------------------------ the strip, under the situation bar */
+.cf-strip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--sb-top, 0px) + var(--sb-h0, 44px));
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 4px 8px 4px 14px;
+  box-sizing: border-box;
+  background: rgba(5, 8, 12, 0.72);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #eef3f7;
+  font-size: 13px;
+}
+.cf-strip[hidden] {
+  display: none;
+}
+.cockpit.no-otw .cf-strip {
+  position: relative;
+  top: auto;
+  flex: 0 0 calc(100% + 28px);
+  margin: 0 -14px;
+}
+.cf-strip .cf-what {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.cf-strip .cf-what > svg {
+  flex: none;
+  color: var(--ck-accent, #00e4ff);
+}
+.cf-strip .cf-what small {
+  flex: none;
+  font-size: 9.5px;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: #8b97a4;
+  font-weight: 700;
+}
+.cf-strip .cf-what b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font:
+    700 13.5px "Roboto Condensed",
+    sans-serif;
+  letter-spacing: 0.2px;
+}
+.cf-strip .cf-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #ff4d4d;
+  box-shadow: 0 0 0 3px rgba(255, 77, 77, 0.22);
+}
+.cf-strip .cf-dot.preview {
+  background: #ffb020;
+  box-shadow: 0 0 0 3px rgba(255, 176, 32, 0.22);
+}
+.cf-strip .cf-acts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.cf-b {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 11px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: #eef3f7;
+  font: 600 12.5px var(--font, system-ui, sans-serif);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cf-b:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.26);
+}
+.cf-b:focus-visible {
+  outline: 2px solid var(--ck-accent, #00e4ff);
+  outline-offset: 1px;
+}
+.cf-b svg {
+  width: 14px;
+  height: 14px;
+}
+.cf-b.primary {
+  background: #0b63ce;
+  border-color: #0b63ce;
+  color: #fff;
+}
+.cf-b.primary:hover {
+  background: #0a57b5;
+}
+.cf-kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(0, 0, 0, 0.3);
+  font:
+    700 10.5px "Roboto Mono",
+    ui-monospace,
+    monospace;
+  color: #cfd8e1;
+}
+body.touch .cf-strip {
+  min-height: 52px;
+}
+body.touch .cf-b {
+  height: 44px;
+  padding: 0 14px;
+}
+body.touch .cf-kbd {
+  display: none;
+}
+/* narrow screens (the iPad is 1180 px): a short kicker, and the course name truncates instead of disappearing */
+.cf-strip .cf-what .cf-k-short {
+  display: none;
+}
+.cf-strip .cf-what small.cf-course {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 38%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 1200px) {
+  .cf-strip .cf-what .cf-k-long {
+    display: none;
+  }
+  .cf-strip .cf-what .cf-k-short {
+    display: inline;
+  }
+  .cf-strip .cf-what small.cf-course {
+    max-width: 30%;
+  }
+}
+/* a course flight loading (?fly=): the strip says so at once */
+.cf-strip .cf-spin {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.22);
+  border-top-color: var(--ck-accent, #00e4ff);
+  animation: cf-spin 0.9s linear infinite;
+}
+@keyframes cf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cf-strip .cf-spin {
+    animation: none;
+  }
+}
+/* "Leave without a result?" in place of the strip's action */
+.cf-strip .cf-confirm .cf-q {
+  font-weight: 700;
+  font-size: 12.5px;
+  color: #ffd27a;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+.cf-b.danger {
+  background: #b3261e;
+  border-color: #b3261e;
+  color: #fff;
+}
+.cf-b.danger:hover {
+  background: #9c2019;
+}
+body.portrait .cf-strip {
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+/* ------------------------------------------------------------------ the brief card of a course flight
+   The outside view can be short (a laptop in the Standard layout): two columns, the text scrolls, the goals and
+   Start stay in view; one column when the view is narrow (portrait). */
+.cf-card-wrap {
+  position: absolute;
+  right: 0;
+  /* right of the lesson column (when it is docked as a column), above the toasts while it is up */
+  left: var(--lesson-w, 0px);
+  /* under the situation bar and the course strip (main.ts placeBriefCard, every layout), else the overlay top */
+  top: var(--cf-top, var(--ov-top, 56px));
+  bottom: 10px;
+  z-index: 31;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 0 16px;
+  pointer-events: none;
+}
+.cf-card-wrap[hidden] {
+  display: none;
+}
+/* Instruments only: the overlays are docked in a row above the panel (ui-shell.css), the card too: beside the
+   lesson window when there is room, else on its own row; the panel gives it the height while the flight waits */
+body .cockpit.no-otw .cf-card-wrap {
+  position: relative;
+  top: auto;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  z-index: auto;
+  flex: 1 1 520px;
+  min-width: 0;
+  padding: 0;
+}
+body .cockpit.no-otw .cf-card {
+  width: 100%;
+  max-height: min(340px, 44vh);
+}
+.cf-card {
+  /* a light card over the dark cockpit: its own tokens (the cockpit redefines some of the page's) */
+  --text: #0f1722;
+  --text-2: #2b3846;
+  --muted: #5f6b77;
+  --accent: #0b63ce;
+  --good: #127a52;
+  --line: #e2e7ed;
+  --surface: #ffffff;
+  --surface-2: #f4f6f9;
+  pointer-events: auto;
+  width: min(860px, 100%);
+  max-height: 100%;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+  /* the row is held to the card's max-height (the text column scrolls, Start stays in view) */
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+  background: var(--surface, #fff);
+  color: var(--text, #0f1722);
+  border-radius: 12px;
+  border-top: 3px solid var(--accent, #0b63ce);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+.cf-card * {
+  color: inherit;
+}
+.cf-card-main {
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 18px 12px;
+}
+.cf-card-side {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 12px;
+  background: var(--surface-2, #f6f8fa);
+  border-left: 1px solid var(--line, #e2e7ed);
+  overflow: hidden;
+}
+/* the goals scroll when the card is short; Start and the way out stay in view */
+.cf-card-side > .cf-card-sec {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+.cf-card-foot {
+  flex: none;
+}
+@media (max-height: 860px) {
+  .cf-card .cf-card-w {
+    display: none;
+  }
+}
+.cf-card-k {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font: 800 10.5px var(--font, system-ui, sans-serif);
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+.cf-card .cf-card-k > span:first-child {
+  color: var(--accent, #0b63ce);
+}
+.cf-card .cf-card-k .cf-card-c {
+  color: var(--muted, #66737f);
+  letter-spacing: 0.3px;
+  text-transform: none;
+  font-weight: 600;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cf-card-k .cf-card-c::before {
+  content: '·';
+  margin-right: 8px;
+}
+.cf-card h2 {
+  margin: 4px 0 4px;
+  font-size: 18px;
+  line-height: 1.25;
+  letter-spacing: -0.2px;
+  color: var(--text, #0f1722);
+}
+.cf-card .cf-card-p {
+  margin: 0 0 8px;
+  color: var(--text-2, #2b3846);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.cf-card-sec {
+  margin: 0;
+}
+.cf-card .cf-card-h {
+  font: 700 10px var(--font, system-ui, sans-serif);
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--muted, #66737f);
+  margin-bottom: 5px;
+}
+.cf-goals,
+.cf-keys {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.cf-goals li {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+}
+.cf-card .cf-goals li svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--good, #127a52);
+}
+.cf-card .cf-keys li {
+  position: relative;
+  padding-left: 14px;
+  color: var(--text-2, #2b3846);
+}
+.cf-keys li::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 7px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent, #0b63ce);
+}
+.cf-card-foot {
+  margin-top: auto;
+  display: grid;
+  gap: 4px;
+}
+.cf-card .cf-card-w {
+  flex: 1;
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--muted, #66737f);
+}
+.cf-card .cf-start,
+.cf-card .cf-start * {
+  color: #fff;
+}
+.cf-card .cf-start {
+  width: 100%;
+  height: 38px;
+  justify-content: center;
+  background: #0b63ce;
+  border-color: #0b63ce;
+  font-size: 14px;
+}
+.cf-card .cf-start:hover {
+  background: #0a57b5;
+}
+.cf-card .cf-start:focus-visible {
+  outline: 2px solid rgba(11, 99, 206, 0.45);
+  outline-offset: 2px;
+}
+body.touch .cf-card .cf-start {
+  height: 44px;
+}
+/* the way out before flying: back to the course, nothing recorded (a quiet text button under Start) */
+.cf-card .cf-notnow {
+  width: 100%;
+  height: 30px;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-2, #2b3846);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.cf-card .cf-notnow:hover {
+  background: #fff;
+  border-color: var(--line, #e2e7ed);
+}
+body.touch .cf-card .cf-notnow {
+  height: 44px;
+}
+/* a calc target: the numbers the student solved */
+.cf-card .cf-givens {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 14px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.cf-card .cf-givens dt {
+  color: var(--muted, #66737f);
+}
+.cf-card .cf-givens dd {
+  margin: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.cf-card .cf-card-sec + .cf-card-sec {
+  margin-top: 8px;
+}
+/* the bridge's messages (course changed, started again) and the panel of this flight */
+.cf-card .cf-notes {
+  margin: 10px 0 0;
+  padding: 7px 10px;
+  list-style: none;
+  display: grid;
+  gap: 3px;
+  border-radius: 8px;
+  background: #eef4fc;
+  color: #1d3f66;
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+@media (max-width: 760px) {
+  .cf-card {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    overflow: auto;
+  }
+  .cf-card-main {
+    overflow: visible;
+  }
+  .cf-card-side {
+    border-left: 0;
+    border-top: 1px solid var(--line, #e2e7ed);
+    overflow: visible;
+  }
+  .cf-card-side > .cf-card-sec {
+    overflow: visible;
+  }
+}
+
+/* ------------------------------------------------------------------ the lesson's briefing course (briefing window) */
+.cf-brieflink {
+  --accent: #0b63ce;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line, #e2e7ed);
+  border-left: 3px solid var(--accent, #0b63ce);
+  border-radius: 10px;
+  background: var(--surface-2, #f6f8fa);
+}
+.cf-brieflink > svg {
+  flex: none;
+  color: var(--accent, #0b63ce);
+}
+.cf-brieflink > div {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+.cf-brieflink small {
+  font-size: 10.5px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted, #66737f);
+  font-weight: 700;
+}
+.cf-brieflink b {
+  font-size: 14px;
+}
+.cf-brieflink .btn {
+  text-decoration: none;
+}
+body.touch .cf-brieflink .btn {
+  height: 44px;
+}
+.cf-asides {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+.cf-asides > .cf-brieflink {
+  margin: 0;
+}
+.cf-surprise {
+  margin: 10px 0 0;
+}

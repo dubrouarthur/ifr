@@ -22,6 +22,8 @@ export interface Attempt {
   exerciseTitle?: string;
   /** lesson attempt result */
   passed?: boolean;
+  /** the course step this flight was flown for (a course's Fly it, SPEC §9.8) */
+  course?: { id: string; rev: number; stepId: string; token: string };
 }
 /** a training record with the emergency procedures graded during the flight (procedures mode: failure drills,
  *  instructor failures). Every record may carry them; older records have none. */

@@ -693,6 +693,16 @@ export const topOfDescent: GeneratorDef = defineGenerator({
             },
           ],
           doThis: [
+            // the stage is the training area: its ARD VOR stands in for the problem's fix, 25 NM ahead on the 090
+            fix === TRAINING.vor.ident
+              ? tr(
+                  (f) => `In the simulator you start 25 NM west of ARD (the VOR ahead, course 090) at ${f.u(fromFt, "ft")}.`,
+                  (f) => `Dans le simulateur, vous partez 25 NM à l'ouest d'ARD (le VOR devant vous, route 090), à ${f.u(fromFt, "ft")}.`,
+                )
+              : tr(
+                  (f) => `In the simulator, ARD (the VOR ahead, course 090) stands in for ${fix}: you start 25 NM west of it at ${f.u(fromFt, "ft")}.`,
+                  (f) => `Dans le simulateur, ARD (le VOR devant vous, route 090) remplace ${fix} : vous partez 25 NM à l'ouest, à ${f.u(fromFt, "ft")}.`,
+                ),
             tr(
               () => `At the top of descent: ${v.doThis.en}`,
               () => `Au TOD : ${v.doThis.fr}`,

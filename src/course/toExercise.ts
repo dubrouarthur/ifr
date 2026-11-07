@@ -390,6 +390,10 @@ function compile(
     ),
     briefing: [
       ...(brief ? [brief] : []),
+      // a calc target: what the stage asks of the trainer (e.g. the VS scaled to its own ground speed)
+      ...(target.kind === "calc"
+        ? (opts.calcProblem?.stage?.doThis ?? []).map((d) => tr(d, lang))
+        : []),
       ...(fly.keys ?? []).map((k) => tr(k, lang)),
       ...(on.has("partialPanel")
         ? [
@@ -484,8 +488,10 @@ function compile(
       if (endTime !== undefined || endWhen.length || !steps.length) {
         endIdx = steps.length;
         steps.push({
+          // the step row of the exercise window and the result: the brief when it is one short line, else the
+          // generic words (a paragraph does not fit a step row)
           text:
-            brief ||
+            (brief && brief.length <= 90 && !/[.:;]\s/.test(brief) ? brief : "") ||
             (f
               ? "Pilotez jusqu’à la fin de l’exercice"
               : "Fly until the end of the exercise"),

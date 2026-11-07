@@ -26,6 +26,7 @@ import type {
 } from "./types";
 import type { CourseStore } from "./store";
 import { flyCriteria, yourTurnFlyIt } from "./goals";
+import { generate } from "./calc";
 
 export const TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
 /** tokens older than this are pruned (an abandoned flight is still "not finished" until then) */
@@ -68,20 +69,26 @@ export function courseReturnUrl(
 }
 /**
  * A return URL must stay on this site: a relative path (academy.html#…, ./academy.html, /ifr/academy.html) or an
- * absolute URL on `origin`. Anything else (another host, javascript:, data:, protocol-relative //) is refused so a
- * crafted token record cannot turn the result button into an open redirect.
+ * absolute URL on `origin`. Anything else (another host, javascript:, data:, protocol-relative //, a backslash that
+ * browsers read as a slash: '/\evil.example') is refused so a crafted link or token record cannot turn the result
+ * button into an open redirect. Every input, relative included, is resolved the way the browser will resolve it
+ * (new URL(url, origin)) and must land on `origin` over http(s).
  */
 export function isSafeReturnUrl(url: string, origin?: string): boolean {
   if (typeof url !== "string" || !url || url.length > 2048) return false;
-  if (/^\s|[\u0000-\u001f]/.test(url)) return false;
-  if (url.startsWith("//") || url.startsWith("\\")) return false;
-  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(url);
-  if (!scheme) return true; // relative
-  if (!origin) return false;
+  // leading spaces, control characters (tab and newline are stripped by the URL parser) and any backslash
+  if (/^\s|[\u0000-\u001f\u007f\\]/.test(url)) return false;
+  // without an http(s) origin (tests, a worker, a file:// page whose origin is "null"), resolve against a
+  // placeholder: only a same-site relative path passes
+  const base =
+    origin && /^https?:\/\/[^/]+$/i.test(origin)
+      ? origin
+      : "https://same-site.invalid";
   try {
-    const u = new URL(url);
+    const u = new URL(url, base);
     return (
-      (u.protocol === "https:" || u.protocol === "http:") && u.origin === origin
+      (u.protocol === "https:" || u.protocol === "http:") &&
+      u.origin === new URL(base).origin
     );
   } catch {
     return false;
@@ -182,8 +189,21 @@ export async function createHandoff(
   const options = (input.options ?? fly.defaultsOn ?? []).filter((o) =>
     offered.has(o),
   );
-  const criteria: Criterion[] =
-    fly.target.kind === "calc" ? fly.criteria : flyCriteria(fly);
+  // a calc target's criteria come from the problem the student solved (its stage goals) when the author wrote none:
+  // the cockpit's brief card and the course's debrief then list the same goals
+  let calcProblem: ReturnType<typeof generate> | undefined;
+  if (fly.target.kind === "calc" && input.calc) {
+    try {
+      calcProblem = generate(
+        input.calc.generatorId,
+        input.calc.seed,
+        input.calc.params,
+      );
+    } catch {
+      calcProblem = undefined;
+    }
+  }
+  const criteria: Criterion[] = flyCriteria(fly, calcProblem);
   const h: Handoff = {
     token,
     courseId: course.id,

@@ -11,6 +11,85 @@ import { svgIcon, I } from './icons';
 import { confirmAction } from './confirm';
 import { history } from './history';
 import { Sim } from '../sim/sim';
+import { registerStrings, t as tr } from './i18n';
+
+// the briefing and result windows' own words (FR/EN): a course flight brings French students here
+registerStrings('en', {
+  'br.title': 'Exercise briefing',
+  'br.objectives': 'Objectives',
+  'br.standards': 'Standards',
+  'br.briefing': 'Briefing',
+  'br.steps': 'Steps · {n}',
+  'br.quizFirst': 'Answer the knowledge check to start.',
+  'br.restartHint': 'Keep flying returns to your exercise as it was. Restart flies it again from step 1.',
+  'br.pausedHint': 'The simulation starts paused at the briefing position.',
+  'br.keepFlying': 'Keep flying',
+  'br.cancel': 'Cancel',
+  'br.restart': 'Restart exercise',
+  'br.start': 'Start exercise',
+  'br.clearance': 'ATC CLEARANCE',
+  'br.quiz': 'Knowledge check',
+  'br.right': 'Correct.',
+  'br.wrong': 'Not quite.',
+  'lr.title': 'Exercise result',
+  'lr.passed': 'Passed',
+  'lr.notYet': 'Not yet',
+  'lr.notGraded': 'Not graded',
+  'lr.endedEarly': 'Ended early',
+  'lr.earlyText': '{n} of {m} steps flown · {t}. An exercise you end before it is complete has no score and does not count as an attempt.',
+  'lr.step': 'Step',
+  'lr.done': 'Done',
+  'lr.outTol': 'Out of tolerance',
+  'lr.firstDev': 'First deviation',
+  'lr.notCompleted': 'Not completed',
+  'lr.notFlown': 'Not flown',
+  'lr.debrief': 'Full debrief',
+  'lr.close': 'Close',
+  'lr.retry': 'Retry',
+  'lr.next': 'Next exercise',
+  'lr.holding': 'Holding',
+});
+registerStrings('fr', {
+  'br.title': 'Briefing de l’exercice',
+  'br.objectives': 'Objectifs',
+  'br.standards': 'Tolérances',
+  'br.briefing': 'Briefing',
+  'br.steps': 'Étapes · {n}',
+  'br.quizFirst': 'Répondez à la question de contrôle pour commencer.',
+  'br.restartHint': 'Continuer le vol reprend votre exercice tel quel. Recommencer le reprend depuis l’étape 1.',
+  'br.pausedHint': 'La simulation démarre en pause à la position du briefing.',
+  'br.keepFlying': 'Continuer le vol',
+  'br.cancel': 'Annuler',
+  'br.restart': 'Recommencer l’exercice',
+  'br.start': 'Commencer l’exercice',
+  'br.clearance': 'CLAIRANCE ATC',
+  'br.quiz': 'Question de contrôle',
+  'br.right': 'Exact.',
+  'br.wrong': 'Pas tout à fait.',
+  'lr.title': 'Résultat de l’exercice',
+  'lr.passed': 'Réussi',
+  'lr.notYet': 'Pas encore',
+  'lr.notGraded': 'Non noté',
+  'lr.endedEarly': 'Arrêté avant la fin',
+  'lr.earlyText': '{n} étape(s) sur {m} volée(s) · {t}. Un exercice arrêté avant la fin n’a pas de note et ne compte pas comme un essai.',
+  'lr.step': 'Étape',
+  'lr.done': 'Fait',
+  'lr.outTol': 'Hors tolérance',
+  'lr.firstDev': 'Premier écart',
+  'lr.notCompleted': 'Non terminée',
+  'lr.notFlown': 'Non volée',
+  'lr.debrief': 'Débriefing complet',
+  'lr.close': 'Fermer',
+  'lr.retry': 'Réessayer',
+  'lr.next': 'Exercice suivant',
+  'lr.holding': 'Attente',
+});
+/** a window's title in the current language (the Modal sets it once, in English, at construction) */
+function setModalTitle(m: Modal, title: string) {
+  const h2 = m.box.querySelector('header h2');
+  if (h2) h2.textContent = title;
+  m.box.setAttribute('aria-label', title);
+}
 
 export interface Progress {
   passed: boolean;
@@ -177,6 +256,7 @@ export class BriefingModal extends Modal {
   }
   show(ex: Exercise, opts: BriefingOptions = {}) {
     if (this.isOpen) this.close(); // a briefing already open is cancelled first
+    this.aside = null;
     this.opts = opts;
     this.answered = null;
     this.starting = false;
@@ -225,29 +305,33 @@ export class BriefingModal extends Modal {
     this.opts = {};
     cb?.();
   }
+  /** an extra card at the top of the briefing (main.ts: the lesson's briefing course), kept across re-renders */
+  aside: HTMLElement | null = null;
   render() {
     const run = this.run!;
     const ex = run.ex;
     clear(this.body);
     clear(this.foot);
+    setModalTitle(this, tr('br.title'));
     const stage = STAGES.find((s) => s.id === ex.stage);
+    if (this.aside) this.body.append(this.aside);
     this.body.append(
       h('div', { class: 'section-t brief-kicker' }, stage?.title ?? ''),
       h('h2', { class: 'brief-title' }, ex.title),
       h('p', { class: 'brief-sum' }, ex.summary),
     );
-    if (run.rt.clearance) this.body.append(h('div', { class: 'atc' }, h('b', {}, 'ATC CLEARANCE'), h('span', {}, `“${run.rt.clearance}”`)));
+    if (run.rt.clearance) this.body.append(h('div', { class: 'atc' }, h('b', {}, tr('br.clearance')), h('span', {}, `“${run.rt.clearance}”`)));
     this.body.append(
       h('div', { class: 'two' },
         h('div', {},
-          h('div', { class: 'section-t' }, 'Objectives'), h('ul', { class: 'tips' }, ...ex.objectives.map((o) => h('li', {}, o))),
-          h('div', { class: 'section-t' }, 'Standards'), h('ul', { class: 'tips' }, ...ex.standards.map((o) => h('li', {}, o))),
+          h('div', { class: 'section-t' }, tr('br.objectives')), h('ul', { class: 'tips' }, ...ex.objectives.map((o) => h('li', {}, o))),
+          h('div', { class: 'section-t' }, tr('br.standards')), h('ul', { class: 'tips' }, ...ex.standards.map((o) => h('li', {}, o))),
         ),
         h('div', {},
-          h('div', { class: 'section-t' }, 'Briefing'), h('ul', { class: 'tips' }, ...ex.briefing.map((o) => h('li', {}, o))),
+          h('div', { class: 'section-t' }, tr('br.briefing')), h('ul', { class: 'tips' }, ...ex.briefing.map((o) => h('li', {}, o))),
         ),
       ),
-      h('section', { class: 'brief-steps' }, h('div', { class: 'section-t' }, `Steps · ${run.rt.steps.length}`), h('ol', {}, ...run.rt.steps.map((s) => h('li', {}, s.text)))),
+      h('section', { class: 'brief-steps' }, h('div', { class: 'section-t' }, tr('br.steps', { n: run.rt.steps.length })), h('ol', {}, ...run.rt.steps.map((s) => h('li', {}, s.text)))),
     );
     const ap = ex.plate ? findApproach(ex.plate) : undefined;
     if (ex.plate && ap) {
@@ -258,7 +342,7 @@ export class BriefingModal extends Modal {
     }
     const q = run.rt.quiz;
     if (q) {
-      this.body.append(h('div', { class: 'section-t' }, 'Knowledge check'), h('p', {}, q.question));
+      this.body.append(h('div', { class: 'section-t' }, tr('br.quiz')), h('p', {}, q.question));
       const opts = h('div', { class: 'quiz-opts' });
       q.options.forEach((o, i) => {
         const cls = this.answered === null ? '' : i === q.answer ? 'right' : i === this.answered ? 'wrong' : '';
@@ -266,7 +350,7 @@ export class BriefingModal extends Modal {
       });
       this.body.append(opts);
       if (this.answered !== null) {
-        this.body.append(h('div', { class: `quiz-fb ${this.answered === q.answer ? 'ok' : 'ko'}` }, h('b', {}, this.answered === q.answer ? 'Correct.' : 'Not quite.'), ' ', q.explain));
+        this.body.append(h('div', { class: `quiz-fb ${this.answered === q.answer ? 'ok' : 'ko'}` }, h('b', {}, this.answered === q.answer ? tr('br.right') : tr('br.wrong')), ' ', q.explain));
         if (q.svg) this.body.append(h('div', { class: 'diagram', html: q.svg }));
       }
     } else if (run.rt.hold) {
@@ -275,9 +359,9 @@ export class BriefingModal extends Modal {
     const needQuiz = !!q && this.answered === null;
     const restart = this.seed !== null;
     this.foot.append(
-      h('span', { class: 'muted', style: 'flex:1;align-self:center;font-size:12.5px' }, needQuiz ? 'Answer the knowledge check to start.' : restart ? 'Keep flying returns to your exercise as it was. Restart flies it again from step 1.' : 'The simulation starts paused at the briefing position.'),
-      h('button', { class: 'btn', onclick: () => this.close() }, restart ? 'Keep flying' : 'Cancel'),
-      h('button', { class: 'btn primary', disabled: needQuiz, onclick: () => this.start() }, restart ? 'Restart exercise' : 'Start exercise'),
+      h('span', { class: 'muted', style: 'flex:1;align-self:center;font-size:12.5px' }, needQuiz ? tr('br.quizFirst') : restart ? tr('br.restartHint') : tr('br.pausedHint')),
+      h('button', { class: 'btn', onclick: () => this.close() }, restart ? tr('br.keepFlying') : tr('br.cancel')),
+      h('button', { class: 'btn primary', disabled: needQuiz, onclick: () => this.start() }, restart ? tr('br.restart') : tr('br.start')),
     );
   }
 }
@@ -288,11 +372,30 @@ export const isGraded = (r: LessonResult) => r.graded !== false && r.score !== n
 /** the step was flown, at least in part (the steps after the one the exercise stopped on were never reached) */
 const stepReached = (run: LessonRun, i: number) => run.finished?.steps[i]?.done || i <= run.idx;
 
+/** options of the result window (main.ts): a course flight offers "Back to the course" as the primary action */
+export interface LessonResultOptions {
+  backToCourse?: { label: string; title?: string; run: () => void | Promise<void> };
+}
 export class LessonResultModal extends Modal {
+  /** the training record the last show() saved (null: too short to keep) */
+  recordId: string | null = null;
   constructor(private onRetry: (ex: Exercise) => void, private onNext: (ex: Exercise) => void, private onDebrief: () => void) {
     super('Exercise result', 'md');
   }
-  show(run: LessonRun, path: Path | null) {
+  /** open, with "Back to the course" as the one primary action when the flight came from a course (isolated) */
+  private openWith(opts: LessonResultOptions) {
+    const b = opts.backToCourse;
+    if (b) {
+      this.foot.querySelectorAll('.btn.primary').forEach((x) => x.classList.remove('primary'));
+      const go: HTMLButtonElement = h('button', { class: 'btn primary res-course', title: b.title ?? b.label, onclick: () => {
+        go.disabled = true;
+        void Promise.resolve(b.run()).catch(() => undefined).finally(() => { go.disabled = false; });
+      } }, svgIcon(I.arrow, 15), h('span', {}, b.label));
+      this.foot.append(go);
+    }
+    this.open();
+  }
+  show(run: LessonRun, path: Path | null, opts: LessonResultOptions = {}) {
     const r = run.finished!;
     const graded = isGraded(r);
     // a graded attempt counts in the progress (attempts, best score); an exercise ended early does not
@@ -300,59 +403,61 @@ export class LessonResultModal extends Modal {
     // the flight goes into the training records: with the exercise and its score, or marked not graded
     run.sim.rec.lesson = graded ? { id: run.ex.id, title: run.ex.title, score: r.score!, passed: r.passed } : { id: run.ex.id, title: run.ex.title };
     const rec = saveFlightRecord(run.sim);
+    this.recordId = rec?.id ?? null;
     if (rec && !graded) history.upsert({ ...rec, graded: false });
     clear(this.body);
     clear(this.foot);
+    setModalTitle(this, tr('lr.title'));
     const flown = r.steps.filter((_, i) => stepReached(run, i)).length;
     this.body.append(
       graded
         ? h('div', { class: 'grade-row' },
             h('div', { class: `grade ${r.passed ? 'A' : 'F'}` }, r.passed ? '✓' : '✗', h('small', {}, `${r.score}/100`)),
-            h('div', {}, h('h2', { style: 'margin:0 0 4px' }, `${r.passed ? 'Passed' : 'Not yet'} — ${run.ex.title}`), h('p', { class: 'muted' }, `${r.reason} · ${fmtTime(r.durationSec)}`)),
+            h('div', {}, h('h2', { style: 'margin:0 0 4px' }, `${r.passed ? tr('lr.passed') : tr('lr.notYet')} — ${run.ex.title}`), h('p', { class: 'muted' }, `${r.reason} · ${fmtTime(r.durationSec)}`)),
           )
         : h('div', { class: 'grade-row' },
-            h('div', { class: 'grade none', 'aria-label': 'Not graded' }, '—', h('small', {}, 'Not graded')),
+            h('div', { class: 'grade none', 'aria-label': tr('lr.notGraded') }, '—', h('small', {}, tr('lr.notGraded'))),
             h('div', {},
-              h('h2', { style: 'margin:0 0 4px' }, `Ended early — ${run.ex.title}`),
-              h('p', { class: 'muted' }, `${flown} of ${r.steps.length} step${r.steps.length === 1 ? '' : 's'} flown · ${fmtTime(r.durationSec)}. An exercise you end before it is complete has no score and does not count as an attempt.`),
+              h('h2', { style: 'margin:0 0 4px' }, `${tr('lr.endedEarly')} — ${run.ex.title}`),
+              h('p', { class: 'muted' }, tr('lr.earlyText', { n: flown, m: r.steps.length, t: fmtTime(r.durationSec) })),
             ),
           ),
       h('table', { class: 'items res-steps' },
-        h('tr', {}, h('th', {}, 'Step'), h('th', {}, 'Done'), h('th', { class: 'num' }, 'Out of tolerance'), h('th', {}, 'First deviation')),
+        h('tr', {}, h('th', {}, tr('lr.step')), h('th', {}, tr('lr.done')), h('th', { class: 'num' }, tr('lr.outTol')), h('th', {}, tr('lr.firstDev'))),
         ...r.steps.map((s, i) => {
           const reached = stepReached(run, i);
           const sec = Math.round(s.violationSec);
           // green "0 s" only for a step flown to the end within tolerance; "—" for a step never reached
           const pen = !reached ? h('td', { class: 'num na' }, '—') : h('td', { class: `pen${sec < 1 ? (s.done ? ' zero' : ' na') : ''}` }, s.violationSec <= 0 ? '0 s' : sec < 1 ? '<1 s' : `${sec} s`);
-          return h('tr', {}, h('td', {}, s.text), h('td', { class: s.done ? 'done' : 'na' }, s.done ? svgIcon(I.check, 15) : reached ? 'Not completed' : 'Not flown'), pen, h('td', { class: 'muted' }, s.worst ?? ''));
+          return h('tr', {}, h('td', {}, s.text), h('td', { class: s.done ? 'done' : 'na' }, s.done ? svgIcon(I.check, 15) : reached ? tr('lr.notCompleted') : tr('lr.notFlown')), pen, h('td', { class: 'muted' }, s.worst ?? ''));
         })),
     );
     if (!graded) {
       this.foot.append(
-        h('button', { class: 'btn', onclick: () => { this.close(); this.onDebrief(); } }, 'Full debrief'),
+        h('button', { class: 'btn', onclick: () => { this.close(); this.onDebrief(); } }, tr('lr.debrief')),
         h('span', { style: 'flex:1' }),
-        h('button', { class: 'btn', onclick: () => this.close() }, 'Close'),
-        h('button', { class: 'btn primary', onclick: () => { this.close(); this.onRetry(run.ex); } }, 'Retry'),
+        h('button', { class: 'btn', onclick: () => this.close() }, tr('lr.close')),
+        h('button', { class: 'btn primary', onclick: () => { this.close(); this.onRetry(run.ex); } }, tr('lr.retry')),
       );
-      this.open();
+      this.openWith(opts);
       return;
     }
-    if (r.holdReport) this.body.append(h('div', { class: 'section-t' }, 'Holding'), h('table', { class: 'items acs-table' }, ...r.holdReport.map((i) => h('tr', { class: i.ok === null ? 'N/A' : i.ok ? 'PASS' : 'FAIL' }, h('td', {}, i.ok === null ? '—' : i.ok ? 'PASS' : 'FAIL'), h('td', {}, i.label), h('td', {}, i.value)))));
+    if (r.holdReport) this.body.append(h('div', { class: 'section-t' }, tr('lr.holding')), h('table', { class: 'items acs-table' }, ...r.holdReport.map((i) => h('tr', { class: i.ok === null ? 'N/A' : i.ok ? 'PASS' : 'FAIL' }, h('td', {}, i.ok === null ? '—' : i.ok ? 'PASS' : 'FAIL'), h('td', {}, i.label), h('td', {}, i.value)))));
     if (run.rt.hold && run.holdEval?.correctEntry) this.body.append(h('div', { class: 'diagram', html: holdDiagramSvg(run.rt.hold.inbound, run.rt.hold.turn, run.rt.hold.fix.ident, run.holdEval.arrivalCourse) }));
     if (r.acs) this.body.append(h('div', { class: 'section-t' }, `ACS — ${r.acs.result}`), h('table', { class: 'items acs-table' }, ...r.acs.items.map((i) => h('tr', { class: i.result }, h('td', {}, i.result), h('td', {}, i.task), h('td', { class: 'muted' }, i.standard), h('td', {}, i.actual)))));
     const idx = path ? path.exercises.indexOf(run.ex.id) : -1;
     const nextId = path && idx >= 0 ? path.exercises[idx + 1] : EXERCISES[EXERCISES.findIndex((e) => e.id === run.ex.id) + 1]?.id;
     this.foot.append(
-      h('button', { class: 'btn', onclick: () => { this.close(); this.onDebrief(); } }, 'Full debrief'),
+      h('button', { class: 'btn', onclick: () => { this.close(); this.onDebrief(); } }, tr('lr.debrief')),
       h('span', { style: 'flex:1' }),
       // the primary action sits on the right: Next exercise after a pass, Retry after a fail
       ...(() => {
-        const retry = h('button', { class: `btn${r.passed ? '' : ' primary'}`, onclick: () => { this.close(); this.onRetry(run.ex); } }, 'Retry');
-        const next = nextId ? h('button', { class: `btn${r.passed ? ' primary' : ''}`, onclick: () => { this.close(); this.onNext(exercise(nextId)); } }, 'Next exercise') : null;
+        const retry = h('button', { class: `btn${r.passed ? '' : ' primary'}`, onclick: () => { this.close(); this.onRetry(run.ex); } }, tr('lr.retry'));
+        const next = nextId ? h('button', { class: `btn${r.passed ? ' primary' : ''}`, onclick: () => { this.close(); this.onNext(exercise(nextId)); } }, tr('lr.next')) : null;
         return next ? (r.passed ? [retry, next] : [next, retry]) : [retry];
       })(),
     );
-    this.open();
+    this.openWith(opts);
   }
 }
 

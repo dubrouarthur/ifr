@@ -1021,6 +1021,18 @@ describe("Fly-it handoff (SPEC §6.2)", () => {
       seed: 42,
       params: {},
     });
+    // descentGradient has no live stage: nothing to check, no criteria
+    expect(h.criteria).toEqual([]);
+    // the author wrote no criteria: the handoff carries the problem's stage goals (the cockpit card and the
+    // course debrief list the same goals)
+    const tod = await createHandoff(s, {
+      course: c,
+      step: st,
+      calc: { generatorId: "ifr.topOfDescent", seed: 7, params: {} },
+    });
+    expect(tod.criteria.length).toBeGreaterThan(0);
+    expect(tod.criteria[0].check.id).toBe("vsBand");
+    expect(tod.criteria[0].label.en).toMatch(/VS/);
     await expect(
       createHandoff(s, {
         course: c,
@@ -1040,8 +1052,21 @@ describe("Fly-it handoff (SPEC §6.2)", () => {
       "https://evil.example/",
       "data:text/html,x",
       " academy.html",
+      // backslashes and stripped control characters: browsers resolve these to another host
+      "/\\evil.example/phish",
+      "/\\/evil.example",
+      "\t//evil.example",
+      "/\t/evil.example",
+      "\\\\evil.example",
+      "academy.html\\..\\x",
     ])
       expect(isSafeReturnUrl(bad), bad).toBe(false);
+    // with the page's origin: the same cases, resolved the way the browser does
+    for (const bad of ["/\\evil.example/phish", "/\\/evil.example", "\t//evil.example", "https://evil.example/"])
+      expect(isSafeReturnUrl(bad, "https://ifr.example"), bad).toBe(false);
+    for (const ok of ["academy.html#play=a", "/ifr/academy.html", "https://ifr.example/academy.html"])
+      expect(isSafeReturnUrl(ok, "https://ifr.example"), ok).toBe(true);
+    expect(isSafeReturnUrl("http://ifr.example/academy.html", "https://ifr.example")).toBe(false);
     expect(
       isSafeReturnUrl(
         "https://ifr.example/academy.html",

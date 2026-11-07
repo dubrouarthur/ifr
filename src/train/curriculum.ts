@@ -34,7 +34,7 @@ function holdExercise(id: string, title: string, fixId: string, inbound: number,
     summary: opts.summary ?? `Hold at ${fixId}, inbound ${fmtHdg(inbound)}°, ${turn === 'R' ? 'right' : 'left'} turns. Determine and fly the correct entry.`,
     objectives: ['Determine the AIM entry from your course to the fix', 'Fly the entry and establish on the inbound course', 'Adjust outbound timing to get 1:00 inbound legs', 'Stay on the holding side, ±100 ft'],
     standards: ['Correct entry procedure', 'Altitude ±100 ft', 'Inbound legs 1:00 ±15 s', 'Non-holding side excursion < 0.6 NM'],
-    briefing: ['Six Ts at the fix: Turn – Time – Twist – Throttle – Talk – Track.', 'Hold at 90 KIAS (C172 maximum holding speed below 6000 ft is 200 KIAS).', 'Wind: triple the drift correction on the outbound leg.'],
+    briefing: ['Six Ts at the fix: Turn – Time – Twist – Throttle – Talk – Track.', 'Hold at 90 KIAS. The FAA maximum holding speed at or below 6,000 ft MSL is 200 KIAS, for every aircraft (AIM 5-3-8, Table 5-3-1).', 'Wind: triple the drift correction on the outbound leg.'],
     allowAp: true,
     minutes: 12,
     setup: (sim: Sim) => {

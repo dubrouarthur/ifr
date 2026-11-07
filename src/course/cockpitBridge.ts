@@ -10,8 +10,10 @@
 import type { Exercise } from "../train/engine";
 import type { Sim } from "../sim/sim";
 import type {
+  CalcProblem,
   Clip,
   Cockpit,
+  Criterion,
   Course,
   FlyOption,
   Handoff,
@@ -40,6 +42,7 @@ import {
   verifyLine,
 } from "./scene";
 import { RewindRing } from "./rewind";
+import { flyCriteria } from "./goals";
 import { ClipRecorder } from "./clip";
 import { generate } from "./calc";
 
@@ -101,8 +104,15 @@ export interface CockpitHost {
   panelThumb?(): Promise<Blob | null>;
   /** 3D still 480×270 for the tray (optional) */
   outsideStill?(): Promise<Blob | null>;
-  /** the brief card while the flight loads (optional: the default is a toast) */
-  showBrief?(h: Handoff, step: Step, course: Course): void;
+  /** the brief card while the flight loads (optional: the default is a toast). `more` carries what the card needs
+   *  beyond the handoff: the criteria the flight checks (a calc target's come from the problem's stage) and the
+   *  calc problem itself (its givens and what the stage asks: doThis). */
+  showBrief?(h: Handoff, step: Step, course: Course, more?: BriefExtras): void;
+}
+
+export interface BriefExtras {
+  criteria: Criterion[];
+  calcProblem?: CalcProblem;
 }
 
 export interface FlyOutcome {
@@ -243,7 +253,18 @@ export class CourseBridge {
       lang,
       ...(calcProblem ? { calcProblem } : {}),
     });
-    if (this.host.showBrief) this.host.showBrief(r.handoff, r.step, r.course);
+    // the criteria the flight checks: the handoff's (stored from the problem since the calc fix), else the Fly it's,
+    // completed from the calc problem's stage goals (an older handoff stored none for a calc target)
+    const criteria = r.handoff.criteria?.length
+      ? r.handoff.criteria
+      : r.step.flyIt
+        ? flyCriteria(r.step.flyIt, calcProblem)
+        : [];
+    if (this.host.showBrief)
+      this.host.showBrief(r.handoff, r.step, r.course, {
+        criteria,
+        ...(calcProblem ? { calcProblem } : {}),
+      });
     else {
       const t = r.step.title;
       this.host.toast(
