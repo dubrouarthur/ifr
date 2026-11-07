@@ -172,6 +172,13 @@ export const sixtyToOne: GeneratorDef = defineGenerator({
             `Vous dérivez ${sideFr} : la route suivie est ${f.n(s.teRule, 1)}° ${sideFr} de la route prévue, environ ${f.hdg(course + side * s.teRule)}.`,
         ),
       );
+      if (Math.abs(answer - Math.round(s.teRule * 10) / 10) > 0.05)
+        steps.push(
+          tr(
+            (f) => `Rounded to the nearest half degree: ${f.n(answer, 1)}°.`,
+            (f) => `Arrondi au demi-degré le plus proche : ${f.n(answer, 1)}°.`,
+          ),
+        );
     } else if (variant === "regain") {
       prompt = tr(
         () =>
@@ -603,7 +610,7 @@ export const dmeArcLead: GeneratorDef = defineGenerator({
     const ruleD = outbound ? arc - s.rRule : arc + s.rRule;
     const exactD = outbound
       ? s.startOutExact
-      : Math.sqrt(arc * arc - s.rExact * s.rExact) + s.rExact;
+      : radialToArcStartExact(arc, s.rExact, true);
     const answer = roundStep(ruleD, 0.1);
     return {
       prompt: tr(
@@ -655,8 +662,8 @@ export const dmeArcLead: GeneratorDef = defineGenerator({
         "Anticipez l'arc du rayon de virage : environ 0,5 NM sous 120 kt, Vs ÷ 200 en général.",
       ),
       formula: L(
-        outbound ? "d = √(D² − r²) − r" : "d = √(D² − r²) + r",
-        outbound ? "d = √(D² − r²) − r" : "d = √(D² − r²) + r",
+        outbound ? "d = √(D² − 2Dr)  (turn radius r)" : "d = √(D² + 2Dr)  (turn radius r)",
+        outbound ? "d = √(D² − 2Dr)  (rayon de virage r)" : "d = √(D² + 2Dr)  (rayon de virage r)",
       ),
       refs,
       diagram: {
@@ -990,9 +997,9 @@ export const adfBearing: GeneratorDef = defineGenerator({
           ),
           tr(
             (f) =>
-              `Add 360 if negative. The needle points ${f.n(rb)}° clockwise from the nose${rb > 180 ? ", i.e. left of the nose" : rb < 180 ? ", right of the nose" : ""}.`,
+              `Add 360 if negative. The needle points ${f.n(rb)}° clockwise from the nose${rb > 180 ? `, i.e. left of the nose (${f.n(360 - rb)}° left)` : rb < 180 && rb > 0 ? ", right of the nose" : ""}.`,
             (f) =>
-              `Ajoutez 360 si négatif. L'aiguille pointe ${f.n(rb)}° à droite du nez dans le sens horaire${rb > 180 ? ", donc à gauche du nez" : ""}.`,
+              `Ajoutez 360 si négatif. L'aiguille pointe à ${f.n(rb)}° du nez, comptés dans le sens horaire${rb > 180 ? ` : elle est donc à gauche du nez (${f.n(360 - rb)}° à gauche)` : rb < 180 && rb > 0 ? ` : elle est donc à droite du nez` : ""}.`,
           ),
         ],
       };

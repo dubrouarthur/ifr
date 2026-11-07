@@ -132,9 +132,13 @@ export function arcToRadialLeadExact(arcNm: number, radiusNm: number): number {
 export function arcToRadialLeadRule(arcNm: number, radiusNm: number): number {
   return (60 * radiusNm) / arcNm;
 }
-/** DME to start a 90° turn from a radial (outbound) onto the arc (exact): d = √(D² − r²) − r. */
-export function radialToArcStartExact(arcNm: number, radiusNm: number): number {
-  return Math.sqrt(arcNm * arcNm - radiusNm * radiusNm) - radiusNm;
+/**
+ * DME to start a 90° turn of radius r from a radial onto the arc of radius D (exact). The turn centre sits r abeam
+ * the start point and D ∓ r from the station (inside the arc outbound, outside it inbound), so
+ * d² + r² = (D ∓ r)²:  d = √(D² − 2Dr) outbound, √(D² + 2Dr) inbound.
+ */
+export function radialToArcStartExact(arcNm: number, radiusNm: number, inbound = false): number {
+  return Math.sqrt(arcNm * arcNm + (inbound ? 2 : -2) * arcNm * radiusNm);
 }
 /** Lead distance along the track to roll out on a course after a turn of θ (exact): r tan(θ / 2). */
 export function interceptLeadNm(

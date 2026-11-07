@@ -24,8 +24,14 @@ import {
   poseOnRadial,
   REF,
   rulesParam,
+  TRAINING,
   variantParam,
 } from "../kit";
+
+/** inbound to ARD on R-270 (heading 090): NAV1 on ARD, OBS 090, so the CDI is centred with a TO flag */
+const INBOUND_ARD = {
+  radios: { nav1: TRAINING.vor.freq, obs1: 90, cdi: "NAV1" as const },
+};
 
 const THREE_DEG_FT_PER_NM = ftPerNmFromAngle(3); // 318.4
 
@@ -116,10 +122,12 @@ export const descentGradient: GeneratorDef = defineGenerator({
       };
     }
     if (variant === "ftNmToPct" || variant === "ftNmToAngle") {
-      const g = rng.range(150, 500, 10);
+      const isPct = variant === "ftNmToPct";
+      // a published departure requirement is never below the standard 200 ft/NM (FAA) / 3.3 % (PANS-OPS PDG);
+      // lower values only as a descent
+      const g = isPct ? rng.range(210, 500, 10) : rng.range(150, 500, 10);
       const pct = pctFromFtPerNm(g);
       const ang = angleFromFtPerNm(g);
-      const isPct = variant === "ftNmToPct";
       return {
         ...common,
         prompt: isPct
@@ -181,7 +189,8 @@ export const descentGradient: GeneratorDef = defineGenerator({
         },
       };
     }
-    const p = rng.range(2.5, 8, 0.1);
+    // at or above the PANS-OPS procedure design gradient of 3.3 %
+    const p = rng.range(3.3, 8, 0.1);
     const g = ftPerNmFromPct(p);
     return {
       ...common,
@@ -435,11 +444,38 @@ export const descentRate: GeneratorDef = defineGenerator({
   },
 });
 
+/** The live stage flies a trainer (≤ 105 KIAS): the IAS that gives the problem's ground speed at that altitude (no
+ *  wind, TAS ≈ IAS + 2 % per 1,000 ft), and the ground speed it really flies when the problem's is out of reach. */
+export function stageSpeed(gs: number, altFt: number): { ias: number; stageGs: number; same: boolean } {
+  const k = 1 + (0.02 * altFt) / 1000;
+  const ias = Math.round(Math.max(80, Math.min(105, gs / k)));
+  const stageGs = Math.round(ias * k);
+  return { ias, stageGs, same: Math.abs(stageGs - gs) <= 5 };
+}
+
+/** the VS to hold on the stage for the problem's PATH: scaled to the stage's own ground speed */
+function stageVs(gs: number, vs: number, altFt: number) {
+  const sp = stageSpeed(gs, altFt);
+  const target = roundStep(sp.same ? vs : (vs * sp.stageGs) / gs, 50);
+  const doThis = sp.same
+    ? tr(
+        (f) => `Pitch down to hold ${f.u(target, "fpm")} down (±100), speed constant.`,
+        (f) => `Réduisez l'assiette pour tenir ${f.u(target, "fpm")} en descente (±100), vitesse constante.`,
+      )
+    : tr(
+        (f) =>
+          `The trainer on the stage flies about ${f.u(sp.stageGs, "kt")} over the ground, not ${f.u(gs, "kt")}: for the same path, VS = ${f.n(vs)} × ${f.n(sp.stageGs)} ÷ ${f.n(gs)} ≈ ${f.u(target, "fpm")}. Pitch down to hold it (±100), speed constant.`,
+        (f) =>
+          `L'avion d'entraînement de la scène vole à environ ${f.u(sp.stageGs, "kt")} sol, pas ${f.u(gs, "kt")} : pour la même pente, Vz = ${f.n(vs)} × ${f.n(sp.stageGs)} ÷ ${f.n(gs)} ≈ ${f.u(target, "fpm")}. Réduisez l'assiette pour la tenir (±100), vitesse constante.`,
+      );
+  return { ias: sp.ias, target, doThis };
+}
+
 function vsStage(gs: number, vs: number) {
-  const target = roundStep(vs, 50);
+  const v = stageVs(gs, vs, 5000);
   return {
     panes: [{ kind: "pfd" }] as [{ kind: "pfd" }],
-    pose: poseOnRadial(270, 12, 5000, 90, gs, { vsFpm: 0 }),
+    pose: poseOnRadial(270, 12, 5000, 90, v.ias, { vsFpm: 0, ...INBOUND_ARD }),
     weather: { windKt: 0, turbulence: 0 },
     mode: "live" as const,
     controls: ["pitch", "power"] as ("pitch" | "power")[],
@@ -447,17 +483,10 @@ function vsStage(gs: number, vs: number) {
     goals: [
       {
         id: "vsBand" as const,
-        p: { min: -(target + 100), max: -(target - 100) },
+        p: { min: -(v.target + 100), max: -(v.target - 100) },
       },
     ],
-    doThis: [
-      tr(
-        (f) =>
-          `Pitch down to hold ${f.u(target, "fpm")} down (±100), speed constant.`,
-        (f) =>
-          `Réduisez l'assiette pour tenir ${f.u(target, "fpm")} en descente (±100), vitesse constante.`,
-      ),
-    ],
+    doThis: [v.doThis],
   };
 }
 
@@ -648,31 +677,29 @@ export const topOfDescent: GeneratorDef = defineGenerator({
           marks: [{ distNm: 0, altFt: toFt, label: fix }],
         },
       },
-      stage: {
-        panes: [{ kind: "pfd" }],
-        pose: poseOnRadial(270, 25, fromFt, 90, gs, { vsFpm: 0 }),
-        weather: { windKt: 0, turbulence: 0 },
-        mode: "live",
-        controls: ["pitch", "power", "altBug"],
-        assist: { holdIas: true },
-        goals: [
-          {
-            id: "vsBand",
-            p: {
-              min: -((vs ?? roundStep(s.vs3, 50)) + 100),
-              max: -((vs ?? roundStep(s.vs3, 50)) - 100),
+      stage: (() => {
+        const v = stageVs(gs, vs ?? s.vs3, fromFt);
+        return {
+          panes: [{ kind: "pfd" as const }],
+          pose: poseOnRadial(270, 25, fromFt, 90, v.ias, { vsFpm: 0, ...INBOUND_ARD }),
+          weather: { windKt: 0, turbulence: 0 },
+          mode: "live" as const,
+          controls: ["pitch", "power", "altBug"] as ("pitch" | "power" | "altBug")[],
+          assist: { holdIas: true },
+          goals: [
+            {
+              id: "vsBand" as const,
+              p: { min: -(v.target + 100), max: -(v.target - 100) },
             },
-          },
-        ],
-        doThis: [
-          tr(
-            (f) =>
-              `At the top of descent, set ${f.u(vs ?? roundStep(s.vs3, 50), "fpm")} down.`,
-            (f) =>
-              `Au TOD, affichez ${f.u(vs ?? roundStep(s.vs3, 50), "fpm")} en descente.`,
-          ),
-        ],
-      },
+          ],
+          doThis: [
+            tr(
+              () => `At the top of descent: ${v.doThis.en}`,
+              () => `Au TOD : ${v.doThis.fr}`,
+            ),
+          ],
+        };
+      })(),
     };
   },
   check(problem, response) {

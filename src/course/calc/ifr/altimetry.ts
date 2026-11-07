@@ -135,8 +135,8 @@ export const pressureAltitude: GeneratorDef = defineGenerator({
           ]
         : [
             tr(
-              (f) => `1013 − ${setting} = ${f.s(1013.25 - setting, 1)} hPa.`,
-              (f) => `1013 − ${setting} = ${f.s(1013.25 - setting, 1)} hPa.`,
+              (f) => `1013.25 − ${setting} = ${f.s(1013.25 - setting, 2)} hPa.`,
+              (f) => `1013,25 − ${setting} = ${f.s(1013.25 - setting, 2)} hPa.`,
             ),
             tr(
               (f) =>
@@ -278,9 +278,9 @@ export function densityAltitudeGenerator(
         return {
           prompt: tr(
             (f) =>
-              `Field elevation ${f.u(elev, "ft")}, altimeter ${alt.toFixed(2)} inHg, OAT ${f.u(oat, "degC")}. What are the pressure altitude and the density altitude for the takeoff chart?`,
+              `Field elevation ${f.u(elev, "ft")}, altimeter ${alt.toFixed(2)} inHg, OAT ${f.u(oat, "degC")}. What are the pressure altitude (to enter the takeoff chart, with the OAT) and the density altitude (how the aeroplane will perform)?`,
             (f) =>
-              `Altitude du terrain ${f.u(elev, "ft")}, calage ${alt.toFixed(2).replace(".", ",")} inHg, température ${f.u(oat, "degC")}. Quelles altitudes pression et densité pour l'abaque de décollage ?`,
+              `Altitude du terrain ${f.u(elev, "ft")}, calage ${alt.toFixed(2).replace(".", ",")} inHg, température ${f.u(oat, "degC")}. Quelles sont l'altitude-pression (pour entrer dans l'abaque de décollage, avec la température) et l'altitude-densité (ce que l'avion ressentira) ?`,
           ),
           givens: [
             given("elevFt", L("Elevation", "Altitude du terrain"), elev, "ft"),

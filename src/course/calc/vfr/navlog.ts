@@ -100,7 +100,9 @@ export const tvmdc: GeneratorDef = defineGenerator({
   ],
   generate(rng, params) {
     const tc = rng.range(5, 360, 5);
-    const tas = rng.range(90, 130, 5);
+    // within what the live stage flies (a trainer at ≤ 105 KIAS, ≈ 110 KTAS at 3,500 ft): the WCA computed here is
+    // then the one that holds the track on the stage
+    const tas = rng.range(90, 110, 5);
     let windDir = 0;
     let windKt = 0;
     for (let i = 0; i < 20; i++) {
@@ -117,15 +119,22 @@ export const tvmdc: GeneratorDef = defineGenerator({
           : rng.chance(0.5)
             ? 1
             : -1;
-    const variation = side * rng.range(2, 15, 1);
-    const deviation = rng.pick([-3, -2, -1, 1, 2, 3, 0]);
+    let variation = side * rng.range(2, 15, 1);
+    let deviation = rng.pick([-4, -3, -2, 2, 3, 4, 0]);
+    // the heading tolerance depends on the wind only (rule vs exact WCA): a sign error on the variation or the
+    // deviation (2 × its value off) must always fall outside it, or the exercise cannot catch it
+    const tolOf = (x: ReturnType<typeof solveTvmdc>) => Math.max(2, Math.abs(wrap180(x.ch - x.chExact)) + 1);
+    const tol0 = tolOf(solveTvmdc(tc, tas, windDir, windKt, variation, deviation));
+    const minSign = Math.floor(tol0 / 2) + 1;
+    if (deviation !== 0 && Math.abs(deviation) < minSign) deviation = Math.sign(deviation) * Math.min(5, minSign);
+    if (Math.abs(variation) < minSign) variation = Math.sign(variation) * minSign;
     const s = solveTvmdc(tc, tas, windDir, windKt, variation, deviation);
     const wr = windText(windDir, windKt);
     const devCard = tr(
       (f) => `for ${f.hdg(s.mh)} steer ${f.hdg(s.mh + deviation)}`,
       (f) => `pour ${f.hdg(s.mh)} afficher ${f.hdg(s.mh + deviation)}`,
     );
-    const tolCh = Math.max(2, Math.abs(wrap180(s.ch - s.chExact)) + 1);
+    const tolCh = tolOf(s);
     const parts: CalcPart[] = [
       {
         key: "wca",
@@ -238,7 +247,8 @@ export const tvmdc: GeneratorDef = defineGenerator({
           norm360(tc + 180),
           15,
           3500,
-          s.th,
+          // starts on the course, not on the answer: the student applies the WCA
+          tc,
           Math.round(tas / 1.05),
         ),
         weather: {
@@ -254,9 +264,9 @@ export const tvmdc: GeneratorDef = defineGenerator({
         doThis: [
           tr(
             (f) =>
-              `The training area has no variation: fly true heading ${f.hdg(s.th)} and hold a ${f.hdg(tc)} track.`,
+              `The training area has no variation and the compass no deviation: fly the TRUE heading you computed (course + WCA) and hold a ${f.hdg(tc)} track.`,
             (f) =>
-              `La zone d'entraînement n'a pas de déclinaison : volez le cap vrai ${f.hdg(s.th)} et tenez la route ${f.hdg(tc)}.`,
+              `La zone d'entraînement n'a ni déclinaison ni déviation : volez le cap VRAI calculé (route + dérive) et tenez la route ${f.hdg(tc)}.`,
           ),
         ],
       },

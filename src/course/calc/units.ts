@@ -121,6 +121,10 @@ export function unitsLike(unit: CalcUnit): CalcUnit[] {
   const dim = UNITS[unit].dim;
   if (dim === "none" || dim === "angle" || dim === "arm" || dim === "moment")
     return [unit];
+  // a height (ft, m) and a distance (NM, SM, km) share a dimension but never an answer box: an altitude
+  // correction in NM makes no sense
+  if (dim === "length")
+    return unit === "ft" || unit === "m" ? ["ft", "m"] : ["NM", "SM", "km"];
   return (Object.keys(UNITS) as CalcUnit[]).filter((u) => UNITS[u].dim === dim);
 }
 

@@ -490,7 +490,7 @@ export function windComponentsGenerator(id: "ifr.windComponents" | "vfr.crosswin
         givens: [
           given("rwyHdg", L("Runway heading", "QFU"), rwyHdg, "deg", L(`RWY ${rwy}`, `piste ${rwy}`)),
           given("windDir", L("Wind direction", "Direction du vent"), windDir, "deg"),
-          given("windKt", L("Wind speed", "Force du vent"), windKt, "kt", L(w, w)),
+          given("windKt", L("Wind speed", "Force du vent"), windKt, "kt"),
           ...(gust ? [given("gustKt", L("Gusts", "Rafales"), gust, "kt")] : []),
         ],
         answer: Math.round(xMax),

@@ -207,7 +207,8 @@ export function poseOnRadial(
     },
     altFt,
     hdg: Math.round(hdg),
-    iasKt: Math.round(iasKt),
+    // the stage flies a trainer: a problem's ground speed is not an indicated airspeed it can hold
+    iasKt: Math.round(Math.max(80, Math.min(105, iasKt))),
     ...extra,
   };
 }

@@ -29,6 +29,9 @@ import {
 } from "../kit";
 
 // ================================================================== standard-rate bank
+/** the live stage flies a trainer: 105 KIAS at 3,000 ft is about 110 KTAS (kit.ts poseOnRadial clamps the IAS) */
+const STAGE_MAX_TAS = 110;
+const STAGE_TAS = 110;
 export const standardRateBank: GeneratorDef = defineGenerator({
   id: "ifr.standardRateBank",
   title: L(
@@ -67,7 +70,8 @@ export const standardRateBank: GeneratorDef = defineGenerator({
       givens: [given("tasKt", L("TAS", "Vitesse propre"), tas, "kt")],
       answer: Math.round(rule),
       unit: "deg",
-      tolerance: bracket(rule, exact, 2, 0.5),
+      // around the PUBLISHED answer (the rounded rule): the exact angle is always accepted too
+      tolerance: bracket(Math.round(rule), exact, 2, 0.5),
       exact: roundStep(exact, 0.1),
       solutionSteps: [
         tr(
@@ -113,12 +117,20 @@ export const standardRateBank: GeneratorDef = defineGenerator({
         controls: ["bank"],
         assist: { holdAlt: true, holdIas: true },
         doThis: [
-          tr(
-            (f) =>
-              `Roll into ${f.n(rule)}° of bank and watch the turn-rate trend reach the standard-rate mark.`,
-            (f) =>
-              `Inclinez à ${f.n(rule)}° et regardez la tendance de virage atteindre le repère du taux 1.`,
-          ),
+          tas <= STAGE_MAX_TAS
+            ? tr(
+                (f) =>
+                  `Roll into ${f.n(Math.round(rule))}° of bank and watch the turn-rate trend reach the standard-rate mark.`,
+                (f) =>
+                  `Inclinez à ${f.n(Math.round(rule))}° et regardez la tendance de virage atteindre le repère du taux 1.`,
+              )
+            : // the stage flies a trainer (≤ 105 KIAS): the bank is worked from ITS true airspeed, not the problem's
+              tr(
+                (f) =>
+                  `The trainer on the stage flies about ${f.u(STAGE_TAS, "kt")} TAS, not ${f.u(tas, "kt")}: same rule for its speed, ${f.n(STAGE_TAS / 10, 0)} + 7 ≈ ${f.n(Math.round(bankRule(STAGE_TAS)))}°. Roll into it and watch the turn-rate trend reach the standard-rate mark.`,
+                (f) =>
+                  `L'avion d'entraînement de la scène vole à environ ${f.u(STAGE_TAS, "kt")} de vitesse propre, pas ${f.u(tas, "kt")} : même règle pour sa vitesse, ${f.n(STAGE_TAS / 10, 0)} + 7 ≈ ${f.n(Math.round(bankRule(STAGE_TAS)))}°. Inclinez-vous et regardez la tendance atteindre le repère du taux 1.`,
+              ),
         ],
       },
     };
@@ -370,7 +382,8 @@ export const holdWind: GeneratorDef = defineGenerator({
   ),
   generate(rng) {
     const inbound = rng.range(10, 360, 5);
-    const tas = rng.range(90, 140, 10);
+    // within what the live stage flies (≤ 105 KIAS, ≈ 110 KTAS at 5,000 ft): the heading computed holds the track
+    const tas = rng.range(90, 110, 10);
     const turn = rng.pick(["R", "R", "L"] as const);
     // a crosswind of 6–14 kt, so 3 × WCA stays under ~25°
     let windDir = 0;
@@ -497,7 +510,7 @@ export const holdWind: GeneratorDef = defineGenerator({
           6,
           5000,
           inbound,
-          Math.round(tas / 1.08),
+          Math.round(tas / 1.1),
           {
             radios: {
               nav1: TRAINING.vor.freq,
