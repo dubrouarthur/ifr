@@ -88,6 +88,8 @@ async function optional<T>(
 function routeKeyOf(r: AcademyRoute): string {
   if (r.k === "play") return `play:${r.id}:${r.a ?? ""}`;
   if (r.k === "edit" || r.k === "present" || r.k === "project") return `${r.k}:${r.id}`;
+  // the library keeps its programme and subject in the hash itself (#library&p=ir&s=ir.hold)
+  if (r.k === "library") return "library";
   return academyHash(r);
 }
 function go(r: AcademyRoute, replace = false) {

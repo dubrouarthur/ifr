@@ -2375,7 +2375,11 @@ const deepBuilder = deepQ.has('builder');
 // the library (academy.html#library) opens a failure drill (?drill=<id>) or a scenario / school circuit (?flight=<id>)
 const deepDrill = deepQ.get('drill');
 const deepFlight = deepQ.get('flight');
-if (deepDrill || deepFlight) {
+// the library's Club shelf opens the club's tools (?club=drills|library|results|pack): checklists, drills, the pack
+const deepClub = deepQ.get('club');
+if (deepClub && ['drills', 'library', 'results', 'pack'].includes(deepClub)) {
+  fc.openClub(deepClub as 'drills' | 'library' | 'results' | 'pack');
+} else if (deepDrill || deepFlight) {
   const ok = fc.openLibraryItem(deepDrill ? { k: 'drill', id: deepDrill } : { k: 'scenario', id: deepFlight! });
   if (!ok) {
     fc.open();

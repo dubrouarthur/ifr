@@ -1,75 +1,360 @@
-// The unified library (academy #library and the Flight Center's Library): the programs a club or a school teaches,
-// the three kinds of things it holds and the three levels. Constants and labels only (FR / EN), no DOM.
+// The unified library (academy #library and the Flight Center): ONE way to browse it. The library is a bookcase:
+// programme shelves in the order a pilot meets them (Découvrir, LAPL · PPL, Vol de nuit, IR, ATPL, Club,
+// Instructeurs), and on each shelf its subjects in syllabus order (Part-FCL's nine theory subjects then the flight
+// modules, the IR's curriculum stages, the 13 ATPL subjects). Every item has exactly one home: a subject
+// (classification.ts). The three kind families are the only filter. Constants and labels only (FR / EN), no DOM.
 import type { CourseLevel, CourseProgram, L10n } from "../course/types";
+import { BRAND } from "../brand";
 
-/** A library program: the licence or the part of club life an item belongs to. */
-export type ProgramId = Exclude<CourseProgram, "lapl-ppl">;
-/** What an item is: a slide course, a procedure or checklist, or a flight in the simulator. */
-export type LibKind = "course" | "procedure" | "flight";
-/** The finer kind a card names. */
+/** A programme shelf. LAPL and PPL share one (Part-FCL gives them the same subjects and flight exercises). */
+export type ProgramId =
+  | "discover"
+  | "ppl"
+  | "night"
+  | "ir"
+  | "atpl"
+  | "club"
+  | "instructors";
+/** The filter's three families: slide courses, what opens the cockpit, procedures and checklists. */
+export type LibKind = "course" | "sim" | "proc";
+/** The one plain word on a card. */
 export type LibSub =
   | "course"
-  | "checklist"
-  | "clubProcedure"
   | "lesson"
   | "drill"
+  | "circuit"
   | "scenario"
-  | "circuit";
+  | "checklist"
+  | "clubChecklist";
 export type Level = CourseLevel;
 
 export interface ProgramDef {
   id: ProgramId;
-  /** the short code on the program strip ("PPL(A)") */
+  /** the short name ("LAPL · PPL", "IR") */
   code: L10n;
-  /** the full name */
+  /** the full name ("Licence de pilote avion") */
   title: L10n;
-  /** the frame it follows ("EASA Part-FCL · FAA Private") */
+  /** the frame it follows ("EASA Part-FCL · LAPL(A) et PPL(A)") */
   frame: L10n;
   /** one line: what a student finds there */
   blurb: L10n;
-  /** the level a course of this program gets when it names none */
+  /** the level a course filed here gets when it names none */
   level: Level;
+  /** the subject a course of this programme lands in when nothing better is known */
+  fallback: SubjectId;
 }
 
+// ------------------------------------------------------------------ subjects (syllabus order)
+export type SubjectGroup = "theory" | "flight";
+interface SubjectRow {
+  id: string;
+  program: ProgramId;
+  /** syllabus number as printed ("01", "010") */
+  n: string;
+  title: L10n;
+  group?: SubjectGroup;
+  /** words that file an unknown course here (its id slug or its tags) */
+  words?: readonly string[];
+}
+function S<P extends ProgramId, I extends string>(
+  program: P,
+  id: I,
+  n: string,
+  en: string,
+  fr: string,
+  words: readonly string[] = [],
+  group?: SubjectGroup,
+): SubjectRow & { id: `${P}.${I}` } {
+  return {
+    id: `${program}.${id}`,
+    program,
+    n,
+    title: { en, fr },
+    words,
+    ...(group ? { group } : {}),
+  };
+}
+const T = <I extends string>(
+  id: I,
+  n: string,
+  en: string,
+  fr: string,
+  w: string[] = [],
+) => S("ppl", id, n, en, fr, w, "theory");
+const F = <I extends string>(
+  id: I,
+  n: string,
+  en: string,
+  fr: string,
+  w: string[] = [],
+) => S("ppl", id, n, en, fr, w, "flight");
+const A = <N extends string>(n: N, en: string, fr: string, w: string[] = []) =>
+  S("atpl", n, n, en, fr, [n, ...w]);
+
+const SUBJECT_ROWS = [
+  S("discover", "start", "01", "First steps", "Premiers pas"),
+  // LAPL · PPL: the nine Part-FCL theory subjects, then the flight modules
+  T("law", "01", "Air law", "Droit aérien", [
+    "law",
+    "airspace",
+    "rules",
+    "sera",
+    "regulation",
+  ]),
+  T("hp", "02", "Human performance", "Performances humaines", [
+    "human",
+    "physiology",
+    "disorientation",
+  ]),
+  T("met", "03", "Meteorology", "Météorologie", [
+    "meteorology",
+    "weather",
+    "metar",
+    "taf",
+    "met",
+  ]),
+  T("com", "04", "Communications", "Communications", [
+    "phraseology",
+    "radio",
+    "communications",
+    "rt",
+  ]),
+  T("pof", "05", "Principles of flight", "Principes du vol", [
+    "principles",
+    "aerodynamics",
+    "lift",
+    "stall",
+  ]),
+  T("ops", "06", "Operational procedures", "Procédures opérationnelles", [
+    "operational",
+    "operations",
+  ]),
+  T(
+    "fpp",
+    "07",
+    "Flight performance and planning",
+    "Performances et préparation du vol",
+    ["performance", "mass", "balance", "planning", "maths"],
+  ),
+  T(
+    "agk",
+    "08",
+    "Aircraft general knowledge",
+    "Connaissance générale de l’aéronef",
+    ["systems", "engine", "aircraft"],
+  ),
+  T("nav", "09", "Navigation", "Navigation", ["navigation", "chart", "map"]),
+  F(
+    "prep",
+    "10",
+    "Preparation and normal procedures",
+    "Préparation et procédures normales",
+    ["normal", "preflight", "checklist"],
+  ),
+  F("hand", "11", "Aircraft handling", "Maniabilité", [
+    "handling",
+    "slow",
+    "steep",
+  ]),
+  F("circ", "12", "Circuits and landings", "Tour de piste et atterrissages", [
+    "circuit",
+    "landing",
+    "landings",
+    "takeoff",
+    "pattern",
+  ]),
+  F("emer", "13", "Failures and emergencies", "Pannes et urgences", [
+    "emergency",
+    "emergencies",
+    "forced",
+    "failure",
+  ]),
+  F("xc", "14", "Navigation flights", "Navigation en vol", [
+    "cross",
+    "country",
+    "xc",
+  ]),
+  F("bif", "15", "Basic instrument flight", "Vol aux instruments de base", [
+    "basic",
+    "instrument",
+  ]),
+  // Night rating
+  S(
+    "night",
+    "rules",
+    "01",
+    "Night rules and minima",
+    "Règles et minima de nuit",
+    ["rules", "minima"],
+  ),
+  S(
+    "night",
+    "hp",
+    "02",
+    "Night vision and disorientation",
+    "Vision de nuit et désorientation",
+    ["vision", "disorientation"],
+  ),
+  S("night", "nav", "03", "Night navigation", "Navigation de nuit", [
+    "navigation",
+  ]),
+  S("night", "emer", "04", "Failures at night", "Pannes de nuit", [
+    "failure",
+    "emergency",
+  ]),
+  // IR: the curriculum stages S1–S8, in the order a student flies them
+  S(
+    "ir",
+    "att",
+    "01",
+    "Attitude instrument flying",
+    "Pilotage aux instruments",
+    ["scan", "attitude", "instruments", "gyros", "pressure", "compass"],
+  ),
+  S("ir", "nav", "02", "Radio navigation", "Radionavigation", [
+    "vor",
+    "ndb",
+    "adf",
+    "dme",
+    "radionav",
+    "gps",
+  ]),
+  S("ir", "hold", "03", "Holding", "Attentes", ["holding", "hold", "holds"]),
+  S("ir", "app", "04", "Approaches", "Approches", [
+    "ils",
+    "loc",
+    "rnav",
+    "gnss",
+    "approach",
+    "approaches",
+  ]),
+  S(
+    "ir",
+    "emer",
+    "05",
+    "IFR failures and emergencies",
+    "Pannes et urgences IFR",
+    ["lost", "comms", "failure", "emergency"],
+  ),
+  S(
+    "ir",
+    "proc",
+    "06",
+    "IFR procedures and cross-countries",
+    "Procédures IFR et navigations",
+    ["departures", "arrivals", "sid", "star", "planning", "maths"],
+  ),
+  S("ir", "test", "07", "Checkride", "Test pratique", ["checkride", "test"]),
+  // ATPL: the 13 EASA subjects
+  A("010", "Air law", "Droit aérien", ["law"]),
+  A("021", "Airframe, systems and powerplant", "Cellule, systèmes et moteurs", [
+    "systems",
+  ]),
+  A("022", "Instrumentation", "Instrumentation", ["instruments"]),
+  A("031", "Mass and balance", "Masse et centrage", ["mass"]),
+  A("032", "Performance", "Performances", ["performance"]),
+  A("033", "Flight planning and monitoring", "Préparation et suivi du vol", [
+    "planning",
+  ]),
+  A("040", "Human performance", "Performances humaines", ["human"]),
+  A("050", "Meteorology", "Météorologie", ["meteorology"]),
+  A("061", "General navigation", "Navigation générale", ["navigation"]),
+  A("062", "Radio navigation", "Radionavigation", ["radionav"]),
+  A("070", "Operational procedures", "Procédures opérationnelles", [
+    "operational",
+  ]),
+  A("081", "Principles of flight", "Principes du vol", ["principles"]),
+  A("090", "Communications", "Communications", ["communications"]),
+  // Club
+  S("club", "life", "01", "Club essentials", "L’essentiel du club", [
+    "essentials",
+    "briefing",
+  ]),
+  S(
+    "club",
+    "drills",
+    "02",
+    "Club checks and drills",
+    "Contrôles et exercices du club",
+    ["drill", "drills", "check", "test"],
+  ),
+  S("club", "courses", "03", "Club courses", "Cours du club"),
+  // Instructors
+  S(
+    "instructors",
+    "teach",
+    "01",
+    `Teaching with ${BRAND.name}`,
+    `Enseigner avec ${BRAND.name}`,
+    ["teaching", "teach"],
+  ),
+  S(
+    "instructors",
+    "mine",
+    "02",
+    "My courses and drafts",
+    "Mes cours et brouillons",
+  ),
+] as const satisfies readonly SubjectRow[];
+
+export type SubjectId = (typeof SUBJECT_ROWS)[number]["id"];
+export interface SubjectDef extends SubjectRow {
+  id: SubjectId;
+}
+export const SUBJECTS: readonly SubjectDef[] =
+  SUBJECT_ROWS as readonly SubjectDef[];
+const SUBJECT_BY_ID = new Map<string, SubjectDef>(
+  SUBJECTS.map((s) => [s.id, s]),
+);
+export const isSubjectId = (x: unknown): x is SubjectId =>
+  typeof x === "string" && SUBJECT_BY_ID.has(x);
+export const subjectDef = (id: SubjectId): SubjectDef => SUBJECT_BY_ID.get(id)!;
+export const subjectsOf = (p: ProgramId): SubjectDef[] =>
+  SUBJECTS.filter((s) => s.program === p);
+/** The rank of a subject in the whole bookcase (shelf order, then syllabus order). */
+export const subjectRank = (id: SubjectId): number =>
+  SUBJECTS.findIndex((s) => s.id === id);
+
+// ------------------------------------------------------------------ the shelves
 export const PROGRAMS: readonly ProgramDef[] = [
   {
-    id: "lapl",
-    code: { en: "LAPL(A)", fr: "LAPL(A)" },
-    title: {
-      en: "Light aircraft pilot licence",
-      fr: "Licence de pilote d’aéronef léger",
-    },
-    frame: { en: "EASA Part-FCL", fr: "EASA Part-FCL" },
+    id: "discover",
+    code: { en: "Discover", fr: "Découvrir" },
+    title: { en: "Discover the platform", fr: "Découvrir la plateforme" },
+    frame: { en: "For everyone", fr: "Pour tout le monde" },
     blurb: {
-      en: "The aeroclub basics: the circuit, engine failures, the first navigation flights",
-      fr: "Les bases de l’aéroclub : tour de piste, pannes moteur, premières navigations",
+      en: "The platform in 5 slides and a first free flight",
+      fr: "La plateforme en 5 diapositives et un premier vol libre",
     },
     level: 1,
+    fallback: "discover.start",
   },
   {
     id: "ppl",
-    code: { en: "PPL(A)", fr: "PPL(A)" },
-    title: { en: "Private pilot licence", fr: "Licence de pilote privé" },
+    code: { en: "LAPL · PPL", fr: "LAPL · PPL" },
+    title: { en: "Pilot licence, aeroplane", fr: "Licence de pilote avion" },
     frame: {
-      en: "EASA Part-FCL · FAA Private",
-      fr: "EASA Part-FCL · FAA Private",
+      en: "EASA Part-FCL · LAPL(A) and PPL(A)",
+      fr: "EASA Part-FCL · LAPL(A) et PPL(A)",
     },
     blurb: {
-      en: "The nine theory subjects, the C172S, emergencies and basic instrument flying",
-      fr: "Les neuf matières théoriques, le C172S, les urgences et le vol aux instruments de base",
+      en: "The 9 theory subjects and the flight modules, on the C172S",
+      fr: "Les 9 matières théoriques et les modules en vol, sur C172S",
     },
     level: 1,
+    fallback: "ppl.prep",
   },
   {
     id: "night",
-    code: { en: "Night · VFR", fr: "Nuit · VFR" },
-    title: { en: "Night rating and VFR", fr: "Qualification de nuit et VFR" },
+    code: { en: "Night", fr: "Vol de nuit" },
+    title: { en: "Night rating", fr: "Qualification vol de nuit" },
     frame: { en: "EASA FCL.810 · SERA", fr: "EASA FCL.810 · SERA" },
     blurb: {
-      en: "Flying by the instruments when the horizon goes, disorientation, electrical failures",
-      fr: "Piloter aux instruments quand l’horizon disparaît, désorientation, pannes électriques",
+      en: "When the horizon goes: rules, vision, failures at night",
+      fr: "Quand l’horizon disparaît : règles, vision, pannes de nuit",
     },
     level: 2,
+    fallback: "night.rules",
   },
   {
     id: "ir",
@@ -80,112 +365,165 @@ export const PROGRAMS: readonly ProgramDef[] = [
     },
     frame: { en: "EASA IR · FAA Instrument", fr: "EASA IR · FAA Instrument" },
     blurb: {
-      en: "From the first scan to the checkride: radio navigation, holds, approaches",
-      fr: "Du premier circuit visuel au test : radionavigation, attentes, approches",
+      en: "From the first scan to the checkride, in syllabus order",
+      fr: "Du premier circuit visuel au test, dans l’ordre du programme",
     },
     level: 2,
+    fallback: "ir.proc",
   },
   {
     id: "atpl",
     code: { en: "ATPL", fr: "ATPL" },
     title: { en: "ATPL theory", fr: "Théorique ATPL" },
     frame: {
-      en: "EASA 14 subjects · FAA ATP",
-      fr: "EASA 14 matières · FAA ATP",
+      en: "EASA ATPL(A) · 13 subjects",
+      fr: "EASA ATPL(A) · 13 matières",
     },
     blurb: {
       en: "The subjects where live instruments and calculations help most",
       fr: "Les matières où instruments en direct et calculs aident le plus",
     },
     level: 3,
+    fallback: "atpl.010",
   },
   {
     id: "club",
     code: { en: "Club", fr: "Club" },
     title: { en: "Club life", fr: "Vie du club" },
-    frame: {
-      en: "Checklists · local procedures · briefings",
-      fr: "Check-lists · procédures locales · briefings",
-    },
+    frame: { en: "Your club’s own", fr: "Propre à votre club" },
     blurb: {
-      en: "Your club’s own checklists and drills, its briefings and the radio phraseology",
-      fr: "Les check-lists et exercices du club, ses briefings et la phraséologie radio",
+      en: "What your club adds: its essentials, its checks, its courses",
+      fr: "Ce que votre club ajoute : son essentiel, ses contrôles, ses cours",
     },
     level: 1,
+    fallback: "club.courses",
   },
   {
     id: "instructors",
-    code: { en: "FI", fr: "FI" },
+    code: { en: "Instructors", fr: "Instructeurs" },
     title: { en: "For instructors", fr: "Pour les instructeurs" },
     frame: {
       en: "Create · present · follow up",
       fr: "Créer · présenter · suivre",
     },
     blurb: {
-      en: "Build a course from a template or your slides, teach it in class, follow your students",
-      fr: "Créer un cours depuis un modèle ou vos diapositives, l’enseigner en salle, suivre vos élèves",
+      en: "Build a course, teach it in class, follow your students",
+      fr: "Créer un cours, l’enseigner en salle, suivre vos élèves",
     },
     level: 1,
+    fallback: "instructors.mine",
   },
 ];
 export const PROGRAM_IDS: readonly ProgramId[] = PROGRAMS.map((p) => p.id);
+/** The shelves the landing lists (Découvrir is the "Où commencer ?" block, never a shelf row). */
+export const SHELF_IDS: readonly ProgramId[] = PROGRAM_IDS.filter(
+  (p) => p !== "discover",
+);
 export const programDef = (id: ProgramId): ProgramDef =>
   PROGRAMS.find((p) => p.id === id)!;
 export const isProgramId = (x: unknown): x is ProgramId =>
   typeof x === "string" && (PROGRAM_IDS as readonly string[]).includes(x);
+export const GROUP_TITLE: Record<SubjectGroup, L10n> = {
+  theory: { en: "Theory · the 9 subjects", fr: "Théorie · les 9 matières" },
+  flight: { en: "In flight", fr: "En vol" },
+};
 
-/** A course's program field as library programs ('lapl-ppl' is both, PPL first). */
-export function expandPrograms(
-  p: CourseProgram | readonly CourseProgram[] | null | undefined,
-): ProgramId[] {
-  const list = p === undefined || p === null ? [] : Array.isArray(p) ? p : [p];
-  const out: ProgramId[] = [];
-  for (const x of list as readonly string[]) {
-    const ids: string[] = x === "lapl-ppl" ? ["ppl", "lapl"] : [x];
-    for (const id of ids)
-      if (isProgramId(id) && !out.includes(id)) out.push(id);
-  }
-  return out;
+/** A course's own program field (authors' vocabulary) as a shelf: LAPL, PPL and 'lapl-ppl' are the one LAPL · PPL. */
+export function shelfOfCourseProgram(
+  p: CourseProgram | string | null | undefined,
+): ProgramId | null {
+  if (!p) return null;
+  if (p === "lapl" || p === "ppl" || p === "lapl-ppl") return "ppl";
+  return isProgramId(p) && p !== "discover" ? p : null;
+}
+/** The course `program` value a shelf is saved as (the inverse, for the "File" dialog). */
+export function courseProgramOf(p: ProgramId): CourseProgram | null {
+  return p === "discover" ? null : p === "ppl" ? "lapl-ppl" : p;
 }
 
-export const KINDS: readonly { id: LibKind; title: L10n; plural: L10n }[] = [
-  {
-    id: "course",
-    title: { en: "Course", fr: "Cours" },
-    plural: { en: "Courses", fr: "Cours" },
-  },
-  {
-    id: "flight",
-    title: { en: "Flight", fr: "Vol" },
-    plural: { en: "Simulator flights", fr: "Vols au simulateur" },
-  },
-  {
-    id: "procedure",
-    title: { en: "Procedure", fr: "Procédure" },
-    plural: {
-      en: "Procedures and checklists",
-      fr: "Procédures et check-lists",
-    },
-  },
-];
-export const KIND_ORDER: readonly LibKind[] = KINDS.map((k) => k.id);
-/** The filter labels (short). */
+const fold = (s: string) =>
+  s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+/**
+ * The subject of a programme that a course with these words belongs to (its id slug, its tags, its title): the one
+ * whose words match most, the first in syllabus order on a tie, else the programme's fallback. This is how a course
+ * an author adds later, or a club's own course, lands in the right subject without anyone editing a table.
+ */
+export function guessSubject(
+  p: ProgramId,
+  words: readonly string[],
+): SubjectId {
+  const toks = new Set(
+    words.flatMap((w) =>
+      fold(w)
+        .split(/[^a-z0-9]+/)
+        .filter(Boolean),
+    ),
+  );
+  let best: SubjectDef | null = null;
+  let bestN = 0;
+  for (const s of subjectsOf(p)) {
+    const n = (s.words ?? []).filter((w) => toks.has(w)).length;
+    if (n > bestN) ((best = s), (bestN = n));
+  }
+  return best?.id ?? programDef(p).fallback;
+}
+
+// ------------------------------------------------------------------ kinds
+export const KIND_ORDER: readonly LibKind[] = ["course", "sim", "proc"];
+/** The filter's labels (§3: no "Vols": the plain words). */
 export const KIND_FILTER: Record<LibKind, L10n> = {
   course: { en: "Courses", fr: "Cours" },
-  procedure: { en: "Procedures", fr: "Procédures" },
-  flight: { en: "Flights", fr: "Vols" },
+  sim: { en: "In the simulator", fr: "Au simulateur" },
+  proc: { en: "Procedures and checklists", fr: "Procédures et check-lists" },
 };
-
-/** The word on a card. */
+export const KIND_OF: Record<LibSub, LibKind> = {
+  course: "course",
+  lesson: "sim",
+  drill: "sim",
+  circuit: "sim",
+  scenario: "sim",
+  checklist: "proc",
+  clubChecklist: "proc",
+};
+/** The word on a card. Never "Vol", "Scénario" or "Circuit école". */
 export const SUB_LABEL: Record<LibSub, L10n> = {
   course: { en: "Course", fr: "Cours" },
-  checklist: { en: "Checklist", fr: "Check-list" },
-  clubProcedure: { en: "Club procedure", fr: "Procédure du club" },
   lesson: { en: "Sim lesson", fr: "Leçon au simulateur" },
   drill: { en: "Failure drill", fr: "Exercice de panne" },
-  scenario: { en: "Scenario", fr: "Scénario" },
-  circuit: { en: "School circuit", fr: "Circuit école" },
+  circuit: { en: "Graded route", fr: "Parcours noté" },
+  scenario: { en: "Free practice", fr: "Entraînement libre" },
+  checklist: { en: "Checklist", fr: "Check-list" },
+  clubChecklist: { en: "Club checklist", fr: "Check-list du club" },
 };
+export const SUB_PLURAL: Record<LibSub, L10n> = {
+  course: { en: "Courses", fr: "Cours" },
+  lesson: { en: "Sim lessons", fr: "Leçons au simulateur" },
+  drill: { en: "Failure drills", fr: "Exercices de panne" },
+  circuit: { en: "Graded routes", fr: "Parcours notés" },
+  scenario: { en: "Free practice", fr: "Entraînements libres" },
+  checklist: { en: "Checklists", fr: "Check-lists" },
+  clubChecklist: { en: "Club checklists", fr: "Check-lists du club" },
+};
+/** Order inside a subject: understand, fly it graded, handle failures, practise freely, keep the checklist. */
+export const SUB_ORDER: readonly LibSub[] = [
+  "course",
+  "lesson",
+  "drill",
+  "circuit",
+  "scenario",
+  "checklist",
+  "clubChecklist",
+];
+/** What a subject's section groups by: a club's checklist sits with the checklists it replaces. */
+export type GroupId = Exclude<LibSub, "clubChecklist">;
+export const groupOf = (s: LibSub): GroupId =>
+  s === "clubChecklist" ? "checklist" : s;
+/** Scanned as compact rows, not cards (reference items). */
+export const ROW_SUBS: ReadonlySet<LibSub> = new Set<LibSub>([
+  "checklist",
+  "clubChecklist",
+  "scenario",
+]);
 
 export const LEVELS: readonly { id: Level; title: L10n }[] = [
   { id: 1, title: { en: "Getting started", fr: "Débuter" } },

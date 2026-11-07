@@ -2,27 +2,32 @@
 // from the course library's entries (course/ui/library.ts libraryEntries: stored courses, then the built-in samples);
 // a sample briefing written for a sim lesson is not listed on its own: it becomes that lesson's cover and opens with
 // it. Sim lessons, failure drills, scenarios and school circuits come from the tables of meta.ts, procedures and
-// checklists from the procedure store (the library in the screen language and every club procedure).
+// checklists from the procedure store (the library in the screen language and every club procedure). Every item
+// gets its ONE home from classification.ts; a course nobody classified (an author's, a club's, one a library author
+// adds later) is filed from its own subject, its program and its words (programs.ts guessSubject).
 import type { CourseProgram, Lang, L10n } from "../course/types";
 import type { LibraryEntry } from "../course/ui/library";
 import type { Procedure, ProcCategory } from "../train/procedureTypes";
 import {
-  COURSE_META,
   DRILL_META,
   FLIGHT_META,
   LESSON_META,
   LESSON_ORDER,
-  PROCEDURE_META,
   STAGE_LABEL,
-  TAG_PROGRAMS,
   type DrillPhaseId,
 } from "./meta";
+import { CLASSIFICATION, type Placement } from "./classification";
 import type { LibItem } from "./model";
 import {
-  expandPrograms,
+  guessSubject,
+  isProgramId,
+  isSubjectId,
   programDef,
+  shelfOfCourseProgram,
+  subjectDef,
   type Level,
   type ProgramId,
+  type SubjectId,
 } from "./programs";
 
 /** A lesson's record in the cockpit's progress store (ui/learn.ts, localStorage 'ifr.progress.v1'). */
@@ -58,40 +63,89 @@ export interface SourceInput {
   flights?: boolean;
 }
 
-const uniq = <T>(xs: readonly T[]): T[] =>
-  xs.filter((x, i) => xs.indexOf(x) === i);
+/** The classified home of a built-in item; an unknown id (a new club procedure, a club drill) gets `fallback`. */
+export function placementOf(
+  id: string,
+  fallback: SubjectId,
+  level: Level = 2,
+): Placement {
+  return CLASSIFICATION[id] ?? { home: fallback, level };
+}
 
 // ------------------------------------------------------------------ courses
-/** Where a course sits: its own program field, else the built-in placement (meta.ts), else the library registry,
- *  else its tags, else the Club shelf for an imported course; level likewise. */
+/** The words a course is filed by when it has no row: its id's slug, its tags, its title. */
+const courseWords = (
+  id: string,
+  tags: readonly string[],
+  title?: { en: string; fr?: string },
+) => [id.replace(/^sample-(lib-)?/, ""), ...tags, title?.en ?? ""];
+/**
+ * Where a course lives (its ONE home) and its level:
+ * - the subject the author filed it in (`course.subject`);
+ * - a built-in course (or a copy of one): its row in the classification table;
+ * - an author's own `program`, or a library course's registry program: the subject its words match in that
+ *   programme (a library course an author adds later lands there by itself);
+ * - its tags (a programme's name), then an imported club pack in Club › Club courses, then the author's own
+ *   course in Instructors › My courses and drafts.
+ */
 export function coursePlacement(
   e: Pick<LibraryEntry, "id" | "tags" | "shelf" | "sample"> & {
+    title?: { en: string; fr?: string };
     course?: {
       program?: CourseProgram | CourseProgram[];
+      subject?: string;
       level?: Level;
       sample?: string;
     } | null;
   },
   sampleProgram?: (id: string) => CourseProgram | undefined,
-): { programs: ProgramId[]; level: Level } {
-  const sid = e.sample ? e.id : (e.course?.sample ?? e.id);
-  const meta = COURSE_META[sid];
-  let programs = expandPrograms(e.course?.program);
-  if (!programs.length && meta?.programs) programs = [...meta.programs];
-  if (!programs.length) programs = expandPrograms(sampleProgram?.(sid));
-  if (!programs.length)
-    programs = uniq(
-      (e.tags ?? [])
-        .map((t) => TAG_PROGRAMS[t.toLowerCase()])
-        .filter((x): x is ProgramId => !!x),
-    );
-  if (e.shelf === "club" && !programs.includes("club")) programs.push("club");
+): { home: SubjectId; also: readonly SubjectId[]; level: Level } {
+  const c = e.course;
+  const sid = e.sample ? e.id : (c?.sample ?? e.id);
+  const row = CLASSIFICATION[sid];
+  const words = courseWords(e.id, e.tags ?? [], e.title);
+  const own =
+    [c?.program]
+      .flat()
+      .map((p) => shelfOfCourseProgram(p))
+      .find(Boolean) ?? null;
+  let home: SubjectId | null = null;
+  let also: readonly SubjectId[] = [];
+  const filed = c?.subject;
+  if (isSubjectId(filed)) home = filed;
+  else if (row && (e.sample || !own || subjectDef(row.home).program === own)) {
+    home = row.home;
+    also = e.sample ? (row.also ?? []) : [];
+  } else if (own) home = guessSubject(own, words);
+  else {
+    const reg = shelfOfCourseProgram(sampleProgram?.(sid));
+    if (reg) home = guessSubject(reg, words);
+  }
+  if (!home) {
+    const tag = (e.tags ?? [])
+      .map(
+        (t) =>
+          shelfOfCourseProgram(t.toLowerCase()) ?? TAG_SHELF[t.toLowerCase()],
+      )
+      .find((x): x is ProgramId => !!x && isProgramId(x));
+    if (tag) home = guessSubject(tag, words);
+  }
+  home ??= e.shelf === "club" ? "club.courses" : "instructors.mine";
   const level: Level =
-    e.course?.level ??
-    meta?.level ??
-    (programs[0] ? programDef(programs[0]).level : 2);
-  return { programs, level };
+    c?.level ??
+    (row && row.home === home ? row.level : undefined) ??
+    programDef(subjectDef(home).program).level;
+  return { home, also, level };
 }
+/** Tags that name a shelf (a course imported without a program). */
+const TAG_SHELF: Readonly<Record<string, ProgramId>> = {
+  vfr: "ppl",
+  nuit: "night",
+  ifr: "ir",
+  holding: "ir",
+  instructor: "instructors",
+  fi: "instructors",
+};
 
 /** The lesson a built-in briefing deck was written for (it is listed as that lesson's cover, not as a course). */
 export function briefingLessonOf(e: LibraryEntry): string | null {
@@ -107,13 +161,15 @@ export function courseItems(
   const out: LibItem[] = [];
   list.forEach((e, i) => {
     if (briefingLessonOf(e)) return;
-    const { programs, level } = coursePlacement(e, o.sampleProgram);
-    const blurb = e.summary ?? o.sampleBlurb?.(e.id);
+    const { home, also, level } = coursePlacement(e, o.sampleProgram);
+    const purpose = e.sample ? CLASSIFICATION[e.id]?.purpose : undefined;
+    const blurb = purpose ?? e.summary ?? o.sampleBlurb?.(e.id);
     out.push({
       key: `course:${e.id}`,
       kind: "course",
       sub: "course",
-      programs,
+      home,
+      also,
       level,
       title: e.title,
       ...(blurb ? { blurb } : {}),
@@ -154,13 +210,16 @@ export function lessonItems(
     const m = LESSON_META[id];
     const r = rec[id];
     const deck = briefings.get(id);
+    const pl = placementOf(id, "ir.att");
     return {
       key: `lesson:${id}`,
-      kind: "flight",
+      kind: "sim",
       sub: "lesson",
-      programs: [...m.programs],
-      level: m.level,
+      home: pl.home,
+      also: pl.also ?? [],
+      level: pl.level,
       title: { en: m.en, fr: m.fr },
+      ...(pl.purpose ? { blurb: pl.purpose } : {}),
       eyebrow: STAGE_LABEL[m.stage],
       minutes: m.minutes,
       source: "builtin",
@@ -180,7 +239,7 @@ export function lessonItems(
       open: { k: "lesson", id },
       ...(deck ? { deck } : {}),
       facet: m.stage,
-      words: `${id} simulator simulateur cockpit`,
+      words: `${id} simulator simulateur cockpit ${pl.words ?? ""}`,
     };
   });
 }
@@ -200,21 +259,24 @@ export function procedureItems(
 ): LibItem[] {
   return list.map((p, i): LibItem => {
     const base = procBase(p);
-    const meta = PROCEDURE_META[base];
     const club = p.source === "club";
-    const programs: ProgramId[] = club
-      ? uniq<ProgramId>(["club", ...(meta?.programs ?? ["ppl"])])
-      : [...(meta?.programs ?? ["ppl"])];
+    // a club's copy takes its original's place; a club's brand-new procedure lives in Club › checks and drills
+    const pl = placementOf(base, club ? "club.drills" : "ppl.emer");
     const cat = cats?.[p.category];
     const mem = p.items.filter((x) => x.memory).length;
     return {
       key: `proc:${p.id}`,
-      kind: "procedure",
-      sub: club ? "clubProcedure" : "checklist",
-      programs,
-      level: meta?.level ?? 2,
+      kind: "proc",
+      sub: club ? "clubChecklist" : "checklist",
+      home: pl.home,
+      also: pl.also ?? [],
+      level: pl.level,
       title: { en: p.title, fr: p.title },
-      ...(p.summary ? { blurb: { en: p.summary, fr: p.summary } } : {}),
+      ...(p.summary
+        ? { blurb: { en: p.summary, fr: p.summary } }
+        : pl.purpose
+          ? { blurb: pl.purpose }
+          : {}),
       ...(cat ? { eyebrow: { en: cat.en, fr: cat.fr } } : {}),
       count: { n: p.items.length, unit: "items" },
       source: club ? "club" : "builtin",
@@ -225,7 +287,7 @@ export function procedureItems(
       lines: p.items
         .slice(0, 6)
         .map((x) => ({ text: x.text, memory: x.memory })),
-      words: `${p.ref ?? ""} ${mem ? "memory mémoire" : ""} checklist ${p.lang !== lang ? p.lang : ""}`,
+      words: `${p.ref ?? ""} ${mem ? "memory mémoire" : ""} checklist check-list ${p.lang !== lang ? p.lang : ""} ${pl.words ?? ""}`,
       langs: [p.lang],
     };
   });
@@ -242,9 +304,10 @@ export function drillItems(club: readonly ClubDrill[] = []): LibItem[] {
   const mine = club.map(
     (d, i): LibItem => ({
       key: `drill:${d.id}`,
-      kind: "flight",
+      kind: "sim",
       sub: "drill",
-      programs: ["club"],
+      home: "club.drills",
+      also: [],
       level: 2,
       title: { en: d.name, fr: d.name },
       ...(d.desc ? { blurb: { en: d.desc, fr: d.desc } } : {}),
@@ -259,14 +322,17 @@ export function drillItems(club: readonly ClubDrill[] = []): LibItem[] {
       words: d.assignee ?? "",
     }),
   );
-  const tpl = Object.entries(DRILL_META).map(
-    ([id, m], i): LibItem => ({
+  const tpl = Object.entries(DRILL_META).map(([id, m], i): LibItem => {
+    const pl = placementOf(id, "club.drills");
+    return {
       key: `drill:${id}`,
-      kind: "flight",
+      kind: "sim",
       sub: "drill",
-      programs: [...m.programs],
-      level: m.level,
+      home: pl.home,
+      also: pl.also ?? [],
+      level: pl.level,
       title: m.name,
+      ...(pl.purpose ? { blurb: pl.purpose } : {}),
       eyebrow: PHASE_LABEL[m.phase],
       minutes: m.phase === "approach" ? 15 : 10,
       source: "builtin",
@@ -274,29 +340,33 @@ export function drillItems(club: readonly ClubDrill[] = []): LibItem[] {
       open: { k: "drill", id },
       facet: m.phase,
       aircraft: "C172S",
-      words: `${m.trains.join(" ")} drill exercice panne failure`,
-    }),
-  );
+      words: `${m.trains.join(" ")} drill exercice panne failure ${pl.words ?? ""}`,
+    };
+  });
   return [...mine, ...tpl];
 }
 export function flightItems(): LibItem[] {
-  return Object.entries(FLIGHT_META).map(
-    ([id, m], i): LibItem => ({
+  return Object.entries(FLIGHT_META).map(([id, m], i): LibItem => {
+    const pl = placementOf(id, "ir.proc");
+    return {
       key: `flight:${id}`,
-      kind: "flight",
+      kind: "sim",
       sub: m.type,
-      programs: [...m.programs],
-      level: m.level,
+      home: pl.home,
+      also: pl.also ?? [],
+      level: pl.level,
       title: { en: m.en, fr: m.fr },
+      ...(pl.purpose ? { blurb: pl.purpose } : {}),
       eyebrow: { en: `${m.airport} · ${m.tag}`, fr: `${m.airport} · ${m.tag}` },
       minutes: m.minutes,
       source: "builtin",
       order: i,
       open: { k: "scenario", id },
       facet: m.tag,
-      words: `${m.airport} ${m.tag} ${id}`,
-    }),
-  );
+      aircraft: m.airport,
+      words: `${m.airport} ${m.tag} ${id} ${pl.words ?? ""}`,
+    };
+  });
 }
 
 /** Every item of the library. */
