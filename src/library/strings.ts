@@ -9,8 +9,8 @@ const S = {
     fr: "Tout ce que votre club enseigne, au sol et en vol",
   },
   lead: {
-    en: "Slide courses, procedures and checklists, simulator lessons: from the LAPL to ATPL theory, in one place.",
-    fr: "Cours en diapositives, procédures et check-lists, leçons au simulateur : du LAPL à la théorique ATPL, au même endroit.",
+    en: "The platform for aviation education: slide courses, procedures and checklists, lessons in the built-in simulator, from the LAPL and PPL to the IR and ATPL theory.",
+    fr: "La plateforme de l’éducation aéronautique : cours en diapositives, procédures et check-lists, leçons au simulateur intégré, du LAPL et du PPL jusqu’à l’IR et la théorie ATPL.",
   },
   search: {
     en: "Search courses, procedures, flights",
@@ -41,7 +41,10 @@ const S = {
     fr: "Ce que votre instructeur vous demande de préparer",
   },
   drafts: { en: "My drafts", fr: "Mes brouillons" },
-  draftsEmpty: { en: "Your own courses appear here.", fr: "Vos propres cours apparaîtront ici." },
+  draftsEmpty: {
+    en: "Your own courses appear here.",
+    fr: "Vos propres cours apparaîtront ici.",
+  },
   draftsEmptyBody: {
     en: "Start from a beautiful deck in the classroom theme, or bring the slides you already teach with.",
     fr: "Partez d’un beau modèle en thème « salle de cours », ou reprenez les diapositives avec lesquelles vous enseignez déjà.",

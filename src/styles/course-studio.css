@@ -7,7 +7,8 @@
   --rail-w: 76px;
   --panel-w: 344px;
   --insp-w: 320px;
-  --stage-bg: #e6e9ee;
+  /* the classroom chrome (SPEC slides v2 §4): a warm paper grey, the slide paper sits on it like Keynote */
+  --stage-bg: #ecebe6;
   --ink: #0f1722;
   --accent-ink: #ffffff;
   --present: #0b63ce;

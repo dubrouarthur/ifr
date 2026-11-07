@@ -4,8 +4,15 @@
 // behind "Browse all flights".
 import { h, clear, store } from "./dom";
 import { brandAudience, brandEyebrow, brandLead, brandTagline } from "../brand";
+import { LESSON_META } from "../library/meta";
 import { Modal, WX_PRESETS, type WxPreset } from "./modals";
-import { CATEGORIES, MINE_SUB as MINE, catalog, type CatId, type Item } from "./catalog";
+import {
+  CATEGORIES,
+  MINE_SUB as MINE,
+  catalog,
+  type CatId,
+  type Item,
+} from "./catalog";
 import { PATHS, type Path } from "../train/curriculum";
 import { progress } from "./learn";
 import { history } from "./history";
@@ -17,7 +24,15 @@ import type { Exercise } from "../train/engine";
 import type { Attempt } from "./history";
 import type { Circuit } from "../train/circuits";
 import { circuitStore } from "../train/circuits";
-import { registerStrings, t, tn, lang as uiLang, setLang, onLangChange, type UiLang } from "./i18n";
+import {
+  registerStrings,
+  t,
+  tn,
+  lang as uiLang,
+  setLang,
+  onLangChange,
+  type UiLang,
+} from "./i18n";
 import { PHASES, listDrills, type DrillEntry } from "../train/drills";
 import {
   clubName,
@@ -34,10 +49,22 @@ import {
   type ConflictPolicy,
   type ImportReport,
 } from "../train/procedureStore";
-import { CATEGORY_LABELS, CATEGORY_ORDER, DISCLAIMER } from "../train/procedureLibrary";
+import {
+  CATEGORY_LABELS,
+  CATEGORY_ORDER,
+  DISCLAIMER,
+} from "../train/procedureLibrary";
 import type { Lang, Procedure, ProcedureResult } from "../train/procedureTypes";
 import type { FailureKey } from "../sim/systemsTypes";
-import { CAT_ICONS, categoryFor, failureName, openProcedureEditor, openShareDialog, pIcon, type PIcon } from "./procedureEditor";
+import {
+  CAT_ICONS,
+  categoryFor,
+  failureName,
+  openProcedureEditor,
+  openShareDialog,
+  pIcon,
+  type PIcon,
+} from "./procedureEditor";
 
 export type CockpitType = "g1000" | "steam" | "airliner";
 
@@ -81,7 +108,11 @@ type View =
   | { type: "path"; path: Path }
   | { type: "search" }
   | { type: "club"; tab: ClubTab }
-  | { type: "courses"; intent?: CourseIntent; program?: import("../library/programs").ProgramId };
+  | {
+      type: "courses";
+      intent?: CourseIntent;
+      program?: import("../library/programs").ProgramId;
+    };
 
 /** what the Ground school page does once the library is up: create a course, or pick one to present */
 export type CourseIntent = "new" | "present";
@@ -115,10 +146,20 @@ const PATH_SHORT: Record<string, string> = {
   xc: "IFR cross-country",
   ckp: "Checkride prep",
 };
+const PATH_SHORT_FR: Record<string, string> = {
+  ir: "Qualification IR",
+  classic: "VOR/NDB classiques",
+  holds: "Attentes",
+  emerg: "Panneau partiel",
+  xc: "Navigation IFR",
+  ckp: "Préparation au test",
+};
 const QUICK_KEY = "ifr.fc.quick";
 
 const pathLabel = (p: Path) =>
-  PATH_SHORT[p.id] ?? p.title.replace(" — complete syllabus", "");
+  (uiLang() === "fr" ? PATH_SHORT_FR[p.id] : undefined) ??
+  PATH_SHORT[p.id] ??
+  p.title.replace(" — complete syllabus", "");
 const pct = (n: number) => `${Math.round(n)}%`;
 const plural = (n: number, one: string, many = `${one}s`) =>
   `${n} ${n === 1 ? one : many}`;
@@ -243,7 +284,9 @@ export function procedureRows(list: Attempt[]): ProcRow[] {
         verdict: r.verdict === "PASS" ? "PASS" : "FAIL",
         reactionS: typeof r.reactionS === "number" ? r.reactionS : null,
         note: r.notes?.[0] ?? "",
-        notes: Array.isArray(r.notes) ? r.notes.filter((x) => typeof x === "string" && x) : [],
+        notes: Array.isArray(r.notes)
+          ? r.notes.filter((x) => typeof x === "string" && x)
+          : [],
         outcome: r.outcome,
       });
     }
@@ -263,13 +306,17 @@ export function filterProcRows(rows: ProcRow[], f: ProcFilter): ProcRow[] {
     (r) =>
       (!f.student || r.student === f.student) &&
       (!f.verdict || r.verdict === f.verdict) &&
-      words.every((w) => `${r.procedure} ${r.drill} ${r.student}`.toLowerCase().includes(w)),
+      words.every((w) =>
+        `${r.procedure} ${r.drill} ${r.student}`.toLowerCase().includes(w),
+      ),
   );
 }
 
 /** the students who appear in the rows, sorted (no name: '') */
 export function studentsOf(rows: ProcRow[]): string[] {
-  return [...new Set(rows.map((r) => r.student))].sort((a, b) => a.localeCompare(b));
+  return [...new Set(rows.map((r) => r.student))].sort((a, b) =>
+    a.localeCompare(b),
+  );
 }
 
 export interface ProcSummary {
@@ -281,21 +328,45 @@ export interface ProcSummary {
   /** median reaction time (s) of the attempts with a reaction */
   reactionS: number | null;
   /** per procedure, the weakest (lowest pass rate, then lowest average) first */
-  byProcedure: { procedureId: string; procedure: string; n: number; pass: number; avgScore: number }[];
+  byProcedure: {
+    procedureId: string;
+    procedure: string;
+    n: number;
+    pass: number;
+    avgScore: number;
+  }[];
 }
 export function procSummary(rows: ProcRow[]): ProcSummary {
   const n = rows.length;
   const pass = rows.filter((r) => r.verdict === "PASS").length;
-  const reacts = rows.map((r) => r.reactionS).filter((x): x is number => x !== null).sort((a, b) => a - b);
+  const reacts = rows
+    .map((r) => r.reactionS)
+    .filter((x): x is number => x !== null)
+    .sort((a, b) => a - b);
   const med = reacts.length
     ? reacts.length % 2
       ? reacts[(reacts.length - 1) / 2]
       : (reacts[reacts.length / 2 - 1] + reacts[reacts.length / 2]) / 2
     : null;
-  const by = new Map<string, { procedureId: string; procedure: string; n: number; pass: number; sum: number }>();
+  const by = new Map<
+    string,
+    {
+      procedureId: string;
+      procedure: string;
+      n: number;
+      pass: number;
+      sum: number;
+    }
+  >();
   for (const r of rows) {
     const k = r.procedureId;
-    const e = by.get(k) ?? { procedureId: k, procedure: r.procedure, n: 0, pass: 0, sum: 0 };
+    const e = by.get(k) ?? {
+      procedureId: k,
+      procedure: r.procedure,
+      n: 0,
+      pass: 0,
+      sum: 0,
+    };
     e.n++;
     e.sum += r.score;
     if (r.verdict === "PASS") e.pass++;
@@ -308,19 +379,57 @@ export function procSummary(rows: ProcRow[]): ProcSummary {
     avgScore: n ? Math.round(rows.reduce((s, r) => s + r.score, 0) / n) : null,
     reactionS: med === null ? null : Math.round(med * 10) / 10,
     byProcedure: [...by.values()]
-      .map((e) => ({ procedureId: e.procedureId, procedure: e.procedure, n: e.n, pass: e.pass, avgScore: Math.round(e.sum / e.n) }))
-      .sort((a, b) => a.pass / a.n - b.pass / b.n || a.avgScore - b.avgScore || a.procedure.localeCompare(b.procedure)),
+      .map((e) => ({
+        procedureId: e.procedureId,
+        procedure: e.procedure,
+        n: e.n,
+        pass: e.pass,
+        avgScore: Math.round(e.sum / e.n),
+      }))
+      .sort(
+        (a, b) =>
+          a.pass / a.n - b.pass / b.n ||
+          a.avgScore - b.avgScore ||
+          a.procedure.localeCompare(b.procedure),
+      ),
   };
 }
 
 /** the Results table as CSV (one row per procedure attempt; Excel-friendly quoting) */
 export function procCsv(rows: ProcRow[]): string {
-  const head = ["date", "student", "drill", "procedure", "procedure_id", "failure", "mode", "score", "verdict", "reaction_s", "outcome", "main_point"];
-  const q = (v: string | number | null) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const head = [
+    "date",
+    "student",
+    "drill",
+    "procedure",
+    "procedure_id",
+    "failure",
+    "mode",
+    "score",
+    "verdict",
+    "reaction_s",
+    "outcome",
+    "main_point",
+  ];
+  const q = (v: string | number | null) =>
+    `"${String(v ?? "").replace(/"/g, '""')}"`;
   return [
     head.join(","),
     ...rows.map((r) =>
-      [r.date, r.student, r.drill, r.procedure, r.procedureId, r.failure, r.mode, r.score, r.verdict, r.reactionS === null ? "" : Math.round(r.reactionS * 10) / 10, r.outcome, r.note]
+      [
+        r.date,
+        r.student,
+        r.drill,
+        r.procedure,
+        r.procedureId,
+        r.failure,
+        r.mode,
+        r.score,
+        r.verdict,
+        r.reactionS === null ? "" : Math.round(r.reactionS * 10) / 10,
+        r.outcome,
+        r.note,
+      ]
         .map(q)
         .join(","),
     ),
@@ -328,27 +437,45 @@ export function procCsv(rows: ProcRow[]): string {
 }
 
 /** plain-language import report, in the UI language */
-export function importSummary(r: ImportReport): { ok: boolean; lines: string[] } {
+export function importSummary(r: ImportReport): {
+  ok: boolean;
+  lines: string[];
+} {
   const lines: string[] = [...r.issues];
   if (r.added.length) lines.push(tn("ch.imp.added", r.added.length));
   if (r.replaced.length) lines.push(tn("ch.imp.replaced", r.replaced.length));
   if (r.renamed.length) lines.push(tn("ch.imp.renamed", r.renamed.length));
-  for (const s of r.skipped) lines.push(t("ch.imp.skipped", { id: s.id, why: s.reason }));
+  for (const s of r.skipped)
+    lines.push(t("ch.imp.skipped", { id: s.id, why: s.reason }));
   if (!lines.length) lines.push(t("ch.imp.nothing"));
-  return { ok: !r.issues.length && r.added.length + r.replaced.length + r.renamed.length > 0, lines };
+  return {
+    ok:
+      !r.issues.length &&
+      r.added.length + r.replaced.length + r.renamed.length > 0,
+    lines,
+  };
 }
 
 /** what a share link holds, in the UI language: a title line and the procedures (title, item count) */
-export function shareSummary(code: string): { ok: boolean; title: string; procs: { title: string; items: number }[] } {
+export function shareSummary(code: string): {
+  ok: boolean;
+  title: string;
+  procs: { title: string; items: number }[];
+} {
   const s = decodeShare(code);
   if (!s) return { ok: false, title: t("ch.p.linkBad"), procs: [] };
   const list = s.kind === "pack" ? s.pack.procedures : [s.procedure];
-  const procs = list.map((p) => ({ title: p.title, items: Array.isArray(p.items) ? p.items.length : 0 }));
+  const procs = list.map((p) => ({
+    title: p.title,
+    items: Array.isArray(p.items) ? p.items.length : 0,
+  }));
   return {
     ok: true,
     title:
       s.kind === "pack"
-        ? tn("ch.p.linkPack", procs.length, { c: s.pack.club || t("ch.p.linkClub") })
+        ? tn("ch.p.linkPack", procs.length, {
+            c: s.pack.club || t("ch.p.linkClub"),
+          })
         : t("ch.p.linkProc", { t: s.procedure.title }),
     procs,
   };
@@ -357,10 +484,12 @@ export function shareSummary(code: string): { ok: boolean; title: string; procs:
 // ------------------------------------------------------------------ procedures mode: strings (FR / EN)
 registerStrings("en", {
   "ch.tile": "Procedures · Flying club",
-  "ch.tileDesc": "Failure drills, the club’s checklists and the students’ results.",
+  "ch.tileDesc":
+    "Failure drills, the club’s checklists and the students’ results.",
   "ch.tileMeta": "{d} drills · {p} procedures",
   "ch.title": "Procedures · Flying club",
-  "ch.sub": "Test your students on failures and emergencies: fly a drill, adapt the checklists to your club, follow the results.",
+  "ch.sub":
+    "Test your students on failures and emergencies: fly a drill, adapt the checklists to your club, follow the results.",
   "ch.back": "Flight Center",
   "ch.searchAll": "Search all flights",
   "ch.lang": "Language",
@@ -371,10 +500,12 @@ registerStrings("en", {
   "ch.d.student": "Student flying",
   "ch.d.studentPh": "Name (for the records)",
   "ch.d.new": "Create a drill",
-  "ch.d.newTip": "In the flight builder: where and when, the failure and its trigger, training or test",
+  "ch.d.newTip":
+    "In the flight builder: where and when, the failure and its trigger, training or test",
   "ch.d.club": "Club drills",
   "ch.d.clubNone": "No club drill yet",
-  "ch.d.clubNoneSub": "Open a template, adjust it in the flight builder and Save: it appears here for every instructor and student.",
+  "ch.d.clubNoneSub":
+    "Open a template, adjust it in the flight builder and Save: it appears here for every instructor and student.",
   "ch.d.mine": "Assigned to {s}",
   "ch.d.tpl": "Templates",
   "ch.d.tplSub": "Ready to fly at your airport. Edit one to make a club drill.",
@@ -387,10 +518,12 @@ registerStrings("en", {
   "ch.d.assignOk": "Assign",
   "ch.d.unassign": "Remove",
   "ch.d.assignDone": "“{d}” assigned to {s}",
-  "ch.d.noBuild": "No airport of the loaded data fits this drill: it opens in the flight builder.",
+  "ch.d.noBuild":
+    "No airport of the loaded data fits this drill: it opens in the flight builder.",
   "ch.d.training": "Training",
   "ch.d.test": "Test",
-  "ch.d.trainingTip": "Emergency card shown: memory items with live ticks, then the checklist",
+  "ch.d.trainingTip":
+    "Emergency card shown: memory items with live ticks, then the checklist",
   "ch.d.testTip": "Nothing announced, checklist hidden: graded at the end",
   "ch.d.random": "Random failure",
   "ch.l.search": "Search procedures",
@@ -410,7 +543,8 @@ registerStrings("en", {
   "ch.l.none": "No procedure matches “{q}”",
   "ch.l.noneSub": "Try a failure (alternator, vacuum) or a word of the title.",
   "ch.l.noClub": "Your club has no procedure of its own yet",
-  "ch.l.noClubSub": "Open a library procedure and press Customise, or write a new one.",
+  "ch.l.noClubSub":
+    "Open a library procedure and press Customise, or write a new one.",
   "ch.l.otherLang": "in English",
   "ch.l.saved": "“{t}” saved in the club library",
   "ch.l.deleted": "Procedure deleted",
@@ -433,7 +567,8 @@ registerStrings("en", {
   "ch.r.weak": "To work on",
   "ch.r.weakLine": "{p}/{n} passed · average {a}",
   "ch.r.none": "No procedure result yet",
-  "ch.r.noneSub": "Fly a drill: every procedure the student runs is graded and listed here, with what was late, missed or out of order.",
+  "ch.r.noneSub":
+    "Fly a drill: every procedure the student runs is graded and listed here, with what was late, missed or out of order.",
   "ch.r.noneFilter": "No result for these filters",
   "ch.r.records": "All training records",
   "ch.r.shown": "{n} shown",
@@ -444,13 +579,17 @@ registerStrings("en", {
   "ch.p.namePh": "e.g. Aéroclub de Toussus",
   "ch.p.nameHint": "Shown on the packs you share.",
   "ch.p.export": "Share the club library",
-  "ch.p.exportSub": "The {n} procedures of your club, for the other instructors and your students’ devices.",
-  "ch.p.exportSub.1": "Your club’s procedure, for the other instructors and your students’ devices.",
-  "ch.p.exportNone": "Your club has no procedure of its own yet: customise or write one first.",
+  "ch.p.exportSub":
+    "The {n} procedures of your club, for the other instructors and your students’ devices.",
+  "ch.p.exportSub.1":
+    "Your club’s procedure, for the other instructors and your students’ devices.",
+  "ch.p.exportNone":
+    "Your club has no procedure of its own yet: customise or write one first.",
   "ch.p.download": "Download the pack (.json)",
   "ch.p.link": "Share link and QR code",
   "ch.p.import": "Import a pack",
-  "ch.p.importSub": "A .json file from another instructor, or a share link or code.",
+  "ch.p.importSub":
+    "A .json file from another instructor, or a share link or code.",
   "ch.p.file": "Choose a file",
   "ch.p.paste": "Paste a share link or code",
   "ch.p.go": "Import",
@@ -464,9 +603,11 @@ registerStrings("en", {
   "ch.p.linkPack": "{n} procedures shared by {c}",
   "ch.p.linkPack.1": "1 procedure shared by {c}",
   "ch.p.linkClub": "another club",
-  "ch.p.linkBad": "This share link is damaged or incomplete: ask for a new one.",
+  "ch.p.linkBad":
+    "This share link is damaged or incomplete: ask for a new one.",
   "ch.p.linkLater": "Not now",
-  "ch.p.disclaimer": "Club packs carry the club’s own texts: check them against the aircraft POH/AFM.",
+  "ch.p.disclaimer":
+    "Club packs carry the club’s own texts: check them against the aircraft POH/AFM.",
   "ch.imp.added": "{n} procedures added",
   "ch.imp.added.1": "1 procedure added",
   "ch.imp.replaced": "{n} procedures updated",
@@ -479,10 +620,12 @@ registerStrings("en", {
 });
 registerStrings("fr", {
   "ch.tile": "Procédures · Aéroclub",
-  "ch.tileDesc": "Exercices de panne, check-lists du club et résultats des élèves.",
+  "ch.tileDesc":
+    "Exercices de panne, check-lists du club et résultats des élèves.",
   "ch.tileMeta": "{d} exercices · {p} procédures",
   "ch.title": "Procédures · Aéroclub",
-  "ch.sub": "Entraînez et contrôlez vos élèves sur les pannes et les urgences : lancez un exercice, adaptez les check-lists à votre club, suivez les résultats.",
+  "ch.sub":
+    "Entraînez et contrôlez vos élèves sur les pannes et les urgences : lancez un exercice, adaptez les check-lists à votre club, suivez les résultats.",
   "ch.back": "Flight Center",
   "ch.searchAll": "Rechercher un vol",
   "ch.lang": "Langue",
@@ -493,13 +636,16 @@ registerStrings("fr", {
   "ch.d.student": "Élève aux commandes",
   "ch.d.studentPh": "Nom (pour le suivi)",
   "ch.d.new": "Créer un exercice",
-  "ch.d.newTip": "Dans le constructeur de vol : où et quand, la panne et son déclenchement, entraînement ou contrôle",
+  "ch.d.newTip":
+    "Dans le constructeur de vol : où et quand, la panne et son déclenchement, entraînement ou contrôle",
   "ch.d.club": "Exercices du club",
   "ch.d.clubNone": "Pas encore d’exercice du club",
-  "ch.d.clubNoneSub": "Ouvrez un modèle, ajustez-le dans le constructeur de vol et enregistrez : il apparaît ici pour tous les instructeurs et élèves.",
+  "ch.d.clubNoneSub":
+    "Ouvrez un modèle, ajustez-le dans le constructeur de vol et enregistrez : il apparaît ici pour tous les instructeurs et élèves.",
   "ch.d.mine": "Attribués à {s}",
   "ch.d.tpl": "Modèles",
-  "ch.d.tplSub": "Prêts à voler sur votre terrain. Modifiez-en un pour créer un exercice du club.",
+  "ch.d.tplSub":
+    "Prêts à voler sur votre terrain. Modifiez-en un pour créer un exercice du club.",
   "ch.d.fly": "Voler",
   "ch.d.edit": "Modifier",
   "ch.d.assign": "Attribuer",
@@ -509,10 +655,12 @@ registerStrings("fr", {
   "ch.d.assignOk": "Attribuer",
   "ch.d.unassign": "Retirer",
   "ch.d.assignDone": "« {d} » attribué à {s}",
-  "ch.d.noBuild": "Aucun terrain des données chargées ne convient : l’exercice s’ouvre dans le constructeur de vol.",
+  "ch.d.noBuild":
+    "Aucun terrain des données chargées ne convient : l’exercice s’ouvre dans le constructeur de vol.",
   "ch.d.training": "Entraînement",
   "ch.d.test": "Contrôle",
-  "ch.d.trainingTip": "Carte d’urgence affichée : actions réflexes cochées en direct, puis la check-list",
+  "ch.d.trainingTip":
+    "Carte d’urgence affichée : actions réflexes cochées en direct, puis la check-list",
   "ch.d.testTip": "Rien n’est annoncé, check-list masquée : notation à la fin",
   "ch.d.random": "Panne aléatoire",
   "ch.l.search": "Rechercher une procédure",
@@ -530,9 +678,11 @@ registerStrings("fr", {
   "ch.l.edit": "Modifier",
   "ch.l.share": "Partager",
   "ch.l.none": "Aucune procédure ne correspond à « {q} »",
-  "ch.l.noneSub": "Essayez une panne (alternateur, dépression) ou un mot du titre.",
+  "ch.l.noneSub":
+    "Essayez une panne (alternateur, dépression) ou un mot du titre.",
   "ch.l.noClub": "Votre club n’a pas encore de procédure à lui",
-  "ch.l.noClubSub": "Ouvrez une procédure de la bibliothèque et appuyez sur Personnaliser, ou rédigez-en une.",
+  "ch.l.noClubSub":
+    "Ouvrez une procédure de la bibliothèque et appuyez sur Personnaliser, ou rédigez-en une.",
   "ch.l.otherLang": "en français",
   "ch.l.saved": "« {t} » enregistrée dans la bibliothèque du club",
   "ch.l.deleted": "Procédure supprimée",
@@ -555,7 +705,8 @@ registerStrings("fr", {
   "ch.r.weak": "À retravailler",
   "ch.r.weakLine": "{p}/{n} réussies · moyenne {a}",
   "ch.r.none": "Pas encore de résultat de procédure",
-  "ch.r.noneSub": "Lancez un exercice : chaque procédure de l’élève est notée et listée ici, avec ce qui était en retard, oublié ou dans le désordre.",
+  "ch.r.noneSub":
+    "Lancez un exercice : chaque procédure de l’élève est notée et listée ici, avec ce qui était en retard, oublié ou dans le désordre.",
   "ch.r.noneFilter": "Aucun résultat pour ces filtres",
   "ch.r.records": "Tout le carnet de vol",
   "ch.r.shown": "{n} affichés",
@@ -566,13 +717,17 @@ registerStrings("fr", {
   "ch.p.namePh": "ex. Aéroclub de Toussus",
   "ch.p.nameHint": "Affiché sur les packs que vous partagez.",
   "ch.p.export": "Partager la bibliothèque du club",
-  "ch.p.exportSub": "Les {n} procédures de votre club, pour les autres instructeurs et les appareils des élèves.",
-  "ch.p.exportSub.1": "La procédure de votre club, pour les autres instructeurs et les appareils des élèves.",
-  "ch.p.exportNone": "Votre club n’a pas encore de procédure à lui : personnalisez-en ou rédigez-en une d’abord.",
+  "ch.p.exportSub":
+    "Les {n} procédures de votre club, pour les autres instructeurs et les appareils des élèves.",
+  "ch.p.exportSub.1":
+    "La procédure de votre club, pour les autres instructeurs et les appareils des élèves.",
+  "ch.p.exportNone":
+    "Votre club n’a pas encore de procédure à lui : personnalisez-en ou rédigez-en une d’abord.",
   "ch.p.download": "Télécharger le pack (.json)",
   "ch.p.link": "Lien de partage et QR code",
   "ch.p.import": "Importer un pack",
-  "ch.p.importSub": "Un fichier .json d’un autre instructeur, ou un lien ou code de partage.",
+  "ch.p.importSub":
+    "Un fichier .json d’un autre instructeur, ou un lien ou code de partage.",
   "ch.p.file": "Choisir un fichier",
   "ch.p.paste": "Collez un lien ou un code de partage",
   "ch.p.go": "Importer",
@@ -586,9 +741,11 @@ registerStrings("fr", {
   "ch.p.linkPack": "{n} procédures partagées par {c}",
   "ch.p.linkPack.1": "1 procédure partagée par {c}",
   "ch.p.linkClub": "un autre club",
-  "ch.p.linkBad": "Ce lien de partage est abîmé ou incomplet : demandez-en un nouveau.",
+  "ch.p.linkBad":
+    "Ce lien de partage est abîmé ou incomplet : demandez-en un nouveau.",
   "ch.p.linkLater": "Plus tard",
-  "ch.p.disclaimer": "Les packs contiennent les textes propres au club : vérifiez-les avec le manuel de vol (POH/AFM).",
+  "ch.p.disclaimer":
+    "Les packs contiennent les textes propres au club : vérifiez-les avec le manuel de vol (POH/AFM).",
   "ch.imp.added": "{n} procédures ajoutées",
   "ch.imp.added.1": "1 procédure ajoutée",
   "ch.imp.replaced": "{n} procédures mises à jour",
@@ -629,7 +786,9 @@ function groundSchoolMeta(): string {
   } catch {
     /* storage blocked */
   }
-  return fr ? "Maths IFR et VFR, VOR, attentes" : "Maths for IFR and VFR, VOR, holding";
+  return fr
+    ? "Maths IFR et VFR, VOR, attentes"
+    : "Maths for IFR and VFR, VOR, holding";
 }
 
 export class FlightCenter extends Modal {
@@ -696,13 +855,16 @@ export class FlightCenter extends Modal {
     this.buildHeader();
     // the procedures page follows the FR / EN switch and the club library
     onLangChange(() => this.isOpen && this.render());
-    onProceduresChange(() => this.isOpen && this.view.type === "club" && this.renderMain());
+    onProceduresChange(
+      () => this.isOpen && this.view.type === "club" && this.renderMain(),
+    );
     // "/" focuses the search field; Esc closes the plate viewer / Quick start before it closes the Flight Center
     window.addEventListener(
       "keydown",
       (e) => {
         // another window stacked over the Flight Center (procedure editor) owns the keyboard
-        if (!this.isOpen || Modal.stack[Modal.stack.length - 1] !== this) return;
+        if (!this.isOpen || Modal.stack[Modal.stack.length - 1] !== this)
+          return;
         if (e.key === "Escape" && (this.plateView || this.quickPop)) {
           e.stopImmediatePropagation();
           e.preventDefault();
@@ -719,7 +881,8 @@ export class FlightCenter extends Modal {
         if (e.key === "/" && !typing && !e.ctrlKey && !e.metaKey) {
           e.preventDefault();
           // the Library has its own search (courses, procedures and flights)
-          if (this.view.type === "courses" && this.courseLib) this.courseLib.focusSearch();
+          if (this.view.type === "courses" && this.courseLib)
+            this.courseLib.focusSearch();
           else this.searchInput.focus();
         }
       },
@@ -793,7 +956,8 @@ export class FlightCenter extends Modal {
 
   open() {
     // opened from a share link: straight to the Club pack page, where the link waits to be imported
-    if (this.pendingShare && this.view.type !== "club") return this.openClub("pack");
+    if (this.pendingShare && this.view.type !== "club")
+      return this.openClub("pack");
     this.items = catalog();
     this.render();
     super.open();
@@ -871,15 +1035,15 @@ export class FlightCenter extends Modal {
           ? "Instructor"
           : v.type === "courses"
             ? groundSchoolLabel()
-          : v.type === "club"
-            ? t("ch.title")
-          : v.type === "all"
-            ? "All flights"
-            : v.type === "search"
-              ? "Search"
-              : v.type === "path"
-                ? pathLabel(v.path)
-                : CATEGORIES.find((c) => c.id === v.cat)!.title;
+            : v.type === "club"
+              ? t("ch.title")
+              : v.type === "all"
+                ? "All flights"
+                : v.type === "search"
+                  ? "Search"
+                  : v.type === "path"
+                    ? pathLabel(v.path)
+                    : CATEGORIES.find((c) => c.id === v.cat)!.title;
     clear(this.crumb);
     if (label)
       this.crumb.append(
@@ -939,7 +1103,10 @@ export class FlightCenter extends Modal {
       navBtn(groundSchoolLabel(), false, () => this.go({ type: "courses" }), {
         icon: svgIcon(I.slides),
         key: "library",
-        tip: uiLang() === "fr" ? "Cours, procédures et leçons au simulateur, par programme" : "Courses, procedures and sim lessons, by program",
+        tip:
+          uiLang() === "fr"
+            ? "Cours, procédures et leçons au simulateur, par programme"
+            : "Courses, procedures and sim lessons, by program",
       }),
       navBtn(t("ch.nav"), false, () => this.goClub(), {
         icon: pIcon("drill"),
@@ -983,13 +1150,29 @@ export class FlightCenter extends Modal {
       );
     }
     this.side.append(h("div", { class: "fc-sec" }, "Tools"));
-    for (const t of this.tools(false))
+    for (const t of this.tools(true))
       this.side.append(
         navBtn(t.label, false, () => this.leave(t.run), {
           icon: svgIcon(t.icon),
           tip: t.tip,
         }),
       );
+    // the school tools (the home keeps only a shortcut to them)
+    this.side.append(
+      navBtn(
+        uiLang() === "fr" ? "Instructeur" : "Instructor",
+        v.type === "instructor",
+        () => this.go({ type: "instructor" }),
+        {
+          icon: svgIcon(I.tablet),
+          key: "instructor",
+          tip:
+            uiLang() === "fr"
+              ? "Appairer un téléphone, préparer une leçon, conduire la séance, relire les dossiers"
+              : "Pair a phone, build a lesson, run the session and review the records",
+        },
+      ),
+    );
   }
 
   /** the tools, in the home toolbar and the catalogue sidebar (only the wired ones) */
@@ -1296,11 +1479,7 @@ export class FlightCenter extends Modal {
         h(
           "div",
           { class: "fc-head" },
-          h(
-            "div",
-            {},
-            h("h2", {}, `Results for “${this.q}”`),
-          ),
+          h("div", {}, h("h2", {}, `Results for “${this.q}”`)),
         ),
       );
       if (!res.length) {
@@ -1454,8 +1633,7 @@ export class FlightCenter extends Modal {
     }
     for (const s of v.sub ? [v.sub] : cat.subs) {
       const list = shown.filter((i) => i.sub === s);
-      const emptyMine =
-        s === MINE && !inCatAll.some((i) => i.sub === s);
+      const emptyMine = s === MINE && !inCatAll.some((i) => i.sub === s);
       if (!list.length && !emptyMine) continue;
       if (!v.sub && subs.length > 1)
         this.main.append(
@@ -1490,11 +1668,25 @@ export class FlightCenter extends Modal {
     const ci = continueInfo(this.items);
     const fr = uiLang() === "fr";
     const L = (en: string, frText: string) => (fr ? frText : en);
-    const visual = h("div", { class: "fc-sh-vis dh-visual", "aria-label": L("A course, drawn live", "Un cours, dessiné en direct") });
-    const shelf = h("div", { class: "fc-deck-row dh-shelf", role: "list", "aria-label": L("Courses", "Cours") });
+    const visual = h("div", {
+      class: "fc-sh-vis dh-visual",
+      "aria-label": L("A course, drawn live", "Un cours, dessiné en direct"),
+    });
+    const shelf = h("div", {
+      class: "fc-deck-row dh-shelf",
+      role: "list",
+      "aria-label": L("Courses", "Cours"),
+    });
     // placeholders the size of the slides, so nothing moves when the engine arrives
-    visual.append(h("div", { class: "dh-stage dh-wait" }), h("div", { class: "dh-film dh-wait" }));
-    for (let i = 0; i < 4; i++) shelf.append(h("div", { class: "dh-card dh-wait", "aria-hidden": "true" }, h("div", { class: "dh-card-media" })));
+    visual.append(h("div", { class: "dh-stage dh-wait" }));
+    for (let i = 0; i < 4; i++)
+      shelf.append(
+        h(
+          "div",
+          { class: "dh-card dh-wait", "aria-hidden": "true" },
+          h("div", { class: "dh-card-media" }),
+        ),
+      );
     const slidesHero = h(
       "section",
       { class: "fc-sh", "aria-labelledby": "fc-sh-t" },
@@ -1510,13 +1702,29 @@ export class FlightCenter extends Modal {
           { class: "fc-sh-acts" },
           h(
             "button",
-            { class: "btn primary fc-sh-open", type: "button", onclick: () => this.go({ type: "courses" }), title: L("Every course: samples, your club’s and your drafts", "Tous les cours : exemples, ceux du club et vos brouillons") },
+            {
+              class: "btn primary fc-sh-open",
+              type: "button",
+              onclick: () => this.go({ type: "courses" }),
+              title: L(
+                "Every course: samples, your club’s and your drafts",
+                "Tous les cours : exemples, ceux du club et vos brouillons",
+              ),
+            },
             svgIcon(I.learn, 20),
             L("Open a course", "Ouvrir un cours"),
           ),
           h(
             "button",
-            { class: "btn fc-sh-b fc-sh-new", type: "button", onclick: () => this.go({ type: "courses", intent: "new" }), title: L("A new deck from a template, in the course builder", "Un nouveau cours à partir d’un modèle, dans l’éditeur") },
+            {
+              class: "btn fc-sh-b fc-sh-new",
+              type: "button",
+              onclick: () => this.go({ type: "courses", intent: "new" }),
+              title: L(
+                "A new deck from a template, in the course builder",
+                "Un nouveau cours à partir d’un modèle, dans l’éditeur",
+              ),
+            },
             svgIcon(I.plus, 18),
             L("Create a course", "Créer un cours"),
           ),
@@ -1527,7 +1735,15 @@ export class FlightCenter extends Modal {
           { class: "fc-sh-more" },
           h(
             "button",
-            { class: "fc-sh-link fc-sh-present", type: "button", onclick: () => this.go({ type: "courses", intent: "present" }), title: L("Projector window and presenter notes on one computer", "Fenêtre projecteur et notes du présentateur sur un seul ordinateur") },
+            {
+              class: "fc-sh-link fc-sh-present",
+              type: "button",
+              onclick: () => this.go({ type: "courses", intent: "present" }),
+              title: L(
+                "Projector window and presenter notes on one computer",
+                "Fenêtre projecteur et notes du présentateur sur un seul ordinateur",
+              ),
+            },
             svgIcon(I.screen, 18),
             L("Present to a class", "Présenter à une classe"),
           ),
@@ -1540,7 +1756,13 @@ export class FlightCenter extends Modal {
                 (e.currentTarget as HTMLElement)
                   .closest(".fc-home")
                   ?.querySelector<HTMLElement>(".fc-fly")
-                  ?.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }),
+                  ?.scrollIntoView({
+                    behavior: matchMedia("(prefers-reduced-motion: reduce)")
+                      .matches
+                      ? "auto"
+                      : "smooth",
+                    block: "start",
+                  }),
             },
             svgIcon(I.plane, 18),
             L("Fly the simulator on its own", "Voler le simulateur seul"),
@@ -1559,14 +1781,21 @@ export class FlightCenter extends Modal {
         h("span", { class: "fc-sec-sub" }, groundSchoolMeta()),
         h(
           "button",
-          { class: "fc-sec-link", type: "button", onclick: () => this.go({ type: "courses" }) },
+          {
+            class: "fc-sec-link",
+            type: "button",
+            onclick: () => this.go({ type: "courses" }),
+          },
           L("The whole library", "Toute la bibliothèque"),
           svgIcon(I.arrow, 16),
         ),
       ),
       shelf,
     );
-    void Promise.all([import("../course/ui/deckHome"), import("../course/store")]).then(([m, st]) => {
+    void Promise.all([
+      import("../course/ui/deckHome"),
+      import("../course/store"),
+    ]).then(([m, st]) => {
       if (!shelf.isConnected || this.view.type !== "home") return;
       this.deckHome?.destroy();
       this.deckHome = m.mountDeckHome({
@@ -1576,23 +1805,24 @@ export class FlightCenter extends Modal {
         page: "academy.html",
         store: st.courseStore(),
         navigate: (url) => this.leave(() => location.assign(url)),
-        onCreate: () => this.go({ type: "courses", intent: "new" }),
       });
     });
-    const hero = h(
-      "section",
-      { class: "fc-hero2" },
-      h("img", {
-        class: "fc-hero-img",
-        src: "/img/clouds.jpg",
-        alt: "",
-        decoding: "async",
-        loading: "lazy",
-      }),
+    // Fly: the simulator, also on its own. One light card (build a flight or Quick start, beside Continue) and four
+    // shortcuts; every flight, path and tool (the instructor's included) is one click deeper, behind "All flights".
+    const n = (f: (i: Item) => boolean) => this.items.filter(f).length;
+    const nApp = n((i) => i.cat === "approaches");
+    const nHold = n((i) => i.cat === "procedures" && i.sub === "Holdings");
+    const flyCard = h(
+      "div",
+      { class: "fc-fly-card" },
       h(
         "div",
-        { class: "fc-hero-txt" },
-        h("h1", {}, L("What are we flying today?", "Qu’est-ce qu’on vole aujourd’hui ?")),
+        { class: "fc-fly-main" },
+        h(
+          "h3",
+          {},
+          L("What are we flying today?", "Qu’est-ce qu’on vole aujourd’hui ?"),
+        ),
         h(
           "p",
           {},
@@ -1607,9 +1837,11 @@ export class FlightCenter extends Modal {
           h(
             "button",
             {
-              class: "btn primary fc-go",
-              title:
+              class: "btn fc-go",
+              title: L(
                 "Open the flight builder: departure, route, approach, weather, failures",
+                "Ouvrir l’éditeur de vol : départ, route, approche, météo, pannes",
+              ),
               onclick: () => this.leave(() => this.hooks.planFlight()),
             },
             svgIcon(I.plan, 20),
@@ -1621,8 +1853,10 @@ export class FlightCenter extends Modal {
               class: "btn fc-quick-b",
               "aria-haspopup": "dialog",
               "aria-expanded": "false",
-              title:
+              title: L(
                 "One click: a random approach or hold, flown straight away",
+                "Un clic : une approche ou une attente au hasard, volée tout de suite",
+              ),
               onclick: (e: Event) =>
                 this.quickPop
                   ? this.closeQuick()
@@ -1636,104 +1870,92 @@ export class FlightCenter extends Modal {
       ),
       this.continueCard(ci),
     );
+    const jump = (
+      icon: Node,
+      label: string,
+      meta: string,
+      run: () => void,
+      cls = "",
+    ) =>
+      h(
+        "button",
+        {
+          class: `fc-jump${cls ? ` ${cls}` : ""}`,
+          type: "button",
+          onclick: run,
+        },
+        h("span", { class: "fc-jump-ic" }, icon),
+        h(
+          "span",
+          { class: "fc-jump-t" },
+          h("b", {}, label),
+          h("small", {}, meta),
+        ),
+      );
+    const jumps = h(
+      "nav",
+      { class: "fc-jumps", "aria-label": L("Shortcuts", "Raccourcis") },
+      jump(
+        svgIcon(I.learn, 18),
+        pathLabel(ci.path),
+        L(
+          `${ci.passed} of ${ci.total} passed`,
+          `${ci.passed} sur ${ci.total} réussies`,
+        ),
+        () => this.go({ type: "path", path: ci.path }),
+      ),
+      jump(
+        svgIcon(I.plane, 18),
+        L("Approaches", "Approches"),
+        L(`${nApp} approaches`, `${nApp} approches`),
+        () => this.go({ type: "cat", cat: "approaches", sub: null }),
+      ),
+      jump(
+        svgIcon(I.stopwatch, 18),
+        L("Holds", "Attentes"),
+        L(`${nHold} holds`, `${nHold} attentes`),
+        () => this.go({ type: "cat", cat: "procedures", sub: "Holdings" }),
+      ),
+      jump(
+        pIcon("drill"),
+        t("ch.nav"),
+        t("ch.tileMeta", {
+          d: listDrills(uiL()).length,
+          p: effectiveProcedures(uiL()).length,
+        }),
+        () => this.goClub(),
+        "fc-jump-club",
+      ),
+    );
     const flyHead = h(
       "div",
       { class: "fc-sec-h fc-fly-h" },
-      h("h2", {}, L("Fly", "Voler")),
-      h("span", { class: "fc-sec-sub" }, L("The simulator: approaches, holds, the syllabus, real-world flights", "Le simulateur : approches, attentes, syllabus, vols réels")),
-    );
-    const tools = h(
-      "div",
-      { class: "fc-tools", role: "toolbar", "aria-label": "Tools" },
-      ...this.tools(true).map((t) =>
-        h(
-          "button",
-          { class: "fc-tool", title: t.tip, onclick: () => this.leave(t.run) },
-          h("span", { class: "fc-tool-ic" }, svgIcon(t.icon, 18)),
-          h(
-            "span",
-            { class: "fc-tool-tx" },
-            h("b", {}, t.label),
-            h("small", {}, t.sub),
-          ),
+      h("h2", { id: "fc-fly-t" }, L("Fly", "Voler")),
+      h(
+        "span",
+        { class: "fc-sec-sub" },
+        L(
+          "The built-in simulator, also on its own",
+          "Le simulateur intégré, utilisable aussi seul",
         ),
       ),
       h(
         "button",
         {
-          class: "fc-tool fc-browse",
-          title:
-            "Every flight by type, with search, filters and learning paths",
+          class: "fc-sec-link",
+          type: "button",
           onclick: () => this.go({ type: "all" }),
+          title: L(
+            "Every flight by type, with search, filters, learning paths and tools",
+            "Tous les vols par type, avec recherche, filtres, parcours et outils",
+          ),
         },
-        h("span", { class: "fc-tool-ic" }, svgIcon(I.records, 18)),
-        h(
-          "span",
-          { class: "fc-tool-tx" },
-          h("b", {}, "Browse all flights"),
-          h("small", {}, `${this.items.length} flights · search, paths`),
+        L(
+          `All flights (${this.items.length})`,
+          `Tous les vols (${this.items.length})`,
         ),
         svgIcon(I.arrow, 16),
       ),
-    );
-    const n = (f: (i: Item) => boolean) => this.items.filter(f).length;
-    const nApp = n((i) => i.cat === "approaches");
-    const nHold = n((i) => i.cat === "procedures" && i.sub === "Holdings");
-    const nMine = n((i) => i.cat === "circuits" && i.sub === MINE);
-    const nCirc = n((i) => i.cat === "circuits");
-    const tiles = h(
-      "div",
-      { class: "fc-tiles" },
-      this.tile({
-        img: "hero-cockpit",
-        title: "Learn the syllabus",
-        desc: "The Instrument Rating, lesson by lesson, from the first scan to the checkride.",
-        meta: `${ci.passed} of ${ci.total} passed`,
-        bar: ci.passed / ci.total,
-        run: () => this.go({ type: "path", path: ci.path }),
-      }),
-      this.tile({
-        img: "landing",
-        title: "Practise approaches",
-        desc: "ILS, LOC, VOR, NDB, RNAV and circling, coupled or hand-flown.",
-        meta: plural(nApp, "approach", "approaches"),
-        run: () => this.go({ type: "cat", cat: "approaches", sub: null }),
-      }),
-      this.tile({
-        img: "above",
-        title: "Practise holds",
-        desc: "Direct, teardrop and parallel entries, wind correction, ATC clearances.",
-        meta: plural(nHold, "hold"),
-        run: () => this.go({ type: "cat", cat: "procedures", sub: "Holdings" }),
-      }),
-      this.tile({
-        img: "departure",
-        title: t("ch.tile"),
-        desc: t("ch.tileDesc"),
-        meta: t("ch.tileMeta", {
-          d: listDrills(uiL()).length,
-          p: effectiveProcedures(uiL()).length,
-        }),
-        run: () => this.goClub(),
-        cls: "fc-tile-club",
-      }),
-      this.tile({
-        img: "sky",
-        title: "My flights & circuits",
-        desc: "Your saved and shared flights, school presets and templates.",
-        meta: nMine
-          ? `${plural(nMine, "flight")} of yours · in the flight builder`
-          : `${plural(nCirc, "school preset")} · in the flight builder`,
-        run: () => this.leave(() => this.hooks.openBuilder()),
-      }),
-      this.tile({
-        img: "crew",
-        title: "Instructor",
-        desc: "Pair a phone, build a lesson, run the session and review the records.",
-        meta: "School tools",
-        run: () => this.go({ type: "instructor" }),
-        cls: "fc-tile-ins",
-      }),
     );
     this.main.append(
       h(
@@ -1741,24 +1963,45 @@ export class FlightCenter extends Modal {
         { class: "fc-home" },
         slidesHero,
         decks,
-        h("section", { class: "fc-fly", "aria-label": L("Fly", "Voler") }, flyHead, hero, tools, tiles),
+        h(
+          "section",
+          { class: "fc-fly", "aria-labelledby": "fc-fly-t" },
+          flyHead,
+          flyCard,
+          jumps,
+        ),
       ),
     );
   }
 
   private continueCard(ci: ReturnType<typeof continueInfo>): HTMLElement {
-    const card = h("aside", { class: "fc-cont", "aria-label": "Continue" });
+    const fr = uiLang() === "fr";
+    const L = (en: string, frText: string) => (fr ? frText : en);
+    const card = h("aside", {
+      class: "fc-cont",
+      "aria-label": L("Continue", "Reprendre"),
+    });
     card.append(
-      h("div", { class: "fc-cont-k" }, ci.started ? "Continue" : "Start here"),
+      h(
+        "div",
+        { class: "fc-cont-k" },
+        ci.started
+          ? L("Continue", "Reprendre")
+          : L("Start here", "Pour commencer"),
+      ),
     );
     if (ci.next) {
       card.append(
         h(
           "div",
           { class: "fc-cont-sub" },
-          `${pathLabel(ci.path)} · Lesson ${ci.lesson} of ${ci.total}`,
+          `${pathLabel(ci.path)} · ${L(`Lesson ${ci.lesson} of ${ci.total}`, `Leçon ${ci.lesson} sur ${ci.total}`)}`,
         ),
-        h("b", { class: "fc-cont-t" }, ci.next.title),
+        h(
+          "b",
+          { class: "fc-cont-t" },
+          (fr && ci.next.ex ? LESSON_META[ci.next.ex.id]?.fr : undefined) ?? ci.next.title,
+        ),
         h(
           "div",
           { class: "fc-cont-prog" },
@@ -1773,20 +2016,32 @@ export class FlightCenter extends Modal {
           "button",
           {
             class: "btn fc-cont-go",
-            title: "Brief and fly the next lesson",
+            title: L(
+              "Brief and fly the next lesson",
+              "Briefer et voler la leçon suivante",
+            ),
             onclick: () => this.fly(ci.next!, ci.path),
           },
-          ci.started ? "Continue lesson" : "Start lesson 1",
+          ci.started
+            ? L("Continue lesson", "Reprendre la leçon")
+            : L("Start lesson 1", "Commencer la leçon 1"),
           svgIcon(I.arrow, 16),
         ),
       );
     } else {
       card.append(
-        h("b", { class: "fc-cont-t" }, "Syllabus complete"),
+        h(
+          "b",
+          { class: "fc-cont-t" },
+          L("Syllabus complete", "Syllabus terminé"),
+        ),
         h(
           "div",
           { class: "fc-cont-sub" },
-          `All ${ci.total} lessons passed. Keep current with the checkride profiles.`,
+          L(
+            `All ${ci.total} lessons passed. Keep current with the checkride profiles.`,
+            `Les ${ci.total} leçons sont réussies. Restez en forme avec les profils de test.`,
+          ),
         ),
         h(
           "button",
@@ -1795,7 +2050,7 @@ export class FlightCenter extends Modal {
             onclick: () =>
               this.go({ type: "cat", cat: "checkride", sub: null }),
           },
-          "Checkride profiles",
+          L("Checkride profiles", "Profils de test"),
           svgIcon(I.arrow, 16),
         ),
       );
@@ -1809,80 +2064,26 @@ export class FlightCenter extends Modal {
           h(
             "div",
             {},
-            h("small", {}, `Last flight · ${last.when}`),
+            h("small", {}, `${L("Last flight", "Dernier vol")} · ${last.when}`),
             h("span", { title: last.item.title }, last.item.title),
           ),
           h(
             "button",
             {
               class: "btn ghost",
-              title: `Fly “${last.item.title}” again`,
+              title: L(
+                `Fly “${last.item.title}” again`,
+                `Revoler « ${last.item.title} »`,
+              ),
               onclick: () => this.fly(last.item),
             },
             svgIcon(I.restart, 15),
-            "Fly again",
+            L("Fly again", "Revoler"),
           ),
         ),
       );
     }
     return card;
-  }
-
-  private tile(t: {
-    img: string;
-    title: string;
-    desc: string;
-    meta: string;
-    bar?: number;
-    run?: () => void;
-    href?: string;
-    cls?: string;
-  }): HTMLElement {
-    const inner = [
-      h(
-        "span",
-        { class: "fc-tile-img" },
-        h("img", {
-          src: `/img/${t.img}.jpg`,
-          alt: "",
-          decoding: "async",
-        }),
-      ),
-      h(
-        "span",
-        { class: "fc-tile-txt" },
-        h("b", {}, t.title, t.href ? svgIcon(I.direct, 14) : null),
-        h("span", { class: "fc-tile-d" }, t.desc),
-        h(
-          "span",
-          { class: "fc-tile-m" },
-          t.bar !== undefined
-            ? h(
-                "span",
-                { class: "lp-bar" },
-                h("i", { style: `width:${t.bar * 100}%` }),
-              )
-            : null,
-          h("span", {}, t.meta),
-        ),
-      ),
-    ];
-    return t.href
-      ? h(
-          "a",
-          {
-            class: "fc-tile",
-            href: t.href,
-            target: "_blank",
-            rel: "noopener",
-          },
-          ...inner,
-        )
-      : h(
-          "button",
-          { class: `fc-tile${t.cls ? ` ${t.cls}` : ""}`, onclick: t.run },
-          ...inner,
-        );
   }
 
   // ------------------------------------------------------------------ Quick start
@@ -1892,6 +2093,9 @@ export class FlightCenter extends Modal {
 
   private openQuick(anchor: HTMLElement) {
     this.closeQuick();
+    const fr = uiLang() === "fr";
+    const L = (en: string, frText: string) => (fr ? frText : en);
+    const nFlights = (n: number) => (fr ? `${n} vol${n === 1 ? "" : "s"}` : plural(n, "flight"));
     const pref = this.quickPrefs();
     const apts = [
       ...new Set(
@@ -1905,7 +2109,7 @@ export class FlightCenter extends Modal {
     const pop = h("div", {
       class: "fc-pop",
       role: "dialog",
-      "aria-label": "Quick start",
+      "aria-label": L("Quick start", "Départ rapide"),
     });
     const opts = h("div", { class: "fc-pop-opts" });
     const fill = () => {
@@ -1913,11 +2117,11 @@ export class FlightCenter extends Modal {
       const kinds: [QuickKind, string, keyof typeof I, string][] = [
         [
           "approach",
-          "Random approach",
+          L("Random approach", "Approche au hasard"),
           I.approach,
-          "ILS, LOC, VOR, NDB or RNAV",
+          L("ILS, LOC, VOR, NDB or RNAV", "ILS, LOC, VOR, NDB ou RNAV"),
         ],
-        ["hold", "Random hold", I.hold, "Entries, timing, wind"],
+        ["hold", L("Random hold", "Attente au hasard"), I.hold, L("Entries, timing, wind", "Entrées, chronométrage, vent")],
       ];
       for (const [k, label, icon, sub] of kinds) {
         const pool = quickPool(this.items, k, pref.apt);
@@ -1928,8 +2132,8 @@ export class FlightCenter extends Modal {
               class: "fc-pop-b",
               disabled: !pool.length,
               title: pool.length
-                ? `Fly one of ${plural(pool.length, "flight")} at random`
-                : `No ${k} at ${pref.apt} yet`,
+                ? L(`Fly one of ${plural(pool.length, "flight")} at random`, `Voler l’un des ${nFlights(pool.length)} au hasard`)
+                : L(`No ${k} at ${pref.apt} yet`, `Rien de ce type à ${pref.apt} pour l’instant`),
               onclick: () => {
                 const it = pool[Math.floor(Math.random() * pool.length)];
                 if (it) this.fly(it);
@@ -1944,8 +2148,8 @@ export class FlightCenter extends Modal {
                 "small",
                 {},
                 pool.length
-                  ? `${sub} · ${plural(pool.length, "flight")}`
-                  : "None at this airport",
+                  ? `${sub} · ${nFlights(pool.length)}`
+                  : L("None at this airport", "Aucun sur cet aérodrome"),
               ),
             ),
             svgIcon(I.arrow, 16),
@@ -1956,14 +2160,14 @@ export class FlightCenter extends Modal {
     const sel = h(
       "select",
       {
-        "aria-label": "Airport",
+        "aria-label": L("Airport", "Aérodrome"),
         onchange: (e: Event) => {
           pref.apt = (e.target as HTMLSelectElement).value;
           store.set(QUICK_KEY, pref);
           fill();
         },
       },
-      h("option", { value: "", selected: !pref.apt }, "Any airport"),
+      h("option", { value: "", selected: !pref.apt }, L("Any airport", "Tous les aérodromes")),
       ...apts.map((a) =>
         h(
           "option",
@@ -1977,13 +2181,13 @@ export class FlightCenter extends Modal {
       h(
         "div",
         { class: "fc-pop-head" },
-        h("b", {}, "Quick start"),
-        h("span", {}, "Flies straight away, current weather"),
+        h("b", {}, L("Quick start", "Départ rapide")),
+        h("span", {}, L("Flies straight away, current weather", "Décolle tout de suite, météo actuelle")),
       ),
       h(
         "label",
         { class: "fc-pop-apt" },
-        h("span", {}, "Airport · training region"),
+        h("span", {}, L("Airport · training region", "Aérodrome · région d’entraînement")),
         sel,
       ),
       opts,
@@ -1994,6 +2198,10 @@ export class FlightCenter extends Modal {
     pop.style.left = `${Math.max(12, r.left - box.left)}px`;
     pop.style.top = `${r.bottom - box.top + 8}px`;
     this.box.append(pop);
+    // above the button when it would run past the bottom of the box (the Fly card sits low on the page)
+    const ph = pop.getBoundingClientRect().height;
+    if (r.bottom + 8 + ph > box.bottom - 12 && r.top - 8 - ph > box.top + 12)
+      pop.style.top = `${r.top - box.top - 8 - ph}px`;
     this.quickPop = pop;
     anchor.setAttribute("aria-expanded", "true");
     const off = (e: Event) => {
@@ -2039,7 +2247,9 @@ export class FlightCenter extends Modal {
     const items = catalog();
     const i =
       t.k === "lesson"
-        ? items.find((x) => x.kind === "exercise" && x.ex?.id === t.id && !x.circuit)
+        ? items.find(
+            (x) => x.kind === "exercise" && x.ex?.id === t.id && !x.circuit,
+          )
         : t.k === "scenario"
           ? items.find((x) => x.id === `sc-${t.id}` || x.circuit?.id === t.id)
           : undefined;
@@ -2049,37 +2259,41 @@ export class FlightCenter extends Modal {
     return true;
   }
 
-  private renderCourses(intent?: CourseIntent, program?: import("../library/programs").ProgramId) {
+  private renderCourses(
+    intent?: CourseIntent,
+    program?: import("../library/programs").ProgramId,
+  ) {
     const host = h("div", { class: "fc-courses" });
     this.main.append(host);
-    void Promise.all([import("../course/ui/library"), import("../course/store")]).then(
-      ([m, st]) => {
-        if (!host.isConnected || this.view.type !== "courses") return;
-        this.courseLib?.destroy();
-        this.courseLib = m.mountLibrary(host, {
-          lang: uiLang(),
-          store: st.courseStore(),
-          embedded: true,
-          page: "academy.html",
-          ...(intent ? { intent } : {}),
-          ...(program ? { program } : {}),
-          navigate: (url) => this.leave(() => location.assign(url)),
-          // the simulator's own items fly from here, without leaving the page
-          openSim: (t) => this.openLibraryItem(t),
-          editProcedure: (id) => this.openProc(id),
-          clubDrills: () =>
-            listDrills(uiL())
-              .filter((e) => e.kind === "club")
-              .map((e) => ({
-                id: e.id,
-                name: e.name,
-                desc: e.desc,
-                ...(e.phase ? { phase: e.phase } : {}),
-                ...(e.assignee ? { assignee: e.assignee } : {}),
-              })),
-        });
-      },
-    );
+    void Promise.all([
+      import("../course/ui/library"),
+      import("../course/store"),
+    ]).then(([m, st]) => {
+      if (!host.isConnected || this.view.type !== "courses") return;
+      this.courseLib?.destroy();
+      this.courseLib = m.mountLibrary(host, {
+        lang: uiLang(),
+        store: st.courseStore(),
+        embedded: true,
+        page: "academy.html",
+        ...(intent ? { intent } : {}),
+        ...(program ? { program } : {}),
+        navigate: (url) => this.leave(() => location.assign(url)),
+        // the simulator's own items fly from here, without leaving the page
+        openSim: (t) => this.openLibraryItem(t),
+        editProcedure: (id) => this.openProc(id),
+        clubDrills: () =>
+          listDrills(uiL())
+            .filter((e) => e.kind === "club")
+            .map((e) => ({
+              id: e.id,
+              name: e.name,
+              desc: e.desc,
+              ...(e.phase ? { phase: e.phase } : {}),
+              ...(e.assignee ? { assignee: e.assignee } : {}),
+            })),
+      });
+    });
   }
 
   private renderInstructor() {
@@ -2121,7 +2335,10 @@ export class FlightCenter extends Modal {
       },
       {
         icon: I.learn,
-        title: uiLang() === "fr" ? "Des cours pour vos élèves" : "Courses for your students",
+        title:
+          uiLang() === "fr"
+            ? "Des cours pour vos élèves"
+            : "Courses for your students",
         desc:
           uiLang() === "fr"
             ? "Des diapositives avec les vrais instruments, des exercices de calcul et un « À vous » dans le simulateur. Dupliquez un exemple ou partez de zéro."
@@ -2214,7 +2431,14 @@ export class FlightCenter extends Modal {
   // ------------------------------------------------------------------ procedures · flying club
   private goClub(tab?: ClubTab) {
     const last = store.get<ClubTab>(CLUB_TAB_KEY, "drills");
-    this.go({ type: "club", tab: tab ?? (["drills", "library", "results", "pack"].includes(last) ? last : "drills") });
+    this.go({
+      type: "club",
+      tab:
+        tab ??
+        (["drills", "library", "results", "pack"].includes(last)
+          ? last
+          : "drills"),
+    });
   }
 
   private say(text: string, kind: "ok" | "warn" = "ok") {
@@ -2331,18 +2555,23 @@ export class FlightCenter extends Modal {
   }
 
   private editEntry(e: DrillEntry) {
-    const x: Circuit | string = e.kind === "template" ? e.id : (e.build() ?? e.id);
+    const x: Circuit | string =
+      e.kind === "template" ? e.id : (e.build() ?? e.id);
     this.leave(() => {
       if (this.hooks.editDrill) return this.hooks.editDrill(x);
       void import("./circuitBuilder").then((m) => {
-        if (!m.openDrill(x)) this.hooks.openBuilder(typeof x === "string" ? undefined : x);
+        if (!m.openDrill(x))
+          this.hooks.openBuilder(typeof x === "string" ? undefined : x);
       });
     });
   }
 
   private assign(e: DrillEntry, name: string) {
     const who = name.trim();
-    const c = e.kind === "club" ? circuitStore.list().find((x) => x.id === e.id) : e.build();
+    const c =
+      e.kind === "club"
+        ? circuitStore.list().find((x) => x.id === e.id)
+        : e.build();
     if (!c) {
       this.say(t("ch.d.noBuild"), "warn");
       return;
@@ -2351,7 +2580,9 @@ export class FlightCenter extends Modal {
     else delete c.assignee;
     circuitStore.save(c);
     this.assignFor = null;
-    this.flash = who ? { text: t("ch.d.assignDone", { d: c.name, s: who }), kind: "ok" } : null;
+    this.flash = who
+      ? { text: t("ch.d.assignDone", { d: c.name, s: who }), kind: "ok" }
+      : null;
     this.renderMain();
   }
 
@@ -2359,7 +2590,8 @@ export class FlightCenter extends Modal {
   private knownStudents(): string[] {
     const names = new Set<string>();
     for (const c of circuitStore.list()) if (c.assignee) names.add(c.assignee);
-    for (const a of history.all()) if (a.student?.trim()) names.add(a.student.trim());
+    for (const a of history.all())
+      if (a.student?.trim()) names.add(a.student.trim());
     return [...names].sort((a, b) => a.localeCompare(b));
   }
 
@@ -2368,14 +2600,25 @@ export class FlightCenter extends Modal {
     const keys = e.failures.filter((f): f is FailureKey => f !== "random");
     const icon: PIcon = keys.length ? CAT_ICONS[categoryFor(keys[0])] : "drill";
     const phase = PHASES.find((p) => p.id === e.phase);
-    const fails = e.failures.map((f) => (f === "random" ? t("ch.d.random") : failureName(f, l)));
+    const fails = e.failures.map((f) =>
+      f === "random" ? t("ch.d.random") : failureName(f, l),
+    );
     const card = h(
       "article",
-      { class: `ch-drill${e.kind === "club" ? " club" : ""}${e.mode === "test" ? " test" : ""}`, "data-id": e.id },
+      {
+        class: `ch-drill${e.kind === "club" ? " club" : ""}${e.mode === "test" ? " test" : ""}`,
+        "data-id": e.id,
+      },
       h(
         "div",
         { class: "ch-drill-top" },
-        h("span", { class: `ch-ic cat-${keys.length ? categoryFor(keys[0]) : "other"}` }, pIcon(icon, 20)),
+        h(
+          "span",
+          {
+            class: `ch-ic cat-${keys.length ? categoryFor(keys[0]) : "other"}`,
+          },
+          pIcon(icon, 20),
+        ),
         h(
           "div",
           { class: "ch-drill-tx" },
@@ -2386,10 +2629,17 @@ export class FlightCenter extends Modal {
             phase ? h("span", {}, phase.name[l]) : null,
             h(
               "span",
-              { class: `ch-mode ${e.mode}`, title: t(e.mode === "test" ? "ch.d.testTip" : "ch.d.trainingTip") },
+              {
+                class: `ch-mode ${e.mode}`,
+                title: t(
+                  e.mode === "test" ? "ch.d.testTip" : "ch.d.trainingTip",
+                ),
+              },
               t(e.mode === "test" ? "ch.d.test" : "ch.d.training"),
             ),
-            e.assignee ? h("span", { class: "ch-who" }, pIcon("users", 13), e.assignee) : null,
+            e.assignee
+              ? h("span", { class: "ch-who" }, pIcon("users", 13), e.assignee)
+              : null,
           ),
         ),
       ),
@@ -2422,13 +2672,37 @@ export class FlightCenter extends Modal {
           "div",
           { class: "ch-assign" },
           h("label", {}, h("span", {}, t("ch.d.assignTo")), input),
-          h("datalist", { id: "ch-students" }, ...this.knownStudents().map((s) => h("option", { value: s }))),
+          h(
+            "datalist",
+            { id: "ch-students" },
+            ...this.knownStudents().map((s) => h("option", { value: s })),
+          ),
           h(
             "div",
             { class: "ch-assign-b" },
-            e.assignee ? h("button", { class: "btn ghost", onclick: () => this.assign(e, "") }, t("ch.d.unassign")) : null,
-            h("button", { class: "btn", onclick: () => ((this.assignFor = null), this.renderMain()) }, t("pe.cancel")),
-            h("button", { class: "btn primary", onclick: () => this.assign(e, input.value) }, t("ch.d.assignOk")),
+            e.assignee
+              ? h(
+                  "button",
+                  { class: "btn ghost", onclick: () => this.assign(e, "") },
+                  t("ch.d.unassign"),
+                )
+              : null,
+            h(
+              "button",
+              {
+                class: "btn",
+                onclick: () => ((this.assignFor = null), this.renderMain()),
+              },
+              t("pe.cancel"),
+            ),
+            h(
+              "button",
+              {
+                class: "btn primary",
+                onclick: () => this.assign(e, input.value),
+              },
+              t("ch.d.assignOk"),
+            ),
           ),
         ),
       );
@@ -2438,8 +2712,18 @@ export class FlightCenter extends Modal {
       h(
         "div",
         { class: "ch-acts" },
-        h("button", { class: "btn primary", onclick: () => this.flyEntry(e) }, pIcon("play", 15), t("ch.d.fly")),
-        h("button", { class: "btn", onclick: () => this.editEntry(e) }, pIcon("edit", 15), t("ch.d.edit")),
+        h(
+          "button",
+          { class: "btn primary", onclick: () => this.flyEntry(e) },
+          pIcon("play", 15),
+          t("ch.d.fly"),
+        ),
+        h(
+          "button",
+          { class: "btn", onclick: () => this.editEntry(e) },
+          pIcon("edit", 15),
+          t("ch.d.edit"),
+        ),
         h(
           "button",
           {
@@ -2483,7 +2767,11 @@ export class FlightCenter extends Modal {
           pIcon("users", 16),
           h("span", {}, t("ch.d.student")),
           name,
-          h("datalist", { id: "ch-students-all" }, ...this.knownStudents().map((s) => h("option", { value: s }))),
+          h(
+            "datalist",
+            { id: "ch-students-all" },
+            ...this.knownStudents().map((s) => h("option", { value: s })),
+          ),
         ),
         h("span", { class: "grow" }),
         h(
@@ -2491,7 +2779,10 @@ export class FlightCenter extends Modal {
           {
             class: "btn primary ch-new",
             title: t("ch.d.newTip"),
-            onclick: () => this.editEntry(listDrills(uiL()).find((d) => d.kind === "template")!),
+            onclick: () =>
+              this.editEntry(
+                listDrills(uiL()).find((d) => d.kind === "template")!,
+              ),
           },
           pIcon("plus", 16),
           t("ch.d.new"),
@@ -2500,7 +2791,9 @@ export class FlightCenter extends Modal {
     );
     const club = all.filter((d) => d.kind === "club");
     const me = this.assess.student.trim().toLowerCase();
-    const mine = me ? club.filter((d) => d.assignee?.trim().toLowerCase() === me) : [];
+    const mine = me
+      ? club.filter((d) => d.assignee?.trim().toLowerCase() === me)
+      : [];
     const rest = club.filter((d) => !mine.includes(d));
     const tpls = all.filter((d) => d.kind === "template");
     const templates = () =>
@@ -2516,24 +2809,45 @@ export class FlightCenter extends Modal {
       );
     if (mine.length)
       body.append(
-        h("div", { class: "fc-sec2" }, pIcon("users", 16), t("ch.d.mine", { s: this.assess.student }), h("span", { class: "ct" }, String(mine.length))),
+        h(
+          "div",
+          { class: "fc-sec2" },
+          pIcon("users", 16),
+          t("ch.d.mine", { s: this.assess.student }),
+          h("span", { class: "ct" }, String(mine.length)),
+        ),
         h("div", { class: "ch-grid" }, ...mine.map((d) => this.drillCard(d))),
       );
     if (rest.length)
       body.append(
-        h("div", { class: "fc-sec2" }, t("ch.d.club"), h("span", { class: "ct" }, String(rest.length))),
+        h(
+          "div",
+          { class: "fc-sec2" },
+          t("ch.d.club"),
+          h("span", { class: "ct" }, String(rest.length)),
+        ),
         h("div", { class: "ch-grid" }, ...rest.map((d) => this.drillCard(d))),
       );
     templates();
     // no club drill yet: the templates come first, then how to make the club's own
     if (!club.length)
       body.append(
-        h("div", { class: "fc-sec2" }, t("ch.d.club"), h("span", { class: "ct" }, "0")),
+        h(
+          "div",
+          { class: "fc-sec2" },
+          t("ch.d.club"),
+          h("span", { class: "ct" }, "0"),
+        ),
         h(
           "div",
           { class: "ch-empty" },
           h("span", { class: "fc-none-ic" }, pIcon("drill", 24)),
-          h("div", {}, h("b", {}, t("ch.d.clubNone")), h("span", {}, t("ch.d.clubNoneSub"))),
+          h(
+            "div",
+            {},
+            h("b", {}, t("ch.d.clubNone")),
+            h("span", {}, t("ch.d.clubNoneSub")),
+          ),
         ),
       );
   }
@@ -2544,7 +2858,13 @@ export class FlightCenter extends Modal {
       id,
       lang: uiL(),
       onSaved: (p, how) =>
-        this.say(how === "reset" && p ? t("ch.l.reset", { t: p.title }) : p ? t("ch.l.saved", { t: p.title }) : t("ch.l.deleted")),
+        this.say(
+          how === "reset" && p
+            ? t("ch.l.reset", { t: p.title })
+            : p
+              ? t("ch.l.saved", { t: p.title })
+              : t("ch.l.deleted"),
+        ),
     });
   }
 
@@ -2557,8 +2877,16 @@ export class FlightCenter extends Modal {
       { class: `ch-proc${club ? " club" : ""}`, "data-id": p.id },
       h(
         "button",
-        { class: "ch-proc-main", onclick: () => this.openProc(p.id), title: club ? t("ch.l.edit") : t("ch.l.open") },
-        h("span", { class: `ch-ic cat-${p.category}` }, pIcon(CAT_ICONS[p.category] ?? "other", 18)),
+        {
+          class: "ch-proc-main",
+          onclick: () => this.openProc(p.id),
+          title: club ? t("ch.l.edit") : t("ch.l.open"),
+        },
+        h(
+          "span",
+          { class: `ch-ic cat-${p.category}` },
+          pIcon(CAT_ICONS[p.category] ?? "other", 18),
+        ),
         h(
           "span",
           { class: "ch-proc-tx" },
@@ -2566,17 +2894,37 @@ export class FlightCenter extends Modal {
             "b",
             {},
             p.title,
-            p.lang !== l ? h("span", { class: "ch-lang-tag" }, p.lang.toUpperCase()) : null,
+            p.lang !== l
+              ? h("span", { class: "ch-lang-tag" }, p.lang.toUpperCase())
+              : null,
           ),
           p.summary ? h("span", { class: "ch-proc-sum" }, p.summary) : null,
           h(
             "span",
             { class: "ch-proc-meta" },
-            h("span", { class: `ch-src ${club ? "club" : "lib"}` }, club ? (p.basedOn ? t("ch.l.custom") : t("ch.l.club")) : t("ch.l.library")),
+            h(
+              "span",
+              { class: `ch-src ${club ? "club" : "lib"}` },
+              club
+                ? p.basedOn
+                  ? t("ch.l.custom")
+                  : t("ch.l.club")
+                : t("ch.l.library"),
+            ),
             h("span", {}, tn("ch.l.items", p.items.length)),
             mem ? h("span", { class: "ch-mem" }, tn("ch.l.mem", mem)) : null,
             p.failures.length
-              ? h("span", { class: "ch-ans", title: p.failures.map((f) => failureName(f, l)).join(", ") }, l === "fr" ? `${t("ch.l.answers")}\u00a0: ` : `${t("ch.l.answers")}: `, p.failures.map((f) => failureName(f, l)).join(", "))
+              ? h(
+                  "span",
+                  {
+                    class: "ch-ans",
+                    title: p.failures.map((f) => failureName(f, l)).join(", "),
+                  },
+                  l === "fr"
+                    ? `${t("ch.l.answers")}\u00a0: `
+                    : `${t("ch.l.answers")}: `,
+                  p.failures.map((f) => failureName(f, l)).join(", "),
+                )
               : null,
           ),
         ),
@@ -2586,10 +2934,20 @@ export class FlightCenter extends Modal {
         { class: "ch-proc-acts" },
         h(
           "button",
-          { class: "pe-ib", title: t("ch.l.share"), "aria-label": `${t("ch.l.share")} · ${p.title}`, onclick: () => openShareDialog(p) },
+          {
+            class: "pe-ib",
+            title: t("ch.l.share"),
+            "aria-label": `${t("ch.l.share")} · ${p.title}`,
+            onclick: () => openShareDialog(p),
+          },
           pIcon("share", 16),
         ),
-        h("button", { class: "btn", onclick: () => this.openProc(p.id) }, club ? pIcon("edit", 15) : pIcon("eye", 15), club ? t("ch.l.edit") : t("ch.l.open")),
+        h(
+          "button",
+          { class: "btn", onclick: () => this.openProc(p.id) },
+          club ? pIcon("edit", 15) : pIcon("eye", 15),
+          club ? t("ch.l.edit") : t("ch.l.open"),
+        ),
       ),
     );
   }
@@ -2598,11 +2956,15 @@ export class FlightCenter extends Modal {
     const l = uiL();
     const other: Lang = l === "fr" ? "en" : "fr";
     // the library in the screen language, and every club procedure (a club writes in its own language)
-    const all = [...effectiveProcedures(l), ...effectiveProcedures(other).filter((p) => p.source === "club")];
+    const all = [
+      ...effectiveProcedures(l),
+      ...effectiveProcedures(other).filter((p) => p.source === "club"),
+    ];
     const words = this.libQ.toLowerCase().split(/\s+/).filter(Boolean);
     const shown = all.filter(
       (p) =>
-        (this.libSrc === "all" || (this.libSrc === "club") === (p.source === "club")) &&
+        (this.libSrc === "all" ||
+          (this.libSrc === "club") === (p.source === "club")) &&
         words.every((w) =>
           `${p.title} ${p.summary ?? ""} ${p.failures.map((f) => failureName(f, l)).join(" ")} ${CATEGORY_LABELS[p.category]?.[l] ?? ""}`
             .toLowerCase()
@@ -2621,7 +2983,8 @@ export class FlightCenter extends Modal {
       this.libQ = search.value;
       const pos = search.selectionStart;
       this.renderMain();
-      const again = this.main.querySelector<HTMLInputElement>(".ch-search input");
+      const again =
+        this.main.querySelector<HTMLInputElement>(".ch-search input");
       again?.focus();
       if (pos !== null) again?.setSelectionRange(pos, pos);
     });
@@ -2653,7 +3016,12 @@ export class FlightCenter extends Modal {
           src("library", t("ch.l.library"), all.length - nClub),
         ),
         h("span", { class: "grow" }),
-        h("button", { class: "btn primary", onclick: () => this.openProc(null) }, pIcon("plus", 16), t("ch.l.new")),
+        h(
+          "button",
+          { class: "btn primary", onclick: () => this.openProc(null) },
+          pIcon("plus", 16),
+          t("ch.l.new"),
+        ),
       ),
     );
     if (!shown.length) {
@@ -2661,10 +3029,24 @@ export class FlightCenter extends Modal {
         h(
           "div",
           { class: "ch-empty" },
-          h("span", { class: "fc-none-ic" }, pIcon(this.libQ ? "search" : "book", 24)),
+          h(
+            "span",
+            { class: "fc-none-ic" },
+            pIcon(this.libQ ? "search" : "book", 24),
+          ),
           this.libQ
-            ? h("div", {}, h("b", {}, t("ch.l.none", { q: this.libQ })), h("span", {}, t("ch.l.noneSub")))
-            : h("div", {}, h("b", {}, t("ch.l.noClub")), h("span", {}, t("ch.l.noClubSub"))),
+            ? h(
+                "div",
+                {},
+                h("b", {}, t("ch.l.none", { q: this.libQ })),
+                h("span", {}, t("ch.l.noneSub")),
+              )
+            : h(
+                "div",
+                {},
+                h("b", {}, t("ch.l.noClub")),
+                h("span", {}, t("ch.l.noClubSub")),
+              ),
         ),
       );
     } else
@@ -2675,7 +3057,11 @@ export class FlightCenter extends Modal {
           h(
             "div",
             { class: "fc-sec2 ch-cat" },
-            h("span", { class: `ch-ic sm cat-${cat}` }, pIcon(CAT_ICONS[cat], 15)),
+            h(
+              "span",
+              { class: `ch-ic sm cat-${cat}` },
+              pIcon(CAT_ICONS[cat], 15),
+            ),
             CATEGORY_LABELS[cat][l],
             h("span", { class: "ct" }, String(list.length)),
           ),
@@ -2694,17 +3080,39 @@ export class FlightCenter extends Modal {
           "div",
           { class: "ch-empty big" },
           h("span", { class: "fc-none-ic" }, pIcon("chart", 28)),
-          h("div", {}, h("b", {}, t("ch.r.none")), h("span", {}, t("ch.r.noneSub"))),
-          h("button", { class: "btn primary", onclick: () => this.go({ type: "club", tab: "drills" }) }, pIcon("drill", 15), t("ch.tab.drills")),
+          h(
+            "div",
+            {},
+            h("b", {}, t("ch.r.none")),
+            h("span", {}, t("ch.r.noneSub")),
+          ),
+          h(
+            "button",
+            {
+              class: "btn primary",
+              onclick: () => this.go({ type: "club", tab: "drills" }),
+            },
+            pIcon("drill", 15),
+            t("ch.tab.drills"),
+          ),
         ),
       );
       return;
     }
     const studs = studentsOf(rows);
-    if (this.resStudent && !studs.includes(this.resStudent)) this.resStudent = "";
-    const f = filterProcRows(rows, { student: this.resStudent || undefined, verdict: this.resVerdict });
+    if (this.resStudent && !studs.includes(this.resStudent))
+      this.resStudent = "";
+    const f = filterProcRows(rows, {
+      student: this.resStudent || undefined,
+      verdict: this.resVerdict,
+    });
     const sum = procSummary(f);
-    const sel = (label: string, value: string, opts: [string, string][], set: (v: string) => void) =>
+    const sel = (
+      label: string,
+      value: string,
+      opts: [string, string][],
+      set: (v: string) => void,
+    ) =>
       h(
         "label",
         { class: "ch-sel" },
@@ -2718,42 +3126,108 @@ export class FlightCenter extends Modal {
               this.renderMain();
             },
           },
-          ...opts.map(([v, tx]) => h("option", { value: v, selected: v === value }, tx)),
+          ...opts.map(([v, tx]) =>
+            h("option", { value: v, selected: v === value }, tx),
+          ),
         ),
       );
     const dl = () => {
-      const blob = new Blob([`﻿${procCsv(f)}`], { type: "text/csv;charset=utf-8" });
-      const a = h("a", { href: URL.createObjectURL(blob), download: `procedures-${new Date().toISOString().slice(0, 10)}.csv` });
+      const blob = new Blob([`﻿${procCsv(f)}`], {
+        type: "text/csv;charset=utf-8",
+      });
+      const a = h("a", {
+        href: URL.createObjectURL(blob),
+        download: `procedures-${new Date().toISOString().slice(0, 10)}.csv`,
+      });
       document.body.append(a);
       a.click();
       setTimeout(() => (URL.revokeObjectURL(a.href), a.remove()), 1000);
     };
-    const stat = (label: string, v: string, cls = "") => h("div", { class: `ch-stat ${cls}` }, h("span", {}, label), h("b", {}, v));
+    const stat = (label: string, v: string, cls = "") =>
+      h(
+        "div",
+        { class: `ch-stat ${cls}` },
+        h("span", {}, label),
+        h("b", {}, v),
+      );
     body.append(
       h(
         "div",
         { class: "ch-bar" },
-        sel(t("ch.r.student"), this.resStudent, [["", t("ch.r.allStudents")], ...studs.map((s) => [s, s || t("ch.r.noName")] as [string, string])], (v) => (this.resStudent = v)),
-        sel(t("ch.r.verdict"), this.resVerdict, [["", t("ch.r.allVerdicts")], ["PASS", t("ch.v.PASS")], ["FAIL", t("ch.v.FAIL")]], (v) => (this.resVerdict = v as "" | "PASS" | "FAIL")),
+        sel(
+          t("ch.r.student"),
+          this.resStudent,
+          [
+            ["", t("ch.r.allStudents")],
+            ...studs.map((s) => [s, s || t("ch.r.noName")] as [string, string]),
+          ],
+          (v) => (this.resStudent = v),
+        ),
+        sel(
+          t("ch.r.verdict"),
+          this.resVerdict,
+          [
+            ["", t("ch.r.allVerdicts")],
+            ["PASS", t("ch.v.PASS")],
+            ["FAIL", t("ch.v.FAIL")],
+          ],
+          (v) => (this.resVerdict = v as "" | "PASS" | "FAIL"),
+        ),
         // the two actions wrap together, to the right
         h(
           "div",
           { class: "ch-bar-end" },
-          h("button", { class: "btn ghost", onclick: () => this.leave(() => this.hooks.openRecords()) }, svgIcon(I.clipboard, 15), t("ch.r.records")),
-          h("button", { class: "btn", onclick: dl, disabled: !f.length }, pIcon("download", 15), t("ch.r.csv")),
+          h(
+            "button",
+            {
+              class: "btn ghost",
+              onclick: () => this.leave(() => this.hooks.openRecords()),
+            },
+            svgIcon(I.clipboard, 15),
+            t("ch.r.records"),
+          ),
+          h(
+            "button",
+            { class: "btn", onclick: dl, disabled: !f.length },
+            pIcon("download", 15),
+            t("ch.r.csv"),
+          ),
         ),
       ),
       h(
         "div",
         { class: "ch-stats" },
         stat(t("ch.r.n"), String(sum.n)),
-        stat(t("ch.r.pass"), sum.passRate === null ? "—" : `${sum.passRate} %`, sum.passRate !== null && sum.passRate >= 70 ? "ok" : sum.passRate !== null ? "bad" : ""),
-        stat(t("ch.r.avg"), sum.avgScore === null ? "—" : `${sum.avgScore}/100`),
-        stat(t("ch.r.react"), sum.reactionS === null ? "—" : `${String(sum.reactionS).replace(".", uiL() === "fr" ? "," : ".")} s`),
+        stat(
+          t("ch.r.pass"),
+          sum.passRate === null ? "—" : `${sum.passRate} %`,
+          sum.passRate !== null && sum.passRate >= 70
+            ? "ok"
+            : sum.passRate !== null
+              ? "bad"
+              : "",
+        ),
+        stat(
+          t("ch.r.avg"),
+          sum.avgScore === null ? "—" : `${sum.avgScore}/100`,
+        ),
+        stat(
+          t("ch.r.react"),
+          sum.reactionS === null
+            ? "—"
+            : `${String(sum.reactionS).replace(".", uiL() === "fr" ? "," : ".")} s`,
+        ),
       ),
     );
     if (!f.length) {
-      body.append(h("div", { class: "ch-empty" }, h("span", { class: "fc-none-ic" }, pIcon("search", 24)), h("div", {}, h("b", {}, t("ch.r.noneFilter")))));
+      body.append(
+        h(
+          "div",
+          { class: "ch-empty" },
+          h("span", { class: "fc-none-ic" }, pIcon("search", 24)),
+          h("div", {}, h("b", {}, t("ch.r.noneFilter"))),
+        ),
+      );
       return;
     }
     const weak = sum.byProcedure.filter((p) => p.pass < p.n).slice(0, 3);
@@ -2763,13 +3237,24 @@ export class FlightCenter extends Modal {
           "div",
           { class: "ch-weak" },
           h("b", {}, pIcon("warn", 15), t("ch.r.weak")),
-          ...weak.map((w) => h("span", {}, h("strong", {}, w.procedure), ` · ${t("ch.r.weakLine", { p: w.pass, n: w.n, a: w.avgScore })}`)),
+          ...weak.map((w) =>
+            h(
+              "span",
+              {},
+              h("strong", {}, w.procedure),
+              ` · ${t("ch.r.weakLine", { p: w.pass, n: w.n, a: w.avgScore })}`,
+            ),
+          ),
         ),
       );
     const date = (iso: string) => {
       const d = new Date(iso);
       return Number.isFinite(d.getTime())
-        ? d.toLocaleDateString(uiL() === "fr" ? "fr-FR" : "en-GB", { day: "numeric", month: "short", year: "numeric" })
+        ? d.toLocaleDateString(uiL() === "fr" ? "fr-FR" : "en-GB", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })
         : "";
     };
     body.append(
@@ -2809,30 +3294,55 @@ export class FlightCenter extends Modal {
                   h(
                     "div",
                     {},
-                  h("b", {}, r.procedure),
-                  h(
-                    "small",
-                    {},
-                    // the drill column is hidden on narrow screens: its name rides along here
-                    r.drill ? h("span", { class: "c-drill-sm" }, r.drill, " · ") : null,
-                    failureName(r.failure, uiL()),
-                    " · ",
-                    t(r.mode === "test" ? "ch.d.test" : "ch.d.training"),
-                  ),
-                  r.notes.length > 1
-                    ? h(
-                        "details",
-                        { class: "c-notes" },
-                        h("summary", {}, h("span", { class: "c-note" }, r.note), h("span", { class: "c-more" }, tn("ch.r.more", r.notes.length - 1))),
-                        h("ul", {}, ...r.notes.slice(1).map((x) => h("li", {}, x))),
-                      )
-                    : r.note
-                      ? h("span", { class: "c-note" }, r.note)
-                      : null,
+                    h("b", {}, r.procedure),
+                    h(
+                      "small",
+                      {},
+                      // the drill column is hidden on narrow screens: its name rides along here
+                      r.drill
+                        ? h("span", { class: "c-drill-sm" }, r.drill, " · ")
+                        : null,
+                      failureName(r.failure, uiL()),
+                      " · ",
+                      t(r.mode === "test" ? "ch.d.test" : "ch.d.training"),
+                    ),
+                    r.notes.length > 1
+                      ? h(
+                          "details",
+                          { class: "c-notes" },
+                          h(
+                            "summary",
+                            {},
+                            h("span", { class: "c-note" }, r.note),
+                            h(
+                              "span",
+                              { class: "c-more" },
+                              tn("ch.r.more", r.notes.length - 1),
+                            ),
+                          ),
+                          h(
+                            "ul",
+                            {},
+                            ...r.notes.slice(1).map((x) => h("li", {}, x)),
+                          ),
+                        )
+                      : r.note
+                        ? h("span", { class: "c-note" }, r.note)
+                        : null,
                   ),
                 ),
                 h("td", { class: "num" }, h("b", {}, String(r.score))),
-                h("td", {}, h("span", { class: `ch-verdict ${r.verdict === "PASS" ? "ok" : "bad"}` }, t(`ch.v.${r.verdict}`))),
+                h(
+                  "td",
+                  {},
+                  h(
+                    "span",
+                    {
+                      class: `ch-verdict ${r.verdict === "PASS" ? "ok" : "bad"}`,
+                    },
+                    t(`ch.v.${r.verdict}`),
+                  ),
+                ),
               ),
             ),
           ),
@@ -2860,7 +3370,11 @@ export class FlightCenter extends Modal {
     const { ok, title, procs } = shareSummary(code);
     return h(
       "section",
-      { class: `ch-pending${ok ? "" : " bad"}`, role: "region", "aria-label": t("ch.p.linkTitle") },
+      {
+        class: `ch-pending${ok ? "" : " bad"}`,
+        role: "region",
+        "aria-label": t("ch.p.linkTitle"),
+      },
       h("span", { class: "ch-ic" }, pIcon(ok ? "link" : "warn", 18)),
       h(
         "div",
@@ -2871,17 +3385,34 @@ export class FlightCenter extends Modal {
           ? h(
               "ul",
               {},
-              ...procs.slice(0, 6).map((p) =>
-                h("li", {}, p.title, h("span", { class: "muted" }, ` · ${tn("ch.l.items", p.items)}`)),
-              ),
-              procs.length > 6 ? h("li", { class: "muted" }, `+ ${procs.length - 6}`) : null,
+              ...procs
+                .slice(0, 6)
+                .map((p) =>
+                  h(
+                    "li",
+                    {},
+                    p.title,
+                    h(
+                      "span",
+                      { class: "muted" },
+                      ` · ${tn("ch.l.items", p.items)}`,
+                    ),
+                  ),
+                ),
+              procs.length > 6
+                ? h("li", { class: "muted" }, `+ ${procs.length - 6}`)
+                : null,
             )
           : null,
       ),
       h(
         "div",
         { class: "ch-pending-b" },
-        h("button", { class: "btn ghost", onclick: () => (done(), this.renderMain()) }, t("ch.p.linkLater")),
+        h(
+          "button",
+          { class: "btn ghost", onclick: () => (done(), this.renderMain()) },
+          t("ch.p.linkLater"),
+        ),
         ok
           ? h(
               "button",
@@ -2918,8 +3449,16 @@ export class FlightCenter extends Modal {
     name.addEventListener("change", () => setClubName(name.value));
     const download = () => {
       const blob = new Blob([exportPackJson()], { type: "application/json" });
-      const slug = (clubName() || "club").toLowerCase().normalize("NFD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "club";
-      const a = h("a", { href: URL.createObjectURL(blob), download: `${slug}-procedures.json` });
+      const slug =
+        (clubName() || "club")
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "") || "club";
+      const a = h("a", {
+        href: URL.createObjectURL(blob),
+        download: `${slug}-procedures.json`,
+      });
       document.body.append(a);
       a.click();
       setTimeout(() => (URL.revokeObjectURL(a.href), a.remove()), 1000);
@@ -2928,16 +3467,27 @@ export class FlightCenter extends Modal {
       this.packReport = importSummary(r);
       this.renderMain();
     };
-    const file = h("input", { type: "file", accept: ".json,application/json", class: "ch-file", "aria-label": t("ch.p.file") }) as HTMLInputElement;
+    const file = h("input", {
+      type: "file",
+      accept: ".json,application/json",
+      class: "ch-file",
+      "aria-label": t("ch.p.file"),
+    }) as HTMLInputElement;
     file.addEventListener("change", async () => {
       const f = file.files?.[0];
       if (!f) return;
       report(importPack(await f.text(), this.packPolicy, uiL()));
     });
-    const code = h("input", { type: "text", placeholder: t("ch.p.paste"), "aria-label": t("ch.p.paste"), autocomplete: "off" }) as HTMLInputElement;
+    const code = h("input", {
+      type: "text",
+      placeholder: t("ch.p.paste"),
+      "aria-label": t("ch.p.paste"),
+      autocomplete: "off",
+    }) as HTMLInputElement;
     code.addEventListener("keydown", (e) => {
       e.stopPropagation();
-      if (e.key === "Enter" && code.value.trim()) report(importShare(code.value, this.packPolicy, uiL()));
+      if (e.key === "Enter" && code.value.trim())
+        report(importShare(code.value, this.packPolicy, uiL()));
     });
     const pol: [ConflictPolicy, string][] = [
       ["newer", t("ch.p.newer")],
@@ -2945,18 +3495,33 @@ export class FlightCenter extends Modal {
       ["keep", t("ch.p.keep")],
       ["copy", t("ch.p.copy")],
     ];
-    const card = (icon: PIcon, title: string, sub: string, ...content: (Node | null)[]) =>
+    const card = (
+      icon: PIcon,
+      title: string,
+      sub: string,
+      ...content: (Node | null)[]
+    ) =>
       h(
         "section",
         { class: "ch-card" },
-        h("div", { class: "ch-card-h" }, h("span", { class: "ch-ic" }, pIcon(icon, 18)), h("div", {}, h("b", {}, title), h("small", {}, sub))),
+        h(
+          "div",
+          { class: "ch-card-h" },
+          h("span", { class: "ch-ic" }, pIcon(icon, 18)),
+          h("div", {}, h("b", {}, title), h("small", {}, sub)),
+        ),
         ...content,
       );
     body.append(
       h(
         "div",
         { class: "ch-pack" },
-        card("users", t("ch.p.name"), t("ch.p.nameHint"), h("div", { class: "ch-row" }, name)),
+        card(
+          "users",
+          t("ch.p.name"),
+          t("ch.p.nameHint"),
+          h("div", { class: "ch-row" }, name),
+        ),
         card(
           "upload",
           t("ch.p.export"),
@@ -2964,8 +3529,22 @@ export class FlightCenter extends Modal {
           h(
             "div",
             { class: "ch-row" },
-            h("button", { class: "btn primary", disabled: !n, onclick: download }, pIcon("download", 15), t("ch.p.download")),
-            h("button", { class: "btn", disabled: !n, onclick: () => openShareDialog(exportPack()) }, pIcon("qr", 15), t("ch.p.link")),
+            h(
+              "button",
+              { class: "btn primary", disabled: !n, onclick: download },
+              pIcon("download", 15),
+              t("ch.p.download"),
+            ),
+            h(
+              "button",
+              {
+                class: "btn",
+                disabled: !n,
+                onclick: () => openShareDialog(exportPack()),
+              },
+              pIcon("qr", 15),
+              t("ch.p.link"),
+            ),
           ),
         ),
         card(
@@ -2979,27 +3558,48 @@ export class FlightCenter extends Modal {
             h(
               "select",
               {
-                onchange: (e: Event) => (this.packPolicy = (e.target as HTMLSelectElement).value as ConflictPolicy),
+                onchange: (e: Event) =>
+                  (this.packPolicy = (e.target as HTMLSelectElement)
+                    .value as ConflictPolicy),
               },
-              ...pol.map(([v, tx]) => h("option", { value: v, selected: v === this.packPolicy }, tx)),
+              ...pol.map(([v, tx]) =>
+                h("option", { value: v, selected: v === this.packPolicy }, tx),
+              ),
             ),
           ),
           h(
             "div",
             { class: "ch-row" },
-            h("button", { class: "btn", onclick: () => file.click() }, pIcon("other", 15), t("ch.p.file")),
+            h(
+              "button",
+              { class: "btn", onclick: () => file.click() },
+              pIcon("other", 15),
+              t("ch.p.file"),
+            ),
             file,
           ),
           h(
             "div",
             { class: "ch-row" },
             code,
-            h("button", { class: "btn", onclick: () => code.value.trim() && report(importShare(code.value, this.packPolicy, uiL())) }, t("ch.p.go")),
+            h(
+              "button",
+              {
+                class: "btn",
+                onclick: () =>
+                  code.value.trim() &&
+                  report(importShare(code.value, this.packPolicy, uiL())),
+              },
+              t("ch.p.go"),
+            ),
           ),
           this.packReport
             ? h(
                 "div",
-                { class: `ch-report ${this.packReport.ok ? "ok" : "warn"}`, role: "status" },
+                {
+                  class: `ch-report ${this.packReport.ok ? "ok" : "warn"}`,
+                  role: "status",
+                },
                 ...this.packReport.lines.map((x) => h("div", {}, x)),
               )
             : null,
@@ -3456,7 +4056,12 @@ export class FlightCenter extends Modal {
  */
 export function coursesTopbarButton(open: () => void): HTMLElement {
   const lbl = h("span", { class: "lbl" });
-  const b = h("button", { class: "btn tb-courses", type: "button", onclick: open }, svgIcon(I.slides), lbl);
+  const b = h(
+    "button",
+    { class: "btn tb-courses", type: "button", onclick: open },
+    svgIcon(I.slides),
+    lbl,
+  );
   const sync = () => {
     const fr = uiLang() === "fr";
     lbl.textContent = fr ? "Cours" : "Courses";

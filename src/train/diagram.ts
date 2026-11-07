@@ -359,6 +359,9 @@ export function holdSlideSvg(
   const k = 15 * u;
   out += `<path d="M${f2(cx)},${f2(cy - k * 1.13)} L${f2(cx + k)},${f2(cy + k * 0.67)} L${f2(cx - k)},${f2(cy + k * 0.67)} Z" fill="${C.bg}" stroke="${C.ink}" stroke-width="${4 * u}" stroke-linejoin="round"/>`;
   out += text(fl[0], fl[1] + 10 * u, fix, 28, C.ink, `text-anchor="middle" font-weight="600"`);
+  // the bearings of what sits just outside the circle: the sectors' arc sizes and the arriving aircraft
+  const outside: number[] = [];
+  if (planeRel !== null && o.courseToFix !== undefined) outside.push(o.courseToFix + 180);
   if (!quiet) {
     for (const kk of Object.keys(SECT) as K[]) {
       const S = SECT[kk];
@@ -366,13 +369,24 @@ export function holdSlideSvg(
       out += text(p[0], p[1] - 10 * u, `${fr ? "SECTEUR" : "SECTOR"} ${S.n}`, 24, C.mute, `text-anchor="middle" font-weight="500" letter-spacing="${2.5 * u}"`);
       out += text(p[0], p[1] + 30 * u, S.name, 32, S.col, `text-anchor="middle" font-weight="600"`);
       if (entry === kk) out += text(p[0], p[1] + 64 * u, fr ? "votre entrée" : "your entry", 24, C.ink2, `text-anchor="middle" font-weight="600"`);
-      const q = at(absB(aside((S.from + S.to) / 2, S.from, S.to, 16, 20)), RC + 44 * u);
+      const qb = absB(aside((S.from + S.to) / 2, S.from, S.to, 16, 20));
+      outside.push(qb);
+      const q = at(qb, RC + 44 * u);
       out += text(q[0], q[1] + 9 * u, S.arc, 24, C.mute, `text-anchor="middle" font-style="italic" font-weight="500"`);
     }
   }
-  // north arrow, just outside the circle, top left
-  const nx = cx - RC * 0.8 - 34 * u;
-  const ny = cy - RC * 0.8 - 20 * u;
+  // north arrow, just outside the circle in a corner: top left, unless an arc size or the aircraft sits there
+  const room = (b: number) => Math.min(180, ...outside.map((x) => dRel(x, b)));
+  let corner = 315;
+  for (const c of [315, 45, 225, 135]) {
+    if (room(c) >= 32) {
+      corner = c;
+      break;
+    }
+    if (room(c) > room(corner)) corner = c;
+  }
+  const nx = cx + (corner < 180 ? 1 : -1) * (RC * 0.8 + 34 * u);
+  const ny = cy + (corner === 315 || corner === 45 ? -1 : 1) * (RC * 0.8 + 20 * u) - (corner === 315 || corner === 45 ? 0 : 24 * u);
   out += `<g transform="translate(${f2(nx)} ${f2(ny)}) scale(${u})"><path d="M0,-26 L11,8 L0,0 L-11,8 Z" fill="${C.ink2}"/></g>`;
   out += text(nx, ny + 44 * u, "N", 24, C.ink2, `text-anchor="middle" font-weight="600"`);
   const label = `Hold ${cardinal(O)} of ${fix}, inbound ${pad3(I)}°, ${turn === "R" ? "right" : "left"} turns${entry ? `, ${entry.toLowerCase()} entry` : ""}`;

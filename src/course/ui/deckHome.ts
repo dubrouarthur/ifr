@@ -1,8 +1,8 @@
-// The slide decks on the Flight Center's first screen (SPEC slides v2 §12): the hero shows a real deck, drawn live
-// by the slide renderer (a large slide and its filmstrip), and the shelf under it lists every deck as a slide card
-// (cover thumbnail, steps, minutes, progress, Present). Loaded on demand by ui/flightcenter.ts, so the slide
-// engine stays out of the cockpit's first bundle. Same entries and order as the library (library.ts): the deck the
-// student should continue first, then assigned, recent and sample decks.
+// The slide decks on the Flight Center's first screen (SPEC slides v2 §12), kept simple: the hero shows one real
+// deck, its cover drawn live by the slide renderer, and the shelf under it shows four decks as slide cards (cover
+// thumbnail, steps, minutes, progress); the rest is one click away in the library. Loaded on demand by
+// ui/flightcenter.ts, so the slide engine stays out of the cockpit's first bundle. Same entries and order as the
+// library (library.ts): the deck the student should continue first, then assigned, recent and sample decks.
 import "../../styles/course-canvas.css";
 import { h } from "../../ui/dom";
 import { allSamples, HOLDING_ID } from "../samples";
@@ -29,8 +29,8 @@ export interface DeckHomeOptions {
   page?: string;
   /** open a URL (the Flight Center closes first) */
   navigate: (url: string) => void;
-  /** "Create a course" (the library's new-course flow) */
-  onCreate: () => void;
+  /** the most deck cards on the shelf (default 4: the rest is one click away, in the library) */
+  shelfMax?: number;
   /** the store, when it opens (stored decks and progress join the samples) */
   store?: Promise<CourseStore> | null;
   profileId?: string;
@@ -44,12 +44,7 @@ const S = {
   en: {
     cont: "Continue",
     start: "Start here",
-    present: "Present",
     open: "Open",
-    create: "Create a course",
-    createSub: "Start from a template: cover, diagram, instrument, quiz",
-    slides: "Slides of this deck",
-    slideN: "Slide {n}",
     playDeck: "Open the deck",
     of: "{a} of {b}",
     deckOf: "{n} slides",
@@ -57,12 +52,7 @@ const S = {
   fr: {
     cont: "Reprendre",
     start: "Pour commencer",
-    present: "Présenter",
     open: "Ouvrir",
-    create: "Créer un cours",
-    createSub: "Partez d’un modèle : couverture, schéma, instrument, quiz",
-    slides: "Diapositives de ce cours",
-    slideN: "Diapositive {n}",
     playDeck: "Ouvrir le cours",
     of: "{a} sur {b}",
     deckOf: "{n} diapositives",
@@ -136,13 +126,8 @@ export function mountDeckHome(o: DeckHomeOptions): DeckHome {
         )
       : null;
 
-  const href = (k: "play" | "present", e: LibraryEntry, stepId?: string) =>
-    academyHref(
-      k === "play"
-        ? { k: "play", id: e.id, ...(stepId ? { s: stepId } : {}) }
-        : { k: "present", id: e.id },
-      page,
-    );
+  const href = (_k: "play", e: LibraryEntry, stepId?: string) =>
+    academyHref({ k: "play", id: e.id, ...(stepId ? { s: stepId } : {}) }, page);
 
   /** one SceneSims per course: every thumbnail of a deck shares its instruments */
   const simsFor = (c: Course) => {
@@ -192,72 +177,27 @@ export function mountDeckHome(o: DeckHomeOptions): DeckHome {
     }
   };
 
-  // ---------------------------------------------------------------- the hero: one deck, a large slide + filmstrip
+  // ---------------------------------------------------------------- the hero: one deck, its cover drawn large
+  // (one slide and one caption: the Flight Center stays simple; the filmstrip and every action live in the player)
   const renderVisual = () => {
     const last = store?.last() ?? null;
     const e = featuredEntry(entries, last);
-    for (const el of o.visual.querySelectorAll<HTMLElement>(
-      ".dh-slide,.dh-film-t",
-    ))
+    for (const el of o.visual.querySelectorAll<HTMLElement>(".dh-slide"))
       dropView(el);
     o.visual.replaceChildren();
     const c = e?.course;
     const slides = slidesOf(c);
     if (!e || !c || !slides.length) return;
-    let cur = 0;
     const big = h("div", {
       class: "dh-slide",
       role: "img",
       "aria-label": loc(slides[0].title, l),
     });
-    const film = h("div", {
-      class: "dh-film",
-      role: "tablist",
-      "aria-label": tr(l, "slides"),
-    });
-    const show = (i: number) => {
-      cur = i;
-      dropView(big);
-      delete big.dataset.drawn;
-      big.replaceChildren();
-      big.setAttribute("aria-label", loc(slides[i].title, l));
-      thumb(big, c, slides[i], true);
-      film.querySelectorAll<HTMLElement>(".dh-film-b").forEach((b, k) => {
-        b.classList.toggle("on", k === i);
-        b.setAttribute("aria-selected", k === i ? "true" : "false");
-      });
-    };
-    // the cover, then the slides that show the most (a diagram, an instrument, a formula, a quiz)
-    const pick = [0, ...slides.map((_, i) => i).filter((i) => i > 0)].slice(
-      0,
-      5,
-    );
-    for (const i of pick) {
-      const t = h("span", { class: "dh-film-t", "aria-hidden": "true" });
-      const b = h(
-        "button",
-        {
-          class: "dh-film-b",
-          type: "button",
-          role: "tab",
-          title: loc(slides[i].title, l),
-          "aria-label": `${tr(l, "slideN", { n: i + 1 })} · ${loc(slides[i].title, l)}`,
-          onclick: () => show(i),
-        },
-        t,
-      );
-      film.append(b);
-      thumb(t, c, slides[i], true);
-    }
-    const playAt = () =>
-      o.navigate(
-        href("play", e, cur > 0 ? slides[cur].id : e.progress?.stepId),
-      );
     const open = h("button", {
       class: "dh-slide-hit",
       type: "button",
       "aria-label": `${tr(l, "playDeck")} · ${loc(e.title, l)}`,
-      onclick: playAt,
+      onclick: () => o.navigate(href("play", e, e.progress?.stepId)),
     });
     const cap = h(
       "div",
@@ -277,20 +217,9 @@ export function mountDeckHome(o: DeckHomeOptions): DeckHome {
             .join(" · "),
         ),
       ),
-      h(
-        "button",
-        {
-          class: "dh-cap-b",
-          type: "button",
-          onclick: () => o.navigate(href("present", e)),
-          title: tr(l, "present"),
-        },
-        icon("screen"),
-        h("span", {}, tr(l, "present")),
-      ),
     );
-    o.visual.append(h("div", { class: "dh-stage" }, big, open), film, cap);
-    show(0);
+    o.visual.append(h("div", { class: "dh-stage" }, big, open), cap);
+    thumb(big, c, slides[0], true);
   };
 
   // ---------------------------------------------------------------- the shelf: every deck as a slide card
@@ -299,7 +228,7 @@ export function mountDeckHome(o: DeckHomeOptions): DeckHome {
     for (const el of o.shelf.querySelectorAll<HTMLElement>(".dh-card-thumb"))
       dropView(el);
     o.shelf.replaceChildren();
-    const rows = shelfOrder(entries, last);
+    const rows = shelfOrder(entries, last).slice(0, o.shelfMax ?? 4);
     for (const { entry: e, cont, started } of rows) {
       const c = e.course;
       const slides = slidesOf(c);
@@ -383,56 +312,11 @@ export function mountDeckHome(o: DeckHomeOptions): DeckHome {
                 ),
               )
             : null,
-          h(
-            "div",
-            { class: "dh-acts" },
-            e.briefing
-              ? null
-              : h(
-                  "button",
-                  {
-                    class: "dh-act",
-                    type: "button",
-                    onclick: () => o.navigate(href("present", e)),
-                    title: tr(l, "present"),
-                  },
-                  icon("screen"),
-                  tr(l, "present"),
-                ),
-            h(
-              "button",
-              { class: "dh-act primary", type: "button", onclick: go },
-              cont && started ? tr(l, "cont") : tr(l, "open"),
-              icon("chev"),
-            ),
-          ),
         ),
       );
       o.shelf.append(card);
       if (c && cover) thumb(th, c, cover);
     }
-    o.shelf.append(
-      h(
-        "button",
-        {
-          class: "dh-card dh-new",
-          type: "button",
-          role: "listitem",
-          onclick: () => o.onCreate(),
-        },
-        h(
-          "span",
-          { class: "dh-new-media", "aria-hidden": "true" },
-          h("span", { class: "dh-new-ic" }, icon("plus", 28)),
-        ),
-        h(
-          "span",
-          { class: "dh-card-b" },
-          h("b", {}, tr(l, "create")),
-          h("small", {}, tr(l, "createSub")),
-        ),
-      ),
-    );
   };
 
   renderVisual();
@@ -492,24 +376,4 @@ export function mountDeckHome(o: DeckHomeOptions): DeckHome {
       sims.clear();
     },
   };
-}
-
-// ------------------------------------------------------------------ icons (24 × 24 strokes)
-const PATHS = {
-  screen: "M3 5h18v11H3zM8 20h8M12 16v4",
-  chev: "M9 6l6 6-6 6",
-  plus: "M12 5v14M5 12h14",
-} as const;
-function icon(name: keyof typeof PATHS, size = 18): SVGSVGElement {
-  const NS = "http://www.w3.org/2000/svg";
-  const s = document.createElementNS(NS, "svg");
-  s.setAttribute("viewBox", "0 0 24 24");
-  s.setAttribute("width", String(size));
-  s.setAttribute("height", String(size));
-  s.setAttribute("aria-hidden", "true");
-  s.setAttribute("class", "dh-ic");
-  const p = document.createElementNS(NS, "path");
-  p.setAttribute("d", PATHS[name]);
-  s.append(p);
-  return s;
 }

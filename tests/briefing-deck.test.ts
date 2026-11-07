@@ -232,4 +232,21 @@ describe("generated briefing deck: every exercise of the curriculum", () => {
     expect(g.authored).toBe(false);
     expect(Object.keys(g.scenes).length).toBe(1);
   });
+
+  // hold-random draws its hold at random: every hold geometry it can draw must pass the guard, not just today's
+  it("hold-random: every inbound course and turn direction passes the readability guard", () => {
+    const ex = EXERCISES.find((e) => e.id === "hold-random")!;
+    const rt0 = runtimeOf(ex);
+    const fails: string[] = [];
+    for (let inbound = 10; inbound <= 360; inbound += 10)
+      for (const turn of ["L", "R"] as const)
+        for (const lang of LANGS) {
+          const rt = { ...rt0, hold: { ...rt0.hold!, inbound, turn, fix: "KEDDY" } };
+          for (const s of buildBriefingDeck(ex, lang, rt).steps)
+            for (const i of slideReadability(s.slide!, { theme, lang }))
+              if (READ_FAILS.has(i.kind))
+                fails.push(`${inbound}${turn} ${lang} ${s.id}/${i.blockId}: ${readIssueText(i, "en").en}`);
+        }
+    expect(fails).toEqual([]);
+  });
 });
