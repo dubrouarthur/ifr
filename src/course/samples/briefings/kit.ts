@@ -1,8 +1,8 @@
 // Ground school — the crafted lesson briefings' building kit: one builder per slide archetype (SPEC slides v2 §8),
 // so every briefing reads like the lesson plan it is: cover (A1), why it matters (A3), the picture (A4 hero
 // diagram, A5 instrument with callouts), the numbers (A8 formula), the common mistakes, a question on the slide
-// (A9), "Your turn" on a live instrument, then "Ready to fly" (A11) and Fly it. Cockpit theme always (§11): the
-// deck is what the cockpit plays before the lesson (course/ui/briefingDeck.ts reads `briefingFor.exerciseId`).
+// (A9), "Your turn" on a live instrument, then "Ready to fly" (A11) and Fly it. The light classroom theme always:
+// the deck is what the cockpit plays before the lesson (course/ui/briefingDeck.ts reads `briefingFor.exerciseId`).
 //
 // Frames are the archetype frames on the 12-column grid; text never sits on a card; the marker is the only
 // numbering device; one idea per reveal; sources go on the footer line, never in the eyebrow.
@@ -635,7 +635,7 @@ export interface BriefingMeta {
   minutes: number;
   cockpit?: "steam" | "g1000";
 }
-/** A crafted lesson briefing: a Course with shape 'briefing', cockpit theme, for `exerciseId`. */
+/** A crafted lesson briefing: a Course with shape 'briefing', classroom (light) theme, for `exerciseId`. */
 export function briefing(
   meta: BriefingMeta,
   steps: Step[],

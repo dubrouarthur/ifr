@@ -1732,6 +1732,8 @@ export class CoursePlayer {
     this.body.dataset.layout = "readerOnly";
     this.body.dataset.kind = "summary";
     this.el.dataset.layout = "readerOnly";
+    // the result sheet sits on the same calm paper-grey stage as the slides
+    this.el.dataset.chrome = "classroom";
     this.scroll.replaceChildren();
     this.wideCol.replaceChildren();
     this.bottom.replaceChildren();

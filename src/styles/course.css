@@ -3919,7 +3919,9 @@ html.ga-doc body {
 }
 .pr-keys {
   margin: auto 0 0;
-  font: 12px/1.5 var(--gl-mono, monospace);
+  padding-top: 10px;
+  border-top: 1px solid var(--gl-line, #e2e7ed);
+  font: 12.5px/1.6 var(--font, "Inter", system-ui, sans-serif);
   color: var(--gl-muted, #5f6b77);
 }
 @media (max-width: 1000px) {
@@ -4021,4 +4023,136 @@ html.ga-doc body {
     0 0 0 1.5px rgba(20, 24, 31, 0.09),
     0 2px 4px rgba(20, 24, 31, 0.05),
     0 18px 44px -22px rgba(20, 24, 31, 0.22);
+}
+
+/* ------------------------------------------------------------ the result sheet (end of a course)
+   One white sheet on the paper-grey stage, like a training record: a graduated top edge (a chart's neatline), the
+   figures in one row between hairlines (no cards), then the steps as a ruled list with a quiet kind label and the
+   result on the right. */
+.cp-app .cp-summary {
+  position: relative;
+  gap: 18px;
+  padding: 34px 40px 26px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow:
+    0 1px 2px rgba(20, 24, 31, 0.04),
+    0 18px 44px -26px rgba(20, 24, 31, 0.22);
+  flex: none;
+}
+.cp-app .cp-summary::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 0;
+  height: 6px;
+  background: repeating-linear-gradient(90deg, var(--line-strong) 0 1px, transparent 1px 24px);
+  pointer-events: none;
+}
+.cp-app .cp-summary .cp-h1 {
+  margin: 0;
+  font-size: clamp(24px, 2.2vw, 30px);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.cp-app .cp-summary .cp-lead {
+  margin: -6px 0 0;
+  color: var(--text-2);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.cp-app .cp-summary .cp-tiles {
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.cp-app .cp-summary .cp-tile {
+  padding: 16px 18px 14px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.cp-app .cp-summary .cp-tile + .cp-tile {
+  border-left: 1px solid var(--line);
+}
+.cp-app .cp-summary .cp-tile:first-child {
+  padding-left: 0;
+}
+.cp-app .cp-summary .cp-tile b {
+  font-size: 30px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.cp-app .cp-summary .cp-tile span {
+  font-size: 13px;
+}
+.cp-app .cp-summary .cp-sum-list {
+  padding: 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+}
+.cp-app .cp-summary .cp-sum-list > li + li {
+  border-top: 1px solid var(--line);
+}
+.cp-app .cp-summary .cp-ol-row {
+  min-height: 52px;
+  padding: 8px 6px;
+  border-radius: 0;
+}
+.cp-app .cp-summary .cp-ol-row:hover {
+  background: var(--surface-2);
+}
+.cp-app .cp-summary .cp-ol-row .mid {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 14px;
+}
+.cp-app .cp-summary .cp-ol-row .mid .t {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+}
+/* the kind: a quiet label, not a coloured pill (colour is kept for results) */
+.cp-app .cp-summary .cp-ol-row .cp-kind {
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+.cp-app .cp-summary .cp-ol-row .cp-kind .dot {
+  display: none;
+}
+.cp-app .cp-summary .cp-ol-row .st {
+  min-width: 96px;
+  justify-content: flex-end;
+  font-size: 12.5px;
+}
+.cp-app .cp-summary .cp-ol-row .st .ok {
+  color: var(--good);
+}
+@media (max-width: 720px) {
+  .cp-app .cp-summary {
+    padding: 26px 20px 18px;
+  }
+  .cp-app .cp-summary .cp-ol-row .mid {
+    flex-direction: column;
+    gap: 2px;
+  }
+  .cp-app .cp-summary .cp-tile + .cp-tile {
+    border-left: 0;
+  }
+  .cp-app .cp-summary .cp-tile {
+    padding-left: 0;
+  }
 }

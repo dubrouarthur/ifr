@@ -1236,7 +1236,7 @@ body.chrome-auto .cockpit.no-otw {
   text-wrap: balance;
 }
 .intro-lead {
-  max-width: 32em;
+  max-width: 30.5em;
   margin: calc(var(--u) * 22) 0 0;
   font-size: max(15.5px, calc(var(--u) * 18));
   line-height: 1.52;
@@ -1338,10 +1338,11 @@ body.chrome-auto .cockpit.no-otw {
 }
 .intro-rose {
   position: absolute;
-  left: 42%;
+  /* centred a little right of the slide, so the W label stays clear of the lead */
+  left: 48%;
   top: 44%;
-  width: calc(var(--u) * 900);
-  height: calc(var(--u) * 900);
+  width: calc(var(--u) * 860);
+  height: calc(var(--u) * 860);
   transform: translate(-50%, -50%);
   pointer-events: none;
   z-index: 0;
@@ -1398,9 +1399,18 @@ body.chrome-auto .cockpit.no-otw {
     opacity 0.24s cubic-bezier(0.2, 0.7, 0.2, 1),
     transform 0.24s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
+/* the two screens are drawn as soon as the page opens (an empty sheet of paper with its tab, never a blank rose);
+   the live slide and the PFD fade in inside them when they are ready */
+.intro.open .intro-screen,
 .intro.ready .intro-screen {
   opacity: 1;
   transform: none;
+}
+.intro-stage > * {
+  transition: opacity 0.24s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.intro-stage:not(.ready) > * {
+  opacity: 0;
 }
 .intro.ready .intro-screen.is-sim {
   transition-delay: 0.06s;

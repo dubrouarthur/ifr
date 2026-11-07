@@ -37,8 +37,10 @@ import {
   holdParallelBriefing,
   holdTeardropBriefing,
 } from "./holds";
+import { HOLD_NDB_BRIEFING_ID, holdNdbBriefing } from "./holdNdb";
 
 export {
+  HOLD_NDB_BRIEFING_ID,
   ILS_HAND_BRIEFING_ID,
   LNAV_BRIEFING_ID,
   MISSED_BRIEFING_ID,
@@ -62,7 +64,14 @@ export interface BriefingDef {
   blurb: L10n;
 }
 
+// hold-ndb first: the library has listed it right after the four sample courses since the first briefing
 export const CRAFTED_BRIEFINGS: readonly BriefingDef[] = [
+  {
+    id: HOLD_NDB_BRIEFING_ID,
+    exerciseId: "hold-ndb",
+    build: holdNdbBriefing,
+    blurb: { en: "Briefing: the RMI, abeam on 180, a short outbound", fr: "Briefing : le RMI, le travers sur 180, un éloignement court" },
+  },
   {
     id: TURNS_BRIEFING_ID,
     exerciseId: "bai-turns",

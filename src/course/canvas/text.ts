@@ -448,7 +448,10 @@ export function formulaFragment(src: string, lang: Lang): DocumentFragment {
         nodes(b, n.b);
         f.append(a, b);
         parent.append(f);
-      } else if (n.t === "text") parent.append(document.createTextNode(typo(n.s, lang)));
+      } else if (n.t === "text")
+        // a word run is a flex item, whose edge spaces the layout would drop ("1:00 at 73" read "1:00at73"):
+        // keep them as no-break spaces
+        parent.append(document.createTextNode(typo(n.s, lang).replace(/^ +| +$/g, (m) => "\u00a0".repeat(m.length))));
       else parent.append(span(`fx-${n.t}`, n.t === "num" ? typo(n.s, lang) : n.s));
     }
   };
