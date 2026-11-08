@@ -121,9 +121,39 @@ type View =
 /** what the Ground school page does once the library is up: create a course, or pick one to present */
 export type CourseIntent = "new" | "present";
 
+/** set (sessionStorage) when a course opens from the Flight Center: the course page's way back returns here, to the
+ *  Flight Center's library (index.html#courses), instead of its own library page (learn/main.ts) */
+export const COURSE_FROM_KEY = "ifr.courseFrom";
+function goToCourse(url: string) {
+  try {
+    sessionStorage.setItem(COURSE_FROM_KEY, "fc");
+  } catch {
+    /* storage blocked */
+  }
+  location.assign(url);
+}
+
+/** the flight types' names in French (the flight data itself stays as written) */
+const CAT_FR: Record<string, string> = {
+  approaches: "Approches",
+  procedures: "Procédures",
+  xc: "Vols IFR",
+  circuits: "Circuits IFR",
+  basics: "Bases du vol aux instruments",
+  abnormal: "Urgences",
+  checkride: "Test en vol",
+  free: "Vol libre",
+};
+/** a flight type's name in the UI language */
+const catTitle = (c: { id: string; title: string }) =>
+  uiLang() === "fr" ? (CAT_FR[c.id] ?? c.title) : c.title;
+
 type QuickKind = "approach" | "hold";
 
 const DIFF = ["", "Easy", "Medium", "Hard"];
+const DIFF_FR = ["", "Facile", "Moyen", "Difficile"];
+/** a level's word in the UI language */
+const diffLabel = (d: number) => (uiLang() === "fr" ? DIFF_FR : DIFF)[d] ?? "";
 const COCKPITS: { id: CockpitType; title: string; desc: string }[] = [
   {
     id: "g1000",
@@ -902,7 +932,7 @@ export class FlightCenter extends Modal {
         "button",
         {
           class: "fc-title-home",
-          title: "Flight Center home",
+          title: LL("Flight Center home", "Accueil du Flight Center"),
           onclick: () => this.go({ type: "home" }),
         },
         "Flight Center",
@@ -911,8 +941,8 @@ export class FlightCenter extends Modal {
     );
     const search = h("input", {
       type: "search",
-      placeholder: "Search all flights",
-      "aria-label": "Search all flights",
+      placeholder: t("ch.searchAll"),
+      "aria-label": t("ch.searchAll"),
       enterkeyhint: "search",
     }) as HTMLInputElement;
     const clearBtn = h(
@@ -981,7 +1011,22 @@ export class FlightCenter extends Modal {
   close() {
     this.closePlate();
     this.closeQuick();
+    this.bg.classList.remove("fc-solid-bg");
     super.close();
+  }
+
+  /** at launch the Flight Center is the first page, not a window over a cockpit nobody has flown yet: an opaque
+   *  light backdrop (the start page's and the course pages' surface) until it closes */
+  solidBackdrop() {
+    this.bg.classList.add("fc-solid-bg");
+  }
+
+  /** on open the focus goes to the page's heading, so Tab starts at the top of the page */
+  protected initialFocus(): HTMLElement | null {
+    const hd = this.main.querySelector<HTMLElement>("h1, h2");
+    if (!hd) return super.initialFocus();
+    hd.tabIndex = -1;
+    return hd;
   }
 
   private go(v: View) {
@@ -1002,6 +1047,8 @@ export class FlightCenter extends Modal {
 
   /** leave the Flight Center and run a tool */
   private leave(fn: () => void) {
+    // the focus leaves with the dialog (the keyboard flies the aircraft), it does not go back to the opener
+    this.leavingForTool = true;
     this.close();
     fn();
   }
@@ -1032,7 +1079,7 @@ export class FlightCenter extends Modal {
       v.type === "home"
         ? ""
         : v.type === "instructor"
-          ? "Instructor"
+          ? LL("Instructor", "Instructeur")
           : v.type === "courses"
             ? v.flights
               ? LL("All flights", "Tous les vols")
@@ -1045,7 +1092,7 @@ export class FlightCenter extends Modal {
                   ? LL("Search", "Recherche")
                   : v.type === "path"
                     ? pathLabel(v.path)
-                    : CATEGORIES.find((c) => c.id === v.cat)!.title;
+                    : catTitle(CATEGORIES.find((c) => c.id === v.cat)!);
     clear(this.crumb);
     if (label)
       this.crumb.append(
@@ -1279,9 +1326,9 @@ export class FlightCenter extends Modal {
         String(this.fDiff || ""),
         [
           ["", LL("Any level", "Tous niveaux")],
-          ["1", LL(DIFF[1], "Facile")],
-          ["2", LL(DIFF[2], "Moyen")],
-          ["3", LL(DIFF[3], "Difficile")],
+          ["1", diffLabel(1)],
+          ["2", diffLabel(2)],
+          ["3", diffLabel(3)],
         ],
         (v) => (this.fDiff = Number(v) || 0),
       ),
@@ -1361,7 +1408,7 @@ export class FlightCenter extends Modal {
                 ? "Scored against standards at the end"
                 : "Free practice, no score",
             },
-            i.graded ? "Scored" : "Practice",
+            i.graded ? LL("Scored", "Évalué") : LL("Practice", "Entraînement"),
           );
     const ic = (name: keyof typeof I, tip: string) =>
       h("span", { class: "fc-mi", title: tip }, svgIcon(name, 14));
@@ -1389,7 +1436,7 @@ export class FlightCenter extends Modal {
       h(
         "div",
         { class: "fc-meta" },
-        h("span", { class: `fc-lvl d${i.difficulty}` }, DIFF[i.difficulty]),
+        h("span", { class: `fc-lvl d${i.difficulty}` }, diffLabel(i.difficulty)),
         h("span", {}, i.airport),
         h("span", {}, `${i.minutes} min`),
         i.ap === false ? ic(I.hand, "Hand-flown: autopilot inhibited") : null,
@@ -1406,8 +1453,8 @@ export class FlightCenter extends Modal {
     const f = filter ? this.filtered(list) : list;
     if (!f.length)
       return this.empty(
-        "No flights match these filters.",
-        "Reset filters",
+        LL("No flights match these filters.", "Aucun vol ne correspond à ces filtres."),
+        LL("Reset filters", "Réinitialiser les filtres"),
         () => this.resetFilters(),
       );
     return h(
@@ -1559,7 +1606,7 @@ export class FlightCenter extends Modal {
             "div",
             { class: "fc-sec2" },
             h("span", { class: "fc-sec2-ic" }, svgIcon(c.icon, 16)),
-            c.title,
+            catTitle(c),
             h("span", { class: "ct" }, String(list.length)),
             h(
               "button",
@@ -1567,7 +1614,7 @@ export class FlightCenter extends Modal {
                 class: "fc-more",
                 onclick: () => this.go({ type: "cat", cat: c.id, sub: null }),
               },
-              "Open",
+              LL("Open", "Ouvrir"),
               svgIcon(I.arrow, 14),
             ),
           ),
@@ -1587,7 +1634,7 @@ export class FlightCenter extends Modal {
         h(
           "div",
           {},
-          h("h2", { class: "has-ico" }, svgIcon(cat.icon, 22), cat.title),
+          h("h2", { class: "has-ico" }, svgIcon(cat.icon, 22), catTitle(cat)),
           h("p", { class: "muted" }, cat.desc),
         ),
       ),
@@ -1612,7 +1659,7 @@ export class FlightCenter extends Modal {
         h(
           "div",
           { class: "fc-chips", role: "group", "aria-label": "Type" },
-          chip("All", null, inCatAll.length),
+          chip(LL("All", "Tous"), null, inCatAll.length),
           ...subs.map((s) =>
             chip(s, s, inCatAll.filter((i) => i.sub === s).length),
           ),
@@ -1650,7 +1697,7 @@ export class FlightCenter extends Modal {
     const mine = v.cat === "circuits" && (!v.sub || v.sub === MINE);
     if (!shown.length && !mine) {
       this.main.append(
-        this.empty("No flights match these filters.", "Reset filters", () =>
+        this.empty(LL("No flights match these filters.", "Aucun vol ne correspond à ces filtres."), LL("Reset filters", "Réinitialiser les filtres"), () =>
           this.resetFilters(),
         ),
       );
@@ -1815,7 +1862,7 @@ export class FlightCenter extends Modal {
             }),
           openFlights: () => this.go({ type: "courses", flights: true }),
         },
-        navigate: (url) => this.leave(() => location.assign(url)),
+        navigate: (url) => this.leave(() => goToCourse(url)),
         openSim: (t) => this.openLibraryItem(t),
         editProcedure: (id) => this.openProc(id),
         openClub: (tab) => this.goClub(tab),
@@ -1835,7 +1882,7 @@ export class FlightCenter extends Modal {
         shelfMax: 0,
         page: "academy.html",
         store: st.courseStore(),
-        navigate: (url) => this.leave(() => location.assign(url)),
+        navigate: (url) => this.leave(() => goToCourse(url)),
       });
     });
     // Fly: the simulator, also on its own. One light card (build a flight or Quick start, beside Continue) and four
@@ -2317,6 +2364,23 @@ export class FlightCenter extends Modal {
   ) {
     const host = h("div", { class: "fc-courses" });
     this.main.append(host);
+    // "Create a course": the library stays out of sight while the new draft is made and the editor opens
+    if (intent === "new") {
+      host.classList.add("fc-courses-opening");
+      const wait = h(
+        "div",
+        { class: "fc-opening", role: "status" },
+        h("span", { class: "fc-opening-dot", "aria-hidden": "true" }),
+        LL("Opening the editor…", "Ouverture de l’éditeur…"),
+      );
+      this.main.append(wait);
+      // never a dead end: if the editor could not open (no course storage here), the library comes back
+      window.setTimeout(() => {
+        if (!host.isConnected) return;
+        host.classList.remove("fc-courses-opening");
+        wait.remove();
+      }, 6000);
+    }
     void Promise.all([
       import("../course/ui/library"),
       import("../course/store"),
@@ -2332,7 +2396,7 @@ export class FlightCenter extends Modal {
         ...(program ? { program } : {}),
         ...(subject ? { subject } : {}),
         ...(flights ? { flights: true } : {}),
-        navigate: (url) => this.leave(() => location.assign(url)),
+        navigate: (url) => this.leave(() => goToCourse(url)),
         // the simulator's own items fly from here, without leaving the page
         openSim: (t) => this.openLibraryItem(t),
         editProcedure: (id) => this.openProc(id),
@@ -3730,7 +3794,7 @@ export class FlightCenter extends Modal {
             h(
               "small",
               {},
-              `${i.sub} · ${DIFF[i.difficulty]} · ${i.minutes} min`,
+              `${i.sub} · ${diffLabel(i.difficulty)} · ${i.minutes} min`,
             ),
             h("span", {}, i.summary),
           ),
@@ -3824,10 +3888,10 @@ export class FlightCenter extends Modal {
       h(
         "div",
         { class: "fc-meta" },
-        h("span", { class: `fc-lvl d${i.difficulty}` }, DIFF[i.difficulty]),
+        h("span", { class: `fc-lvl d${i.difficulty}` }, diffLabel(i.difficulty)),
         h("span", {}, i.airport),
         h("span", {}, `${i.minutes} min`),
-        h("span", {}, i.graded ? "Scored" : "Practice"),
+        h("span", {}, i.graded ? LL("Scored", "Évalué") : LL("Practice", "Entraînement")),
         i.ap === false ? h("span", {}, "Hand-flown") : null,
       ),
       h("p", {}, i.summary),

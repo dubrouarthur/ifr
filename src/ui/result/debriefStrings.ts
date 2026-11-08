@@ -106,6 +106,7 @@ const EN: Dict = {
   "l.help": "Help & cues",
   "l.atc": "ATC",
   "l.none": "none this flight",
+  "l.allNone": "No deviation, failure or ATC message on this flight",
   "k.live": "{t} · {what}",
   "k.flyToast": "Flying from {t}: practice from the replay, not graded",
   // ---- lower
@@ -275,6 +276,7 @@ const FR: Dict = {
   "l.help": "Aide & indices",
   "l.atc": "ATC",
   "l.none": "aucun sur ce vol",
+  "l.allNone": "Aucun écart, panne ni message ATC sur ce vol",
   "k.live": "{t} · {what}",
   "k.flyToast": "Vol depuis {t} : entraînement depuis le rejeu, non noté",
   "t.standards": "Standards",

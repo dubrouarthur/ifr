@@ -25,7 +25,10 @@ export interface Ctx {
 }
 
 export interface Step {
+  /** the instruction in English: the canonical text (ATC voice, the result report reads it) */
   text: string;
+  /** the same instruction in French, shown to a French pilot (see stepText) */
+  fr?: string;
   hint?: string;
   onStart?: (c: Ctx) => void;
   done: (c: Ctx) => boolean;
@@ -42,6 +45,41 @@ export interface Step {
   limitSec?: number;
 }
 
+/** the step's instruction in the UI language (the French text when there is one) */
+export function stepText(st: Pick<Step, 'text' | 'fr'>): string {
+  return uiLang() === 'fr' && st.fr ? st.fr : st.text;
+}
+/** a deviation as the pilot reads it: the engine and the result report keep the English text; a French pilot
+ *  reads it in French */
+const VIOL_FR: [RegExp, string][] = [
+  [/^Altitude (.+) ft$/, 'Altitude $1 ft'],
+  [/^Heading (.+)°$/, 'Cap $1°'],
+  [/^Airspeed (.+) kt$/, 'Vitesse $1 kt'],
+  [/^Bank (\d+)° \(max (\d+)\)$/, 'Inclinaison $1° (max $2)'],
+  [/^Bank (\d+)° \(standard rate ≈ (\d+)°\)$/, 'Inclinaison $1° (taux standard ≈ $2°)'],
+  [/^Bank (\d+)° \(45 ±7\)$/, 'Inclinaison $1° (45 ±7)'],
+  [/^Turning the wrong way$/, 'Virage du mauvais côté'],
+  [/^Overshot (\d+) by (\d+)°$/, 'Cap $1 dépassé de $2°'],
+  [/^Turn rate (.+)°\/s \(standard 3°\/s\)$/, 'Taux de virage $1°/s (standard 3°/s)'],
+  [/^Vertical speed (.+) fpm$/, 'Vitesse verticale $1 ft/min'],
+  [/^Stall warning$/, 'Alarme de décrochage'],
+  [/^Stall$/, 'Décrochage'],
+  [/^Overspeed$/, 'Survitesse'],
+  [/^Too low$/, 'Trop bas'],
+  [/^Too slow in the climb$/, 'Trop lent en montée'],
+  [/^CDI (.+) dots \(max 1\.5\)$/, 'CDI $1 points (max 1,5)'],
+  [/^Off course (.+)°$/, 'Hors route $1°'],
+  [/^Overshoot (.+) dots \(max (.+)\)$/, 'Dépassement de l’axe $1 points (max $2)'],
+];
+export function violationText(v: string): string {
+  if (uiLang() !== 'fr') return v;
+  for (const [re, fr] of VIOL_FR) if (re.test(v)) return v.replace(re, fr);
+  return v;
+}
+/** a display string (hint, readout) in the UI language */
+const LL = (en: string, fr: string) => (uiLang() === 'fr' ? fr : en);
+const sideFr = (dir: 'L' | 'R' | null) => (dir === 'L' ? 'à gauche' : dir === 'R' ? 'à droite' : '');
+
 export interface Quiz {
   question: string;
   options: string[];
@@ -49,6 +87,8 @@ export interface Quiz {
   explain: string;
   /** optional SVG shown with the explanation */
   svg?: string;
+  /** the question, its options and the explanation in French (authored, never machine-translated) */
+  fr?: { question: string; options: string[]; explain: string };
 }
 
 export interface Exercise {
@@ -64,6 +104,8 @@ export interface Exercise {
   /** builds the starting state; may randomise and returns runtime data (e.g. hold clearance) */
   setup: (sim: Sim) => ExerciseRuntime;
   minutes: number;
+  /** the briefing words in French, where the curriculum authors them (the title is in library/meta.ts) */
+  fr?: { summary?: string; objectives?: string[]; standards?: string[]; briefing?: string[] };
 }
 
 export interface ExerciseRuntime {
@@ -458,17 +500,19 @@ export const S = {
   maintain(alt: number, hdg: number, ias: number, sec: number, tol: Tol = {}): Step {
     return {
       text: `Maintain ${alt} ft, heading ${fmtHdg(hdg)}, ${ias} KIAS for ${Math.round(sec / 60) || sec + ' s'}${sec >= 60 ? ' min' : ''}`,
-      hint: 'Attitude + power = performance. Small corrections, then trim.',
+      fr: `Maintenez ${alt} ft, cap ${fmtHdg(hdg)}, ${ias} KIAS pendant ${Math.round(sec / 60) || sec + ' s'}${sec >= 60 ? ' min' : ''}`,
+      hint: LL('Attitude + power = performance. Small corrections, then trim.', 'Assiette + puissance = performances. De petites corrections, puis compensez.'),
       done: (c) => c.t >= sec,
       check: (c) => devCheck(c, { alt, hdg, ias }, tol),
-      readout: (c) => `${Math.round(sec - c.t)} s left`,
+      readout: (c) => LL(`${Math.round(sec - c.t)} s left`, `encore ${Math.round(sec - c.t)} s`),
     };
   },
   turnTo(hdg: number, dir: 'L' | 'R' | null, alt: number, opts: { maxBank?: number; ias?: number; rollOutTol?: number } = {}): Step {
     const maxBank = opts.maxBank ?? 30;
     return {
       text: `${dir === 'L' ? 'Turn left' : dir === 'R' ? 'Turn right' : 'Turn'} to heading ${fmtHdg(hdg)} at standard rate, maintain ${alt} ft`,
-      hint: 'Standard rate ≈ 15° of bank at 90 KIAS (TAS/10 + 7). Lead the roll-out by ½ the bank angle.',
+      fr: `Virez ${dir ? `${sideFr(dir)} ` : ''}au cap ${fmtHdg(hdg)} au taux standard, maintenez ${alt} ft`,
+      hint: LL('Standard rate ≈ 15° of bank at 90 KIAS (TAS/10 + 7). Lead the roll-out by ½ the bank angle.', 'Taux standard ≈ 15° d’inclinaison à 90 KIAS (TAS/10 + 7). Anticipez la sortie de virage de la moitié de l’inclinaison.'),
       done: (c) => {
         turnState(c, hdg, dir);
         return hdgErr(c.d, hdg) < 5 && Math.abs(c.d.rollDeg) < 5;
@@ -492,7 +536,10 @@ export const S = {
       },
       readout: (c) => {
         const ts = turnState(c, hdg, dir);
-        return `${ts.rate.toFixed(1)}°/s · bank ${Math.round(Math.abs(c.d.rollDeg))}° (std ${Math.round(stdRateBank(c.d.tasKt))}°) · ${Math.max(0, Math.round(ts.remaining))}° to go`;
+        return LL(
+          `${ts.rate.toFixed(1)}°/s · bank ${Math.round(Math.abs(c.d.rollDeg))}° (std ${Math.round(stdRateBank(c.d.tasKt))}°) · ${Math.max(0, Math.round(ts.remaining))}° to go`,
+          `${ts.rate.toFixed(1)}°/s · inclinaison ${Math.round(Math.abs(c.d.rollDeg))}° (std ${Math.round(stdRateBank(c.d.tasKt))}°) · encore ${Math.max(0, Math.round(ts.remaining))}°`,
+        );
       },
       // roll-in grace: the rate and bank standards apply once the turn is established
       graceSec: TURN_GRACE_SEC,
@@ -502,7 +549,8 @@ export const S = {
   changeAlt(target: number, ias: number, hdg: number | null, vs?: number): Step {
     return {
       text: `${vs && vs < 0 ? 'Descend' : 'Climb'} to ${target} ft at ${ias} KIAS${vs ? `, ${Math.abs(vs)} fpm` : ''}${hdg !== null ? `, heading ${fmtHdg(hdg)}` : ''}`,
-      hint: 'Climb: power first, then pitch for airspeed. Descent: reduce power, pitch for the rate. Level off at 10% of VS before the target.',
+      fr: `${vs && vs < 0 ? 'Descendez' : 'Montez'} vers ${target} ft à ${ias} KIAS${vs ? `, ${Math.abs(vs)} ft/min` : ''}${hdg !== null ? `, cap ${fmtHdg(hdg)}` : ''}`,
+      hint: LL('Climb: power first, then pitch for airspeed. Descent: reduce power, pitch for the rate. Level off at 10% of VS before the target.', 'Montée : la puissance d’abord, puis l’assiette pour la vitesse. Descente : réduisez, l’assiette pour le taux. Mise en palier à 10 % du Vz avant la cible.'),
       done: (c) => Math.abs(c.sim.indicatedAlt() - target) < 40 && Math.abs(c.d.vsFpm) < 250,
       check: (c) => {
         const r = devCheck(c, { ias, hdg: hdg ?? undefined }, { ias: 10 });
@@ -515,7 +563,8 @@ export const S = {
   steepTurn(dir: 'L' | 'R', alt: number, degrees = 360): Step {
     return {
       text: `Steep turn ${dir === 'L' ? 'left' : 'right'} ${degrees}° at 45° bank, maintain ${alt} ft (±100), roll out on the entry heading (±10°)`,
-      hint: 'Add back pressure and ~100 RPM as you pass 30° of bank. Lead the roll-out by 20°.',
+      fr: `Virage serré ${sideFr(dir)} de ${degrees}° à 45° d’inclinaison, maintenez ${alt} ft (±100), sortez au cap d’entrée (±10°)`,
+      hint: LL('Add back pressure and ~100 RPM as you pass 30° of bank. Lead the roll-out by 20°.', 'Tirez un peu et ajoutez ~100 tr/min en passant 30° d’inclinaison. Anticipez la sortie de 20°.'),
       onStart: (c) => {
         c.mem.entry = c.d.hdgTrue;
         c.mem.turned = 0;
@@ -531,14 +580,15 @@ export const S = {
         if (turned > 30 && turned < degrees - 40 && Math.abs(Math.abs(c.d.rollDeg) - 45) > 7) return `Bank ${Math.round(Math.abs(c.d.rollDeg))}° (45 ±7)`;
         return null;
       },
-      readout: (c) => `${Math.round(c.mem.turned as number)}° turned`,
+      readout: (c) => LL(`${Math.round(c.mem.turned as number)}° turned`, `${Math.round(c.mem.turned as number)}° effectués`),
       graceSec: 4,
     };
   },
   recover(): Step {
     return {
       text: 'RECOVER from the unusual attitude: wings level, pitch on the horizon, airspeed in the green',
-      hint: 'Nose high: power up, nose down, level the wings. Nose low: power idle, level the wings, then raise the nose.',
+      fr: 'RÉCUPÉREZ la position inhabituelle : ailes à plat, assiette sur l’horizon, vitesse dans l’arc vert',
+      hint: LL('Nose high: power up, nose down, level the wings. Nose low: power idle, level the wings, then raise the nose.', 'Nez haut : plein gaz, nez bas, ailes à plat. Nez bas : réduction, ailes à plat, puis relevez le nez.'),
       done: (c) => Math.abs(c.d.rollDeg) < 8 && Math.abs(c.d.pitchDeg) < 6 && c.d.iasKt > 60 && c.d.iasKt < 130 && Math.abs(c.d.vsFpm) < 600,
       check: (c) => (c.d.stallWarn ? 'Stall' : c.d.iasKt > 155 ? 'Overspeed' : c.d.aglFt < 500 ? 'Too low' : null),
       graceSec: 0,
@@ -547,7 +597,8 @@ export const S = {
   trackRadial(nav: string, freq: number, radial: number, mode: 'TO' | 'FROM', untilDme: number | null, alt: number, label?: string): Step {
     return {
       text: label ?? `Intercept and track the ${fmtHdg(radial)} radial ${mode === 'TO' ? 'inbound to' : 'outbound from'} ${nav}${untilDme ? ` ${mode === 'TO' ? 'to' : 'until'} ${untilDme} DME` : ''}, maintain ${alt} ft`,
-      hint: 'Set CRS, CDI on NAV1. Intercept at 30–45°, then bracket: find the wind correction angle and hold it.',
+      fr: label ? undefined : `Interceptez et suivez le radial ${fmtHdg(radial)} ${mode === 'TO' ? 'en rapprochement de' : 'en éloignement de'} ${nav}${untilDme ? ` jusqu’à ${untilDme} DME` : ''}, maintenez ${alt} ft`,
+      hint: LL('Set CRS, CDI on NAV1. Intercept at 30–45°, then bracket: find the wind correction angle and hold it.', 'Affichez la CRS, CDI sur NAV1. Interceptez à 30–45°, puis encadrez : trouvez la correction de dérive et gardez-la.'),
       onStart: (c) => {
         c.sim.av.nav1.active = freq;
         c.sim.av.obs1 = mode === 'TO' ? (radial + 180) % 360 || 360 : radial;
@@ -567,14 +618,15 @@ export const S = {
         if (c.mem.captured && Math.abs(c.sim.nav1.dev) > 0.75) return `CDI ${(c.sim.nav1.dev * 2).toFixed(1)} dots (max 1.5)`;
         return null;
       },
-      readout: (c) => `${c.mem.captured ? 'tracking' : 'intercepting'} · R-${fmtHdg(c.sim.nav1.radial)} · ${c.sim.nav1.dmeNm?.toFixed(1) ?? '—'} DME`,
+      readout: (c) => `${c.mem.captured ? LL('tracking', 'en suivi') : LL('intercepting', 'en interception')} · R-${fmtHdg(c.sim.nav1.radial)} · ${c.sim.nav1.dmeNm?.toFixed(1) ?? '—'} DME`,
       graceSec: 5,
     };
   },
   dmeArc(nav: LatLon & { ident: string }, freq: number, radius: number, endRadial: number, dir: 'L' | 'R', alt: number): Step {
     return {
       text: `Fly the ${radius} DME arc ${dir === 'L' ? 'counter-clockwise' : 'clockwise'} around ${nav.ident} to R-${fmtHdg(endRadial)}, maintain ${alt} ft (±1 NM)`,
-      hint: 'Keep the RMI/bearing needle on the wingtip reference: turn 10° toward the station each time it falls 10° behind.',
+      fr: `Volez l’arc DME ${radius} ${dir === 'L' ? 'dans le sens inverse des aiguilles d’une montre' : 'dans le sens des aiguilles d’une montre'} autour de ${nav.ident} jusqu’au R-${fmtHdg(endRadial)}, maintenez ${alt} ft (±1 NM)`,
+      hint: LL('Keep the RMI/bearing needle on the wingtip reference: turn 10° toward the station each time it falls 10° behind.', 'Gardez l’aiguille RMI sur le repère du saumon d’aile : virez de 10° vers la station chaque fois qu’elle recule de 10°.'),
       onStart: (c) => {
         c.sim.av.nav1.active = freq;
         c.sim.av.bearing1 = 'NAV1';
@@ -595,7 +647,8 @@ export const S = {
   ndbTrack(ndbFreq: number, bearingTo: number, alt: number, untilNm: number, ndb: LatLon & { ident: string }): Step {
     return {
       text: `Track ${fmtHdg(bearingTo)}° inbound to the ${ndb.ident} NDB (QDM) using the ADF needle, maintain ${alt} ft`,
-      hint: 'Set BRG1 = ADF. Intercept, then hold a heading that keeps the needle steady; correct for drift.',
+      fr: `Suivez le QDM ${fmtHdg(bearingTo)}° vers le NDB ${ndb.ident} à l’aiguille ADF, maintenez ${alt} ft`,
+      hint: LL('Set BRG1 = ADF. Intercept, then hold a heading that keeps the needle steady; correct for drift.', 'BRG1 = ADF. Interceptez, puis tenez un cap qui garde l’aiguille immobile ; corrigez la dérive.'),
       onStart: (c) => {
         c.sim.av.adf.active = ndbFreq;
         c.sim.av.bearing1 = 'ADF';
@@ -615,16 +668,19 @@ export const S = {
   hold(def: HoldDef, laps: number): Step {
     return {
       text: `Enter and fly the hold at ${def.fix.ident}: ${laps} complete circuits, ${def.altFt} ft, ${def.legMin}-minute inbound legs`,
-      hint: 'Six Ts at the fix: Turn, Time, Twist (CRS), Throttle, Talk, Track. Adjust the outbound time to get 1:00 inbound.',
+      fr: `Entrez et effectuez l’attente à ${def.fix.ident} : ${laps} tour${laps > 1 ? 's' : ''} complet${laps > 1 ? 's' : ''}, ${def.altFt} ft, branches de rapprochement de ${def.legMin} min`,
+      hint: LL('Six Ts at the fix: Turn, Time, Twist (CRS), Throttle, Talk, Track. Adjust the outbound time to get 1:00 inbound.', 'Les six T au point : Turn (virer), Time (chrono), Twist (CRS), Throttle (gaz), Talk (annonce), Track (suivre). Ajustez l’éloignement pour un rapprochement de 1:00.'),
       done: (c) => (c.run.holdEval?.laps ?? 0) >= laps,
       setup: (c) => holdSetup(c.sim, def),
       check: (c) => devCheck(c, { alt: def.altFt }),
       readout: (c) => {
         const h = c.run.holdEval;
         if (!h) return '';
-        if (h.crossedAt === null) return `to ${def.fix.ident} ${distanceNm(c.sim.ac.s, def.fix).toFixed(1)} NM · planned entry ${holdEntry(def.inbound, def.turn, bearingDeg(c.sim.ac.s, def.fix))}`;
+        const entry = holdEntry(def.inbound, def.turn, bearingDeg(c.sim.ac.s, def.fix));
+        const entryFr = { DIRECT: 'directe', TEARDROP: 'décalée', PARALLEL: 'parallèle' }[entry] ?? entry;
+        if (h.crossedAt === null) return LL(`to ${def.fix.ident} ${distanceNm(c.sim.ac.s, def.fix).toFixed(1)} NM · planned entry ${entry}`, `${def.fix.ident} à ${distanceNm(c.sim.ac.s, def.fix).toFixed(1)} NM · entrée prévue : ${entryFr}`);
         const last = h.inboundTimes[h.inboundTimes.length - 1];
-        return `lap ${h.laps}/${laps}${last ? ` · last inbound ${Math.round(last)} s` : ''}`;
+        return LL(`lap ${h.laps}/${laps}${last ? ` · last inbound ${Math.round(last)} s` : ''}`, `tour ${h.laps}/${laps}${last ? ` · dernier rapprochement ${Math.round(last)} s` : ''}`);
       },
       graceSec: 10,
     };
@@ -632,7 +688,8 @@ export const S = {
   approach(goAround: boolean): Step {
     return {
       text: goAround ? 'Fly the approach to minimums and execute the missed approach if not visual' : 'Fly the approach and land (or go around if not visual at minimums)',
-      hint: 'Brief the plate: frequencies, course, FAF altitude, minimums, missed approach. Stabilized by 1000 ft AGL.',
+      fr: goAround ? 'Volez l’approche jusqu’aux minima et exécutez l’approche interrompue sans références visuelles' : 'Volez l’approche et atterrissez (ou remettez les gaz sans références visuelles aux minima)',
+      hint: LL('Brief the plate: frequencies, course, FAF altitude, minimums, missed approach. Stabilized by 1000 ft AGL.', 'Briefez la carte : fréquences, route, altitude au FAF, minima, approche interrompue. Stabilisé à 1000 ft sol.'),
       setup: (c) => (c.sim.fp.approachId ? approachSetup(c.sim, c.sim.fp.approachId) : []),
       done: (c) => {
         const r = c.sim.rec;
@@ -642,17 +699,18 @@ export const S = {
       },
       readout: (c) => {
         const g = c.sim.fp.out;
-        return g.valid ? `${g.toIdent} ${g.distNm.toFixed(1)} NM · mins ${c.sim.av.minimums ?? '—'}` : '';
+        return g.valid ? `${g.toIdent} ${g.distNm.toFixed(1)} NM · ${LL('mins', 'minima')} ${c.sim.av.minimums ?? '—'}` : '';
       },
     };
   },
   missedHold(laps: number, def: HoldDef): Step {
-    return { ...S.hold(def, laps), text: `Missed approach: climb to ${def.altFt}, proceed to ${def.fix.ident} and hold (${laps} circuit${laps > 1 ? 's' : ''})` };
+    return { ...S.hold(def, laps), text: `Missed approach: climb to ${def.altFt}, proceed to ${def.fix.ident} and hold (${laps} circuit${laps > 1 ? 's' : ''})`, fr: `Approche interrompue : montez vers ${def.altFt}, rejoignez ${def.fix.ident} et attendez (${laps} tour${laps > 1 ? 's' : ''})` };
   },
   locIntercept(freq: number, course: number, fix: LatLon & { ident: string }, alt: number, maxOvershootDots = 1): Step {
     return {
       text: `Intercept the localizer (CRS ${fmtHdg(course)}) and track it to ${fix.ident} at ${alt} ft — no overshoot`,
-      hint: 'Start the turn when the CDI comes alive (≈ 1 dot): lead the turn by the needle rate, not its position.',
+      fr: `Interceptez le localizer (CRS ${fmtHdg(course)}) et suivez-le jusqu’à ${fix.ident} à ${alt} ft, sans dépasser l’axe`,
+      hint: LL('Start the turn when the CDI comes alive (≈ 1 dot): lead the turn by the needle rate, not its position.', 'Commencez le virage quand le CDI s’anime (≈ 1 point) : anticipez sur la vitesse de l’aiguille, pas sur sa position.'),
       setup: (c) => [
         { label: `NAV1 ${freq.toFixed(2)}`, detail: 'Localizer tuned and identified.', ok: Math.abs(c.sim.av.nav1.active - freq) < 0.006 && c.sim.nav1.valid },
         { label: `CRS ${fmtHdg(course)}`, detail: 'Front course of the localizer.', ok: Math.abs(((c.sim.av.obs1 - course + 540) % 360) - 180) <= 2 },
@@ -672,14 +730,15 @@ export const S = {
         if (c.mem.captured && Math.abs(dev) * 2 > maxOvershootDots) return `Overshoot ${(Math.abs(dev) * 2).toFixed(1)} dots (max ${maxOvershootDots})`;
         return null;
       },
-      readout: (c) => `${c.mem.captured ? 'established' : 'intercepting'} · ${(c.sim.nav1.dev * 2).toFixed(1)} dots · ${distanceNm(c.sim.ac.s, fix).toFixed(1)} NM to ${fix.ident}`,
+      readout: (c) => LL(`${c.mem.captured ? 'established' : 'intercepting'} · ${(c.sim.nav1.dev * 2).toFixed(1)} dots · ${distanceNm(c.sim.ac.s, fix).toFixed(1)} NM to ${fix.ident}`, `${c.mem.captured ? 'établi' : 'en interception'} · ${(c.sim.nav1.dev * 2).toFixed(1)} points · ${fix.ident} à ${distanceNm(c.sim.ac.s, fix).toFixed(1)} NM`),
       graceSec: 3,
     };
   },
   takeoff(alt: number, hdg: number): Step {
     return {
       text: `Take off, climb runway heading ${fmtHdg(hdg)} at 74 KIAS (Vy) to ${alt} ft`,
-      hint: 'Full power, rotate at 55, ~8° nose up. Positive rate → flaps up. Instruments only after 400 ft.',
+      fr: `Décollez, montez dans l’axe au cap ${fmtHdg(hdg)} à 74 KIAS (Vy) jusqu’à ${alt} ft`,
+      hint: LL('Full power, rotate at 55, ~8° nose up. Positive rate → flaps up. Instruments only after 400 ft.', 'Plein gaz, rotation à 55, ~8° à cabrer. Vario positif → volets rentrés. Aux instruments seulement après 400 ft.'),
       done: (c) => Math.abs(c.sim.indicatedAlt() - alt) < 60 && Math.abs(c.d.vsFpm) < 300,
       check: (c) => (c.sim.ac.s.onGround ? null : c.d.aglFt > 400 ? devCheck(c, { hdg, ias: 74 }, { ias: 10, hdg: 10 }) : null),
       graceSec: 5,
@@ -688,10 +747,11 @@ export const S = {
   direct(ident: string, alt: number, setup: (c: Ctx) => void, untilNm = 1): Step {
     return {
       text: `Proceed direct ${ident} at ${alt} ft`,
+      fr: `Rejoignez ${ident} en direct à ${alt} ft`,
       onStart: setup,
       done: (c) => c.sim.fp.out.valid && c.sim.fp.out.toIdent === ident && c.sim.fp.out.distNm < untilNm,
       check: (c) => devCheck(c, { alt }),
-      readout: (c) => (c.sim.fp.out.valid ? `${c.sim.fp.out.toIdent} ${c.sim.fp.out.distNm.toFixed(1)} NM` : 'press D→'),
+      readout: (c) => (c.sim.fp.out.valid ? `${c.sim.fp.out.toIdent} ${c.sim.fp.out.distNm.toFixed(1)} NM` : LL('press D→', 'appuyez sur D→')),
       graceSec: 30,
     };
   },

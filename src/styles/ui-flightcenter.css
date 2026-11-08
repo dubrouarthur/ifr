@@ -3103,3 +3103,66 @@
     transition: none;
   }
 }
+
+/* ---------------------------------------------------------------- entry audit
+   readable labels: nothing under 12 px */
+.fc-cont-k {
+  font-size: 12px;
+}
+.fc-cont-last small {
+  font-size: 12px;
+}
+.modal.fc .fc-kbd {
+  font-size: 12px;
+}
+
+/* "Create a course": the library stays hidden while the draft is made and the editor opens */
+.fc-courses.fc-courses-opening {
+  display: none;
+}
+.fc-opening {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 50vh;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-2, var(--muted));
+}
+.fc-opening-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2.5px solid rgb(var(--accent-rgb, 29 95 209) / 0.25);
+  border-top-color: var(--accent, #1d5fd1);
+  animation: fc-spin 0.8s linear infinite;
+}
+@keyframes fc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fc-opening-dot {
+    animation: none;
+  }
+}
+
+/* touch: every target in the dialog header and the Continue card is at least 44 px */
+@media (pointer: coarse) {
+  .modal header .x {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .fc-cont .fc-cont-go,
+  .fc-cont-last .btn {
+    min-height: 44px;
+  }
+}
+
+/* at launch: an opaque light page behind the Flight Center (no dark cockpit frame around it) */
+.modal-bg.fc-solid-bg {
+  background: #eef1f5;
+  backdrop-filter: none;
+}

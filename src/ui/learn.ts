@@ -3,6 +3,7 @@ import { h, clear, fmtTime, store } from './dom';
 import { Modal, saveFlightRecord } from './modals';
 import { EXERCISES, PATHS, STAGES, exercise, type Path } from '../train/curriculum';
 import { LessonRun, withSeed, newRunSeed, type Exercise, type LessonResult } from '../train/engine';
+import { exerciseWords } from '../train/briefingText';
 import { holdDiagramSvg } from '../train/diagram';
 import { holdEntry, clearanceText, type Turn } from '../nav/holding';
 import { approachPlate } from '../plates/plates';
@@ -311,6 +312,8 @@ export class BriefingModal extends Modal {
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
     const d = this.deck;
     if (!d) return;
+    // the slide segments move with the arrow keys themselves (course/ui/deckStage.ts segments)
+    if (t?.classList.contains('ds-seg')) return;
     if (e.key === 'ArrowRight' || e.key === 'PageDown' || (e.key === ' ' && !(t && t.tagName === 'BUTTON'))) {
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -331,11 +334,21 @@ export class BriefingModal extends Modal {
   private next() {
     const d = this.deck;
     if (!d) return;
+    // a question still to answer here (or on a slide skipped to get here): answer it first, the slides after it
+    // give the answer away (the hold slide draws the entry)
+    const g = d.pendingGate;
+    if (g >= 0 && g <= d.index && d.reveal >= d.revealCount) {
+      if (g !== d.index) d.go(g);
+      this.hint = this.fr ? 'Répondez à la question pour continuer.' : 'Answer the question to continue.';
+      this.renderBar();
+      this.stageHost.querySelector<HTMLElement>('.sl-q-opt')?.focus({ preventScroll: true });
+      return;
+    }
     if (d.next()) return this.renderBar();
     if (d.gatesDone) return this.start();
-    const g = d.pendingGate;
-    if (g >= 0) {
-      d.go(g);
+    const g2 = d.pendingGate;
+    if (g2 >= 0) {
+      d.go(g2);
       this.hint = this.fr ? 'Répondez à la question pour commencer.' : 'Answer the knowledge check to start.';
       this.renderBar();
     }
@@ -414,13 +427,17 @@ export class BriefingModal extends Modal {
     const h2 = head.querySelector('h2')!;
     clear(h2);
     h2.classList.add('bd-title');
-    h2.append(h('span', { class: 'bd-k' }, 'Briefing'), h('span', { class: 'bd-t' }, ex.title));
+    // the exercise's words in the UI language (train/briefingText.ts: the curriculum's French, never a machine
+    // translation; the ATC clearance stays in English phraseology)
+    const words = exerciseWords(ex, run.rt, fr ? 'fr' : 'en');
+    const title = words.title;
+    h2.append(h('span', { class: 'bd-k' }, 'Briefing'), h('span', { class: 'bd-t' }, title));
     head.querySelector('.bd-chip')?.remove();
     head.insertBefore(
       h('span', { class: 'bd-chip' }, h('i', { 'aria-hidden': 'true' }), this.seed !== null ? (fr ? 'Votre exercice continue derrière' : 'Your exercise is kept behind') : fr ? 'Simulateur en pause au point de départ' : 'Simulator paused at the start'),
       head.querySelector('.x'),
     );
-    this.box.setAttribute('aria-label', `Briefing · ${ex.title}`);
+    this.box.setAttribute('aria-label', `Briefing · ${title}`);
     clear(this.body);
     clear(this.stageHost);
     this.stageHost.classList.add('loading');
@@ -430,20 +447,20 @@ export class BriefingModal extends Modal {
     const ap = ex.plate ? findApproach(ex.plate) : undefined;
     const src: BriefingSource = {
       id: ex.id,
-      title: ex.title,
-      summary: ex.summary,
+      title,
+      summary: words.summary,
       stageTitle: stage?.title,
       stage: ex.stage,
       minutes: ex.minutes,
       allowAp: ex.allowAp,
-      objectives: ex.objectives,
-      standards: ex.standards,
-      briefing: ex.briefing,
+      objectives: words.objectives,
+      standards: words.standards,
+      briefing: words.briefing,
       ...(ex.plate && ap ? { plate: ex.plate, plateName: `${ap.airport} ${ap.name}` } : {}),
       ...(run.rt.clearance ? { clearance: run.rt.clearance } : {}),
-      ...(run.rt.quiz ? { quiz: { question: run.rt.quiz.question, options: run.rt.quiz.options, answer: run.rt.quiz.answer, explain: run.rt.quiz.explain } } : {}),
+      ...(words.quiz ? { quiz: words.quiz } : {}),
       ...(run.rt.hold ? { hold: { inbound: run.rt.hold.inbound, turn: run.rt.hold.turn, fix: run.rt.hold.fix.ident, legMin: run.rt.hold.legMin, altFt: run.rt.hold.altFt } } : {}),
-      steps: run.rt.steps.map((x) => x.text),
+      steps: words.steps,
       setup: briefSetup(run),
     };
     void import('../course/ui/briefingDeck')
@@ -485,25 +502,35 @@ export class BriefingModal extends Modal {
     const last = !!d && d.atEnd;
     const needQuiz = !!d && !d.gatesDone;
     const ex = this.run?.ex;
+    // the reveals of this slide, as a dot row beside the counter (Next shows the next one before the next slide)
+    const rv = d && d.revealCount > 0
+      ? h('span', { class: 'bd-rv', 'aria-hidden': 'true' }, ...Array.from({ length: d.revealCount + 1 }, (_, k) => h('i', { class: k <= d.reveal ? 'on' : '' })))
+      : null;
+    const counter = d
+      ? h('span', { class: 'bd-n num', 'aria-label': d.revealCount > 0 ? (fr ? `Diapositive ${d.index + 1} sur ${d.count}, étape ${d.reveal + 1} sur ${d.revealCount + 1}` : `Slide ${d.index + 1} of ${d.count}, part ${d.reveal + 1} of ${d.revealCount + 1}`) : null }, `${d.index + 1} / ${d.count}`)
+      : null;
+    // a question still to answer: the skip link leads to it (Start needs it), never to a Start that cannot start
+    const pending = d ? d.pendingGate : -1;
+    const toQuestion = () => { if (d) { d.go(pending); this.hint = ''; this.renderBar(); this.stageHost.querySelector<HTMLElement>('.sl-q-opt')?.focus({ preventScroll: true }); } };
     const items: (HTMLElement | null)[] = [
-      h('div', { class: 'bd-prog' }, segs, d ? h('span', { class: 'bd-n num' }, `${d.index + 1} / ${d.count}`) : null),
-      d && !last ? h('button', { class: 'btn link bd-skip', type: 'button', title: fr ? 'Aller au dernier écran, puis Démarrer l’exercice' : 'Go to the last screen, then Start exercise', onclick: () => { d.go(d.count - 1); this.renderBar(); } }, fr ? 'Passer le briefing ›' : 'Skip briefing ›') : null,
-      this.hint
-        ? h('span', { class: 'bd-hint', role: 'status' }, this.hint)
-        : last && needQuiz && d
-          ? h('button', { class: 'btn link bd-hint bd-gate', type: 'button', onclick: () => { d.go(d.pendingGate); this.renderBar(); } }, fr ? `Répondez à la question (diapo ${d.pendingGate + 1}) pour commencer` : `Answer the question (slide ${d.pendingGate + 1}) to start`)
-          : h('span', { class: 'bd-sp' }),
+      h('div', { class: 'bd-prog' }, segs, counter, rv),
+      d && !last && !(pending >= 0 && pending <= d.index)
+        ? pending > d.index
+          ? h('button', { class: 'btn link bd-skip', type: 'button', title: fr ? 'Aller à la question à répondre avant de démarrer' : 'Go to the question to answer before you start', onclick: toQuestion }, fr ? 'Aller à la question ›' : 'Go to the question ›')
+          : h('button', { class: 'btn link bd-skip', type: 'button', title: fr ? 'Aller au dernier écran, puis Démarrer l’exercice' : 'Go to the last screen, then Start exercise', onclick: () => { d.go(d.count - 1); this.renderBar(); } }, fr ? 'Passer le briefing ›' : 'Skip briefing ›')
+        : null,
+      this.hint ? h('span', { class: 'bd-hint', role: 'status' }, this.hint) : h('span', { class: 'bd-sp' }),
       ex?.plate ? h('button', { class: 'btn ghost bd-plate', type: 'button', onclick: () => this.onPlate(ex.plate!), title: fr ? 'Ouvrir la carte d’approche dans le visualiseur' : 'Open the approach plate in the chart viewer' }, fr ? 'Carte' : 'Plate') : null,
       h('button', { class: 'btn ghost bd-cancel', type: 'button', onclick: () => this.close() }, restart ? (fr ? 'Continuer le vol' : 'Keep flying') : fr ? 'Annuler' : 'Cancel'),
       h('button', { class: 'btn bd-prev', type: 'button', disabled: !d || (d.index === 0), onclick: () => { if (d?.prev()) this.renderBar(); } }, '‹ ', fr ? 'Précédent' : 'Previous'),
-      last
+      last && needQuiz
+        ? h('button', { class: 'btn primary bd-next bd-toq', type: 'button', title: fr ? `Répondez à la question (diapositive ${pending + 1}) pour démarrer` : `Answer the question (slide ${pending + 1}) to start`, onclick: toQuestion }, fr ? 'Aller à la question' : 'Go to the question', ' ›')
+        : last
         ? h(
             'button',
             {
               class: 'btn primary bd-start',
               type: 'button',
-              disabled: needQuiz,
-              title: needQuiz ? (fr ? 'Répondez à la question pour commencer' : 'Answer the knowledge check to start') : '',
               onclick: () => this.start(),
             },
             restart ? (fr ? 'Recommencer l’exercice' : 'Restart exercise') : fr ? 'Démarrer l’exercice' : 'Start exercise',

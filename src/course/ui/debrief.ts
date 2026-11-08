@@ -412,12 +412,21 @@ export class FlyItView {
     const m = this.m;
     const lang = m.lang;
     const card = h("div", { class: "cp-card cp-attempt" });
-    if (m.status === "notFinished")
+    if (m.status === "notFinished") {
+      // a flight stopped before the end comes back as an attempt with nothing graded
+      const stopped = m.attempt?.fly?.ungraded ? m.attempt : null;
       card.append(
         h("div", { class: "cp-label" }, ps("yourAttempt", lang)),
-        h("h2", { class: "cp-h2" }, ps("notFinished", lang)),
-        h("p", { class: "cp-muted" }, ps("notFinishedBody", lang)),
+        h(
+          "h2",
+          { class: "cp-h2" },
+          stopped
+            ? ps("stoppedTitle", lang, { t: flownText(stopped.secs, lang) })
+            : ps("notFinished", lang),
+        ),
+        h("p", { class: "cp-muted" }, ps(stopped ? "stoppedBody" : "notFinishedBody", lang)),
       );
+    }
     if (m.fly.keys?.length)
       card.append(
         h(

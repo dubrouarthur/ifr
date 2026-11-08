@@ -70,13 +70,11 @@ import {
   checksForStep,
   editorChecks,
   pacingRuns,
-  pacingText,
   type EditorCheck,
 } from "./checksPanel";
 import {
   Inspector,
   btn,
-  ico,
   layoutPicker,
   popover,
   closePop,
@@ -138,6 +136,8 @@ const DEVICE: Record<Device, { w: number; h: number; bezel: number }> = {
 const isMac =
   typeof navigator !== "undefined" &&
   /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+/** The shortcut modifier as the platform writes it: ⌘ on Apple devices, Ctrl+ elsewhere. */
+const modKey = () => (isMac ? "⌘" : "Ctrl+");
 const isIpad = () =>
   typeof navigator !== "undefined" &&
   (/iPad/.test(navigator.userAgent) ||
@@ -210,6 +210,8 @@ export class CourseEditor implements InspectorHost {
   private subEl!: HTMLElement;
   private statusEl!: HTMLElement;
   private checksBtn!: HTMLButtonElement;
+  /** the top bar's actions that need at least one step (disabled, with a reason, on an empty course) */
+  private needSteps: HTMLButtonElement[] = [];
   private stepsEl!: HTMLElement;
   private adviceEl!: HTMLElement;
   private toolEl!: HTMLElement;
@@ -418,14 +420,40 @@ export class CourseEditor implements InspectorHost {
         );
     });
   }
-  toast(msg: string, undo?: () => void) {
+  /**
+   * A block added from the rail that still covers others (the slide is full): offer to put it on a new slide
+   * of its own instead, in one tap.
+   */
+  offerNewSlideIfCrowded(b: SlideBlock, d: BlockDraft) {
+    const c = this.canvasEd?.canvas;
+    if (!c) return;
+    const f = b.frame;
+    let covered = 0;
+    for (const x of c.blocks) {
+      if (x.id === b.id || x.hiddenInEditor) continue;
+      const ix = Math.min(f.x + f.w, x.frame.x + x.frame.w) - Math.max(f.x, x.frame.x);
+      const iy = Math.min(f.y + f.h, x.frame.y + x.frame.h) - Math.max(f.y, x.frame.y);
+      if (ix > 0 && iy > 0) covered += ix * iy;
+    }
+    if (covered < 0.2 * f.w * f.h) return;
+    this.toast(
+      t2(this.lang, "The slide is full: this block covers others.", "La diapo est pleine : ce bloc en recouvre d’autres."),
+      () => {
+        this.canvasEd?.run({ k: "undo" });
+        this.addTemplate("slide", { layout: "blank" });
+        this.canvasEd?.add(d);
+      },
+      t2(this.lang, "New slide with this block", "Nouvelle diapo avec ce bloc"),
+    );
+  }
+  toast(msg: string, undo?: () => void, actionLabel?: string) {
     clearTimeout(this.toastTimer);
     const fr = this.lang === "fr";
     this.toastEl.replaceChildren(h("span", {}, msg));
     if (undo)
       this.toastEl.append(
         btn(
-          fr ? "Annuler" : "Undo",
+          actionLabel ?? (fr ? "Annuler" : "Undo"),
           () => {
             undo();
             this.toastEl.hidden = true;
@@ -437,7 +465,7 @@ export class CourseEditor implements InspectorHost {
     this.liveEl.textContent = msg;
     this.toastTimer = window.setTimeout(
       () => (this.toastEl.hidden = true),
-      undo ? 6000 : 3200,
+      undo ? 5000 : 3200,
     );
   }
 
@@ -463,28 +491,35 @@ export class CourseEditor implements InspectorHost {
       icon: "back",
       title: fr ? "Retour à la bibliothèque" : "Back to the course library",
     });
+    // one way to try the course as a student (from this slide): here, next to Present
     const preview = h(
       "button",
       {
         type: "button",
         class: "ce-btn sm ce-preview",
-        title: fr ? "Aperçu élève depuis cette diapo (T)" : "Student preview from this slide (T)",
+        title: fr ? "Tester comme élève depuis cette diapo (T)" : "Test as a student from this slide (T)",
       },
       railIcon("eye", "M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7z M12 15a3 3 0 1 0 0-6a3 3 0 0 0 0 6z"),
-      h("span", {}, fr ? "Aperçu" : "Preview"),
+      h("span", {}, fr ? "Tester comme élève" : "Test as student"),
     );
-    preview.addEventListener("click", () => this.testAsStudent(this.i));
+    preview.addEventListener("click", () => {
+      if (this.course.steps.length) this.testAsStudent(this.i);
+      else this.needStepFirst();
+    });
     const presentB = h(
       "button",
       {
         type: "button",
         class: "ce-btn sm ce-present",
-        title: fr ? "Présenter en plein écran (⌘P)" : "Present full screen (⌘P)",
+        title: fr ? `Présenter en plein écran (${modKey()}P)` : `Present full screen (${modKey()}P)`,
       },
       railIcon("play", "M8 5.5v13l11-6.5z"),
       h("span", {}, fr ? "Présenter" : "Present"),
     );
-    presentB.addEventListener("click", () => this.present());
+    presentB.addEventListener("click", () => {
+      if (this.course.steps.length) this.present();
+      else this.needStepFirst();
+    });
     const top = h(
       "header",
       { class: "ce-top" },
@@ -509,10 +544,15 @@ export class CourseEditor implements InspectorHost {
       preview,
       presentB,
       (() => {
-        const b = btn(fr ? "Partager" : "Share", () => this.share(b), {
-          cls: "sm ce-share-b",
-          icon: "share",
-        });
+        const b = btn(
+          fr ? "Partager" : "Share",
+          () => (this.course.steps.length ? this.share(b) : this.needStepFirst()),
+          {
+            cls: "sm ce-share-b",
+            icon: "share",
+          },
+        );
+        this.needSteps = [preview, presentB, b];
         return b;
       })(),
     );
@@ -622,7 +662,8 @@ export class CourseEditor implements InspectorHost {
         return !!ed.step?.slide && !ed.step.slide.blocks.length;
       },
       addDraft: (d: BlockDraft) => {
-        ed.canvasEd?.add(d);
+        const b = ed.canvasEd?.add(d);
+        if (b && ed.canvasEd) ed.offerNewSlideIfCrowded(b, d);
       },
       dropDraft: (d: BlockDraft, x: number, y: number) => !!ed.canvasEd?.dropAt(d, x, y),
       isOverSlide: (x: number, y: number) => !!ed.canvasEd?.isOverSlide(x, y),
@@ -661,9 +702,12 @@ export class CourseEditor implements InspectorHost {
   private renderRail() {
     const fr = this.lang === "fr";
     const onSlide = !!this.step?.slide;
+    const empty = !this.course.steps.length;
     this.railEl.replaceChildren(
-      ...RAIL_TABS.map((t) => {
-        const off = SLIDE_ONLY.has(t) && !onSlide;
+      // the cockpit tray only once the cockpit can send captures (or has sent some): never a "coming soon" slot
+      ...RAIL_TABS.filter((t) => t !== "cockpit" || this.captureReady || this.tray.count > 0).map((t) => {
+        // on an empty course these still work: they start a blank slide first
+        const off = SLIDE_ONLY.has(t) && !onSlide && !empty;
         const on = this.studio.tab === t;
         const b = h(
           "button",
@@ -685,7 +729,14 @@ export class CourseEditor implements InspectorHost {
           const n = this.tray.count;
           if (n) b.append(h("i", { class: "ce-rail-n" }, String(n)));
         }
-        b.addEventListener("click", () => this.togglePanel(t));
+        b.addEventListener("click", () => {
+          if (SLIDE_ONLY.has(t) && empty) {
+            this.addTemplate("slide", { layout: "blank" });
+            this.openPanel(t);
+            return;
+          }
+          this.togglePanel(t);
+        });
         return b;
       }),
     );
@@ -852,6 +903,19 @@ export class CourseEditor implements InspectorHost {
     const langs = c.langs.includes("fr")
       ? "EN + FR"
       : c.langs.map((l) => l.toUpperCase()).join(" + ");
+    const empty = !n;
+    // an empty course is the deck gallery, full width: no empty properties column, no empty strip
+    this.bodyEl?.classList.toggle("is-empty", empty);
+    for (const b of this.needSteps) {
+      b.setAttribute("aria-disabled", empty ? "true" : "false");
+      b.classList.toggle("is-off", empty);
+      if (empty) b.title = fr ? "Ajoutez une diapo d’abord" : "Add a slide first";
+    }
+    if (!empty && this.needSteps.length === 3) {
+      this.needSteps[0].title = fr ? "Tester comme élève depuis cette diapo (T)" : "Test as a student from this slide (T)";
+      this.needSteps[1].title = fr ? `Présenter en plein écran (${modKey()}P)` : `Present full screen (${modKey()}P)`;
+      this.needSteps[2].title = "";
+    }
     this.subEl.textContent = `${n} ${fr ? (n > 1 ? "étapes" : "étape") : n === 1 ? "step" : "steps"} · ${fr ? "environ" : "about"} ${courseMinutes(c)} min · ${langs} · `;
     const dev = isIpad()
       ? fr
@@ -919,6 +983,8 @@ export class CourseEditor implements InspectorHost {
     );
   }
   private renderSteps() {
+    // the strip's thumbnails resolve scenes the course has now (a deck or a template may have just added one)
+    this.ensureSims();
     const c = this.course;
     const lang = this.lang;
     const frag: Node[] = [];
@@ -986,17 +1052,16 @@ export class CourseEditor implements InspectorHost {
     );
     frag.push(addLi);
     this.stepsEl.replaceChildren(...frag);
-    this.stepsEl
-      .querySelector(".ce-st.sel")
-      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
-    // pacing advisory
-    const run = pacingRuns(c.steps)[0];
-    this.adviceEl.hidden = !run;
-    if (run)
-      this.adviceEl.replaceChildren(
-        ico("warn"),
-        h("span", {}, pacingText(run, lang)),
-      );
+    // bring the selected thumbnail into the strip's view (the strip only: never scroll the page)
+    const selEl = this.stepsEl.querySelector<HTMLElement>(".ce-st.sel");
+    if (selEl && typeof selEl.getBoundingClientRect === "function") {
+      const r = selEl.getBoundingClientRect();
+      const box = this.stepsEl.getBoundingClientRect();
+      if (r.left < box.left) this.stepsEl.scrollLeft -= box.left - r.left + 8;
+      else if (r.right > box.right) this.stepsEl.scrollLeft += r.right - box.right + 8;
+    }
+    // pacing advice lives in Checks only (its badge counts it): never a callout pinned over the strip
+    this.adviceEl.hidden = true;
     this.pumpThumbs();
   }
   /** The step list's thumbnail: an image (never a live canvas). */
@@ -1253,13 +1318,13 @@ export class CourseEditor implements InspectorHost {
       const undoB = btn("", () => this.undo(), {
         cls: "sm ic ghost ce-undo",
         icon: "undo",
-        title: t2(this.lang, "Undo (⌘Z)", "Annuler (⌘Z)"),
+        title: t2(this.lang, `Undo (${modKey()}Z)`, `Annuler (${modKey()}Z)`),
         disabled: !this.history.canUndo,
       });
       const redoB = btn("", () => this.redo(), {
         cls: "sm ic ghost ce-redo",
         icon: "redo",
-        title: t2(this.lang, "Redo (⇧⌘Z)", "Rétablir (⇧⌘Z)"),
+        title: t2(this.lang, `Redo (${isMac ? "⇧⌘Z" : "Ctrl+Y"})`, `Rétablir (${isMac ? "⇧⌘Z" : "Ctrl+Y"})`),
         disabled: !this.history.canRedo,
       });
       // zoom: − 100 % + (pinch and ⌘ + wheel too)
@@ -1337,6 +1402,12 @@ export class CourseEditor implements InspectorHost {
           multiB,
           zoomBox,
           h("span", { class: "ce-vsep" }),
+          // the slide's words in EN or FR (not the app's language): say so
+          h(
+            "span",
+            { class: "ce-ctool-l", title: fr ? "La langue du texte des diapos" : "The language of the slides’ text" },
+            fr ? "Texte des diapos" : "Slide text",
+          ),
           langSeg,
           revealSeg,
           inspB,
@@ -1397,21 +1468,11 @@ export class CourseEditor implements InspectorHost {
     this.startEl?.destroy();
     this.startEl = null;
     if (!s) {
-      // an empty course: start from a beautiful deck (live-rendered covers), or one slide, or one step
+      // an empty course: start from a beautiful deck (live-rendered covers) or from scratch (the gallery's last card)
       this.teardownCentre();
       const fr = this.lang === "fr";
       const g = deckStarterGallery(this.lang, this.course, (d, th) => this.addDeck(d, th));
       this.startEl = g;
-      const one = btn(
-        fr ? "Une seule diapo vierge" : "One blank slide",
-        () => this.addTemplate("slide", { layout: "cover" }),
-        { cls: "sm" },
-      );
-      const step = btn(
-        fr ? "Une étape interactive…" : "An interactive step…",
-        () => this.openPanel("templates"),
-        { cls: "sm ghost" },
-      );
       this.stageArea.replaceChildren(
         h(
           "div",
@@ -1424,12 +1485,11 @@ export class CourseEditor implements InspectorHost {
               "p",
               {},
               fr
-                ? "Des diapos composées avec un vrai contenu IFR : modifiez les mots, gardez la mise en page."
-                : "Slides composed with real IFR content: change the words, keep the design.",
+                ? "Un vrai contenu aéronautique, du LAPL à l’IR : modifiez les mots, gardez la mise en page."
+                : "Real aviation content, from LAPL to IR: change the words, keep the design.",
             ),
           ),
           g.el,
-          h("div", { class: "ce-start-ft" }, one, step),
         ),
       );
       return;
@@ -1457,6 +1517,10 @@ export class CourseEditor implements InspectorHost {
         slideMenu: () => this.slideMenuItems(),
         onChange: (c, final) => {
           this.syncEmpty(c);
+          // the inspector reads the selected blocks: keep them the canvas's current ones (an inline text edit,
+          // a drag) so it never shows, then writes back, a stale copy
+          if (this.sel.length)
+            this.sel = this.sel.map((b) => c.blocks.find((x) => x.id === b.id) ?? b);
           if (!final) return;
           const st = this.step;
           if (!st || st.id !== this.canvasFor) return;
@@ -1685,8 +1749,9 @@ export class CourseEditor implements InspectorHost {
     const more = btn("", () => this.moreMenu(more), {
       cls: "ic",
       icon: "dots",
-      title: fr ? "Plus" : "More",
+      title: fr ? "Plus d’actions sur l’étape" : "More step actions",
     });
+    more.setAttribute("aria-label", fr ? "Plus d’actions sur l’étape" : "More step actions");
     this.stepBar.replaceChildren(
       this.kindChip(s),
       h(
@@ -1719,15 +1784,6 @@ export class CourseEditor implements InspectorHost {
         return b;
       })(),
       more,
-      btn(
-        fr ? "Tester comme élève" : "Test as student",
-        () => this.testAsStudent(this.i),
-        {
-          cls: "sm",
-          icon: "play",
-          title: fr ? "Tester comme élève (T)" : "Test as student (T)",
-        },
-      ),
     );
   }
   private moreMenu(anchor: HTMLElement) {
@@ -1740,8 +1796,8 @@ export class CourseEditor implements InspectorHost {
         s.slide
           ? {
               label: fr
-                ? "Convertir en texte + scène"
-                : "Convert to reader + stage",
+                ? "Convertir en page de lecture avec scène"
+                : "Convert to a reading page with a scene",
               sub: fr
                 ? "Le premier instrument devient la scène"
                 : "The first instrument becomes the stage",
@@ -1765,11 +1821,6 @@ export class CourseEditor implements InspectorHost {
             : "Text, scene and callouts stay",
           icon: "layout",
           onClick: () => this.changeKindMenu(anchor),
-        },
-        {
-          label: fr ? "Dupliquer" : "Duplicate",
-          icon: "copy",
-          onClick: () => this.duplicate(),
         },
         {
           label: fr ? "Supprimer l’étape" : "Delete the step",
@@ -2149,8 +2200,13 @@ export class CourseEditor implements InspectorHost {
   };
 
   // ================================================================ test, present, share, settings
+  /** An empty course: say what to do instead of opening an empty player or presenter. */
+  private needStepFirst() {
+    this.toast(t2(this.lang, "Add a slide first: pick a deck or a first slide.", "Ajoutez une diapo d’abord : choisissez une présentation ou une première diapo."));
+  }
   testAsStudent(from: number) {
     if (this.testEl) return;
+    if (!this.course.steps.length) return this.needStepFirst();
     const s = this.course.steps[from];
     this.player?.destroy();
     this.player = null;
@@ -2214,6 +2270,7 @@ export class CourseEditor implements InspectorHost {
     }
   }
   private present() {
+    if (!this.course.steps.length) return this.needStepFirst();
     void this.saveNow().then(() => {
       const id = this.course.id;
       const st = this.step?.id ?? "";
@@ -2231,7 +2288,7 @@ export class CourseEditor implements InspectorHost {
     const status = h("p", { class: "ce-note muted" });
     const images = courseHasImages(c);
     const exp = btn(
-      fr ? "Exporter un fichier .ifrcourse" : "Export an .ifrcourse file",
+      fr ? "Exporter un fichier de cours Wingdeck" : "Export a Wingdeck course file",
       async () => {
         if (!this.store) return;
         status.textContent = fr ? "Export…" : "Exporting…";

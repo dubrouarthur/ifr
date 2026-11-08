@@ -395,6 +395,21 @@ body.touch .lw-setup-list li {
 .lw-setup-list li.info .lw-setup-t b {
   color: var(--lw-cyan);
 }
+.lw-cues-l {
+  color: var(--lw-text-2);
+  font-weight: 500;
+}
+.lw-setup-list li.cues-close {
+  min-height: 0;
+  justify-content: flex-end;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+.lw-setup-list li.cues .lw-link,
+.lw-setup-list li.cues-close .lw-link {
+  min-width: 32px;
+  justify-content: center;
+}
 .lw-setup-list li.info .lw-setup-t small {
   color: var(--lw-text-2);
 }
@@ -541,6 +556,30 @@ body.touch .lw-pill {
 .lw[data-status="bad"] .lw-dot {
   background: var(--lw-bad);
   box-shadow: 0 0 0 3px rgba(255, 90, 95, 0.28);
+}
+/* an emergency is being flown: the exercise waits, one calm line (no step, no instruction to compete with the card) */
+.lw[data-status="hold"] .lw-dot {
+  background: transparent;
+  box-shadow: none;
+  border: 2px solid var(--lw-muted);
+}
+.lw.lw-em .lw-pill-t {
+  color: var(--lw-text-2);
+}
+.lw.lw-em .lw-pill-step:empty {
+  display: none;
+}
+.lw-pill-todo {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 181, 71, 0.55);
+  color: var(--lw-warn);
+  font: 650 12.5px var(--font, "Inter", sans-serif);
+  white-space: nowrap;
+}
+.lw-pill-todo[hidden] {
+  display: none;
 }
 .lw-pill-step {
   flex: none;
@@ -896,23 +935,21 @@ body.touch .lw.compact:not(.details) .lw-setup-list li {
   white-space: nowrap;
 }
 
-/* "More below": the body hides content under its fold (a short dock, a small window). A bar along the bottom
-   edge fades the last line out and says so; a click on its label scrolls the body (on touch a finger does). It
-   lets every tap through to the buttons under it, and it vanishes at the bottom. */
+/* "More below": the body hides content under its fold (a short dock, a small window). A slim bar UNDER the body
+   (it takes its own line, so it never sits on a row) says so; a click on its label scrolls the body (on touch a
+   finger does). It vanishes at the bottom. */
 .lw-cue {
-  position: absolute;
-  left: 1px;
-  right: 1px;
-  bottom: 1px;
+  flex: none;
+  position: relative;
   z-index: 3;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-  height: 34px;
-  padding-bottom: 5px;
+  height: 30px;
+  border-top: 1px solid var(--lw-line);
   border-radius: 0 0 11px 11px;
-  background: linear-gradient(to bottom, rgba(15, 21, 27, 0), rgba(15, 21, 27, 0.92) 55%, var(--lw-bg));
-  pointer-events: none;
+  background: var(--lw-bg);
+  box-shadow: 0 -10px 12px -6px rgba(0, 0, 0, 0.55);
 }
 .lw-cue[hidden] {
   display: none;
@@ -921,15 +958,14 @@ body.touch .lw.compact:not(.details) .lw-setup-list li {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  min-height: 22px;
+  min-height: 24px;
   padding: 0 9px 0 11px;
-  border-radius: 11px;
+  border-radius: 12px;
   background: #1d2833;
   border: 1px solid var(--lw-line);
   color: var(--lw-text-2);
   font: 600 12px var(--font, "Inter", sans-serif);
   white-space: nowrap;
-  pointer-events: auto;
   cursor: pointer;
 }
 .lw-cue > span:hover {
@@ -945,4 +981,70 @@ body.touch .lw-cue > span {
 }
 .lw.collapsed .lw-cue {
   display: none;
+}
+
+/* ---------------------------------------------------------------- iPad portrait: the ATC card under the strip
+   The outside view is a short band: the lesson strip takes its first line, the ATC card the next one (main.ts
+   fitSides sets --atc-strip-top and .atc-one), never over each other. A tap on the message opens it in full. */
+html body .cockpit .otw .atc-radio.atc-one:not(.empty) {
+  top: var(--atc-strip-top, var(--ov-top));
+  left: 0;
+  right: 0;
+  width: auto;
+  max-width: none;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 2px 8px 2px 16px;
+  border-width: 0 0 1px;
+  border-radius: 0;
+  z-index: 11;
+}
+html body .cockpit .otw .atc-radio.atc-one .atc-top {
+  display: contents;
+}
+html body .cockpit .otw .atc-radio.atc-one .atc-head {
+  order: 0;
+  flex: none;
+  max-width: 34%;
+}
+html body .cockpit .otw .atc-radio.atc-one .atc-head .atc-freq {
+  display: none;
+}
+html body .cockpit .otw .atc-radio.atc-one .atc-body {
+  order: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  cursor: pointer;
+}
+html body .cockpit .otw .atc-radio.atc-one .atc-msg {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+html body .cockpit .otw .atc-radio.atc-one .atc-tools {
+  order: 2;
+}
+html body .cockpit .otw .atc-radio.atc-one .atc-hist {
+  display: none;
+}
+html body .cockpit .otw .atc-radio.atc-one.atc-open {
+  flex-wrap: wrap;
+  padding-top: 8px;
+  padding-bottom: 10px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
+}
+html body .cockpit .otw .atc-radio.atc-one.atc-open .atc-body {
+  order: 3;
+  flex-basis: 100%;
+}
+html body .cockpit .otw .atc-radio.atc-one.atc-open .atc-msg {
+  white-space: normal;
+}
+html body .cockpit .otw .atc-radio.atc-one .atc-body:focus-visible {
+  outline: 2px solid var(--lw-accent, #5cc8ff);
+  outline-offset: 2px;
+  border-radius: 4px;
 }

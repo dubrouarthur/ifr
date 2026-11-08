@@ -1313,3 +1313,30 @@ body > .toasts.toasts-top .toast {
   opacity: 0.45;
   cursor: default;
 }
+
+/* the product mark (src/brand.ts brandMarkSvg): its ring follows the bar's text colour */
+.topbar .brand .logo.brand-mark {
+  display: inline-flex;
+  color: #e6ecf2;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+/* one Resume at a time: while the top bar shows (its Resume is highlighted), the veil keeps only its words; its own
+   Resume comes back when the bar is hidden or on a touch screen (no Esc key) */
+body:not(.touch):not(.chrome-hidden) .cockpit .pause-veil .pv-resume {
+  display: none;
+}
+
+/* the flight title never runs under the layout button: the button fills its slot and ellipsizes its two lines */
+html body .topbar .scn-wrap > .scn {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+/* touch: the layout and camera buttons of the top bar are 44 px tall like every other target there */
+html body.touch .topbar .view-dock.view-dock {
+  --vd-h: 44px;
+}

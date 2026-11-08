@@ -147,20 +147,22 @@ export class DeckStage {
     this.go(to, Infinity);
     return true;
   }
-  /** the progress segments (one per slide; done, current, to come) */
+  /** the progress segments (one per slide; done, current, to come): one Tab stop (the current slide), the arrow
+   *  keys, Home and End move along it (roving tabindex) */
   segments(onPick?: (i: number) => void): HTMLElement {
     const n = this.o.slides.length;
-    return h(
+    const bar = h(
       "div",
       {
         class: "ds-segs",
-        role: "group",
-        "aria-label": this.o.lang === "fr" ? "Progression" : "Progress",
+        role: "toolbar",
+        "aria-label": this.o.lang === "fr" ? "Diapositives" : "Slides",
       },
       ...this.o.slides.map((s, k) =>
         h("button", {
           class: `ds-seg${k < this.i ? " done" : k === this.i ? " on" : ""}`,
           type: "button",
+          tabindex: k === this.i ? 0 : -1,
           title: `${k + 1} / ${n} · ${tl(s.title, this.o.lang)}`,
           "aria-label": `${k + 1} / ${n} · ${tl(s.title, this.o.lang)}`,
           "aria-current": k === this.i ? "step" : null,
@@ -168,6 +170,30 @@ export class DeckStage {
         }),
       ),
     );
+    bar.addEventListener("keydown", (e) => {
+      const to =
+        e.key === "ArrowRight" || e.key === "ArrowDown"
+          ? this.i + 1
+          : e.key === "ArrowLeft" || e.key === "ArrowUp"
+            ? this.i - 1
+            : e.key === "Home"
+              ? 0
+              : e.key === "End"
+                ? n - 1
+                : null;
+      if (to === null) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const k = Math.max(0, Math.min(n - 1, to));
+      if (k !== this.i) onPick?.(k);
+      // the host redraws the bar: the focus follows the current segment
+      requestAnimationFrame(() =>
+        document
+          .querySelector<HTMLElement>('.ds-seg[aria-current="step"]')
+          ?.focus({ preventScroll: true }),
+      );
+    });
+    return bar;
   }
   destroy() {
     this.destroyed = true;

@@ -3,6 +3,10 @@
 // and a squelch tail.
 import { h, clear, store } from "./dom";
 import { svgIcon } from "./icons";
+import { lang, onLangChange } from "./i18n";
+
+/** the card's own words in the UI language (the transmissions stay in English phraseology) */
+const L = (en: string, fr: string) => (lang() === "fr" ? fr : en);
 import { AIRPORTS } from "../nav/data";
 import { distanceNm } from "../nav/geo";
 import type { Sim } from "../sim/sim";
@@ -90,12 +94,11 @@ export class AtcRadio {
   ) {
     this.head = h("div", { class: "atc-head" });
     this.body = h("div", { class: "atc-body" });
-    this.hist = h("div", { class: "atc-hist", "aria-label": "Earlier transmissions" });
+    this.hist = h("div", { class: "atc-hist" });
     const vbtn = h("button", {
       class: "atc-b atc-voice",
       type: "button",
       "aria-pressed": String(this.voiceOn),
-      "aria-label": "ATC voice",
       onclick: () => {
         this.voiceOn = !this.voiceOn;
         store.set("ifr.atc.voice", this.voiceOn);
@@ -105,7 +108,10 @@ export class AtcRadio {
     });
     const syncVoice = () => {
       vbtn.setAttribute("aria-pressed", String(this.voiceOn));
-      vbtn.title = this.voiceOn ? "ATC voice on — click to mute" : "ATC voice off — click to hear ATC";
+      vbtn.setAttribute("aria-label", L("ATC voice", "Voix ATC"));
+      vbtn.title = this.voiceOn
+        ? L("ATC voice on — click to mute", "Voix ATC activée : cliquez pour la couper")
+        : L("ATC voice off — click to hear ATC", "Voix ATC coupée : cliquez pour entendre l’ATC");
       vbtn.replaceChildren(svgIcon(this.voiceOn ? "sound" : "mute", 14));
     };
     syncVoice();
@@ -115,17 +121,15 @@ export class AtcRadio {
         class: "atc-b",
         type: "button",
         "aria-pressed": "false",
-        title: "Earlier transmissions",
         onclick: () => {
           const on = this.el.classList.toggle("show-hist");
           logBtn.setAttribute("aria-pressed", String(on));
         },
       },
-      "Log",
     );
     this.el = h(
       "div",
-      { class: "atc-radio empty", role: "log", "aria-live": "polite", "aria-label": "ATC radio" },
+      { class: "atc-radio empty", role: "log", "aria-live": "polite" },
       h(
         "div",
         { class: "atc-top" },
@@ -138,10 +142,8 @@ export class AtcRadio {
             {
               class: "atc-b atc-again",
               type: "button",
-              title: "Say again (repeat the last transmission)",
               onclick: () => this.sayAgain(),
             },
-            "Say again",
           ),
           logBtn,
           vbtn,
@@ -150,6 +152,31 @@ export class AtcRadio {
       this.body,
       this.hist,
     );
+    const again = this.el.querySelector<HTMLElement>(".atc-again")!;
+    const words = () => {
+      this.hist.setAttribute("aria-label", L("Earlier transmissions", "Messages précédents"));
+      logBtn.title = L("Earlier transmissions", "Messages précédents");
+      logBtn.textContent = L("Log", "Historique");
+      this.el.setAttribute("aria-label", L("ATC radio", "Radio ATC"));
+      again.title = L("Say again (repeat the last transmission)", "Répéter le dernier message");
+      again.textContent = L("Say again", "Répéter");
+      syncVoice();
+    };
+    words();
+    onLangChange(words);
+    // iPad portrait under the lesson strip the card is one line: a tap on the message opens it in full (and folds it)
+    this.body.addEventListener("click", () => {
+      if (!this.el.classList.contains("atc-one")) return;
+      const open = this.el.classList.toggle("atc-open");
+      this.body.setAttribute("aria-expanded", String(open));
+    });
+    this.body.addEventListener("keydown", (e) => {
+      if ((e.key === "Enter" || e.key === " ") && this.el.classList.contains("atc-one")) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.body.click();
+      }
+    });
     if ("speechSynthesis" in window) {
       const pick = () => {
         const vs = speechSynthesis.getVoices();
@@ -167,6 +194,19 @@ export class AtcRadio {
       pick();
       speechSynthesis.addEventListener?.("voiceschanged", pick);
     }
+  }
+
+  /** iPad portrait with the lesson strip: the card is one line under it, a tap opens the full message */
+  setOneLine(on: boolean) {
+    if (this.el.classList.contains("atc-one") === on) return;
+    this.el.classList.toggle("atc-one", on);
+    if (!on) this.el.classList.remove("atc-open");
+    if (on) {
+      this.body.setAttribute("tabindex", "0");
+      this.body.setAttribute("role", "button");
+      this.body.setAttribute("aria-expanded", "false");
+      this.body.setAttribute("aria-label", L("ATC message: tap to read it in full", "Message ATC : touchez pour le lire en entier"));
+    } else ["tabindex", "role", "aria-expanded", "aria-label"].forEach((a) => this.body.removeAttribute(a));
   }
 
   /** controlling facility + frequency for the aircraft position */
@@ -336,7 +376,7 @@ export class AtcRadio {
         h("b", {}, tr.facility),
         h("span", { class: "atc-freq" }, tr.freq),
       );
-      this.body.append(h("div", { class: "atc-msg" }, tr.text));
+      this.body.append(h("div", { class: "atc-msg", title: tr.text }, tr.text));
     }
     clear(this.hist);
     for (const x of this.log.slice(1))

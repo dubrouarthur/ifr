@@ -139,8 +139,20 @@ export class LibraryPanel {
     const title = mk("div", "sle-lib-title", tx("library", this.lang));
     this.search = mk("input", "sle-lib-search");
     this.search.type = "search";
-    this.search.placeholder = `${tx("search", this.lang)}: hsi, hold, metar…`;
-    this.search.setAttribute("aria-label", tx("search", this.lang));
+    // the search says what it searches (this panel's own things), in plain words
+    const fr = this.lang === "fr";
+    const PH: Record<LibraryTab, [string, string]> = {
+      text: ["Search a text style", "Rechercher un style de texte"],
+      shapes: ["Search a shape, an arrow", "Rechercher une forme, une flèche"],
+      icons: ["Search an icon", "Rechercher une icône"],
+      diagrams: ["Search a diagram", "Rechercher un schéma"],
+      instruments: ["Search an instrument", "Rechercher un instrument"],
+      photos: ["Search a photo or an icon", "Rechercher une photo ou une icône"],
+      interactive: ["Search a question, a calculation…", "Rechercher une question, un calcul…"],
+    };
+    const ph = PH[(o.tabs ?? [this.tab])[0] ?? this.tab] ?? PH.text;
+    this.search.placeholder = (o.tabs?.length ?? 2) > 1 && !o.tabs ? tx("search", this.lang) : ph[fr ? 1 : 0];
+    this.search.setAttribute("aria-label", this.search.placeholder);
     this.search.addEventListener("input", () => this.render());
     this.tabsEl = mk("div", "sle-lib-tabs");
     this.tabsEl.setAttribute("role", "tablist");
@@ -273,8 +285,8 @@ export class LibraryPanel {
           display: ["Cover title", "Titre de couverture"],
           title: ["Add a title", "Ajouter un titre"],
           heading: ["Add a heading", "Ajouter un intertitre"],
-          subtitle: ["Add a lead", "Ajouter un chapeau"],
-          lead: ["Add a lead", "Ajouter un chapeau"],
+          subtitle: ["Add a subtitle", "Ajouter un sous-titre"],
+          lead: ["Add a subtitle", "Ajouter un sous-titre"],
           body: ["Add body text", "Ajouter du texte"],
           caption: ["Add a caption", "Ajouter une légende"],
           small: ["Add a caption", "Ajouter une légende"],

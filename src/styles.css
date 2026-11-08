@@ -97,7 +97,7 @@ kbd { font-family: 'Roboto Condensed', monospace; background: var(--bg3); border
 .knob .tick { position: absolute; top: 4px; left: 50%; width: 2px; height: 9px; background: #cfd6dd; transform-origin: 50% 21px; border-radius: 1px; }
 .knob-wrap { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .knob-label { font: 700 10px 'Roboto Condensed'; color: #c9d0d7; letter-spacing: 0.5px; text-align: center; line-height: 1.1; }
-.knob-label small { display: block; color: #7d8790; font-weight: 600; font-size: 8.5px; }
+.knob-label small { display: block; color: #9aa3ad; font-weight: 600; font-size: 11px; letter-spacing: 0; white-space: nowrap; }
 .bkey { width: 60px; height: 24px; border-radius: 5px; border: 0; background: linear-gradient(#41474e, #2a2e33); color: #e8edf2; font: 700 11px 'Roboto Condensed'; box-shadow: 0 2px 3px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08); cursor: pointer; flex: none; position: relative; }
 .bkey:active { transform: translateY(1px); background: #2a2e33; }
 .bkey.on::after { content: ''; position: absolute; top: 3px; right: 4px; width: 5px; height: 5px; border-radius: 50%; background: #2bd576; box-shadow: 0 0 6px #2bd576; }
@@ -640,7 +640,7 @@ body.pro .coach:not(.lesson) { display: none; }
 .sitbar { position: absolute; left: 0; right: 0; top: 0; display: flex; gap: 1px; background: rgba(5,8,12,.62); backdrop-filter: blur(6px); border-bottom: 1px solid rgba(255,255,255,.06); z-index: 4; overflow-x: auto; scrollbar-width: none; }
 .sitbar .sb { flex: 1 1 auto; min-width: 0; padding: 5px 12px; border-right: 1px solid rgba(255,255,255,.06); white-space: nowrap; }
 .sitbar .sb:nth-child(2), .sitbar .sb:nth-child(4) { flex: 2 1 auto; }
-.sitbar small { display: block; font-size: 9.5px; letter-spacing: 1.1px; text-transform: uppercase; color: #8b97a4; font-weight: 700; }
+.sitbar small { display: block; font-size: 12px; line-height: 1.15; letter-spacing: .5px; text-transform: uppercase; color: #9aa6b2; font-weight: 700; }
 .sitbar b { font: 700 13.5px 'Roboto Condensed', sans-serif; color: #eef3f7; letter-spacing: .2px; }
 .sitbar .mag b { color: #ff7af5; }
 .sitbar .good b { color: #6ee7a2; }

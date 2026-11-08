@@ -15,10 +15,18 @@
     <style>
       html, body { margin: 0; height: 100%; background: #eef1f5; }
       #academy { height: 100%; }
+      /* the first frame, before the app draws (replaced by the router): the page's header and a quiet loading line,
+         never a blank page */
+      .ga-boot { height: 100%; display: flex; flex-direction: column; font: 600 16px/1 Inter, system-ui, sans-serif; color: #17202b; }
+      .ga-boot-top { height: 56px; flex: none; display: flex; align-items: center; padding: 0 20px; background: #fff; border-bottom: 1px solid #dfe4ea; }
+      .ga-boot-line { margin: 30vh auto 0; width: 160px; height: 3px; border-radius: 2px; background: #dfe4ea; overflow: hidden; }
+      .ga-boot-line i { display: block; width: 40%; height: 100%; background: #1d5fd1; animation: ga-boot 1.1s ease-in-out infinite; }
+      @keyframes ga-boot { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+      @media (prefers-reduced-motion: reduce) { .ga-boot-line i { animation: none; } }
     </style>
   </head>
   <body>
-    <div id="academy"></div>
+    <div id="academy"><div class="ga-boot" aria-hidden="true"><div class="ga-boot-top">%BRAND_NAME%</div><div class="ga-boot-line"><i></i></div></div></div>
     <noscript>Ground school needs JavaScript.</noscript>
     <script type="module" src="/src/learn/main.ts"></script>
   </body>

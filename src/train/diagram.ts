@@ -366,13 +366,15 @@ export function holdSlideSvg(
     for (const kk of Object.keys(SECT) as K[]) {
       const S = SECT[kk];
       const p = labelAt(S.lab, S.from, S.to, RC * S.lr);
-      out += text(p[0], p[1] - 10 * u, `${fr ? "SECTEUR" : "SECTOR"} ${S.n}`, 24, C.mute, `text-anchor="middle" font-weight="500" letter-spacing="${2.5 * u}"`);
-      out += text(p[0], p[1] + 30 * u, S.name, 32, S.col, `text-anchor="middle" font-weight="600"`);
-      if (entry === kk) out += text(p[0], p[1] + 64 * u, fr ? "votre entrée" : "your entry", 24, C.ink2, `text-anchor="middle" font-weight="600"`);
+      // a halo in the slide's colour: a label that meets a boundary or the entry path stays readable
+      const halo = `paint-order="stroke" stroke="${C.bg}" stroke-width="${7 * u}" stroke-linejoin="round"`;
+      out += text(p[0], p[1] - 10 * u, `${fr ? "SECTEUR" : "SECTOR"} ${S.n}`, 24, C.mute, `text-anchor="middle" font-weight="500" letter-spacing="${2.5 * u}" ${halo}`);
+      out += text(p[0], p[1] + 30 * u, S.name, 32, S.col, `text-anchor="middle" font-weight="600" ${halo}`);
+      if (entry === kk) out += text(p[0], p[1] + 64 * u, fr ? "votre entrée" : "your entry", 24, C.ink2, `text-anchor="middle" font-weight="600" ${halo}`);
       const qb = absB(aside((S.from + S.to) / 2, S.from, S.to, 16, 20));
       outside.push(qb);
       const q = at(qb, RC + 44 * u);
-      out += text(q[0], q[1] + 9 * u, S.arc, 24, C.mute, `text-anchor="middle" font-style="italic" font-weight="500"`);
+      out += text(q[0], q[1] + 9 * u, S.arc, 24, C.mute, `text-anchor="middle" font-style="italic" font-weight="500" paint-order="stroke" stroke="${C.bg}" stroke-width="${7 * u}" stroke-linejoin="round"`);
     }
   }
   // north arrow, just outside the circle in a corner: top left, unless an arc size or the aircraft sits there

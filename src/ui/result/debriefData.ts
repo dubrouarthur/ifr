@@ -425,7 +425,8 @@ export function fromFlight(s: FlightSource): DebriefModel {
     lang: L,
     title: s.title,
     meta: [date, s.student || null, s.mode || null].filter(Boolean).join(" · "),
-    task: s.inProgress ? dx(L, "d.inProgress") : "FAA-S-ACS-8C · IR.VI",
+    // a free flight is not an ACS task: no code as its title (the standards table still names its tolerances)
+    task: s.inProgress ? dx(L, "d.inProgress") : "",
     outcome,
     metCount,
     gradedCount: graded.length,

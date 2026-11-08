@@ -23,11 +23,13 @@ import type { BlockDraft, LibraryTab } from "../canvas/factory";
 import { baseThemeId } from "../canvas/themes";
 import { KINDS } from "./reader";
 import { TEMPLATES, titleOfSlide, tr, type TemplateId } from "./templates";
-import {
-  DECK_STARTERS,
-  deckStarterGallery,
-  type DeckStarter,
-} from "./deckStarters";
+import type { DeckStarter } from "./deckStarters";
+
+/** the paste shortcut as the platform writes it */
+const PASTE_KEY =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
+    ? "⌘V"
+    : "Ctrl+V";
 
 export type RailTab =
   | "templates"
@@ -210,8 +212,6 @@ export class StudioPanel {
   private views: SlideView[] = [];
   private io: IntersectionObserver | null = null;
   private decks: { destroy(): void } | null = null;
-  /** templates: add as a new slide, or replace the current one */
-  private place: "new" | "replace" = "new";
   constructor(
     private host: StudioHost,
     private onClose: () => void,
@@ -303,6 +303,7 @@ export class StudioPanel {
             ),
           ),
         ),
+        ...(tab === "interactive" ? this.stepKinds() : []),
       );
       return;
     }
@@ -340,8 +341,8 @@ export class StudioPanel {
           { class: "ce-panel-note" },
           t2(
             lang,
-            "Or drop an image file on the slide, or paste one (⌘V). Approach plates import as an image you can crop.",
-            "Ou déposez une image sur la diapo, ou collez-la (⌘V). Les cartes d’approche s’importent comme une image recadrable.",
+            `Or drop an image file on the slide, or paste one (${PASTE_KEY}). Approach plates import as an image you can crop.`,
+            `Ou déposez une image sur la diapo, ou collez-la (${PASTE_KEY}). Les cartes d’approche s’importent comme une image recadrable.`,
           ),
         ),
       );
@@ -366,7 +367,37 @@ export class StudioPanel {
       cockpit: host.course.cockpit,
     });
     this.lib.el.classList.add(tabs.length === 1 ? "is-single" : "is-multi");
-    this.body.replaceChildren(...top, this.lib.el);
+    this.body.replaceChildren(...top, this.lib.el, ...(tab === "interactive" ? this.stepKinds() : []));
+  }
+  /** The interactive pieces that are a whole step (not a block on a slide): one home, the Interactive panel. */
+  private stepKinds(): Node[] {
+    const host = this.host;
+    const lang = host.lang;
+    const kinds = h("div", { class: "ce-kinds" });
+    for (const t of TEMPLATES.filter((x) => x.id !== "slide")) {
+      const k = KINDS[t.kind] ?? KINDS.page;
+      const b = h(
+        "button",
+        { type: "button", class: "ce-kindrow" },
+        h("span", { class: `ce-kind k-${k.cls}` }, tr(t.title, lang)),
+        h("small", {}, tr(t.intent, lang)),
+      );
+      b.addEventListener("click", () => host.addTemplate(t.id));
+      kinds.append(b);
+    }
+    return [
+      h("h3", { class: "ce-panel-h" }, t2(lang, "A whole step for the student", "Une étape entière pour l’élève")),
+      h(
+        "p",
+        { class: "ce-panel-note" },
+        t2(
+          lang,
+          "Added after this slide, full screen in the student’s player.",
+          "Ajoutée après cette diapo, en plein écran chez l’élève.",
+        ),
+      ),
+      kinds,
+    ];
   }
 
   // ---------------------------------------------------------------- templates
@@ -377,37 +408,6 @@ export class StudioPanel {
     const course = host.course;
     const theme = baseThemeId(course.theme);
     const parts: Node[] = [];
-    if (host.onSlide) {
-      const seg = h("div", {
-        class: "ce-seg full ce-place",
-        role: "radiogroup",
-        "aria-label": t2(lang, "Where the template goes", "Où va le modèle"),
-      });
-      const opts: ["new" | "replace", string][] = [
-        ["new", t2(lang, "New slide", "Nouvelle diapo")],
-        ["replace", t2(lang, "Replace this one", "Remplacer celle-ci")],
-      ];
-      // an empty slide takes the template in place
-      const placeNow = host.slideEmpty ? "replace" : this.place;
-      for (const [v, label] of opts) {
-        const b = h(
-          "button",
-          {
-            type: "button",
-            role: "radio",
-            class: placeNow === v ? "on" : "",
-            "aria-checked": placeNow === v ? "true" : "false",
-          },
-          label,
-        );
-        b.addEventListener("click", () => {
-          this.place = v;
-          this.refresh();
-        });
-        seg.append(b);
-      }
-      parts.push(seg);
-    }
     const opts = {
       lang,
       theme,
@@ -468,8 +468,8 @@ export class StudioPanel {
       return b;
     };
     const pickLayout = (id: SlideLayoutId) => {
-      const replace =
-        host.onSlide && (host.slideEmpty || this.place === "replace");
+      // Templates add a new slide; an empty slide takes it in place (the toolbar's Layout changes a slide)
+      const replace = host.onSlide && host.slideEmpty;
       if (replace) host.replaceLayout(id);
       else host.addTemplate("slide", { layout: id });
     };
@@ -530,47 +530,6 @@ export class StudioPanel {
         t2(lang, "Ready-made slides", "Diapos prêtes à l’emploi"),
       ),
       exGrid,
-    );
-    // whole decks
-    const decks = deckStarterGallery(
-      lang,
-      course,
-      (d, th) => host.addDeck(d, th),
-      { compact: true, theme: theme === "classroom" ? "classroom" : "cockpit" },
-    );
-    this.decks = decks;
-    parts.push(
-      h(
-        "h3",
-        { class: "ce-panel-h" },
-        t2(
-          lang,
-          `Whole decks · ${DECK_STARTERS.length}`,
-          `Présentations complètes · ${DECK_STARTERS.length}`,
-        ),
-      ),
-      decks.el,
-    );
-    // what the student does: the interactive step kinds
-    const kinds = h("div", { class: "ce-kinds" });
-    for (const t of TEMPLATES.filter((x) => x.id !== "slide")) {
-      const k = KINDS[t.kind] ?? KINDS.page;
-      const b = h(
-        "button",
-        { type: "button", class: "ce-kindrow" },
-        h("span", { class: `ce-kind k-${k.cls}` }, tr(t.title, lang)),
-        h("small", {}, tr(t.intent, lang)),
-      );
-      b.addEventListener("click", () => host.addTemplate(t.id));
-      kinds.append(b);
-    }
-    parts.push(
-      h(
-        "h3",
-        { class: "ce-panel-h" },
-        t2(lang, "What the student does", "Ce que fait l’élève"),
-      ),
-      kinds,
     );
     this.body.replaceChildren(...parts);
   }

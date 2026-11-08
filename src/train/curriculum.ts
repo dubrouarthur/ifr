@@ -24,10 +24,17 @@ export const STAGES = [
   { id: 'S8', title: 'Stage 8 — IFR cross-country flights', desc: 'Gate to gate: clearance, departure, route, descent, approach and landing at another airport.' },
 ];
 
-function holdExercise(id: string, title: string, fixId: string, inbound: number, turn: Turn, courseToFix: number, alt: number, opts: { wind?: [number, number]; vor?: boolean; summary?: string; laps?: number } = {}): Exercise {
+const ENTRY_FR: Record<string, string> = { DIRECT: 'DIRECTE', TEARDROP: 'DÉCALÉE', PARALLEL: 'PARALLÈLE' };
+function holdExercise(id: string, title: string, fixId: string, inbound: number, turn: Turn, courseToFix: number, alt: number, opts: { wind?: [number, number]; vor?: boolean; summary?: string; summaryFr?: string; laps?: number } = {}): Exercise {
   const fx = F(fixId);
   const isVor = opts.vor ?? fx.kind === 'vor';
   return {
+    fr: {
+      summary: opts.summaryFr ?? `Attente à ${fixId}, rapprochement ${fmtHdg(inbound)}°, virages à ${turn === 'R' ? 'droite' : 'gauche'}. Déterminez et volez la bonne entrée.`,
+      objectives: ['Déterminer l’entrée (AIM) d’après votre route vers le point', 'Voler l’entrée et s’établir sur la route de rapprochement', 'Ajuster le temps d’éloignement pour des rapprochements de 1:00', 'Rester côté attente, ±100 ft'],
+      standards: ['Procédure d’entrée correcte', 'Altitude ±100 ft', 'Branches de rapprochement 1:00 ±15 s', 'Sortie côté non protégé < 0,6 NM'],
+      briefing: ['Les six T au point : Turn (virer), Time (chrono), Twist (CRS), Throttle (gaz), Talk (annonce), Track (suivre).', 'Attente à 90 KIAS. La vitesse maximale d’attente de la FAA jusqu’à 6 000 ft MSL est de 200 KIAS, pour tous les avions (AIM 5-3-8, tableau 5-3-1).', 'Vent : triplez en éloignement la correction de dérive.'],
+    },
     id,
     stage: 'S4',
     title,
@@ -72,6 +79,12 @@ function holdExercise(id: string, title: string, fixId: string, inbound: number,
           answer: opts3.indexOf(entry),
           explain: `Course ${fmtHdg(courseToFix)}° relative to the inbound course ${fmtHdg(inbound)}° puts you in the ${entry} sector (70° line rule, AIM 5-3-8).`,
           svg: holdDiagramSvg(inbound, turn, fx.ident, courseToFix),
+          // the clearance stays in English phraseology (it is quoted above the question); the question is French
+          fr: {
+            question: `Vous rejoignez ${fx.ident} en route ${fmtHdg(courseToFix)}°. Quelle entrée ?`,
+            options: opts3.map((o) => ENTRY_FR[o] ?? o),
+            explain: `La route ${fmtHdg(courseToFix)}° comparée à la route de rapprochement ${fmtHdg(inbound)}° vous place dans le secteur ${(ENTRY_FR[entry] ?? entry).toLowerCase()} (règle des 70°, AIM 5-3-8).`,
+          },
         },
         steps: [S.hold(hold, opts.laps ?? 2)],
         allowanceSec: 25,
@@ -191,9 +204,9 @@ function ifrFlight(id: string, title: string, o: { dep: [string, string]; route:
       const lastRoute = o.route[o.route.length - 1];
       const steps: Step[] = [
         S.takeoff(3000, rw.heading),
-        { text: `ATC: "Climb and maintain ${o.cruise}, proceed on course." — set ALT SEL, fly the GPS route (NAV)`, done: (c) => Math.abs(c.sim.indicatedAlt() - o.cruise) < 100 && Math.abs(c.d.vsFpm) < 300, check: (c) => (c.d.iasKt < 62 ? 'Too slow in the climb' : c.d.stallWarn ? 'Stall warning' : null), graceSec: 10 },
+        { text: `ATC: "Climb and maintain ${o.cruise}, proceed on course." — set ALT SEL, fly the GPS route (NAV)`, fr: `ATC : « Climb and maintain ${o.cruise}, proceed on course. » Affichez l’ALT SEL, suivez la route GPS (NAV)`, done: (c) => Math.abs(c.sim.indicatedAlt() - o.cruise) < 100 && Math.abs(c.d.vsFpm) < 300, check: (c) => (c.d.iasKt < 62 ? 'Too slow in the climb' : c.d.stallWarn ? 'Stall warning' : null), graceSec: 10 },
         { text: `En route ${o.route.join(' → ')} at ${o.cruise}. Brief the ${ap.name} plate.`, done: (c) => c.sim.fp.out.valid && (c.sim.fp.out.toIdent === lastRoute ? c.sim.fp.out.distNm < 6 : c.sim.fp.wpts.findIndex((w) => w.ident === c.sim.fp.out.toIdent) > o.route.length), check: (c) => devCheck(c, { alt: o.cruise }), readout: (c) => (c.sim.fp.out.valid ? `${c.sim.fp.out.toIdent} ${c.sim.fp.out.distNm.toFixed(1)} NM` : ''), graceSec: 15 },
-        { ...S.approach(false), text: `ATC: "Descend and maintain ${iafAlt}, cleared ${ap.name} approach." — fly it and land at ${ap.airport}`, onStart: (c) => c.sim.fp.armApproach() },
+        { ...S.approach(false), text: `ATC: "Descend and maintain ${iafAlt}, cleared ${ap.name} approach." — fly it and land at ${ap.airport}`, fr: `ATC : « Descend and maintain ${iafAlt}, cleared ${ap.name} approach. » Volez-la et atterrissez à ${ap.airport}`, onStart: (c) => c.sim.fp.armApproach() },
       ];
       return { steps, acs: true, allowanceSec: 60, clearance };
     },
@@ -259,8 +272,8 @@ export const EXERCISES: Exercise[] = [
     minutes: 8,
     setup: (sim) => {
       startAt(sim, { ...OPEN, altFt: 3000, hdg: 90, iasKt: 90 });
-      const climbTurn: Step = { ...S.changeAlt(4500, 75, null), text: 'Climbing right turn to heading 270, level at 4500 ft, 75 KIAS', done: (c) => Math.abs(c.sim.indicatedAlt() - 4500) < 50 && Math.abs(((c.d.hdgTrue - 270 + 540) % 360) - 180) < 6 };
-      const descTurn: Step = { ...S.changeAlt(3000, 90, null, -500), text: 'Descending left turn to heading 090, level at 3000 ft, 500 fpm', done: (c) => Math.abs(c.sim.indicatedAlt() - 3000) < 50 && Math.abs(((c.d.hdgTrue - 90 + 540) % 360) - 180) < 6 };
+      const climbTurn: Step = { ...S.changeAlt(4500, 75, null), text: 'Climbing right turn to heading 270, level at 4500 ft, 75 KIAS', fr: 'Virage en montée à droite au cap 270, palier à 4500 ft, 75 KIAS', done: (c) => Math.abs(c.sim.indicatedAlt() - 4500) < 50 && Math.abs(((c.d.hdgTrue - 270 + 540) % 360) - 180) < 6 };
+      const descTurn: Step = { ...S.changeAlt(3000, 90, null, -500), text: 'Descending left turn to heading 090, level at 3000 ft, 500 fpm', fr: 'Virage en descente à gauche au cap 090, palier à 3000 ft, 500 ft/min', done: (c) => Math.abs(c.sim.indicatedAlt() - 3000) < 50 && Math.abs(((c.d.hdgTrue - 90 + 540) % 360) - 180) < 6 };
       return { steps: [climbTurn, S.maintain(4500, 270, 90, 20), descTurn], allowanceSec: 20 };
     },
   },
@@ -292,7 +305,7 @@ export const EXERCISES: Exercise[] = [
     setup: (sim) => {
       startAt(sim, { ...OPEN, altFt: 5000, hdg: 45, iasKt: 90, weather: { ceilingFt: 1500, cloudTopFt: 9000 } });
       setAttitude(sim, 22, -35, 72);
-      const second: Step = { ...S.recover(), text: 'Second attitude — RECOVER', onStart: (c) => { setAttitude(c.sim, -18, 55, 125); c.sim.controls.throttle = 0.8; } };
+      const second: Step = { ...S.recover(), text: 'Second attitude — RECOVER', fr: 'Deuxième position : RÉCUPÉREZ', onStart: (c) => { setAttitude(c.sim, -18, 55, 125); c.sim.controls.throttle = 0.8; } };
       return { steps: [S.recover(), S.maintain(Math.round(sim.indicatedAlt() / 100) * 100 || 5000, 45, 95, 10, { alt: 600, hdg: 180 }), second], allowanceSec: 5 };
     },
   },
@@ -308,7 +321,7 @@ export const EXERCISES: Exercise[] = [
     minutes: 5,
     setup: (sim) => {
       startAt(sim, { ...OPEN, altFt: 4000, hdg: 270, iasKt: 95 });
-      return { steps: [{ ...S.maintain(4000, 270, 70, 90, { ias: 5 }), text: 'Slow to 70 KIAS, flaps 20, maintain 4000 ft / heading 270 for 90 s', graceSec: 30 }, S.changeAlt(3200, 80, 270, -400)], allowanceSec: 12 };
+      return { steps: [{ ...S.maintain(4000, 270, 70, 90, { ias: 5 }), text: 'Slow to 70 KIAS, flaps 20, maintain 4000 ft / heading 270 for 90 s', fr: 'Réduisez à 70 KIAS, volets 20, maintenez 4000 ft / cap 270 pendant 90 s', graceSec: 30 }, S.changeAlt(3200, 80, 270, -400)], allowanceSec: 12 };
     },
   },
   // ---------------------------------------------------------------- Stage 2
@@ -390,7 +403,7 @@ export const EXERCISES: Exercise[] = [
     setup: (sim) => {
       const start = destination(MSV, 100, 10);
       startAt(sim, { pos: start, altFt: 4500, hdg: 10, iasKt: 95, weather: { windDir: 270, windKt: 10, ceilingFt: 1200 }, setup: (s) => { s.av.nav1.active = 112.7; s.av.bearing1 = 'NAV1'; s.ap.altSel = 4500; s.av.obs1 = 210; } });
-      return { steps: [S.dmeArc({ ...MSV, ident: 'MSV' }, 112.7, 10, 35, 'L', 4500), { ...S.trackRadial('MSV', 112.7, 30, 'TO', 3, 4500), text: 'Turn inbound and track R-030 to MSV (CRS 210)' }], allowanceSec: 30 };
+      return { steps: [S.dmeArc({ ...MSV, ident: 'MSV' }, 112.7, 10, 35, 'L', 4500), { ...S.trackRadial('MSV', 112.7, 30, 'TO', 3, 4500), text: 'Turn inbound and track R-030 to MSV (CRS 210)', fr: 'Virez en rapprochement et suivez le R-030 vers MSV (CRS 210)' }], allowanceSec: 30 };
     },
   },
   {
@@ -434,13 +447,13 @@ export const EXERCISES: Exercise[] = [
   interceptExercise('int-loc90', 'Late 90° localizer intercept', 'ATC vectors you through the final at 90° close to the FAF — a classic overshoot trap. ½-dot tolerance.', { navaidIdent: 'IPRD', freq: 110.3, course: 270, fix: 'MARLO', from: { brg: 0, dist: 4, off: 2.2 }, hdg: 180, alt: 3000, wind: [360, 15], maxOvershoot: 1.5, plate: 'PARD-I27' }),
   interceptExercise('int-lda', 'LDA intercept (offset course)', 'Intercept the I-ADN LDA (course 016) — the course is not aligned with any runway.', { navaidIdent: 'IADN', freq: 109.5, course: 16, fix: 'NIXIE', from: { brg: 286, dist: 7, off: 3 }, hdg: 60, alt: 3000, wind: [300, 12], plate: 'PARD-L36' }),
   // ---------------------------------------------------------------- Stage 4
-  holdExercise('hold-direct', 'Holding: direct entry', 'ARD', 270, 'R', 300, 3000, { summary: 'The simplest entry — arriving within the 180° direct sector. Learn the hold geometry and timing.' }),
-  holdExercise('hold-teardrop', 'Holding: teardrop entry', 'ARD', 270, 'R', 50, 3000, { summary: 'Arriving from the 70° teardrop sector: outbound 30° toward the holding side, then turn inbound.' }),
-  holdExercise('hold-parallel', 'Holding: parallel entry', 'ARD', 270, 'R', 140, 3000, { summary: 'Arriving from the 110° parallel sector: fly outbound parallel on the non-holding side, turn back >180°.' }),
-  holdExercise('hold-left', 'Non-standard (left) hold', 'MSV', 210, 'L', 290, 4500, { summary: 'Left turns are mirrored — the sectors flip. Many students get this wrong.' }),
-  holdExercise('hold-wind', 'Holding with a strong wind', 'ARD', 270, 'R', 270, 3000, { wind: [360, 25], laps: 3, summary: 'A 25 kt crosswind: triple the drift on the outbound leg, adjust timing to get 1:00 inbound.' }),
-  holdExercise('hold-ndb', 'Holding on an NDB', 'PA', 270, 'R', 45, 3000, { wind: [220, 15], summary: 'Hold at the PA NDB using the ADF bearing pointer only (or the GPS overlay).' }),
-  holdExercise('hold-fix', 'Holding at an RNAV fix', 'KEDDY', 270, 'L', 170, 4000, { summary: 'Hold at KEDDY, left turns, on the GPS — an ATC-style non-published hold.' }),
+  holdExercise('hold-direct', 'Holding: direct entry', 'ARD', 270, 'R', 300, 3000, { summary: 'The simplest entry — arriving within the 180° direct sector. Learn the hold geometry and timing.', summaryFr: 'L’entrée la plus simple : vous arrivez dans le secteur direct de 180°. Apprenez la géométrie et le chronométrage de l’attente.' }),
+  holdExercise('hold-teardrop', 'Holding: teardrop entry', 'ARD', 270, 'R', 50, 3000, { summary: 'Arriving from the 70° teardrop sector: outbound 30° toward the holding side, then turn inbound.', summaryFr: 'Arrivée par le secteur décalé de 70° : éloignement à 30° côté attente, puis virage vers le rapprochement.' }),
+  holdExercise('hold-parallel', 'Holding: parallel entry', 'ARD', 270, 'R', 140, 3000, { summary: 'Arriving from the 110° parallel sector: fly outbound parallel on the non-holding side, turn back >180°.', summaryFr: 'Arrivée par le secteur parallèle de 110° : éloignement parallèle côté non protégé, puis demi-tour de plus de 180°.' }),
+  holdExercise('hold-left', 'Non-standard (left) hold', 'MSV', 210, 'L', 290, 4500, { summary: 'Left turns are mirrored — the sectors flip. Many students get this wrong.', summaryFr: 'Virages à gauche : tout est en miroir, les secteurs s’inversent. Beaucoup d’élèves s’y trompent.' }),
+  holdExercise('hold-wind', 'Holding with a strong wind', 'ARD', 270, 'R', 270, 3000, { wind: [360, 25], laps: 3, summary: 'A 25 kt crosswind: triple the drift on the outbound leg, adjust timing to get 1:00 inbound.', summaryFr: 'Un vent traversier de 25 kt : triplez la dérive en éloignement, ajustez le chrono pour un rapprochement de 1:00.' }),
+  holdExercise('hold-ndb', 'Holding on an NDB', 'PA', 270, 'R', 45, 3000, { wind: [220, 15], summary: 'Hold at the PA NDB using the ADF bearing pointer only (or the GPS overlay).', summaryFr: 'Attente sur le NDB PA à l’aiguille ADF seule (ou avec la superposition GPS).' }),
+  holdExercise('hold-fix', 'Holding at an RNAV fix', 'KEDDY', 270, 'L', 170, 4000, { summary: 'Hold at KEDDY, left turns, on the GPS — an ATC-style non-published hold.', summaryFr: 'Attente à KEDDY, virages à gauche, au GPS : une attente non publiée, donnée par l’ATC.' }),
   {
     id: 'hold-random',
     stage: 'S4',

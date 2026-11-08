@@ -259,6 +259,8 @@ export interface ResultReport {
   endedBy: EndedBy;
   /** "ACS IR.IV.A instrument flight" */
   task: string;
+  /** the standard the task is graded against ("FAA ACS IR.III.B"), shown as a reference, never as the title */
+  taskRef: string;
   eyebrow: string;
   headline: string;
   /** the sub line after "N of M standards met" */

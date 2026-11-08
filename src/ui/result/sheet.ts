@@ -420,8 +420,19 @@ export class ResultSheet extends Modal {
         : null;
 
     // ---- practise next
-    this.pnEl = nextList(plan, rt(ungraded ? "sec.pickUp" : "sec.next"), (it) =>
-      this.runItem(it),
+    // one primary per screen: the footer's primary runs the first row (unless it leads back to a course). An
+    // ungraded attempt the pilot can resume: the footer says "Resume at 0:46", so the list keeps the other ways
+    // ("Or · Restart") and does not repeat it
+    const footRow = this.opts.backToCourse ? undefined : plan.items[0];
+    const dropResume = ungraded && footRow?.kind === "resume" && plan.items.length > 1;
+    const listPlan: NextPlan = dropResume
+      ? { ...plan, why: { lead: "", text: "" }, items: plan.items.slice(1) }
+      : plan;
+    this.pnEl = nextList(
+      listPlan,
+      rt(dropResume ? "sec.other" : ungraded && plan.items[0]?.kind === "resume" ? "sec.pickUp" : "sec.next"),
+      (it) => this.runItem(it),
+      footRow,
     );
 
     // ---- spatial view

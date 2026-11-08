@@ -5,6 +5,7 @@
 // come from the engine's layoutCanvas() (we never draw a slide here).
 import type {
   Course,
+  DiagramSpec,
   L10n,
   Lang,
   SlideCanvas,
@@ -16,6 +17,7 @@ import { h } from "../../ui/dom";
 import { layoutCanvas } from "../canvas/layouts";
 import { renderThumb, type SlideView } from "../canvas/render";
 import { insertStep, linearText, makeStep } from "./templates";
+import { AIRSPACE_DIAGRAM, AIRSPACE_SLIDES, CG_DIAGRAM, WB_SLIDES } from "./deckVfr";
 
 const L = (en: string, fr: string): L10n => ({ en, fr });
 
@@ -27,6 +29,10 @@ export interface DeckStarter {
   /** the course theme it is built for (light classroom by default; cockpit only for a deck that needs dark slides) */
   theme: "cockpit" | "classroom";
   slides: SlideLayoutId[];
+  /** the licence level it teaches (shown on its card): "LAPL / PPL", "IR"… */
+  level?: L10n;
+  /** whole slides written for this deck, by slide index (they replace the archetype of that index) */
+  make?: Partial<Record<number, (theme?: ThemeId) => SlideCanvas>>;
   /** the cover's words and its hero (the deck's signature diagram or instrument, from one of its archetypes) */
   cover?: DeckCover;
 }
@@ -37,8 +43,8 @@ export interface DeckCover {
   subtitle: L10n;
   lead: L10n;
   foot: L10n;
-  /** the hero comes from this archetype's first block of this kind (absent: the cover's quiet hold) */
-  hero?: { from: SlideLayoutId; kind: "diagram" | "instrument" };
+  /** the hero comes from this archetype's first block of this kind, or is this diagram (absent: the cover's quiet hold) */
+  hero?: { from: SlideLayoutId; kind: "diagram" | "instrument" } | { d: DiagramSpec };
 }
 
 export const DECK_STARTERS: readonly DeckStarter[] = [
@@ -50,7 +56,65 @@ export const DECK_STARTERS: readonly DeckStarter[] = [
       "Entrée, chronométrage et vent, puis une question et Prêt à voler",
     ),
     theme: "classroom",
+    level: L("IR", "IR"),
     slides: ["cover", "heroDiagram", "stepByStep", "quiz", "ready"],
+    cover: {
+      eyebrow: L("Ground school · Holding", "Théorie · Attentes"),
+      title: L("Holding", "L’attente"),
+      subtitle: L("Entries, timing and wind", "Entrées, chronométrage et vent"),
+      lead: L(
+        "Read the clearance, pick the entry, time it, correct for the wind — then fly the hold at ARD.",
+        "Lire la clairance, choisir l’entrée, chronométrer, corriger le vent — puis voler l’attente à ARD.",
+      ),
+      foot: L("FAA AIM 5-3-8", "FAA AIM 5-3-8"),
+      hero: { from: "heroDiagram", kind: "diagram" },
+    },
+  },
+  {
+    id: "weight-balance",
+    title: L("Weight and balance", "Masse et centrage"),
+    pitch: L(
+      "Weight, moment, the envelope, then a question and the checks",
+      "Masse, moment, l’enveloppe, puis une question et les vérifications",
+    ),
+    theme: "classroom",
+    level: L("LAPL / PPL", "LAPL / PPL"),
+    slides: ["cover", "heroDiagram", "quiz", "recap"],
+    make: { 1: WB_SLIDES[0], 2: WB_SLIDES[1], 3: WB_SLIDES[2] },
+    cover: {
+      eyebrow: L("Ground school · Weight and balance", "Théorie · Masse et centrage"),
+      title: L("Weight and balance", "Masse et centrage"),
+      subtitle: L("Inside the envelope, every flight", "Dans l’enveloppe, à chaque vol"),
+      lead: L(
+        "Weigh the loaded aircraft, work out the moment, place the point: outside the envelope, you do not take off.",
+        "Peser l’avion chargé, calculer le moment, placer le point : hors de l’enveloppe, on ne décolle pas.",
+      ),
+      foot: L("POH section 6", "Manuel de vol (POH) · section 6"),
+      hero: { d: CG_DIAGRAM },
+    },
+  },
+  {
+    id: "airspace",
+    title: L("Airspace classes", "Les espaces aériens"),
+    pitch: L(
+      "A cross-section to read, a question, what to check before the flight",
+      "Une coupe à lire, une question, ce qu’il faut vérifier avant le vol",
+    ),
+    theme: "classroom",
+    level: L("LAPL / PPL", "LAPL / PPL"),
+    slides: ["cover", "heroDiagram", "quiz", "recap"],
+    make: { 1: AIRSPACE_SLIDES[0], 2: AIRSPACE_SLIDES[1], 3: AIRSPACE_SLIDES[2] },
+    cover: {
+      eyebrow: L("Ground school · Airspace", "Théorie · Espaces aériens"),
+      title: L("Airspace classes", "Les espaces aériens"),
+      subtitle: L("Where you need a clearance", "Où faut-il une clairance ?"),
+      lead: L(
+        "Class G, E and D, the control zone and the TMA: read the chart before you plan the route.",
+        "Classes G, E et D, la zone de contrôle et la TMA : lire la carte avant de préparer la navigation.",
+      ),
+      foot: L("SERA.6001 · VFR chart", "SERA.6001 · carte VFR"),
+      hero: { d: AIRSPACE_DIAGRAM },
+    },
   },
   {
     id: "maths-lesson",
@@ -60,6 +124,7 @@ export const DECK_STARTERS: readonly DeckStarter[] = [
       "Une règle en un chiffre, sa formule, un quiz et l’essentiel",
     ),
     theme: "classroom",
+    level: L("PPL / IR", "PPL / IR"),
     slides: ["cover", "bigNumber", "formula", "quiz", "recap"],
     cover: {
       eyebrow: L("Ground school · Maths for IFR", "Théorie · Maths de l’IFR"),
@@ -69,7 +134,7 @@ export const DECK_STARTERS: readonly DeckStarter[] = [
         "One degree off is one mile off at sixty miles: work it out in your head, then fly it.",
         "Un degré d’erreur, un mille d’écart à soixante milles : le calcul de tête, puis en vol.",
       ),
-      foot: L("5 slides · about 15 min · FAA IFH ch. 9", "5 diapos · environ 15 min · FAA IFH ch. 9"),
+      foot: L("FAA IFH ch. 9", "FAA IFH ch. 9"),
       hero: { from: "formula", kind: "diagram" },
     },
   },
@@ -81,6 +146,7 @@ export const DECK_STARTERS: readonly DeckStarter[] = [
       "Un instrument en direct annoté, un avant / après, la check-list",
     ),
     theme: "classroom",
+    level: L("IR", "IR"),
     slides: ["cover", "instrumentNotes", "compare", "checklist", "recap"],
     cover: {
       eyebrow: L("Instruments · HSI", "Instruments · HSI"),
@@ -90,39 +156,19 @@ export const DECK_STARTERS: readonly DeckStarter[] = [
         "What each needle says, where to look first, and how to fly back onto the course.",
         "Ce que dit chaque aiguille, où regarder d’abord, et comment rejoindre la route.",
       ),
-      foot: L("5 slides · about 15 min · FAA IFH ch. 7", "5 diapos · environ 15 min · FAA IFH ch. 7"),
+      foot: L("FAA IFH ch. 7", "FAA IFH ch. 7"),
       hero: { from: "instrumentNotes", kind: "instrument" },
-    },
-  },
-  {
-    id: "ground-school",
-    title: L("Ground-school theory", "Cours théorique"),
-    pitch: L(
-      "Section openers, a diagram, two columns, a quiz: for the classroom",
-      "Ouvertures de partie, un schéma, deux colonnes, un quiz : pour la salle",
-    ),
-    theme: "classroom",
-    slides: ["cover", "section", "heroDiagram", "twoColumn", "quiz", "recap"],
-    cover: {
-      eyebrow: L("Ground school · Holding", "Théorie · Attentes"),
-      title: L("Holding patterns", "Les attentes"),
-      subtitle: L("The theory, before the simulator", "La théorie, avant le simulateur"),
-      lead: L(
-        "Entries, timing and wind correction, for the classroom: then fly them at ARD.",
-        "Entrées, chronométrage et correction de vent, en salle : puis en vol à ARD.",
-      ),
-      foot: L("6 slides · about 20 min · FAA AIM 5-3-8", "6 diapos · environ 20 min · FAA AIM 5-3-8"),
     },
   },
 ];
 
-/** A blank starter: the cover only. */
+/** Start from scratch: one truly blank slide (no sample words, no diagram). */
 export const BLANK_STARTER: DeckStarter = {
   id: "blank",
-  title: L("Blank deck", "Présentation vierge"),
-  pitch: L("A cover, then add your slides", "Une couverture, puis vos diapos"),
+  title: L("Start from scratch", "Partir de zéro"),
+  pitch: L("One blank slide: you compose it", "Une diapo vierge, à composer vous-même"),
   theme: "classroom",
-  slides: ["cover"],
+  slides: ["blank"],
 };
 
 export const starterById = (id: string): DeckStarter =>
@@ -146,9 +192,23 @@ export function deckCover(
   for (const b of slide.blocks)
     if (b.kind === "text" && (b.style === "eyebrow" || b.style === "label")) b.text = { ...cv.eyebrow };
     else if (b.kind === "text" && (b.style === "lead" || b.style === "subtitle")) b.text = { ...cv.lead };
-  if (cv.hero) {
-    const src = layoutCanvas(cv.hero.from, o.scene ? { scene: o.scene } : {}).blocks.find(
-      (b) => b.kind === cv.hero!.kind,
+  if (cv.hero && "d" in cv.hero) {
+    const at = slide.blocks.findIndex((b) => b.kind === "diagram");
+    if (at >= 0) {
+      const old = slide.blocks[at];
+      slide.blocks[at] = {
+        ...old,
+        id: "hero",
+        frame: { ...old.frame, y: old.frame.y + 120, h: old.frame.h - 240 },
+        kind: "diagram",
+        d: JSON.parse(JSON.stringify(cv.hero.d)) as DiagramSpec,
+        alt: cv.title,
+      } as SlideCanvas["blocks"][number];
+    }
+  } else if (cv.hero) {
+    const hero = cv.hero;
+    const src = layoutCanvas(hero.from, o.scene ? { scene: o.scene } : {}).blocks.find(
+      (b) => b.kind === hero.kind,
     );
     const at = slide.blocks.findIndex((b) => b.kind === "diagram");
     if (src && at >= 0) {
@@ -183,6 +243,8 @@ function withCover(step: Step, d: DeckStarter): Step {
 /** The slide a deck card shows: the deck's cover, then its archetypes. */
 export function starterSlide(d: DeckStarter, i: number, theme: ThemeId): SlideCanvas {
   const id = d.slides[i];
+  const made = d.make?.[i];
+  if (made) return { ...made(theme), layout: id };
   if (id === "cover") return deckCover(d, { theme });
   return layoutCanvas(id, { theme });
 }
@@ -201,13 +263,21 @@ export function addStarterDeck(
   if (fresh || o.theme) c = { ...c, theme: o.theme ?? starter.theme };
   let at = o.at ?? c.steps.length;
   let first: string | null = null;
-  for (const id of starter.slides) {
+  for (const [i, id] of starter.slides.entries()) {
     const r = makeStep(c, "slide", {
       layout: id,
       ...(id === "cover" && o.title ? { title: o.title } : {}),
     });
     let step = r.step;
     if (id === "cover" && starter.cover && !o.title) step = withCover(step, starter);
+    const made = starter.make?.[i];
+    if (made) {
+      const slide: SlideCanvas = { ...made(), layout: id };
+      // the step is titled by the slide's own title
+      const t = slide.blocks.find((b) => b.kind === "text" && b.style === "title");
+      const title = t && t.kind === "text" ? { ...t.text } : step.title;
+      step = { ...step, title, slide, reader: linearText(slide) };
+    }
     c = insertStep(r.course, step, at++);
     first ??= step.id;
   }
@@ -252,19 +322,35 @@ export function deckStarterGallery(
           h(
             "span",
             { class: "ce-deck-meta" },
-            `${d.slides.length} ${fr ? (d.slides.length > 1 ? "diapos" : "diapo") : d.slides.length > 1 ? "slides" : "slide"} · ${
-              theme === "classroom"
-                ? fr
-                  ? "Salle de cours"
-                  : "Classroom"
-                : "Cockpit"
-            }`,
+            d.id === "blank"
+              ? fr
+                ? "1 diapo vierge"
+                : "1 blank slide"
+              : [
+                  d.level ? (fr ? (d.level.fr ?? d.level.en) : d.level.en) : "",
+                  `${d.slides.length} ${fr ? (d.slides.length > 1 ? "diapos" : "diapo") : d.slides.length > 1 ? "slides" : "slide"}`,
+                  theme === "classroom" ? (fr ? "Salle de cours" : "Classroom") : fr ? "Sombre" : "Dark",
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
           ),
         ),
         d.slides.length > 1 ? strip : null,
       );
       card.addEventListener("click", () => onPick(d, theme));
       grid.append(card);
+      if (d.id === "blank") {
+        // a truly empty cover: the card says what you get
+        cover.append(
+          h(
+            "span",
+            { class: "ce-deck-empty", "aria-hidden": "true" },
+            h("i", {}, "+"),
+            h("span", {}, fr ? "Diapo vierge" : "Blank slide"),
+          ),
+        );
+        continue;
+      }
       const opts = {
         lang,
         theme,

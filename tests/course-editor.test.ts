@@ -588,3 +588,98 @@ describe("the checks panel", () => {
     ).toEqual([]);
   });
 });
+
+// ------------------------------------------------------------------ design audit round 1
+import { surfaceNav } from "../src/course/canvas/editorCore";
+import { freeSpot, placeDraft, emptyCanvas, libraryItem } from "../src/course/canvas/factory";
+import { addStarterDeck, BLANK_STARTER, DECK_STARTERS, deckTitle, starterById } from "../src/course/ui/deckStarters";
+
+describe("design audit: the slide surface is one tab stop (roving), never a keyboard trap", () => {
+  const ids = ["a", "b", "c"];
+  it("Tab with nothing selected leaves the surface; arrows and Enter pick a block", () => {
+    expect(surfaceNav({ key: "Tab" }, [], ids)).toEqual({ select: null, leave: true });
+    expect(surfaceNav({ key: "Tab", shiftKey: true }, [], ids)).toEqual({ select: null, leave: true });
+    expect(surfaceNav({ key: "ArrowRight" }, [], ids)).toEqual({ select: ["a"], leave: false });
+    expect(surfaceNav({ key: "Enter" }, [], ids)).toEqual({ select: ["a"], leave: false });
+    expect(surfaceNav({ key: "ArrowLeft" }, [], ids)).toEqual({ select: ["c"], leave: false });
+  });
+  it("Tab walks the blocks, then leaves past the last (forward) or the first (backward)", () => {
+    expect(surfaceNav({ key: "Tab" }, ["a"], ids)).toEqual({ select: ["b"], leave: false });
+    expect(surfaceNav({ key: "Tab" }, ["c"], ids)).toEqual({ select: null, leave: true });
+    expect(surfaceNav({ key: "Tab", shiftKey: true }, ["b"], ids)).toEqual({ select: ["a"], leave: false });
+    expect(surfaceNav({ key: "Tab", shiftKey: true }, ["a"], ids)).toEqual({ select: null, leave: true });
+    // a walk from the first block always ends outside, whatever the length (no cycle)
+    let sel: string[] = ["a"];
+    let out = false;
+    for (let i = 0; i < 10 && !out; i++) {
+      const r = surfaceNav({ key: "Tab" }, sel, ids)!;
+      if (r.leave) out = true;
+      else sel = r.select!;
+    }
+    expect(out).toBe(true);
+  });
+  it("arrows with a selection nudge (not handled here), shortcuts pass through", () => {
+    expect(surfaceNav({ key: "ArrowRight" }, ["a"], ids)).toBeNull();
+    expect(surfaceNav({ key: "Tab", ctrlKey: true }, ["a"], ids)).toBeNull();
+    expect(surfaceNav({ key: "Escape" }, [], ids)).toBeNull();
+  });
+});
+
+describe("design audit: blocks added from the rail never pile up", () => {
+  it("an empty slide takes the first block at the centre, the next ones in free space", () => {
+    let c = emptyCanvas();
+    const frames: { x: number; y: number; w: number; h: number }[] = [];
+    for (const id of ["instrument:hsi", "interactive:quiz", "instrument:alt"]) {
+      const b = placeDraft(c, libraryItem(id)!.make());
+      frames.push(b.frame);
+      c = { ...c, blocks: [...c.blocks, b] };
+    }
+    expect(Math.abs(frames[0].x + frames[0].w / 2 - 960)).toBeLessThanOrEqual(24);
+    const centre = (f: { x: number; y: number; w: number; h: number }) => [f.x + f.w / 2, f.y + f.h / 2];
+    expect(centre(frames[1])).not.toEqual(centre(frames[0]));
+    expect(centre(frames[2])).not.toEqual(centre(frames[1]));
+    // the third block overlaps the first less than if it had landed on it
+    const overlap = (a: typeof frames[0], b: typeof frames[0]) =>
+      Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) *
+      Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+    expect(overlap(frames[2], frames[0])).toBeLessThan(frames[0].w * frames[0].h);
+    expect(freeSpot(emptyCanvas(), 400, 300)).toEqual([960, 540]);
+  });
+});
+
+describe("design audit: starter decks across levels, a truly blank start, cover data that is true", () => {
+  const blank: Course = course({ steps: [], scenes: {} });
+  it("offers LAPL / PPL decks next to the IR ones, each with its own cover words and hero", () => {
+    const levels = DECK_STARTERS.map((d) => d.level?.en ?? "");
+    expect(levels.some((l) => l.includes("PPL"))).toBe(true);
+    expect(levels.some((l) => l.includes("IR"))).toBe(true);
+    const covers = DECK_STARTERS.map((d) => d.cover?.title.fr);
+    expect(new Set(covers).size).toBe(DECK_STARTERS.length);
+    for (const d of DECK_STARTERS) expect(deckTitle(d)).toBeTruthy();
+    const wb = addStarterDeck(blank, starterById("weight-balance")).course;
+    expect(JSON.stringify(wb.steps[0].slide)).toContain("cgEnvelope");
+    expect(JSON.stringify(wb.steps)).not.toContain("Lire la clairance");
+    expect(validateCourse(wb).filter((i) => i.level === "error")).toEqual([]);
+  });
+  it("never writes stale stats on a cover (no '18 steps · about 40 min')", () => {
+    for (const d of DECK_STARTERS) {
+      const c = addStarterDeck(blank, d).course;
+      expect(JSON.stringify(c.steps[0].slide)).not.toMatch(/\d+ (steps|étapes|slides|diapos)/);
+    }
+  });
+  it("starts from scratch with one empty slide", () => {
+    const c = addStarterDeck(blank, BLANK_STARTER).course;
+    expect(c.steps).toHaveLength(1);
+    expect(c.steps[0].slide!.blocks).toEqual([]);
+  });
+});
+
+describe("design audit: an empty slide just added does not raise the pacing advice", () => {
+  it("skips empty slides in a run", () => {
+    const page = (id: string): Step => ({ id, kind: "page", title: L(id), reader: [{ t: "p", text: L("x") }] }) as unknown as Step;
+    const empty = (id: string): Step =>
+      ({ id, kind: "slide", title: L(id), slide: { size: { w: 1920, h: 1080 }, blocks: [] } }) as unknown as Step;
+    expect(pacingRuns([page("a"), page("b"), page("c"), empty("d")])).toEqual([]);
+    expect(pacingRuns([page("a"), page("b"), empty("x"), page("c"), page("d")])).toEqual([[0, 4]]);
+  });
+});

@@ -383,7 +383,7 @@ function templateBlocks(id: SlideLayoutId, o: LayoutOptions): SlideBlock[] {
           744,
           112,
         ),
-        T("foot", o.byline ?? L("18 steps · about 40 min · FAA AIM 5-3-8", "18 étapes · environ 40 min · FAA AIM 5-3-8"), G.left, 912, 840, 32),
+        T("foot", o.byline ?? L("FAA AIM 5-3-8", "FAA AIM 5-3-8"), G.left, 912, 840, 32),
         {
           ...base("d", 984, 96, 816, 888, { alt: L("A holding pattern at ARD", "Une attente à ARD") }),
           kind: "diagram",
@@ -668,7 +668,7 @@ function templateBlocks(id: SlideLayoutId, o: LayoutOptions): SlideBlock[] {
           kind: "checklist",
           title: L("Do this", "À faire"),
           rows: [
-            { text: L("Set the OBS to 090 with a TO flag", "Affichez 090 à l’OBS, flag TO"), check: 0, readout: "obs1" },
+            { text: L("Set the OBS to 090 with a TO flag", "Affichez 090 à l’OBS, indicateur TO"), check: 0, readout: "obs1" },
             { text: L("Turn to heading 120", "Prenez le cap 120"), check: 1, readout: "hdg" },
             { text: L("Bar within 1 dot", "Barre à moins d’un point"), check: 2, readout: "cdiDots" },
           ],
@@ -683,7 +683,7 @@ function templateBlocks(id: SlideLayoutId, o: LayoutOptions): SlideBlock[] {
           controls: ["obs1", "hdgBug"],
           yourTurn: {
             where: "slide",
-            prompt: L("Centre the needle with a TO flag", "Centrez l’aiguille avec un flag TO"),
+            prompt: L("Centre the needle with a TO flag", "Centrez l’aiguille avec l’indicateur TO"),
             controls: ["obs1", "hdgBug"],
             goal: {
               all: [
@@ -701,7 +701,7 @@ function templateBlocks(id: SlideLayoutId, o: LayoutOptions): SlideBlock[] {
           kind: "checklist",
           rows: [
             { text: L("Turn the OBS until the bar centres", "Tournez l’OBS jusqu’à centrer la barre"), check: 1, readout: "cdiDots" },
-            { text: L("With a TO flag", "Avec un flag TO"), check: 0, readout: "toFrom" },
+            { text: L("With a TO flag", "Avec l’indicateur TO"), check: 0, readout: "toFrom" },
           ],
         },
         T(

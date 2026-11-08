@@ -122,10 +122,11 @@ html body .afcs .bkey.on::after {
   cursor: pointer;
   align-content: center;
 }
+/* the readout's caption: 12 px (readable sizes: nothing under 12 px), 6:1 on the key */
 .afcs-val small {
-  font: 700 9px/1.1 var(--font-cond);
-  letter-spacing: 0.8px;
-  color: #8b97a4;
+  font: 700 12px/1.1 var(--font-cond);
+  letter-spacing: 0.4px;
+  color: #9aa6b2;
 }
 .afcs-val b {
   font:

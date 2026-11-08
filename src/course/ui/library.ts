@@ -620,6 +620,9 @@ export class CourseLibrary {
   private searchTimer = 0;
   private destroyed = false;
   private loadSeq = 0;
+  /** the drafts this library has just made ("New course"): never cleared as untouched while the editor opens them
+   *  (the save itself fires a reload, which would delete the draft before the editor can read it) */
+  private readonly ownDrafts = new Set<string>();
   private readonly syncHash: boolean;
   /** a subject to bring into view once the page is drawn (a deep link, a click in the table of contents) */
   private pendingSubject: SubjectId | null = null;
@@ -809,7 +812,7 @@ export class CourseLibrary {
       // "New course" stores a draft at once (the builder needs an id); one left untouched (no step, the default
       // title) is cleared here, so exploring the button never piles up "Untitled course" drafts
       for (const entry of store.list())
-        if (isUntouchedDraft(entry))
+        if (isUntouchedDraft(entry) && !this.ownDrafts.has(entry.id))
           try {
             await store.delete(entry.id);
           } catch {
@@ -3395,6 +3398,7 @@ export class CourseLibrary {
     const s = this.store;
     if (!s) return;
     const id = await s.newId(this.lang === "fr" ? "mon-cours" : "my-course");
+    this.ownDrafts.add(id);
     const title: L10n = { en: "Untitled course", fr: "Cours sans titre" };
     // no step yet: the builder opens on "Start from a beautiful deck"; a course made from a programme's page is filed
     // there, in the subject in view

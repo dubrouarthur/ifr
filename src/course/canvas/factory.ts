@@ -600,7 +600,7 @@ const INTERACTIVE_ITEMS: LibraryItem[] = [
         kind: "mcq",
         prompt: L(
           "The CDI is one dot right with a TO flag. Where is the course?",
-          "Le CDI est à un point à droite, flag TO. Où est la route ?",
+          "Le CDI est à un point à droite, indicateur TO. Où est la route ?",
         ),
         options: [
           { text: L("To my right", "À ma droite") },
@@ -645,7 +645,7 @@ const INTERACTIVE_ITEMS: LibraryItem[] = [
         {
           text: L(
             "Set the OBS to 090 with a TO flag",
-            "Affichez 090 à l’OBS, flag TO",
+            "Affichez 090 à l’OBS, indicateur TO",
           ),
           check: 0,
           readout: "obs1",
@@ -797,17 +797,82 @@ export function searchItems(q: string, tab?: LibraryTab): LibraryItem[] {
 
 // ------------------------------------------------------------------ placing a draft on a slide
 /**
- * Place a draft centred at `at` (slide units; default the slide centre), snapped to the grid, kept on the slide,
+ * Where a new w × h block lands when it is added (not dropped): the centre of the free-est spot of the slide, so
+ * blocks added one after the other never pile up on the same spot. Candidates on a coarse grid inside the margins;
+ * the least overlap with the blocks already there wins, then the nearest to the slide centre (an empty slide:
+ * the centre). Blocks hidden in the editor and full-slide backgrounds do not count.
+ */
+export function freeSpot(c: SlideCanvas, w: number, h: number, grid = c.grid ?? DEFAULT_GRID): Pt {
+  return freePlace(c, w, h, grid).at;
+}
+/**
+ * The free-est spot for a w × h block, and the scale (≤ 1) at which it fits there without covering anything:
+ * full size when it can, else the largest of 85 %, 70 % or 55 % that fits; when nothing fits, full size at the
+ * least-covered spot.
+ */
+export function freePlace(
+  c: SlideCanvas,
+  w: number,
+  h: number,
+  grid = c.grid ?? DEFAULT_GRID,
+): { at: Pt; scale: number } {
+  let first: { at: Pt; o: number } | null = null;
+  for (const k of [1, 0.85, 0.7, 0.55]) {
+    const r = bestSpot(c, w * k, h * k, grid);
+    first ??= r;
+    if (r.o <= 1) return { at: r.at, scale: k };
+  }
+  return { at: first!.at, scale: 1 };
+}
+function bestSpot(c: SlideCanvas, w: number, h: number, grid: number): { at: Pt; o: number } {
+  const M = 96;
+  const step = 48;
+  const frames = c.blocks
+    .filter((b) => !b.hiddenInEditor && !(b.frame.w >= SLIDE_W * 0.9 && b.frame.h >= SLIDE_H * 0.9))
+    .map((b) => b.frame);
+  const cx0 = SLIDE_W / 2;
+  const cy0 = SLIDE_H / 2;
+  if (!frames.length) return { at: [cx0, cy0], o: 0 };
+  const ww = Math.min(w, SLIDE_W - 2 * M);
+  const hh = Math.min(h, SLIDE_H - 2 * M);
+  let best: { o: number; d: number; p: Pt } | null = null;
+  for (let x = M; x + ww <= SLIDE_W - M + 0.5; x += step)
+    for (let y = M; y + hh <= SLIDE_H - M + 0.5; y += step) {
+      let o = 0;
+      for (const f of frames) {
+        const ix = Math.min(x + ww, f.x + f.w) - Math.max(x, f.x);
+        const iy = Math.min(y + hh, f.y + f.h) - Math.max(y, f.y);
+        if (ix > 0 && iy > 0) o += ix * iy;
+      }
+      const p: Pt = [x + ww / 2, y + hh / 2];
+      const d = Math.hypot(p[0] - cx0, p[1] - cy0);
+      if (!best || o < best.o - 1 || (Math.abs(o - best.o) <= 1 && d < best.d)) best = { o, d, p };
+    }
+  const p = best?.p ?? [cx0, cy0];
+  return { at: [snap(p[0], grid), snap(p[1], grid)], o: best?.o ?? 0 };
+}
+/**
+ * Place a draft centred at `at` (slide units; default the free-est spot, see freeSpot), snapped to the grid, kept on the slide,
  * on top of everything. Arrow endpoints and callout targets are translated with it.
  */
 export function placeDraft(
   c: SlideCanvas,
   draft: BlockDraft,
-  at: Pt = [SLIDE_W / 2, SLIDE_H / 2],
+  at?: Pt,
   grid = c.grid ?? DEFAULT_GRID,
 ): SlideBlock {
-  const w = Math.min(SLIDE_W, draft.frame.w);
-  const h = Math.min(SLIDE_H, draft.frame.h);
+  let w = Math.min(SLIDE_W, draft.frame.w);
+  let h = Math.min(SLIDE_H, draft.frame.h);
+  // added from the rail (no drop point): the free-est spot, a little smaller if that keeps it clear of the
+  // blocks already there (never piled on the last one). Arrows keep their drawn length.
+  if (!at) {
+    const r = freePlace(c, w, h, grid);
+    at = r.at;
+    if (r.scale < 1 && draft.kind !== "arrow" && draft.kind !== "callout") {
+      w = snap(w * r.scale, grid);
+      h = snap(h * r.scale, grid);
+    }
+  }
   let x = snap(at[0] - w / 2, grid);
   let y = snap(at[1] - h / 2, grid);
   const f0: BlockFrame = {

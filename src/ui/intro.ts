@@ -65,11 +65,31 @@ export const INTRO_REFS: readonly { org: string; docs: string }[] = [
   { org: "EASA", docs: "Part-FCL, Part-NCO" },
 ];
 
-/** the intro is shown unless the user skipped it, a deep link asks for a flight, or a test browser drives the page
- *  (?intro=1 forces it) */
+/** set for the browser session once the page has been shown (sessionStorage): it is a welcome, not a gate */
+export const INTRO_SEEN_KEY = "ifr.intro.seen";
+
+function sessionSeen(): boolean {
+  try {
+    return sessionStorage.getItem(INTRO_SEEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+function markSessionSeen() {
+  try {
+    sessionStorage.setItem(INTRO_SEEN_KEY, "1");
+  } catch {
+    /* storage blocked */
+  }
+}
+
+/** the intro is shown once per browser session, unless the user skipped it for good, a deep link asks for a flight,
+ *  the user comes back from a course (the academy page), or a test browser drives the page (?intro=1 forces it) */
 export function introWanted(
   loc: Pick<Location, "search" | "hash"> = location,
   nav: { webdriver?: boolean } = navigator,
+  referrer: string = typeof document !== "undefined" ? document.referrer : "",
+  seen: boolean = sessionSeen(),
 ): boolean {
   const q = new URLSearchParams(loc.search);
   if (q.get("intro") === "1") return true;
@@ -80,6 +100,8 @@ export function introWanted(
   )
     return false;
   if (nav.webdriver) return false;
+  // a round trip from a course (academy.html) or a second visit in the same session goes straight to the app
+  if (seen || /\/academy\.html(?:[?#]|$)/.test(referrer)) return false;
   return !store.get(INTRO_SKIP_KEY, false);
 }
 
@@ -157,6 +179,7 @@ export class Intro {
   hide() {
     if (!this.isOpen) return;
     this.isOpen = false;
+    markSessionSeen();
     this.teardown();
     this.offLang?.();
     this.offLang = null;

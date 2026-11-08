@@ -549,7 +549,7 @@ describe("holds", () => {
     expect(r.help).toHaveLength(2);
     expect(r.headline).toBe("Teardrop entry, 3,000 ft held within 74 ft");
     expect(r.eyebrow).toMatch(
-      /^ACS IR\.III\.B holding · PA · inbound 270° · right turns · 3,000 ft/,
+      /^Holding · PA · inbound 270° · right turns · 3,000 ft.* · FAA ACS IR\.III\.B$/,
     );
     const ids = r.standards.map((s) => s.id);
     expect(ids).toEqual(
@@ -697,7 +697,8 @@ describe("approaches (recorder ACS items)", () => {
       }),
     );
     expect(r.outcome).toBe("not-met");
-    expect(r.eyebrow.startsWith("ACS IR.VI.B precision approach")).toBe(true);
+    expect(r.eyebrow.startsWith("Precision approach")).toBe(true);
+    expect(r.taskRef).toBe("FAA ACS IR.VI.B");
     expect(r.metCount).toBe(4);
     expect(r.gradedCount).toBe(5);
     expect(r.standards[0].id).toBe("acs.pubAlt");

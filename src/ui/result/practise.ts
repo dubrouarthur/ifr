@@ -128,7 +128,7 @@ export function practiseNext(rep: ResultReport, c: PractiseCtx): NextPlan {
       kind: "restart",
       label: tx(L, "pn.restart"),
       sub: tx(L, "pn.restartSub", { m }),
-      action: tx(L, "pn.act.fly"),
+      action: tx(L, "pn.act.restart"),
     };
     if (r === "lost") {
       items.push(restart, brief(true));

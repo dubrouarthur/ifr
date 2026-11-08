@@ -59,15 +59,23 @@ export function pacingRuns(
   min: number = COURSE_LIMITS.pacingRun,
 ): [number, number][] {
   const out: [number, number][] = [];
+  // an empty slide just added is not "explaining without a task" yet: it neither counts nor breaks a run
   let start = -1;
+  let last = -1;
+  let n = 0;
   steps.forEach((s, i) => {
+    if (s.slide && !s.slide.blocks.length) return;
     if (hasStudentAction(s)) {
-      if (start >= 0 && i - start >= min) out.push([start, i - 1]);
+      if (start >= 0 && n >= min) out.push([start, last]);
       start = -1;
-    } else if (start < 0) start = i;
+      n = 0;
+    } else {
+      if (start < 0) start = i;
+      last = i;
+      n++;
+    }
   });
-  if (start >= 0 && steps.length - start >= min)
-    out.push([start, steps.length - 1]);
+  if (start >= 0 && n >= min) out.push([start, last]);
   return out;
 }
 /** The left column's amber advisory: "Steps 8 to 11 explain without a task. A Try it in between keeps students doing." */

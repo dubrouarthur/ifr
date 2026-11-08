@@ -939,9 +939,18 @@ function quizBlock(b: Of<"quiz">, env: BlockEnv): BlockView {
               x.classList.toggle("is-right", j === q.answer);
               x.classList.toggle("is-wrong", j === i && i !== q.answer);
               const state = x.querySelector(".sl-q-state");
-              if (state) state.textContent = j === q.answer ? tx("quizRight", env.lang) : j === i ? tx("quizYours", env.lang) : "";
+              // never colour alone: a mark and a word on both cards
+              if (state)
+                state.textContent =
+                  j === q.answer
+                    ? `✓ ${i === q.answer ? tx("quizRight", env.lang) : tx("quizRightAnswer", env.lang)}`
+                    : j === i
+                      ? `✗ ${tx("quizWrong", env.lang)}`
+                      : "";
             });
-            why.replaceChildren(richFragment(loc(o.why ?? q.explain, env.lang), { lang: env.lang }));
+            // the live region says the result first, then why
+            const verdict = mk("b", "", `${i === q.answer ? tx("quizRight", env.lang) : tx("quizWrong", env.lang).split(" · ")[0]}. `);
+            why.replaceChildren(verdict, richFragment(loc(o.why ?? q.explain, env.lang), { lang: env.lang }));
             why.classList.remove("is-reserve");
             env.fire("answered");
           });

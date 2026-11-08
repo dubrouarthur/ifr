@@ -71,6 +71,7 @@ import { LAYOUTS, layoutCanvas } from "../canvas/layouts";
 import { baseThemeId, THEMES, THEME_IDS } from "../canvas/themes";
 import { renderThumb } from "../canvas/render";
 import { blockLabel } from "../canvas/blocks";
+import { viewTitle } from "../canvas/factory";
 import type { EditorCommand } from "../canvas/editorCore";
 import {
   explainRegion,
@@ -404,6 +405,17 @@ export function field(
   control: Node,
   o: { badge?: Node | null; wide?: boolean } = {},
 ): HTMLElement {
+  // the caption names the control for assistive tech (a visible caption alone is not tied to the input)
+  const ctl =
+    typeof HTMLElement !== "undefined" && control instanceof HTMLElement && typeof control.matches === "function"
+      ? control.matches("input, select, textarea")
+        ? control
+        : control.querySelectorAll("input, select, textarea").length === 1
+          ? control.querySelector<HTMLElement>("input, select, textarea")
+          : null
+      : null;
+  if (ctl && !ctl.hasAttribute("aria-label") && !ctl.hasAttribute("aria-labelledby") && label)
+    ctl.setAttribute("aria-label", label);
   return h(
     "div",
     { class: `ce-field${o.wide ? " wide" : ""}` },
@@ -558,22 +570,23 @@ const CONTROL_LABEL: Record<StageControl, L10n> = {
   bank: L("Bank", "Inclinaison"),
   pitch: L("Pitch", "Assiette"),
   power: L("Power", "Puissance"),
-  cdiSource: L("CDI source", "Source CDI"),
-  brg1: L("BRG1", "BRG1"),
-  brg2: L("BRG2", "BRG2"),
+  cdiSource: L("Navigation source (CDI)", "Source de navigation (CDI)"),
+  brg1: L("Bearing pointer 1", "Aiguille de relèvement 1"),
+  brg2: L("Bearing pointer 2", "Aiguille de relèvement 2"),
   dragAircraft: L("Drag aircraft", "Déplacer l’avion"),
   ap: L("Autopilot", "Pilote auto"),
 };
 const ALL_CONTROLS = Object.keys(CONTROL_LABEL) as StageControl[];
 const STYLE_LABEL: Record<TextStyle, L10n> = {
-  display: L("Display", "Affiche"),
+  // the same names as the canvas format bar (canvas/editor.ts STYLES): one style, one name everywhere
+  display: L("Cover title", "Titre de couverture"),
   title: L("Title", "Titre"),
-  lead: L("Lead", "Chapeau"),
-  subtitle: L("Lead", "Chapeau"),
+  lead: L("Subtitle", "Sous-titre"),
+  subtitle: L("Subtitle", "Sous-titre"),
   heading: L("Heading", "Intertitre"),
   body: L("Body", "Texte"),
-  small: L("Small", "Petit"),
-  caption: L("Small", "Petit"),
+  small: L("Caption", "Légende"),
+  caption: L("Caption", "Légende"),
   eyebrow: L("Eyebrow", "Surtitre"),
   label: L("Eyebrow", "Surtitre"),
   foot: L("Source line", "Ligne de source"),
@@ -596,6 +609,7 @@ const STYLE_PICK: TextStyle[] = [
   "quote",
   "formula",
 ];
+const STYLE_COMMON: TextStyle[] = ["title", "lead", "body", "small", "number"];
 const STYLE_ALIAS: Partial<Record<TextStyle, TextStyle>> = {
   subtitle: "lead",
   caption: "small",
@@ -2570,6 +2584,21 @@ export class Inspector {
       s.stage?.assist?.holdIas ||
       (s.stage?.assist?.timeScale ?? 1) > 1
     );
+    // a goal is checked by the sim: a slide with no instrument and no sim view has nothing to check (no
+    // OBS / CDI / altitude suggestions on a plain cover)
+    const flies =
+      !s.slide ||
+      s.slide.blocks.some((b) => b.kind === "instrument" || b.kind === "simViewport");
+    if (!goal && !flies)
+      return [
+        note(
+          this.t(
+            "This slide only presents. A goal needs an instrument or a sim view on the slide: add one from Instruments or Interactive, then the sim can tick “Do this” rows live.",
+            "Cette diapo présente seulement. Un objectif demande un instrument ou une fenêtre simulateur sur la diapo : ajoutez-en un depuis Instruments ou Interactif, et le simulateur pourra cocher les lignes « À faire ».",
+          ),
+          "",
+        ),
+      ];
     if (!goal)
       return [
         note(
@@ -2896,7 +2925,7 @@ export class Inspector {
         "muted",
       ),
       field(
-        this.t("Minutes", "Minutes"),
+        this.t("Duration", "Durée"),
         numIn(
           s.minutes,
           (v) =>
@@ -2906,59 +2935,82 @@ export class Inspector {
           { min: 0.5, max: 60, step: 0.5, w: 90, unit: "min" },
         ),
       ),
-      this.l10n(
-        this.t("Hint", "Indice"),
-        s.hint,
-        (v) => this.edit("hint", (x) => (x.hint = v)),
-        {
-          multi: true,
-          rows: 2,
-          ph: this.t(
-            "Shown when the student asks",
-            "Affiché quand l’élève le demande",
-          ),
-        },
-      ),
-      sw(
-        s.audience === "intro",
-        (on) =>
-          this.edit(
-            undefined,
-            (x) => (on ? (x.audience = "intro") : delete x.audience),
-            true,
-          ),
-        this.t("Introduction only", "Introduction seulement"),
-        {
-          sub: this.t("Skipped in refresher runs", "Sauté lors des révisions"),
-        },
-      ),
-      group(
-        this.t("Shown at guidance levels", "Affiché aux niveaux de guidage"),
-        [
-          chips(
-            LEVELS.map((l) => ({
-              value: l.v,
-              label: tr(l.l, this.lang),
-              on: !s.levels?.length || s.levels.includes(l.v),
-            })),
-            (v, on) =>
-              this.edit(
-                undefined,
-                (x) => {
-                  const cur = new Set(
-                    x.levels?.length ? x.levels : LEVELS.map((l) => l.v),
-                  );
-                  if (on) cur.add(v);
-                  else cur.delete(v);
-                  x.levels = LEVELS.map((l) => l.v).filter((k) => cur.has(k));
-                  if (x.levels.length === LEVELS.length || !x.levels.length)
-                    delete x.levels;
+      // the rest is for lessons with guidance levels: folded, each with one line that says what it does
+      (() => {
+        const det = h(
+          "details",
+          { class: "ce-adv" },
+          h("summary", {}, this.t("Advanced", "Avancé")),
+          h(
+            "div",
+            { class: "ce-adv-b" },
+            ...kids([
+              this.l10n(
+                this.t("Hint", "Indice"),
+                s.hint,
+                (v) => this.edit("hint", (x) => (x.hint = v)),
+                {
+                  multi: true,
+                  rows: 2,
+                  ph: this.t(
+                    "A clue the student can open when stuck",
+                    "Un coup de pouce que l’élève peut ouvrir s’il bloque",
+                  ),
                 },
-                true,
               ),
+              sw(
+                s.audience === "intro",
+                (on) =>
+                  this.edit(
+                    undefined,
+                    (x) => (on ? (x.audience = "intro") : delete x.audience),
+                    true,
+                  ),
+                this.t("Introduction only", "Introduction seulement"),
+                {
+                  sub: this.t("Skipped in refresher runs", "Sauté lors des révisions"),
+                },
+              ),
+              group(
+                this.t("Shown at guidance levels", "Affiché aux niveaux de guidage"),
+                [
+                  note(
+                    this.t(
+                      "Ticked: shown at that level. From Guided (every cue) to Test (no help).",
+                      "Coché : affiché à ce niveau. De Guidé (toutes les aides) à Test (aucune aide).",
+                    ),
+                    "muted",
+                  ),
+                  chips(
+                    LEVELS.map((l) => ({
+                      value: l.v,
+                      label: tr(l.l, this.lang),
+                      on: !s.levels?.length || s.levels.includes(l.v),
+                    })),
+                    (v, on) =>
+                      this.edit(
+                        undefined,
+                        (x) => {
+                          const cur = new Set(
+                            x.levels?.length ? x.levels : LEVELS.map((l) => l.v),
+                          );
+                          if (on) cur.add(v);
+                          else cur.delete(v);
+                          x.levels = LEVELS.map((l) => l.v).filter((k) => cur.has(k));
+                          if (x.levels.length === LEVELS.length || !x.levels.length)
+                            delete x.levels;
+                        },
+                        true,
+                      ),
+                  ),
+                ],
+              ),
+            ]),
           ),
-        ],
-      ),
+        );
+        if (s.hint || s.audience === "intro" || s.levels?.length) det.open = true;
+        return det;
+      })(),
     ];
   }
 
@@ -3693,7 +3745,7 @@ export class Inspector {
             )
           : null,
       ]),
-      group(this.t("Criteria (ACS words)", "Critères (termes ACS)"), [
+      group(this.t("Pass criteria", "Critères de réussite"), [
         tg.kind === "lesson"
           ? note(
               this.t(
@@ -3791,8 +3843,10 @@ export class Inspector {
       { value: "calc", label: this.t("Calc", "Calcul") },
     ];
     const out: Kid[] = [
+      // six kinds: two rows of three, every label whole at the inspector's width (FR is the longer language)
       seg(kinds, q.kind, (k) => set(quizOfKind(k, q)), {
         full: true,
+        cls: "ce-seg-wrap",
         label: this.t("Kind of question", "Type de question"),
       }),
     ];
@@ -3872,10 +3926,7 @@ export class Inspector {
                     `q.w${i}`,
                   ),
                 {
-                  ph: this.t(
-                    "Shown after the answer",
-                    "Affiché après la réponse",
-                  ),
+                  ph: this.t("Optional", "Facultatif"),
                 },
               ),
             ),
@@ -4302,9 +4353,16 @@ export class Inspector {
     );
     // common
     const f = b.frame;
+    const NAMES: Record<"x" | "y" | "w" | "h" | "rot", string> = {
+      x: this.t("Position X", "Position X"),
+      y: this.t("Position Y", "Position Y"),
+      w: this.t("Width", "Largeur"),
+      h: this.t("Height", "Hauteur"),
+      rot: this.t("Rotation", "Rotation"),
+    };
     const fr = (k: "x" | "y" | "w" | "h" | "rot") =>
       numIn(
-        f[k],
+        k === "rot" ? (f.rot ?? 0) : f[k],
         (v) =>
           v !== undefined &&
           setB(
@@ -4314,22 +4372,28 @@ export class Inspector {
             `frame.${k}`,
             false,
           ),
-        { step: k === "rot" ? 1 : 24 },
+        { step: k === "rot" ? 1 : 24, label: NAMES[k], unit: k === "rot" ? "°" : "px" },
       );
+    // exact numbers are for later: folded under "Position and size" (drag on the slide does the same)
+    const adv = h(
+      "details",
+      { class: "ce-adv" },
+      h("summary", {}, this.t("Position and size", "Position et taille")),
+      h(
+        "div",
+        { class: "ce-grid4 ce-xywh" },
+        field("X", fr("x")),
+        field("Y", fr("y")),
+        field(this.t("Width", "Largeur"), fr("w")),
+        field(this.t("Height", "Hauteur"), fr("h")),
+        field(this.t("Rotation", "Rotation"), fr("rot")),
+      ),
+    );
     out.push(
-      group(this.t("Position", "Position"), [
-        h(
-          "div",
-          { class: "ce-grid4" },
-          field("X", fr("x")),
-          field("Y", fr("y")),
-          field("W", fr("w")),
-          field("H", fr("h")),
-        ),
+      group(this.t("Arrange", "Disposition"), [
         h(
           "div",
           { class: "ce-row" },
-          field(this.t("Rotation", "Rotation"), fr("rot")),
           btn(
             f.locked
               ? this.t("Unlock", "Déverrouiller")
@@ -4348,6 +4412,7 @@ export class Inspector {
             title: this.t("Delete", "Supprimer"),
           }),
         ),
+        adv,
         sw(
           !!b.presenterOnly,
           (on) =>
@@ -4523,14 +4588,28 @@ export class Inspector {
             { multi: true, rows: 4 },
           ),
           group(T("Style", "Style"), [
-            chips(
-              STYLE_PICK.map((s) => ({
-                value: s,
-                label: tr(STYLE_LABEL[s], this.lang),
-                on: (STYLE_ALIAS[b.style] ?? b.style) === s,
-              })),
-              (s) => setB((x) => ((x as typeof b).style = s)),
-            ),
+            // the five everyday styles; the rest one tap away (open when the block already uses one of them)
+            ...(() => {
+              const cur = STYLE_ALIAS[b.style] ?? b.style;
+              const pick = (list: TextStyle[]) =>
+                chips(
+                  list.map((s) => ({
+                    value: s,
+                    label: tr(STYLE_LABEL[s], this.lang),
+                    on: cur === s,
+                  })),
+                  (s) => setB((x) => ((x as typeof b).style = s)),
+                );
+              const more = STYLE_PICK.filter((s) => !STYLE_COMMON.includes(s));
+              const det = h(
+                "details",
+                { class: "ce-adv ce-more-styles" },
+                h("summary", {}, T("More styles", "Plus de styles")),
+                h("div", { class: "ce-adv-b" }, pick(more)),
+              );
+              if (more.includes(cur)) det.open = true;
+              return [pick(STYLE_COMMON), det];
+            })(),
             h(
               "div",
               { class: "ce-row" },
@@ -5047,46 +5126,51 @@ export class Inspector {
     setB: (f: (x: SlideBlock) => void, key?: string, render?: boolean) => void,
   ): Kid[] {
     const T = this.t.bind(this);
-    const views: { label: string; v: InstrumentView }[] = [
-      { label: "PFD", v: { kind: "pfd" } },
-      { label: "MFD", v: { kind: "mfd" } },
-      { label: T("Six-pack", "Six-pack"), v: { kind: "six" } },
-      { label: "HSI", v: { kind: "gauge", gauge: "hsi" } },
-      { label: "AI", v: { kind: "gauge", gauge: "ai" } },
-      { label: "ASI", v: { kind: "gauge", gauge: "asi" } },
-      { label: "ALT", v: { kind: "gauge", gauge: "alt" } },
-      { label: "VSI", v: { kind: "gauge", gauge: "vsi" } },
-      { label: "TC", v: { kind: "gauge", gauge: "tc" } },
-      { label: "CDI", v: { kind: "gauge", gauge: "cdi" } },
-      { label: "RMI", v: { kind: "gauge", gauge: "rmi" } },
-      {
-        label: T("PFD attitude", "Horizon PFD"),
-        v: { kind: "gauge", gauge: "pfd.attitude" },
-      },
-      {
-        label: T("PFD HSI", "HSI PFD"),
-        v: { kind: "gauge", gauge: "pfd.hsi" },
-      },
-      { label: T("Radios", "Radios"), v: { kind: "gauge", gauge: "radios" } },
-      { label: T("Map", "Carte"), v: { kind: "gauge", gauge: "mfd.map" } },
-      { label: T("Liner PFD", "PFD liner"), v: { kind: "airlinerPfd" } },
-      { label: "ND", v: { kind: "nd" } },
+    // full names first (the acronym only where pilots say it: HSI, RMI…), in two plain groups
+    const name = (v: InstrumentView) => tr(viewTitle(v), this.lang);
+    const classic: InstrumentView[] = [
+      { kind: "six" },
+      { kind: "gauge", gauge: "ai" },
+      { kind: "gauge", gauge: "asi" },
+      { kind: "gauge", gauge: "alt" },
+      { kind: "gauge", gauge: "vsi" },
+      { kind: "gauge", gauge: "tc" },
+      { kind: "gauge", gauge: "hsi" },
+      { kind: "gauge", gauge: "cdi" },
+      { kind: "gauge", gauge: "rmi" },
+      { kind: "gauge", gauge: "radios" },
+    ];
+    const glass: InstrumentView[] = [
+      { kind: "pfd" },
+      { kind: "mfd" },
+      { kind: "gauge", gauge: "pfd.attitude" },
+      { kind: "gauge", gauge: "pfd.hsi" },
+      { kind: "gauge", gauge: "mfd.map" },
+      { kind: "airlinerPfd" },
+      { kind: "nd" },
     ];
     const cur = JSON.stringify(b.view);
     const calcSteps = this.host.course.steps.filter((s) => s.kind === "calc");
     const frozen = (b.mode ?? "frozen") === "frozen";
     return [
       group(T("Instrument", "Instrument"), [
-        chips(
-          views.map((x) => ({
-            value: JSON.stringify(x.v),
-            label: x.label,
-            on: JSON.stringify(x.v) === cur,
-          })),
+        selectIn<string>(
+          [
+            {
+              group: T("Classic instruments", "Instruments classiques"),
+              opts: classic.map((v) => ({ value: JSON.stringify(v), label: name(v) })),
+            },
+            {
+              group: T("Glass cockpit screens", "Écrans glass cockpit"),
+              opts: glass.map((v) => ({ value: JSON.stringify(v), label: name(v) })),
+            },
+          ],
+          cur,
           (v) =>
             setB(
               (x) => ((x as typeof b).view = JSON.parse(v) as InstrumentView),
             ),
+          { label: T("Instrument", "Instrument") },
         ),
         sw(
           b.bezel !== false,
@@ -5341,7 +5425,7 @@ export class Inspector {
               ? h(
                   "span",
                   { class: "ce-tag" },
-                  `${this.t("reveal", "app.")} ${b.reveal.order}`,
+                  `${this.t("Click", "Clic")} ${b.reveal.order}`,
                 )
               : null,
             b.frame.locked ? ico("lock") : null,
@@ -5368,22 +5452,7 @@ export class Inspector {
       this.l10n(this.t("Step title", "Titre de l’étape"), s.title, (v) =>
         this.edit("title", (x) => (x.title = v)),
       ),
-      group(this.t("Layout", "Mise en page"), [
-        layoutPicker(this.lang, c.layout, course, (id) => {
-          const prev = this.host.step;
-          const next = layoutCanvas(id, {
-            ...(c.scene ? { scene: c.scene } : {}),
-            title: s.title,
-          });
-          delete next.theme;
-          this.host.setSlide(next);
-          this.host.toast(
-            this.t("Layout applied", "Mise en page appliquée"),
-            () => this.set(prev, undefined, true),
-          );
-          this.render();
-        }),
-      ]),
+      // the layout is changed in one place: the canvas toolbar's Layout (no second grid here)
       group(this.t("Course theme", "Thème du cours"), [
         // one theme per course (SPEC slides v2 §4): picking here changes every slide
         themePicker(this.lang, baseThemeId(course.theme), (id) => {

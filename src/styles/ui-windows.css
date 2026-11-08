@@ -537,3 +537,16 @@ body .drawer.left.ios.open { transform: none; }
 .modal .hold-diagram rect[fill='#2a2508'] { fill: #fff4e0; }
 .modal .hold-diagram text[fill='#ffe600'] { fill: #9a5b00; }
 .dbf .chartbox p.muted { font-size: 13.5px; margin: 0; }
+
+/* a dialog takes the focus when it opens (the box, or its heading): no ring on these programmatic targets */
+.modal:focus,
+.modal h1[tabindex="-1"]:focus,
+.modal h2[tabindex="-1"]:focus {
+  outline: none;
+}
+/* (the global :focus-visible ring is !important: these programmatic targets opt out the same way) */
+.modal-bg .modal:focus-visible,
+.modal-bg .modal h1[tabindex="-1"]:focus-visible,
+.modal-bg .modal h2[tabindex="-1"]:focus-visible {
+  box-shadow: none !important;
+}

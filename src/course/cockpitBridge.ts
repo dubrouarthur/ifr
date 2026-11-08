@@ -118,6 +118,8 @@ export interface BriefExtras {
 export interface FlyOutcome {
   passed: boolean;
   durationSec: number;
+  /** the attempt ended before the end (stopped, not graded): the course does not tick it as flown */
+  ungraded?: boolean;
   selfGrade?: "nailed" | "close" | "notyet";
   historyId?: string;
   procResults?: unknown[];
@@ -307,6 +309,7 @@ export class CourseBridge {
         secs: o.durationSec || (Date.now() - this.started) / 1000,
         ...(o.historyId ? { historyId: o.historyId } : {}),
         ...(o.procResults ? { procResults: o.procResults } : {}),
+        ...(o.ungraded ? { ungraded: true } : {}),
       }).catch(() => null);
     }
     return this.returnUrl();

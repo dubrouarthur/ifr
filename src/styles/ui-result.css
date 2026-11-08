@@ -468,15 +468,15 @@ body.touch .rs-lang button {
   display: block;
   font-family: var(--font);
 }
+/* chart words at 12 px at least (readable sizes): the lane names in sentence case so they fit their gutter */
 .rs-tlc .lane-l {
-  font: 600 10.5px var(--font);
+  font: 600 12px var(--font);
   fill: var(--muted);
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
+  letter-spacing: 0;
 }
 .rs-tlc .unit,
 .rs-tlc .tick {
-  font-size: 10.5px;
+  font-size: 12px;
   fill: var(--muted);
 }
 .rs-tlc .ph {
@@ -489,7 +489,7 @@ body.touch .rs-lang button {
   fill: url(#rs-hatch);
 }
 .rs-tlc .ph-t {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   fill: var(--text);
 }
@@ -607,7 +607,7 @@ body.touch .rs-lang button {
   fill: var(--warn);
 }
 .rs-tlc .ev-t {
-  font-size: 11px;
+  font-size: 12px;
   fill: var(--text-2);
 }
 
@@ -2126,7 +2126,7 @@ body.touch .dbx-std button.n::after {
   fill: transparent;
 }
 .dbx-lanes .none {
-  font-size: 11px;
+  font-size: 12px;
   fill: var(--muted);
   font-style: italic;
 }

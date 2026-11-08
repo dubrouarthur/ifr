@@ -8,7 +8,7 @@ import type { Failures } from "../../sim/sim";
 import { applyScene, type SceneDiff } from "../scene";
 import { stageView, lateralDots, verticalDots } from "../goals";
 import { instrumentFrame, type PaneFrame } from "../stage/geometry";
-import { instrumentScreen } from "./factory";
+import { DEMO_SCENE_ID, instrumentScreen } from "./factory";
 import {
   drawFrame,
   newInstrumentStates,
@@ -84,7 +84,9 @@ export class SceneSims implements LoopClient {
         entry = null;
       }
     }
-    this.map.set(k, entry);
+    // a scene that is not there yet (the demo scene is added by the first view that needs it, a capture may
+    // arrive later) is looked up again next time: never cache a miss
+    if (entry) this.map.set(k, entry);
     return entry;
   }
   /** Re-apply a scene (Reset). */
@@ -174,7 +176,9 @@ export class SlideInstrument {
     this.frame = instrumentFrame(o.view, sims.env.cockpit ?? "g1000");
     this.states = newInstrumentStates();
     this.mode = o.mode ?? "frozen";
-    this.entry = sims.get(o.scene, o.failures);
+    // a thumbnail never shows the "capture it" error: it falls back to the sample scene (a static instrument)
+    this.entry =
+      sims.get(o.scene, o.failures) ?? (o.still ? sims.get(DEMO_SCENE_ID, o.failures) : null);
     const gauge = this.frame.kind === "gauge";
     this.el = document.createElement("div");
     this.el.className = `sl-inst cs-scope${gauge ? " is-gauge" : " is-display"}${o.bezel === false ? " no-bezel" : ""}`;

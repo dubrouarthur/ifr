@@ -10,7 +10,7 @@
 // owns its geometry, its menus and its persistence. The geometry helpers are pure and unit-tested.
 import { h, fmtTime, store } from "./dom";
 import { svgIcon, I } from "./icons";
-import { registerStrings, t as tr } from "./i18n";
+import { registerStrings, t as tr, tn, onLangChange } from "./i18n";
 
 registerStrings("en", {
   "lw.stepOf": "Step {n} of {t}",
@@ -31,6 +31,65 @@ registerStrings("fr", {
   "lw.more": "Indice et autres étapes",
   "lw.showHint": "Afficher l’indice",
   "lw.setupDone": "{n} sur {t} faits",
+});
+// the window's other words, keyed by their English text (English needs no table: t() falls back to the key)
+registerStrings("en", {
+  "lw.todo": "{n} settings to do",
+  "lw.todo.1": "{n} setting to do",
+});
+registerStrings("fr", {
+  "lw.todo": "{n} réglages à faire",
+  "lw.todo.1": "{n} réglage à faire",
+  "Move the window: drag it, or use the arrow keys": "Déplacer la fenêtre : faites-la glisser, ou utilisez les flèches",
+  "Drag to move the window anywhere": "Faites glisser pour déplacer la fenêtre",
+  "Exercise time": "Temps de l’exercice",
+  "Open the approach plate in the EFB": "Ouvrir la carte d’approche dans l’EFB",
+  Plate: "Carte",
+  Enlarge: "Agrandir",
+  "Normal size": "Taille normale",
+  "Float the window": "Détacher la fenêtre",
+  "Float the window (drag the header to move it)": "Détacher la fenêtre (faites glisser l’en-tête pour la déplacer)",
+  "Dock the window": "Ancrer la fenêtre",
+  "Exercise options": "Options de l’exercice",
+  Collapse: "Replier",
+  "Exercise progress": "Progression de l’exercice",
+  "More below": "Suite plus bas",
+  "Resize the window: drag, or use the arrow keys": "Redimensionner la fenêtre : faites glisser, ou utilisez les flèches",
+  "Drag to resize": "Faites glisser pour redimensionner",
+  "tap to expand": "touchez pour déplier",
+  "Expand the exercise window. {s}: {t}": "Déplier la fenêtre de l’exercice. {s} : {t}",
+  "Resume the flight": "Reprendre le vol",
+  Complete: "Terminé",
+  Hint: "Indice",
+  Steps: "Étapes",
+  "Set up complete": "Préparation terminée",
+  "Set up": "Préparation",
+  "Set every remaining item for me (the debrief notes it)": "Tout régler pour moi (le débriefing le note)",
+  "Set all ({n})": "Tout régler ({n})",
+  Hide: "Masquer",
+  Show: "Afficher",
+  "Setup checklist": "Liste de préparation",
+  " (done)": " (fait)",
+  " (to do)": " (à faire)",
+  "{a} it for me: {l} (the debrief notes it)": "{a} pour moi : {l} (le débriefing le note)",
+  Tune: "Accorder",
+  Set: "Régler",
+  Select: "Sélectionner",
+  Load: "Charger",
+  Cues: "Repères",
+  "Show the cues": "Afficher les repères",
+  "Hide the cues": "Masquer les repères",
+  "End this exercise?": "Terminer cet exercice ?",
+  "You go to the debrief. An exercise you end is not graded.": "Vous passez au débriefing. Un exercice arrêté avant la fin n’est pas noté.",
+  "Keep flying": "Continuer à voler",
+  "End exercise": "Terminer l’exercice",
+  "Enlarge (reading size)": "Agrandir (taille de lecture)",
+  "Reset position": "Réinitialiser la position",
+  "Restart exercise…": "Recommencer l’exercice…",
+  "End exercise…": "Terminer l’exercice…",
+  "Drop here to dock": "Déposez ici pour ancrer",
+  "Exercise paused: emergency": "Exercice en pause : urgence",
+  "Exercise paused while you handle the emergency": "Exercice en pause pendant que vous traitez l’urgence",
 });
 
 // ------------------------------------------------------------------ data interface
@@ -72,6 +131,9 @@ export interface LessonView {
   resume?: boolean;
   /** a checkride or a test: no coaching, no setup help */
   quiet?: boolean;
+  /** an emergency is being flown (its card is open): the window folds to one pill, "Exercise paused:
+   *  emergency", so one instruction is on screen; a tap on the pill still opens it */
+  emergency?: boolean;
 }
 
 export type LessonAction =
@@ -414,6 +476,8 @@ export class LessonWindow {
   private details = store.get("ifr.lessonWin.details", false);
   /** the setup list unfolded while everything is set */
   private setupAllOpen = false;
+  /** the information lines (entry, timing) unfolded from their one "Cues" line */
+  private cuesOpen = false;
   private bodyKey = "";
   private watch: LessonWatch | null = null;
   private peek = false;
@@ -443,6 +507,8 @@ export class LessonWindow {
   private readonly pillStep: HTMLElement;
   private readonly pillText: HTMLElement;
   private readonly pillTime: HTMLElement;
+  /** the settings still to do, on the one-line pill (the portrait strip): the next action is never hidden */
+  private readonly pillTodo: HTMLElement;
   private readonly sizeGrip: HTMLButtonElement;
   private readonly menu: HTMLElement;
   private readonly onResize = () => this.render();
@@ -511,7 +577,7 @@ export class LessonWindow {
         },
       },
       svgIcon(I.document, 15),
-      h("span", {}, "Plate"),
+      h("span", {}, tr("Plate")),
     );
     this.bigBtn = hb("lw-opt lw-big", "Enlarge", lineIcon(IC.enlarge), () =>
       this.setEnlarged(!this.st.enlarged),
@@ -530,9 +596,14 @@ export class LessonWindow {
     );
     this.menuBtn.setAttribute("aria-haspopup", "menu");
     this.menuBtn.setAttribute("aria-expanded", "false");
-    this.foldBtn = hb("lw-fold", "Collapse", svgIcon(I.chevUp, 16), () =>
-      this.setCollapsed(true),
-    );
+    this.foldBtn = hb("lw-fold", "Collapse", svgIcon(I.chevUp, 16), () => {
+      // opened from the emergency pill: folding goes back to that pill, the pilot's own fold is kept
+      if (this.view?.emergency && this.emOpen) {
+        this.emOpen = false;
+        this.render();
+        this.pill.focus({ preventScroll: true });
+      } else this.setCollapsed(true);
+    });
     this.head = h(
       "header",
       { class: "lw-h" },
@@ -574,23 +645,30 @@ export class LessonWindow {
           });
         },
       },
-      h("span", {}, "More below", svgIcon(I.chevDown, 14)),
+      h("span", {}, h("span", { class: "lw-cue-t" }), svgIcon(I.chevDown, 14)),
     );
     this.pillStep = h("span", { class: "lw-pill-step" });
     this.pillText = h("span", { class: "lw-pill-t" });
     this.pillTime = h("span", { class: "lw-pill-time" });
+    this.pillTodo = h("span", { class: "lw-pill-todo", hidden: true });
     this.pill = h(
       "button",
       {
         type: "button",
         class: "lw-pill",
         onclick: () => {
-          if (!this.dragMoved && !this.tapDone) this.setCollapsed(false);
+          if (this.dragMoved || this.tapDone) return;
+          if (this.emHold()) {
+            this.emOpen = true;
+            this.render();
+            this.foldBtn.focus({ preventScroll: true });
+          } else this.setCollapsed(false);
         },
       },
       h("i", { class: "lw-dot", "aria-hidden": "true" }),
       this.pillStep,
       this.pillText,
+      this.pillTodo,
       this.pillTime,
       h(
         "span",
@@ -647,6 +725,35 @@ export class LessonWindow {
       this.ro.observe(this.body);
     }
     this.loadState();
+    this.staticLabels();
+    this.offLang = onLangChange(() => {
+      this.staticLabels();
+      this.bodyKey = "";
+      if (this.menuOpen) this.renderMenu();
+      this.render();
+    });
+  }
+
+  private offLang: () => void = () => {};
+  /** the words of the parts built once (labels, tooltips), in the UI language */
+  private staticLabels() {
+    const set = (el: Element, label: string, title = label) => {
+      el.setAttribute("aria-label", tr(label));
+      el.setAttribute("title", tr(title));
+    };
+    set(this.moveBtn, "Move the window: drag it, or use the arrow keys", "Drag to move the window anywhere");
+    this.timeEl.title = tr("Exercise time");
+    this.plateBtn.title = tr("Open the approach plate in the EFB");
+    const pl = this.plateBtn.querySelector("span");
+    if (pl) pl.textContent = tr("Plate");
+    set(this.menuBtn, "Exercise options");
+    set(this.foldBtn, "Collapse");
+    this.prog.setAttribute("aria-label", tr("Exercise progress"));
+    const cue = this.moreCue.querySelector(".lw-cue-t");
+    if (cue) cue.textContent = tr("More below");
+    set(this.sizeGrip, "Resize the window: drag, or use the arrow keys", "Drag to resize");
+    this.menu.setAttribute("aria-label", tr("Exercise options"));
+    this.el.setAttribute("aria-label", tr("Exercise"));
   }
 
   // ---------------------------------------------------------------- public API
@@ -674,9 +781,15 @@ export class LessonWindow {
   update(view: LessonView) {
     const { reason, next } = expandReason(this.watch, view);
     this.watch = next;
+    if (!view.emergency) this.emOpen = false;
     this.view = view;
-    if (reason) this.attention();
+    if (reason && !view.emergency) this.attention();
     this.render();
+  }
+  /** the pilot opened the window from its emergency pill */
+  private emOpen = false;
+  private emHold() {
+    return !!this.view?.emergency && !this.emOpen;
   }
   /** no lesson: the window empties and leaves its dock */
   clear() {
@@ -800,6 +913,7 @@ export class LessonWindow {
     if (inside) this.bigBtn.focus({ preventScroll: true });
   }
   destroy() {
+    this.offLang();
     window.removeEventListener("resize", this.onResize);
     this.ro?.disconnect();
     document.removeEventListener("pointerdown", this.onDocDown, true);
@@ -814,6 +928,7 @@ export class LessonWindow {
     return this.zone === "strip";
   }
   private isCollapsed() {
+    if (this.emHold()) return true;
     return (
       !this.peek &&
       !this.st.enlarged &&
@@ -912,13 +1027,15 @@ export class LessonWindow {
     this.timeEl.textContent = fmtTime(v.time);
     this.plateBtn.hidden = !v.plate;
     this.bigBtn.replaceChildren(lineIcon(enlarged ? IC.shrink : IC.enlarge));
-    this.setLabel(this.bigBtn, enlarged ? "Normal size" : "Enlarge");
+    this.setLabel(this.bigBtn, tr(enlarged ? "Normal size" : "Enlarge"));
     this.popBtn.replaceChildren(lineIcon(this.st.float ? IC.dock : IC.float));
     this.setLabel(
       this.popBtn,
-      this.st.float
-        ? "Dock the window"
-        : "Float the window (drag the header to move it)",
+      tr(
+        this.st.float
+          ? "Dock the window"
+          : "Float the window (drag the header to move it)",
+      ),
     );
     this.popBtn.hidden = enlarged;
     this.moveBtn.hidden = enlarged;
@@ -930,14 +1047,26 @@ export class LessonWindow {
     );
     this.progBar.style.width = `${Math.round(((v.finished ? v.steps : v.step) / Math.max(1, v.steps)) * 100)}%`;
     // pill
-    this.pillStep.textContent = stepLabel(v, true);
-    const pillT = v.violation && !v.quiet ? v.violation : v.instruction;
+    const em = this.emHold();
+    el.classList.toggle("lw-em", em);
+    if (em) el.dataset.status = "hold";
+    this.pillStep.textContent = em ? "" : stepLabel(v, true);
+    const pillT = em
+      ? tr("Exercise paused: emergency")
+      : v.violation && !v.quiet
+        ? v.violation
+        : v.instruction;
     this.pillText.textContent = pillT;
     this.pillTime.textContent = fmtTime(v.time);
-    this.pill.title = `${stepLabel(v)}: ${v.instruction}${v.violation && !v.quiet ? ` — ${v.violation}` : ""} (tap to expand)`;
+    const todoN = (v.setup ?? []).filter((r) => r.ok === false).length;
+    this.pillTodo.hidden = em || !!v.quiet || !!v.finished || todoN === 0;
+    this.pillTodo.textContent = todoN ? tn("lw.todo", todoN) : "";
+    this.pill.title = em
+      ? tr("Exercise paused while you handle the emergency")
+      : `${stepLabel(v)}: ${v.instruction}${v.violation && !v.quiet ? ` — ${v.violation}` : ""} (${tr("tap to expand")})`;
     this.pill.setAttribute(
       "aria-label",
-      `Expand the exercise window. ${stepLabel(v)}: ${pillT}`,
+      tr("Expand the exercise window. {s}: {t}", { s: stepLabel(v), t: pillT }),
     );
     this.pill.setAttribute("aria-expanded", "false");
     this.sizeGrip.hidden = !floating || collapsed || enlarged;
@@ -1061,6 +1190,7 @@ export class LessonWindow {
       v.quiet,
       this.details,
       this.setupAllOpen,
+      this.cuesOpen,
       this.zone,
       this.st.enlarged,
     ]);
@@ -1080,7 +1210,7 @@ export class LessonWindow {
               "data-act": "resume",
             },
             svgIcon(I.play, 16),
-            "Resume the flight",
+            tr("Resume the flight"),
           )
         : null,
       // the deviation comes first: the most visible element, never under the fold of a short window
@@ -1095,7 +1225,7 @@ export class LessonWindow {
       h(
         "div",
         { class: "lw-next", "aria-live": "polite" },
-        v.instruction || (v.finished ? "Complete" : ""),
+        v.instruction || (v.finished ? tr("Complete") : ""),
       ),
       v.readout
         ? h("div", { class: "lw-ro", title: v.readout }, v.readout)
@@ -1113,14 +1243,14 @@ export class LessonWindow {
               ? h(
                   "div",
                   { class: "lw-hint" },
-                  h("b", {}, "Hint"),
+                  h("b", {}, tr("Hint")),
                   h("span", {}, v.hint),
                 )
               : null,
             others.length
               ? h(
                   "ol",
-                  { class: "lw-steps", "aria-label": "Steps" },
+                  { class: "lw-steps", "aria-label": tr("Steps") },
                   ...others.map((s, i) =>
                     h(
                       "li",
@@ -1177,8 +1307,8 @@ export class LessonWindow {
 
   private setupEl(rows: LessonSetupRow[], quiet: boolean): HTMLElement {
     const checks = rows.filter((r) => r.ok !== null);
-    const done = checks.filter((r) => r.ok).length;
-    const all = checks.length > 0 && done === checks.length;
+    const todo = checks.filter((r) => r.ok === false).length;
+    const all = checks.length > 0 && todo === 0;
     const todoActs = rows.filter(
       (r) => r.ok === false && r.action && !quiet,
     ).length;
@@ -1190,12 +1320,11 @@ export class LessonWindow {
             "span",
             { class: "lw-setup-done" },
             svgIcon(I.check, 15),
-            "Set up complete",
+            tr("Set up complete"),
           )
-        : h("b", {}, "Set up"),
-      !all && checks.length
-        ? h("span", { class: "lw-setup-n" }, tr("lw.setupDone", { n: done, t: checks.length }))
-        : null,
+        : h("b", {}, tr("Set up")),
+      // what is left to do, counted the way the list shows it (the information lines are not settings)
+      todo > 0 ? h("span", { class: "lw-setup-n" }, tn("lw.todo", todo)) : null,
       h("span", { class: "lw-sp" }),
       todoActs >= 2
         ? h(
@@ -1204,9 +1333,9 @@ export class LessonWindow {
               type: "button",
               class: "lw-btn lw-setall",
               "data-act": "setupAll",
-              title: "Set every remaining item for me (the debrief notes it)",
+              title: tr("Set every remaining item for me (the debrief notes it)"),
             },
-            `Set all ${todoActs}`,
+            tr("Set all ({n})", { n: todoActs }),
           )
         : null,
       all && checks.length
@@ -1218,65 +1347,128 @@ export class LessonWindow {
               "data-act": "setupOpen",
               "aria-expanded": String(this.setupAllOpen),
             },
-            this.setupAllOpen ? "Hide" : "Show",
+            tr(this.setupAllOpen ? "Hide" : "Show"),
             svgIcon(this.setupAllOpen ? I.chevUp : I.chevDown, 13),
           )
         : null,
     );
-    // everything set: only the information lines (the entry to fly, the timing) stay, unless unfolded
-    const shown = rows
-      .map((r, i) => ({ r, i }))
-      .filter(({ r }) => !all || this.setupAllOpen || r.ok === null);
-    const list = h(
-      "ul",
-      { class: "lw-setup-list", "aria-label": "Setup checklist" },
-      ...shown.map(({ r, i }) => {
-        const cls = r.ok === null ? "info" : r.ok ? "ok" : "todo";
-        const showDetail = !!r.detail && (r.ok !== true || this.details);
-        return h(
-          "li",
-          { class: cls, title: r.detail ? `${r.label} — ${r.detail}` : undefined },
-          r.ok === null
-            ? h("i", { class: "lw-mk info", "aria-hidden": "true" })
-            : r.ok
-              ? h(
-                  "i",
-                  { class: "lw-mk ok", "aria-hidden": "true" },
-                  svgIcon(I.check, 12),
-                )
-              : h("i", { class: "lw-mk todo", "aria-hidden": "true" }),
+    const rowEl = (r: LessonSetupRow, i: number) => {
+      const cls = r.ok === null ? "info" : r.ok ? "ok" : "todo";
+      const showDetail = !!r.detail && (r.ok !== true || this.details);
+      const act = r.action ? tr(r.action) : "";
+      return h(
+        "li",
+        { class: cls, title: r.detail ? `${r.label} — ${r.detail}` : undefined },
+        r.ok === null
+          ? h("i", { class: "lw-mk info", "aria-hidden": "true" })
+          : r.ok
+            ? h(
+                "i",
+                { class: "lw-mk ok", "aria-hidden": "true" },
+                svgIcon(I.check, 12),
+              )
+            : h("i", { class: "lw-mk todo", "aria-hidden": "true" }),
+        h(
+          "span",
+          { class: "lw-setup-t" },
+          h("b", {}, r.label),
+          showDetail ? h("small", {}, r.detail!) : null,
           h(
             "span",
-            { class: "lw-setup-t" },
-            h("b", {}, r.label),
-            showDetail ? h("small", {}, r.detail!) : null,
-            h(
-              "span",
-              { class: "sr-only" },
-              r.ok === null ? "" : r.ok ? " (done)" : " (to do)",
-            ),
+            { class: "sr-only" },
+            r.ok === null ? "" : tr(r.ok ? " (done)" : " (to do)"),
           ),
-          r.ok === false && r.action && !quiet
-            ? h(
+        ),
+        r.ok === false && r.action && !quiet
+          ? h(
+              "button",
+              {
+                type: "button",
+                class: "lw-btn lw-set",
+                "data-act": "setup",
+                "data-i": i,
+                title: tr("{a} it for me: {l} (the debrief notes it)", { a: act, l: r.label }),
+              },
+              act,
+            )
+          : null,
+      );
+    };
+    const indexed = rows.map((r, i) => ({ r, i }));
+    // what to set first (the rows with a Set / Tune button on top), then what is done (unless everything is),
+    // then the information lines (the entry to fly, the timing) folded into one "Cues" line
+    const toSet = indexed.filter(({ r }) => r.ok === false);
+    const done = indexed.filter(
+      ({ r }) => r.ok === true && (!all || this.setupAllOpen),
+    );
+    const info = indexed.filter(({ r }) => r.ok === null);
+    const infoOpen = this.cuesOpen;
+    const cues = info.length
+      ? infoOpen || info.length === 1
+        ? info.map(({ r, i }) => rowEl(r, i))
+        : [
+            h(
+              "li",
+              { class: "info cues", title: info.map(({ r }) => (r.detail ? `${r.label} — ${r.detail}` : r.label)).join("\n") },
+              h("i", { class: "lw-mk info", "aria-hidden": "true" }),
+              h(
+                "span",
+                { class: "lw-setup-t" },
+                h(
+                  "b",
+                  {},
+                  tr("Cues"),
+                  h("span", { class: "lw-cues-l" }, ` · ${info.map(({ r }) => r.label).join(" · ")}`),
+                ),
+              ),
+              h(
                 "button",
                 {
                   type: "button",
-                  class: "lw-btn lw-set",
-                  "data-act": "setup",
-                  "data-i": i,
-                  title: `${r.action} it for me: ${r.label} (the debrief notes it)`,
+                  class: "lw-link sm",
+                  "data-act": "cuesOpen",
+                  "aria-expanded": "false",
+                  "aria-label": tr("Show the cues"),
+                  title: tr("Show the cues"),
                 },
-                r.action,
-              )
-            : null,
-        );
-      }),
+                svgIcon(I.chevDown, 14),
+              ),
+            ),
+          ]
+      : [];
+    const items = [
+      ...toSet.map(({ r, i }) => rowEl(r, i)),
+      ...done.map(({ r, i }) => rowEl(r, i)),
+      ...cues,
+    ];
+    if (info.length > 1 && infoOpen)
+      items.push(
+        h(
+          "li",
+          { class: "info cues-close" },
+          h(
+            "button",
+            {
+              type: "button",
+              class: "lw-link sm",
+              "data-act": "cuesOpen",
+              "aria-expanded": "true",
+            },
+            tr("Hide the cues"),
+            svgIcon(I.chevUp, 13),
+          ),
+        ),
+      );
+    const list = h(
+      "ul",
+      { class: "lw-setup-list", "aria-label": tr("Setup checklist") },
+      ...items,
     );
     return h(
       "div",
       { class: `lw-setup${all ? " all" : ""}` },
       head,
-      shown.length ? list : null,
+      items.length ? list : null,
     );
   }
 
@@ -1289,6 +1481,11 @@ export class LessonWindow {
       this.setupAllOpen = !this.setupAllOpen;
       this.bodyKey = "";
       this.render();
+    } else if (a === "cuesOpen") {
+      this.cuesOpen = !this.cuesOpen;
+      this.bodyKey = "";
+      this.render();
+      this.body.querySelector<HTMLElement>('[data-act="cuesOpen"]')?.focus({ preventScroll: true });
     } else if (a === "setup")
       this.emit({ type: "setup", index: Number(b.dataset.i) });
     else if (a === "setupAll") this.emit({ type: "setupAll" });
@@ -1351,11 +1548,11 @@ export class LessonWindow {
         h(
           "div",
           { class: "lw-confirm" },
-          h("b", {}, "End this exercise?"),
+          h("b", {}, tr("End this exercise?")),
           h(
             "p",
             {},
-            "You go to the debrief. An exercise you end is not graded.",
+            tr("You go to the debrief. An exercise you end is not graded."),
           ),
           h(
             "div",
@@ -1367,7 +1564,7 @@ export class LessonWindow {
                 class: "lw-btn",
                 onclick: () => this.closeMenu(true),
               },
-              "Keep flying",
+              tr("Keep flying"),
             ),
             h(
               "button",
@@ -1379,7 +1576,7 @@ export class LessonWindow {
                   this.emit({ type: "end" });
                 },
               },
-              "End exercise",
+              tr("End exercise"),
             ),
           ),
         ),
@@ -1406,13 +1603,13 @@ export class LessonWindow {
           )
         : "",
       item(
-        this.st.enlarged ? "Normal size" : "Enlarge (reading size)",
+        tr(this.st.enlarged ? "Normal size" : "Enlarge (reading size)"),
         lineIcon(this.st.enlarged ? IC.shrink : IC.enlarge),
         () => this.setEnlarged(!this.st.enlarged),
         "lw-mi-opt",
       ),
       item(
-        this.st.float ? "Dock the window" : "Float the window",
+        tr(this.st.float ? "Dock the window" : "Float the window"),
         lineIcon(this.st.float ? IC.dock : IC.float),
         () => {
           this.closeMenu(true);
@@ -1421,18 +1618,18 @@ export class LessonWindow {
         },
         "lw-mi-opt",
       ),
-      item("Reset position", lineIcon(IC.reset), () => {
+      item(tr("Reset position"), lineIcon(IC.reset), () => {
         this.closeMenu(true);
         this.resetPosition();
       }),
       h("hr", { role: "separator" }),
-      item("Restart exercise…", svgIcon(I.restart, 18), () => {
+      item(tr("Restart exercise…"), svgIcon(I.restart, 18), () => {
         this.closeMenu(false);
         this.emit({ type: "restart" });
       }),
       v && !v.finished
         ? item(
-            "End exercise…",
+            tr("End exercise…"),
             lineIcon(IC.end),
             () => {
               this.confirmEnd = true;
@@ -1628,7 +1825,7 @@ export class LessonWindow {
     this.ghost ??= h(
       "div",
       { class: "lw-ghost", "aria-hidden": "true" },
-      h("span", {}, "Drop here to dock"),
+      h("span", {}, tr("Drop here to dock")),
     );
     Object.assign(this.ghost.style, {
       left: `${d.x}px`,

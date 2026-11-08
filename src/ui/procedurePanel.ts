@@ -1173,7 +1173,8 @@ export class ProcedurePanel {
       else if (!fin && x.ready) right = h("span", { class: "qc-set" }, w.set);
       else if (x.optional) right = h("span", { class: "qc-opt" }, w.optional);
       else if (x.late && !fin) right = h("span", { class: "qc-late" }, w.late);
-      const li = h("li", { class: cls }, glyph, main, right);
+      // the full line in the tooltip: rows other than the cursor one hold to one line
+      const li = h("li", { class: cls, title: isCur ? undefined : x.text }, glyph, main, right);
       if (it?.memory) li.dataset.m = "1";
       return li;
     };

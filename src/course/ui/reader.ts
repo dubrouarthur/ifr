@@ -25,6 +25,7 @@ import { getProcedure } from "../../train/procedureStore";
 const S = {
   // top bar, footer, navigation
   backToLibrary: ["Back to the library", "Retour à la bibliothèque"],
+  backToEditor: ["Back to the editor", "Retour à l’éditeur"],
   reader: ["Lesson text", "Texte de la leçon"],
   outline: ["Outline", "Plan"],
   outlineTitle: ["Course outline", "Plan du cours"],
@@ -224,6 +225,12 @@ const S = {
     "Pas encore volé. Le cockpit s’ouvre avec ce briefing.",
   ],
   backFrom: ["Back from the cockpit · {t}", "Retour du cockpit · {t}"],
+  backStopped: ["Stopped at {t} · not graded", "Arrêté à {t} · non noté"],
+  stoppedTitle: ["Stopped at {t} · not graded", "Arrêté à {t} · non noté"],
+  stoppedBody: [
+    "You stopped before the end of the exercise: nothing was graded. Fly it again when you are ready.",
+    "Vous avez arrêté avant la fin de l’exercice : rien n’a été noté. Revolez-le quand vous êtes prêt.",
+  ],
   flyNoStore: [
     "Flying needs this device’s course storage, which is not available here.",
     "Le vol nécessite le stockage des cours de cet appareil, indisponible ici.",
@@ -265,7 +272,7 @@ const S = {
   ],
   goalsMet: ["Goals met", "Objectifs atteints"],
   answeredRight: ["Answered right", "Bonnes réponses"],
-  skippedSteps: ["Skipped", "Passées"],
+  skippedSteps: ["Steps skipped", "Étapes sautées"],
   flights: ["Flights", "Vols"],
   printHandout: ["Print handout", "Imprimer le mémo"],
   handoutTitle: ["Handout", "Mémo"],

@@ -13,38 +13,100 @@ import { AXIS_LABELS, BUTTON_LABELS, AxisDetector, type AxisName, type ButtonAct
 import { distanceNm } from '../nav/geo';
 import type { Lang, ProcedureResult } from '../train/procedureTypes';
 import { FAILURE_LABELS_EN, FAILURE_LABELS_FR } from '../sim/systemsTypes';
+import { lang as uiLang, onLangChange } from './i18n';
 
+/** the base dialog's close button name, in the UI language */
+const closeLabel = () => (uiLang() === 'fr' ? 'Fermer' : 'Close');
+
+/** A dialog over the app. open() makes it a real modal: the focus moves inside (initialFocus()), everything else in
+ *  the page becomes inert (Tab, clicks and screen readers stay in the dialog; live regions such as toasts stay
+ *  reachable), and close() undoes that and gives the focus back to what opened it (or Modal.fallbackFocus). */
 export class Modal {
   bg: HTMLElement;
   box: HTMLElement;
   body: HTMLElement;
   foot: HTMLElement;
   onClose?: () => void;
+  private closeBtn: HTMLElement;
+  private unInert: (() => void) | null = null;
+  private opener: HTMLElement | null = null;
+  /** set by a dialog that closes to launch a tool (a flight, another page): the focus is not handed back to the
+   *  opener (it leaves the dialog, so the keyboard flies the aircraft) */
+  protected leavingForTool = false;
   constructor(title: string, size: '' | 'sm' | 'md' = '') {
     this.body = h('div', { class: 'body' });
     this.foot = h('footer', {});
-    this.box = h('div', { class: `modal ${size}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
-      h('header', {}, h('h2', {}, title), h('button', { class: 'x', onclick: () => this.close(), 'aria-label': 'Close' }, '×')),
+    this.closeBtn = h('button', { class: 'x', type: 'button', onclick: () => this.close(), 'aria-label': closeLabel(), title: closeLabel() }, '×');
+    // the dialog's own header is not a page banner (role none: no second "banner" landmark)
+    this.box = h('div', { class: `modal ${size}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': title, tabindex: -1 },
+      h('header', { role: 'none' }, h('h2', {}, title), this.closeBtn),
       this.body,
       this.foot,
     );
     this.bg = h('div', { class: 'modal-bg', onclick: (e: Event) => e.target === this.bg && this.close() }, this.box);
     document.body.append(this.bg);
+    onLangChange(() => {
+      this.closeBtn.setAttribute('aria-label', closeLabel());
+      this.closeBtn.setAttribute('title', closeLabel());
+    });
   }
   get isOpen() {
     return this.bg.classList.contains('open');
   }
   open() {
     Modal.closeAll();
+    const was = this.isOpen;
     this.bg.classList.add('open');
     Modal.stack.push(this);
+    if (!was) this.trapFocus();
+  }
+  /** where the focus goes when the dialog opens: a [data-autofocus] element, else the dialog itself */
+  protected initialFocus(): HTMLElement | null {
+    return this.box.querySelector<HTMLElement>('[data-autofocus]') ?? this.box;
+  }
+  /** the element that opened the dialog, the rest of the page made inert, the focus moved inside */
+  private trapFocus() {
+    const a = document.activeElement as HTMLElement | null;
+    this.opener = a && a !== document.body && !this.bg.contains(a) ? a : null;
+    this.unInert?.();
+    const changed: HTMLElement[] = [];
+    for (const c of Array.from(document.body.children) as HTMLElement[]) {
+      if (c === this.bg || c.inert || c.tagName === 'SCRIPT') continue;
+      // live regions (toasts, status) stay reachable; another open dialog stacked over this one too
+      if (c.matches('[aria-live], [role="status"], [role="alert"], .toasts, .modal-bg.open')) continue;
+      c.inert = true;
+      changed.push(c);
+    }
+    this.unInert = () => changed.forEach((c) => (c.inert = false));
+    // after the caller has filled the dialog (a timer, not a frame: a busy 3D frame must not delay the focus)
+    setTimeout(() => {
+      if (!this.isOpen || this.box.contains(document.activeElement)) return;
+      this.initialFocus()?.focus({ preventScroll: true });
+    }, 0);
   }
   close() {
+    const was = this.isOpen;
     this.bg.classList.remove('open');
     Modal.stack = Modal.stack.filter((m) => m !== this);
+    if (was && this.unInert) {
+      this.unInert();
+      this.unInert = null;
+      const a = document.activeElement as HTMLElement | null;
+      if (this.leavingForTool) {
+        if (a && this.bg.contains(a)) a.blur();
+      } else {
+        const back = this.opener?.isConnected && this.opener.offsetParent !== null ? this.opener : Modal.fallbackFocus?.() ?? null;
+        // only when the focus was in the dialog (a tool the dialog opened may have taken it already)
+        if (back && (!a || a === document.body || this.bg.contains(a))) back.focus({ preventScroll: true });
+      }
+      this.opener = null;
+    }
+    this.leavingForTool = false;
     this.onClose?.();
   }
   static stack: Modal[] = [];
+  /** where the focus goes back to when the element that opened a dialog is gone (main.ts: the top bar's hub button) */
+  static fallbackFocus: (() => HTMLElement | null) | null = null;
   static closeAll() {
     [...Modal.stack].forEach((m) => m.close());
   }

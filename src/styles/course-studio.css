@@ -4,7 +4,7 @@
    and .sle-* (editing chrome only — the slide itself is the renderer's). Touch targets 44 px on coarse pointers. */
 
 .ce-app.is-studio {
-  --rail-w: 76px;
+  --rail-w: 84px;
   --panel-w: 344px;
   --insp-w: 320px;
   /* the classroom chrome (SPEC slides v2 §4): a warm paper grey, the slide paper sits on it like Keynote */
@@ -128,8 +128,8 @@
   border-radius: 12px;
   background: none;
   color: var(--text-2);
-  font: 600 11px/1.1 var(--font);
-  letter-spacing: 0.005em;
+  font: 600 12.5px/1.15 var(--font);
+  letter-spacing: 0;
   text-align: center;
 }
 .ce-rail-b .ce-i {
@@ -155,9 +155,9 @@
   border-radius: 0 3px 3px 0;
   background: var(--accent);
 }
+/* a tab with nothing to add here (a reading step): muted ink, still readable (≥ 4.5:1), opens its explanation */
 .ce-rail-b.off {
-  opacity: 0.38;
-  cursor: default;
+  color: #5a6575;
 }
 .ce-rail-n {
   position: absolute;
@@ -497,11 +497,10 @@
   color: var(--text-2);
 }
 .ce-deck-meta {
-  margin-top: 3px;
-  font: 600 11px/1 var(--font);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
+  margin-top: 4px;
+  font: 600 12.5px/1.2 var(--font);
+  letter-spacing: 0.01em;
+  color: #4a5566;
 }
 .ce-deck.is-blank .ce-deck-cover {
   background: var(--surface-2);
@@ -1346,7 +1345,7 @@
 /* iPad landscape and smaller laptops: the panel floats over the canvas (the slide keeps its size) */
 @media (max-width: 1279px) {
   .ce-app.is-studio {
-    --rail-w: 68px;
+    --rail-w: 80px;
     --insp-w: 288px;
   }
   .ce-body.studio.panel-open {
@@ -1366,7 +1365,7 @@
   }
   .ce-rail-b {
     min-height: 58px;
-    font-size: 10.5px;
+    font-size: 12px;
   }
   .is-studio .ce-st,
   .is-studio .ce-st .ce-thumb {
@@ -1491,4 +1490,311 @@
 .ce-panel .sle-lib-grid[data-tab="text"] .sle-tile-text {
   white-space: normal;
   line-height: 1.15;
+}
+
+/* ------------------------------------------------------------ design audit: actions that need a step */
+.is-studio .ce-top .ce-btn.is-off,
+.is-studio .ce-top .ce-btn.is-off:hover {
+  background: var(--surface-2, #f1f3f6);
+  border-color: var(--line, #dfe3e8);
+  color: #5a6575;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.is-studio .ce-top .ce-present.is-off .ce-i {
+  fill: currentColor;
+}
+
+/* ------------------------------------------------------------ design audit: the empty course is the gallery */
+.ce-body.studio.is-empty,
+.ce-body.studio.is-empty.insp-closed {
+  grid-template-columns: var(--rail-w) 0 minmax(0, 1fr) 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+.ce-body.studio.is-empty.panel-open {
+  grid-template-columns: var(--rail-w) var(--panel-w) minmax(0, 1fr) 0;
+}
+.ce-body.studio.is-empty > .ce-right,
+.ce-body.studio.is-empty .ce-strip,
+.ce-body.studio.is-empty .ce-ctool {
+  display: none;
+}
+.is-studio .ce-body.studio.is-empty .ce-center,
+.ce-body.studio.is-empty .ce-center {
+  grid-template-rows: minmax(0, 1fr);
+}
+@media (max-width: 1279px) {
+  .ce-body.studio.is-empty.panel-open {
+    grid-template-columns: var(--rail-w) 0 minmax(0, 1fr) 0;
+  }
+}
+@media (max-width: 1000px) {
+  .ce-body.studio.is-empty,
+  .ce-body.studio.is-empty.panel-open {
+    grid-template-columns: var(--rail-w) 0 minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+}
+/* "Start from scratch": an empty cover that says what you get */
+.ce-deck-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 2px dashed #c3cad4;
+  border-radius: 10px;
+  background: #fbfbf9;
+  color: #4a5566;
+  font: 600 14px/1.2 var(--font);
+}
+.ce-deck-empty i {
+  font: 300 40px/1 var(--font);
+  font-style: normal;
+  color: var(--accent);
+}
+/* portrait: the secondary top-bar actions keep their names for screen readers but show only their icon */
+@media (max-width: 1000px) {
+  .is-studio .ce-top .ce-checks-b > span:not(.ce-count),
+  .is-studio .ce-top .ce-preview > span,
+  .is-studio .ce-top .ce-share-b > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .is-studio .ce-top .ce-checks-b,
+  .is-studio .ce-top .ce-preview,
+  .is-studio .ce-top .ce-share-b {
+    min-width: 44px;
+    justify-content: center;
+    padding: 0 10px;
+  }
+}
+
+/* ------------------------------------------------------------ design audit: position and size (folded) */
+.ce-adv {
+  border: 1px solid var(--line, #dfe3e8);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+}
+.ce-adv > summary {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  cursor: pointer;
+  font: 600 13.5px/1.2 var(--font);
+  color: var(--text, #111827);
+  list-style: none;
+}
+.ce-adv > summary::-webkit-details-marker {
+  display: none;
+}
+.ce-adv > summary::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+.ce-adv[open] > summary::before {
+  transform: rotate(45deg);
+}
+.ce-adv > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+.ce-adv > .ce-grid4.ce-xywh {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 4px 12px 12px;
+}
+.ce-xywh .ce-inwrap {
+  display: flex;
+  align-items: center;
+  min-width: 64px;
+}
+.ce-xywh .ce-in.num {
+  min-width: 64px;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ce-adv > summary::before {
+    transition: none;
+  }
+}
+@media (pointer: coarse) {
+  .ce-adv > summary {
+    min-height: 44px;
+  }
+}
+
+/* ------------------------------------------------------------ design audit: a segmented control that wraps */
+.ce-seg.full.ce-seg-wrap {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+}
+.ce-seg.full.ce-seg-wrap button {
+  white-space: normal;
+  line-height: 1.15;
+  padding: 4px 6px;
+  overflow: visible;
+  text-align: center;
+}
+
+/* ------------------------------------------------------------ design audit: toasts sit above the filmstrip */
+.ce-app.is-studio > .ce-toast {
+  bottom: 176px;
+}
+@media (max-width: 1279px) {
+  .ce-app.is-studio > .ce-toast {
+    bottom: 150px;
+  }
+}
+
+/* ------------------------------------------------------------ design audit: text zoom (200 %) and small windows.
+   Below ~560 CSS px of height or ~760 of width the editor scrolls as one page instead of squeezing the slide:
+   the slide keeps a usable size, the properties come under it. */
+@media (max-height: 560px), (max-width: 760px) {
+  .ce-app.is-studio {
+    grid-template-rows: 60px auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .ce-body.studio,
+  .ce-body.studio.panel-open,
+  .ce-body.studio.insp-closed,
+  .ce-body.studio.panel-open.insp-closed {
+    grid-template-columns: var(--rail-w) 0 minmax(0, 1fr);
+    grid-template-rows: auto auto;
+  }
+  .ce-body.studio > .ce-rail {
+    grid-row: 1 / 3;
+    align-self: start;
+    position: sticky;
+    top: 0;
+    height: calc(100vh - 60px);
+  }
+  .ce-body.studio > .ce-right {
+    grid-column: 3;
+    grid-row: 2;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+  .ce-body.studio {
+    align-self: start;
+    min-height: auto;
+  }
+  .ce-body.studio > .ce-center,
+  .ce-body.studio > .ce-right {
+    min-height: auto;
+    overflow: visible;
+  }
+  .is-studio .ce-body.studio > .ce-center {
+    grid-template-rows: auto minmax(min(calc((100vw - var(--rail-w) - 44px) * 0.5625 + 40px), 640px), auto) auto;
+  }
+  .is-studio .ce-body.studio.is-empty > .ce-center {
+    grid-template-rows: minmax(calc(100vh - 60px), auto);
+  }
+  .ce-body.studio > .ce-panel {
+    position: fixed;
+    top: 60px;
+    bottom: 0;
+    z-index: 20;
+  }
+}
+
+/* ------------------------------------------------------------ design audit: the canvas toolbar never clips.
+   It compacts with its own width (container queries), then wraps onto a second row as a last resort. */
+.is-studio .ce-ctool {
+  container-type: inline-size;
+}
+.is-studio .ce-ctool-row {
+  flex-wrap: wrap;
+  overflow: visible;
+  row-gap: 6px;
+}
+.ce-ctool-l {
+  font: 600 12.5px/1.2 var(--font);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.is-studio .ce-ctool .ce-seg .ce-tag {
+  font-size: 12px;
+}
+@container (max-width: 900px) {
+  .ce-ctool-l,
+  .ce-ctool .ce-multi > span,
+  .ce-ctool .ce-reveal > .ce-muted {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+@container (max-width: 720px) {
+  .ce-ctool .ce-zoom,
+  .ce-ctool .ce-zoom + .ce-vsep {
+    display: none;
+  }
+  .ce-ctool .ce-btn.ghost > span:not(.ce-kbd) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+/* the floating format bar keeps its labels on one line, and steps aside under a panel that floats over the slide */
+.sle-bar .sle-tb {
+  white-space: nowrap;
+}
+@media (max-width: 1279px) {
+  .ce-body.studio.panel-open .sle-bar {
+    visibility: hidden;
+  }
+}
+.ce-adv > .ce-adv-b {
+  padding: 4px 12px 12px;
+}
+.ce-more-styles {
+  margin-top: 8px;
+}
+/* the library never shrinks under what follows it in the panel (the Interactive panel's whole-step list) */
+.ce-panel .sle-lib {
+  flex: 1 0 auto;
+}
+.ce-panel-b > .ce-panel-h {
+  margin-top: 18px;
+}
+/* the keyboard hint shows when the slide gets keyboard focus, then steps back */
+.sle-surface:focus-visible > .sle-kbdhint {
+  animation: sle-kbdhint 6s ease forwards;
+}
+@keyframes sle-kbdhint {
+  0%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sle-surface:focus-visible > .sle-kbdhint {
+    animation: none;
+  }
 }

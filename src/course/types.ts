@@ -868,6 +868,8 @@ export interface AttemptRecord {
     /** training record */
     historyId?: string;
     procResults?: unknown[];
+    /** stopped before the end of the exercise: not graded, the step is not ticked as flown */
+    ungraded?: boolean;
   };
   calc?: {
     generatorId: CalcGeneratorId;

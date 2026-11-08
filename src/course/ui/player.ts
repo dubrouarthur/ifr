@@ -1346,7 +1346,8 @@ export class CoursePlayer {
       criteria,
       sceneRows: this.flySceneRows(step, linked),
       still: this.flyStill(step),
-      drawThumb: (c) => this.drawFlyThumb(c),
+      // a lesson target has no scene to draw: the card keeps its aircraft mark (never an empty black box)
+      drawThumb: this.flyScene(step) ? (c) => this.drawFlyThumb(c) : undefined,
       status: "brief",
       options: st.options,
       author: this.course.author.name,
@@ -1488,10 +1489,13 @@ export class CoursePlayer {
         }
       }
       if (attempt && status === "brief") status = "flown";
+      // stopped before the end: nothing was graded, the step is not ticked (the card says so and offers to fly)
+      const stopped = !!attempt?.fly?.ungraded;
+      if (stopped && status === "flown") status = "notFinished";
       if (this.fly !== view) return;
       const token = attempt?.fly?.token;
       const selfGraded = !!token && readFlag(`ifr.course.sg.${token}`);
-      if (attempt?.fly) st.mark.flown = { passed: attempt.fly.passed };
+      if (attempt?.fly && !stopped) st.mark.flown = { passed: attempt.fly.passed };
       const no = attempt ? all.findIndex((a) => a.fly?.token === token) + 1 || all.length : 0;
       view.update({ status, attempt, attemptNo: no || undefined, selfGraded });
       if (attempt && selfGraded && this.o.loadTrace) {
@@ -1629,11 +1633,12 @@ export class CoursePlayer {
       const stepId = s.status === "flown" ? s.attempt.stepId : s.handoff.stepId;
       if (this.step?.id !== stepId) this.goToId(stepId);
       if (s.status === "flown") {
+        const stopped = !!s.attempt.fly?.ungraded;
         this.pill = h(
           "span",
-          { class: "cp-pill ok" },
-          icon("check"),
-          ps("backFrom", this.lang, {
+          { class: `cp-pill${stopped ? "" : " ok"}` },
+          stopped ? null : icon("check"),
+          ps(stopped ? "backStopped" : "backFrom", this.lang, {
             t: flownText(s.attempt.secs, this.lang),
           }),
         );
@@ -1906,20 +1911,28 @@ export class CoursePlayer {
           flights.length ? tile(ps("flights", lang), `${flown} / ${flights.length}`) : null,
           tile(ps("skippedSteps", lang), String(skipped)),
         ),
-        h(
-          "div",
-          { class: "cp-qact" },
-          btn(
-            ps("printHandout", lang),
-            "primary",
-            () => this.printHandout(),
-            "print",
-          ),
-          btn(ps("startOver", lang), "", () => this.startOver(), "refresh"),
-          this.o.onExit
-            ? btn(ps("backToLibrary", lang), "ghost", () => this.o.onExit!())
-            : null,
-        ),
+        // a test run from the editor ends back in the editor (the main action); a student's run, the handout
+        this.o.preview && this.o.onExit
+          ? h(
+              "div",
+              { class: "cp-qact" },
+              btn(ps("backToEditor", lang), "primary", () => this.o.onExit!(), "back"),
+              btn(ps("startOver", lang), "", () => this.startOver(), "refresh"),
+            )
+          : h(
+              "div",
+              { class: "cp-qact" },
+              btn(
+                ps("printHandout", lang),
+                "primary",
+                () => this.printHandout(),
+                "print",
+              ),
+              btn(ps("startOver", lang), "", () => this.startOver(), "refresh"),
+              this.o.onExit
+                ? btn(ps("backToLibrary", lang), "ghost", () => this.o.onExit!())
+                : null,
+            ),
         list,
       ),
     );

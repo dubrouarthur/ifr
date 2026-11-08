@@ -92,13 +92,22 @@ export function knob(o: KnobOpts): HTMLElement {
   const ring = h('div', { class: 'ring' }, ringMark);
   const cap = h('div', { class: 'cap' }, capMark, o.onPush ? h('b', { class: 'push' }) : null);
   const bubble = h('div', { class: 'bubble' });
-  const el = h('div', { class: `pknob ${o.dual ? 'dual' : 'single'} ${o.size ?? 'md'}`, tabindex: 0, role: 'slider', 'aria-label': o.label, title: o.title ?? `${o.label} — drag or scroll${o.dual ? ' (outer ring = coarse, inner knob = fine)' : ''}${o.onPush ? ', click to push' : ''} · right-click or tap for step buttons` }, ring, cap, bubble);
+  const el = h('div', { class: `pknob ${o.dual ? 'dual' : 'single'} ${o.size ?? 'md'}`, tabindex: 0, role: 'spinbutton', 'aria-label': o.label, title: o.title ?? `${o.label} — drag or scroll${o.dual ? ' (outer ring = coarse, inner knob = fine)' : ''}${o.onPush ? ', click to push' : ''} · right-click or tap for step buttons` }, ring, cap, bubble);
   let ringA = 0;
   let capA = 0;
   let hideT = 0;
+  // a rotary encoder has no ends (a frequency, a heading that wraps): a spin button whose value is read out
+  // ("HDG 045°"), kept current as it turns (no aria-valuenow: there is no bounded number to give)
+  const sayValue = () => {
+    if (!o.readout) return;
+    const v = o.readout();
+    if (el.getAttribute('aria-valuetext') !== v) el.setAttribute('aria-valuetext', v);
+  };
+  el.addEventListener('focus', sayValue);
   const show = () => {
     if (!o.readout) return;
     bubble.textContent = o.readout();
+    sayValue();
     el.classList.add('show');
     clearTimeout(hideT);
     hideT = window.setTimeout(() => el.classList.remove('show'), 1300);

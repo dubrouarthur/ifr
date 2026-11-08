@@ -656,3 +656,33 @@ export function keyCommand(
   if (k === "[") return { k: "z", how: "backward" };
   return null;
 }
+
+/**
+ * Keyboard navigation on the slide surface itself (pure). The surface is ONE tab stop, never a trap:
+ * - no block selected: Tab / Shift+Tab leave the surface ("leave"); arrows or Enter pick the first / last block;
+ * - a block selected: Tab / Shift+Tab move to the next / previous block; past the last (or first) one focus
+ *   leaves the surface (forward: into the selected block's format bar, then on to the page).
+ * Any other key (or arrows with a selection, which nudge) → null: keyCommand handles it.
+ */
+export function surfaceNav(
+  e: { key: string; shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean; altKey?: boolean },
+  selection: readonly string[],
+  ids: readonly string[],
+): { select: string[] | null; leave: boolean } | null {
+  if (e.metaKey || e.ctrlKey || e.altKey) return null;
+  const has = selection.length > 0;
+  if (e.key === "Tab") {
+    if (!has || !ids.length) return { select: null, leave: true };
+    const dir = e.shiftKey ? -1 : 1;
+    const i = ids.indexOf(selection[selection.length - 1]);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= ids.length) return { select: null, leave: true };
+    return { select: [ids[j]], leave: false };
+  }
+  if (has || !ids.length) return null;
+  if (e.key === "ArrowRight" || e.key === "ArrowDown" || e.key === "Enter")
+    return { select: [ids[0]], leave: false };
+  if (e.key === "ArrowLeft" || e.key === "ArrowUp")
+    return { select: [ids[ids.length - 1]], leave: false };
+  return null;
+}

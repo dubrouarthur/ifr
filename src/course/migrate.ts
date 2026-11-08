@@ -177,8 +177,8 @@ export function migrate(raw: unknown): MigrateResult<Course> {
     } catch {
       return fail(
         -1,
-        "Unreadable course (invalid JSON)",
-        "Cours illisible (JSON invalide)",
+        "This file is not a Wingdeck course",
+        "Ce fichier n’est pas un cours Wingdeck",
       );
     }
   }
@@ -238,8 +238,8 @@ export function migrateCourseFile(raw: unknown): MigrateResult<CourseFile> {
         changes: [],
         issues: [
           {
-            en: "Unreadable file (invalid JSON)",
-            fr: "Fichier illisible (JSON invalide)",
+            en: "This file is not a Wingdeck course",
+            fr: "Ce fichier n’est pas un cours Wingdeck",
           },
         ],
       };

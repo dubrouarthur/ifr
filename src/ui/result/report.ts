@@ -1910,7 +1910,12 @@ export function buildReport(inp: ResultInput): ResultReport {
   }
 
   const tk = taskKey(inp.ex);
-  const task = tk ? tx(L, tk) : "";
+  const acsTask = tk ? tx(L, tk) : "";
+  // plain words first ("Holding · PA · inbound 270°…"); the ACS code is a reference at the end of the line, not
+  // the headline: a first-time PPL / LAPL student does not read FAA codes
+  const m = /^(ACS(?: IR\.[IVX]+(?:\.[A-Z])?)?)\s+(.+)$/.exec(acsTask);
+  const task = m ? m[2].charAt(0).toUpperCase() + m[2].slice(1) : acsTask;
+  const taskRef = m ? `FAA ${m[1]}` : "";
   const eb: string[] = [];
   if (task) eb.push(task);
   if (hold)
@@ -1941,7 +1946,8 @@ export function buildReport(inp: ResultInput): ResultReport {
     outcome,
     endedBy: inp.endedBy,
     task,
-    eyebrow: eb.join(" · "),
+    taskRef,
+    eyebrow: [...eb, ...(taskRef ? [taskRef] : [])].join(" · "),
     headline,
     summary,
     standards: stds.map(({ spans: _s, limit: _l, kind: _k, ...rest }) => rest),

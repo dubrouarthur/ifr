@@ -642,3 +642,19 @@ html body .topbar .scn-wrap {
     display: none;
   }
 }
+
+/* the hub keeps its word on narrow screens (the way back to every course and flight): only EFB and Instructor
+   become icons there, with their names kept as aria-labels */
+@media (min-width: 760px) and (max-width: 1439px) {
+  html body .topbar .tb-actions .tb-fc .lbl {
+    display: inline;
+  }
+}
+/* "understood on first sight": from 1100 px every top-bar tool says its name (the flight title ellipsizes first);
+   only narrower screens (portrait tablets) fall back to icons, named by aria-label and tooltip */
+@media (min-width: 1100px) and (max-width: 1439px) {
+  html body .topbar .tb-actions .tb-efb .lbl,
+  html body .topbar .tb-actions .tb-ios .lbl {
+    display: inline;
+  }
+}

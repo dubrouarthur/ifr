@@ -29,6 +29,8 @@ const S = {
   doThis: ["Do this", "À faire"],
   quizRight: ["Correct", "Juste"],
   quizYours: ["Your answer", "Votre réponse"],
+  quizWrong: ["Wrong · your answer", "Faux · votre réponse"],
+  quizRightAnswer: ["Right answer", "Bonne réponse"],
   answeredInPlayer: ["Answered in the player", "Répondu dans le lecteur"],
   textTooLong: ["Text too long", "Texte trop long"],
   answer: ["Answer", "Réponse"],
@@ -59,6 +61,10 @@ const S = {
   distributeV: ["Distribute vertically", "Répartir verticalement"],
   selected: ["selected", "sélectionnés"],
   canvasLabel: ["Slide canvas, editing", "Diapositive, en édition"],
+  kbdHint: [
+    "Arrows: pick a block · Tab: next block · Esc: deselect",
+    "Flèches : choisir un bloc · Tab : bloc suivant · Échap : désélectionner",
+  ],
   // library
   library: ["Library", "Bibliothèque"],
   search: ["Search", "Rechercher"],

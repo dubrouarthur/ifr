@@ -473,7 +473,7 @@ export class DebriefView extends Modal {
           ),
           allChip,
         ),
-        h("div", { class: "ma" }, this.flyBtn(true)),
+        // "Fly from" lives on the transport bar under the lanes (it follows the playhead): not twice on screen
       );
       return;
     }
@@ -802,7 +802,8 @@ export class DebriefView extends Modal {
     const chips = h(
       "div",
       { class: "dbx-chips", role: "group", "aria-label": drt("k.lanes") },
-      ...LANES.map((ln) => {
+      // a filter for a lane with nothing on this flight would filter nothing: only the lanes that have events
+      ...LANES.filter((ln) => m.lanes[ln].length > 0).map((ln) => {
         const n = m.lanes[ln].length;
         const on = this.visible.has(ln);
         return h(

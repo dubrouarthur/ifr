@@ -928,9 +928,14 @@ button.sl-q-opt:focus-visible {
 .sl-q-opt.is-right .sl-q-state {
   color: var(--sl-ok);
 }
-.sl-q-opt.is-wrong {
+.sl-q-opt.is-wrong,
+button.sl-q-opt.is-wrong:hover {
   color: var(--sl-text) !important;
   border: 4px solid var(--sl-danger);
+  background: color-mix(in srgb, var(--sl-danger) 8%, transparent);
+}
+button.sl-q-opt.is-right:hover {
+  border-color: var(--sl-ok);
 }
 .sl-q-opt.is-wrong .sl-q-state {
   color: var(--sl-danger);
@@ -1536,6 +1541,27 @@ button.sl-q-opt:focus-visible {
 .sle-text.on-dark {
   background: rgba(12, 16, 21, 0.94);
   color: #e9eef3;
+}
+/* keyboard hint: only while the surface itself has keyboard focus */
+.sle-kbdhint {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 24px);
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(17, 24, 39, 0.86);
+  color: #fff;
+  font-size: 12.5px;
+  line-height: 1.35;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 6;
+}
+.sle-surface:focus-visible > .sle-kbdhint {
+  opacity: 1;
 }
 .sle-live {
   position: absolute;

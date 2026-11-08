@@ -756,7 +756,7 @@ export function circuitToExercise(c: Circuit, opts: { seed?: number } = {}): Exe
           },
         });
         setAttitude(sim, 8.5, 0, VY_KT);
-        steps.push({ ...S.takeoff(curAlt, r.heading), text: ul === 'fr' ? `Montée dans l’axe ${fmtHdg(r.heading)} à 74 kt (Vy) jusqu’à ${curAlt} ft` : `Climb runway heading ${fmtHdg(r.heading)} at 74 KIAS (Vy) to ${curAlt} ft` });
+        steps.push({ ...S.takeoff(curAlt, r.heading), fr: undefined, text: ul === 'fr' ? `Montée dans l’axe ${fmtHdg(r.heading)} à 74 kt (Vy) jusqu’à ${curAlt} ft` : `Climb runway heading ${fmtHdg(r.heading)} at 74 KIAS (Vy) to ${curAlt} ft` });
       } else if (c.start.type === 'runway') {
         const r = runway(c.start.airport, c.start.runway);
         curAlt = c.start.initialAlt;
@@ -821,7 +821,7 @@ export function circuitToExercise(c: Circuit, opts: { seed?: number } = {}): Exe
         } else if (l.type === 'alt') {
           const dir = l.alt > curAlt ? 'Climb' : 'Descend';
           curAlt = l.alt;
-          steps.push({ ...S.changeAlt(l.alt, 95, null, undefined), text: `ATC: "${dir} and maintain ${l.alt}."`, check: (cx) => (cx.d.stallWarn ? 'Stall warning' : null) });
+          steps.push({ ...S.changeAlt(l.alt, 95, null, undefined), fr: undefined, text: `ATC: "${dir} and maintain ${l.alt}."`, check: (cx) => (cx.d.stallWarn ? 'Stall warning' : null) });
         } else if (l.type === 'hold') {
           const f = l.ppos ? { ident: 'PPOS', lat: 0, lon: 0, kind: 'fix' as const } : findFix(l.ident)!;
           curAlt = l.alt;

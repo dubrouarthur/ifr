@@ -13,7 +13,9 @@ const ICON: Record<NextItem["kind"], [string, string]> = {
   drill: ["drill", I.target],
 };
 
-export function nextList(plan: NextPlan, title: string, run: (it: NextItem) => void): HTMLElement {
+/** `footer`: the row the sheet's footer primary already runs: its button here is a plain one (one primary per
+ *  screen) */
+export function nextList(plan: NextPlan, title: string, run: (it: NextItem) => void, footer?: NextItem): HTMLElement {
   return h(
     "section",
     { class: "rs-panel rs-pn" },
@@ -26,7 +28,7 @@ export function nextList(plan: NextPlan, title: string, run: (it: NextItem) => v
         { class: "pn-row" },
         h("span", { class: `ic ${cls}`, "aria-hidden": "true" }, svgIcon(ic, 17)),
         h("div", { class: "tx" }, h("b", {}, it.label), h("span", {}, it.sub)),
-        h("button", { class: `rs-btn${it.primary ? " primary" : ""}`, "aria-label": `${it.action}: ${it.label}`, onclick: () => run(it) }, it.action),
+        h("button", { class: `rs-btn${it.primary && it !== footer ? " primary" : ""}`, "aria-label": `${it.action}: ${it.label}`, onclick: () => run(it) }, it.action),
       );
     }),
   );

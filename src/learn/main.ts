@@ -136,11 +136,28 @@ onCourseLang((l) => {
 document.documentElement.lang = lang;
 
 // ------------------------------------------------------------------ library
+/** a course opened from the Flight Center's library goes back there (flightcenter.ts COURSE_FROM_KEY) */
+const COURSE_FROM_KEY = "ifr.courseFrom";
+function leftFlightCenter(): boolean {
+  try {
+    const was = sessionStorage.getItem(COURSE_FROM_KEY) === "fc";
+    sessionStorage.removeItem(COURSE_FROM_KEY);
+    return was;
+  } catch {
+    return false;
+  }
+}
+/** the player's, the presenter's and the editor's way back: where the course was opened from */
+function exitToLibrary() {
+  if (leftFlightCenter()) location.assign("index.html#courses");
+  else go({ k: "library" });
+}
 function topBar(): HTMLElement {
   const seg = h(
     "div",
     { class: "ga-lang", role: "group", "aria-label": "Language" },
-    ...(["en", "fr"] as Lang[]).map((l) =>
+    // the same order as the start page (FR, EN)
+    ...(["fr", "en"] as Lang[]).map((l) =>
       h(
         "button",
         {
@@ -150,7 +167,7 @@ function topBar(): HTMLElement {
           onclick: () => {
             setCourseLang(l);
             seg.querySelectorAll("button").forEach((b, i) => {
-              const on = (i === 0 ? "en" : "fr") === l;
+              const on = (i === 0 ? "fr" : "en") === l;
               b.classList.toggle("on", on);
               b.setAttribute("aria-pressed", on ? "true" : "false");
             });
@@ -192,6 +209,8 @@ function showLibrary() {
   let bar = topBar();
   // the library is the page's main content (one main landmark; the top bar is its banner)
   const scroller = h("main", { class: "ga-scroll" });
+  // this page's own library: a course opened from here comes back here
+  leftFlightCenter();
   page.append(bar, scroller);
   root.append(page);
   const lib: CourseLibrary = mountLibrary(scroller, {
@@ -234,6 +253,35 @@ async function loadCourse(
   }
   if (!course && isSampleId(id)) course = sampleCourse(id);
   return { course, store };
+}
+/** A course with no step yet: nothing to present or play, one way back to the editor (never a blank page). */
+function emptyCourse(id: string) {
+  root.replaceChildren(
+    h(
+      "div",
+      { class: "ga-page" },
+      topBar(),
+      h(
+        "div",
+        { class: "ga-center" },
+        h(
+          "div",
+          { class: "ga-card" },
+          h("h1", {}, ct("emptyCourse", lang)),
+          h("p", {}, ct("emptyCourseBody", lang)),
+          h(
+            "button",
+            {
+              class: "gl-primary",
+              type: "button",
+              onclick: () => go({ k: "edit", id }),
+            },
+            ct("backToEditor", lang),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 function notFound(id: string) {
   root.replaceChildren(
@@ -280,6 +328,7 @@ async function showPlayer(
   const { course, store } = await loadCourse(id);
   if (key !== routeKey) return;
   if (!course) return notFound(id);
+  if (!course.steps.length) return emptyCourse(id);
   root.replaceChildren();
   const host = h("div", { class: "ga-player" });
   root.append(host);
@@ -294,7 +343,7 @@ async function showPlayer(
     token: o.token,
     ...(o.mode ? { mode: o.mode } : {}),
     renderSlide: slideRenderer,
-    onExit: () => go({ k: "library" }),
+    onExit: () => exitToLibrary(),
     onLang: (l) => setCourseLang(l),
     onStep: (sid) => {
       const hash = academyHash({ k: "play", id: course.id, s: sid });
@@ -364,7 +413,7 @@ async function openShare(code: string) {
     course,
     store: null,
     lang,
-    onExit: () => go({ k: "library" }),
+    onExit: () => exitToLibrary(),
     onLang: (l) => setCourseLang(l),
   });
   view = { destroy: () => p.destroy(), setLang: (l) => p.setLang(l) };
@@ -377,6 +426,7 @@ async function showPresent(k: "present" | "project", id: string) {
   const { course, store } = await loadCourse(id);
   if (key !== routeKey) return;
   if (!course) return notFound(id);
+  if (!course.steps.length) return emptyCourse(id);
   root.replaceChildren();
   let el: HTMLElement | null = null;
   const renderSlide = academySlideRenderer(k === "present" ? store : null, () => el);
@@ -390,7 +440,7 @@ async function showPresent(k: "present" | "project", id: string) {
       lang,
       ...(r.k === "present" && r.s ? { stepId: r.s } : {}),
       renderSlide,
-      onExit: () => go({ k: "library" }),
+      onExit: () => exitToLibrary(),
       onLang: (l) => setCourseLang(l),
       onStep: (s) => {
         const hash = academyHash({ k: "present", id: course.id, s });
@@ -453,7 +503,7 @@ async function showEditor(id: string) {
     store,
     lang,
     ...(r.k === "edit" && r.s ? { stepId: r.s } : {}),
-    onExit: () => go({ k: "library" }),
+    onExit: () => exitToLibrary(),
     onLang: (l) => setCourseLang(l),
     onStep: (s) => {
       const hash = academyHash({ k: "edit", id: c.id, s });

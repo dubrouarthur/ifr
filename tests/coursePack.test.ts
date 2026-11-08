@@ -520,7 +520,7 @@ describe("migrate", () => {
     expect(m.value!.steps[2].layout).toBe("canvas");
     expect(m.value!.steps[4].drill!.practiceOnly).toBe(true);
     expect(migrate({ ...course(), version: 3 }).value).toBeNull();
-    expect(migrate("{").issues[0].en).toMatch(/invalid JSON/);
+    expect(migrate("{").issues[0].en).toMatch(/not a Wingdeck course/);
     expect(
       migrateCourseFile({ format: "ifr-course-file", version: 9 }).value,
     ).toBeNull();

@@ -159,8 +159,8 @@ export const TEMPLATES: TemplateDef[] = [
     kind: "fly",
     title: L("Fly it", "En vol"),
     intent: L(
-      "Brief, fly in the cockpit, graded in ACS words, back here",
-      "Briefing, vol au cockpit, noté en termes ACS, retour ici",
+      "Brief, fly in the cockpit, graded against pass criteria, back here",
+      "Briefing, vol au cockpit, noté selon les critères de réussite, retour ici",
     ),
     usesScene: true,
   },

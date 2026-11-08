@@ -310,6 +310,8 @@ export interface FlyResultInput {
   historyId?: string;
   procResults?: unknown[];
   cfiNote?: string;
+  /** stopped before the end: nothing was graded */
+  ungraded?: boolean;
 }
 /** the storage key of the one attempt a token can produce */
 export const flyAttemptKey = (
@@ -346,6 +348,7 @@ export async function recordFlyResult(
       criteria: r.criteria.filter((c) => !known.size || known.has(c.id)),
       ...(r.historyId ? { historyId: r.historyId } : {}),
       ...(r.procResults ? { procResults: r.procResults } : {}),
+      ...(r.ungraded ? { ungraded: true } : {}),
     },
     ...(r.cfiNote ? { cfiNote: r.cfiNote } : {}),
   };

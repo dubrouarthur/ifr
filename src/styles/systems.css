@@ -186,14 +186,13 @@
   justify-content: center;
   height: 22px;
 }
+/* the switch state is read in words (never by colour only): 12 px, ≥ 4.5:1 on the panel (OFF reads dimmer, ON white) */
 .rk-state,
 .kn-hint,
 .cb-state {
-  font:
-    700 9.5px/1.15 "Roboto Mono",
-    ui-monospace,
-    monospace;
-  color: var(--sp-faint);
+  font: 700 12px/1.15 var(--font-cond, "Roboto Condensed"), ui-sans-serif, sans-serif;
+  letter-spacing: 0.2px;
+  color: #a3adb7;
   white-space: nowrap;
 }
 

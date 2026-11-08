@@ -57,13 +57,14 @@ body.ios-open .procp {
   background: #33100f;
   border-bottom: 1px solid #521c1e;
 }
+/* white on a deep red: 5.6:1 (the bright alert red behind white text was 3.3:1) */
 .procp .pv-tag {
   flex: none;
-  font: 800 11px var(--font);
+  font: 800 12px var(--font);
   letter-spacing: 0.8px;
   padding: 3px 7px;
   border-radius: 4px;
-  background: var(--ck-bad);
+  background: #c62828;
   color: #fff;
 }
 .procp .qc-head {
@@ -1405,6 +1406,51 @@ body[data-procp-dock="mfd"] .procp:not(.moved) .procp-card {
 body[data-procp-dock="mfd"].ios-open .procp:not(.moved) {
   right: var(--procp-r, 12px);
   max-width: calc(100vw - 24px);
+}
+
+/* an emergency in flight: one instruction on screen. The ATC card steps back (it stays readable on hover / focus) */
+body.procp-on .cockpit .atc-radio:not(:hover):not(:focus-within) {
+  opacity: 0.55;
+}
+@media (prefers-reduced-motion: no-preference) {
+  body .cockpit .atc-radio {
+    transition: opacity 0.2s ease;
+  }
+}
+/* every item on one line but the one to do now (its note says how): the whole flow fits the card, the response
+   is read in full in the row's tooltip and on the cursor row */
+.procp .qc-row:not(.cur) .qc-line,
+.procp .qc-row:not(.cur) .qc-line.long {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: baseline;
+}
+.procp .qc-row:not(.cur) .qc-line.long .qc-dots {
+  display: block;
+}
+.procp .qc-row:not(.cur) .qc-line.long .qc-rs {
+  margin-left: auto;
+  text-align: right;
+}
+.procp .qc-row:not(.cur) .qc-ch {
+  flex: 0 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.procp .qc-row:not(.cur) .qc-rs {
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (pointer: fine) {
+  .procp .qc-row:not(.cur) {
+    min-height: 36px;
+    padding-top: 3px;
+    padding-bottom: 3px;
+  }
 }
 
 /* a short dock (laptop outside view, iPad landscape): the header and the rows tighten, the note of the item to do

@@ -113,7 +113,6 @@ export class TrayView {
         { class: "ce-label" },
         `${fr ? "Depuis le cockpit" : "From the cockpit"} · ${this.items.length}`,
       ),
-      h("span", { class: "ce-muted sm" }, fr ? "bac" : "tray"),
     );
     if (!this.items.length) {
       this.box.className = "ce-tray empty";

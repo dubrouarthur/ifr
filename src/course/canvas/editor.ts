@@ -23,6 +23,7 @@ import {
 import {
   EditorCore,
   keyCommand,
+  surfaceNav,
   type EditorCommand,
   type Mods,
 } from "./editorCore";
@@ -101,9 +102,9 @@ const STYLES: [string, string, string][] = [
   ["display", "Cover title", "Titre de couverture"],
   ["title", "Title", "Titre"],
   ["heading", "Heading", "Intertitre"],
-  ["lead", "Lead", "Chapeau"],
+  ["lead", "Subtitle", "Sous-titre"],
   ["body", "Body", "Texte"],
-  ["small", "Small", "Petit"],
+  ["small", "Caption", "Légende"],
   ["eyebrow", "Eyebrow", "Surtitre"],
   ["number", "Big number", "Grand chiffre"],
   ["quote", "Quote", "Citation"],
@@ -128,7 +129,7 @@ const isMac =
 
 // toolbar icons: 24 × 24 strokes, same weight as the app's icons
 const ICON: Record<string, string> = {
-  duplicate: "M8 8h11v11H8z M5 16V5h11",
+  duplicate: "M8 8h11v11H8z M5 16V5h11 M13.5 11v5 M11 13.5h5",
   delete: "M5 7h14 M10 7V4.5h4V7 M7 7l1 13h8l1-13",
   lock: "M7 11h10v9H7z M9 11V8a3 3 0 0 1 6 0v3",
   unlock: "M7 11h10v9H7z M9 11V8a3 3 0 0 1 5.8-1",
@@ -156,7 +157,8 @@ const ICON: Record<string, string> = {
   sameW: "M4 8h16v3H4z M4 15h16v3H4z M4 4v18 M20 4v18",
   sameH: "M8 4v16h3V4z M15 4v16h3V4z",
   center: "M12 3v4 M12 17v4 M3 12h4 M17 12h4 M8 8h8v8H8z",
-  copy: "M8 8h11v11H8z M5 16V5h11",
+  copy: "M9 9h10v11H9z M15 9V4H5v11h4",
+  cut: "M6 7a2.5 2.5 0 1 0 0 .01 M6 17a2.5 2.5 0 1 0 0 .01 M8 8l11 9 M8 16l11-9",
   paste: "M8 5h8v3H8z M6 6.5H5v14h14v-14h-1",
   multi: "M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M15 15l2 2 4-4",
   forward: "M9 9h11v11H9z M4 15V4h11 M14 13v4 M12 15h4",
@@ -225,8 +227,13 @@ export class CanvasEditor {
     this.bar.setAttribute("role", "toolbar");
     this.live = mk("div", "sle-live");
     this.live.setAttribute("aria-live", "polite");
+    // keyboard hint, shown while the surface itself has keyboard focus
+    const hint = mk("div", "sle-kbdhint");
+    hint.id = `sle-kbdhint-${Math.random().toString(36).slice(2, 8)}`;
+    hint.textContent = tx("kbdHint", this.lang);
+    this.el.setAttribute("aria-describedby", hint.id);
     this.overlay.append(this.gridSvg, this.hover, this.guidesSvg, this.marq);
-    this.el.append(this.stage, this.overlay, this.bar, this.live);
+    this.el.append(this.stage, this.overlay, this.bar, this.live, hint);
     host.append(this.el);
     this.core = new EditorCore(canvas, {
       onChange: (c, final) => {
@@ -313,11 +320,17 @@ export class CanvasEditor {
     return this.core.run({ k: "redo" });
   }
   /** Preview the slide as the n-th reveal shows it (later blocks dimmed); null shows everything. */
+  /** the Reveal preview step shown (null: every block, the editing view) */
+  private revealShown: number | null = null;
   previewReveal(n: number | null) {
+    this.revealShown = n;
     this.view.setReveal(n === null ? Infinity : n);
+    this.schedule();
   }
   setLang(l: Lang) {
     this.lang = l;
+    const hint = this.el.querySelector(".sle-kbdhint");
+    if (hint) hint.textContent = tx("kbdHint", l);
     this.closeText();
     this.view.setLang(l);
     this.schedule();
@@ -601,10 +614,20 @@ export class CanvasEditor {
       e.preventDefault();
       return;
     }
+    // The surface is one tab stop: arrows / Enter pick a block, Tab walks the blocks and then leaves
+    const nav = surfaceNav(
+      e,
+      this.core.selection,
+      this.core.canvas.blocks.filter((b) => !b.hiddenInEditor).map((b) => b.id),
+    );
+    if (nav) {
+      if (nav.select) this.core.setSelection(nav.select);
+      if (!nav.leave) e.preventDefault();
+      return;
+    }
+    // Escape with nothing selected: nothing to do here (focus stays on the surface; Tab then leaves)
     const cmd = keyCommand(e, this.core.grid);
     if (!cmd) return;
-    // Tab leaves the canvas when nothing is selected (keyboard users are never trapped)
-    if (cmd.k === "cycle" && !this.core.selection.length && e.shiftKey) return;
     if (this.run(cmd)) e.preventDefault();
   }
 
@@ -719,22 +742,34 @@ export class CanvasEditor {
   private drawReveals() {
     const seen = new Set<string>();
     const EV: Record<string, string> = { answered: "?", goalMet: "✓", presenter: "P", yourTurnDone: "↩" };
-    const blocks = [...this.core.canvas.blocks].sort((a, b) => a.frame.y - b.frame.y || a.frame.x - b.frame.x);
+    const all = this.core.canvas.blocks;
+    // badges only while the build order is being looked at (Reveal preview) or for the selected blocks' groups:
+    // never a row of numbers over the slide's own numbers
+    const selKeys = new Set(this.core.selected.map((b) => b.frame.group ?? b.id));
+    const showAll = this.revealShown !== null;
+    const blocks = [...all].sort((a, b) => a.frame.y - b.frame.y || a.frame.x - b.frame.x);
     for (const b of blocks) {
       const r = b.reveal;
       if (!r?.order || b.hiddenInEditor) continue;
-      const key = `${b.frame.group ?? b.id}:${r.order}:${r.when ?? ""}`;
+      const gk = b.frame.group ?? b.id;
+      if (!showAll && !selKeys.has(gk)) continue;
+      const key = `${gk}:${r.order}:${r.when ?? ""}`;
       if (seen.has(key)) continue;
       seen.add(key);
       const when = r.when ?? "click";
       const d = mk("div", `sle-rv${when !== "click" ? " ev" : ""}`);
       d.textContent = when === "click" ? String(r.order) : when.startsWith("afterCheck") ? "✓" : (EV[when] ?? "•");
       d.title = `${tx("reveal", this.lang)} ${r.order}`;
-      const bb = aabb(b.frame);
-      const [x, y] = this.view.toView([bb.x, bb.y]);
-      // outside the block, level with its first line: never on top of the content
-      d.style.left = `${x - 17}px`;
-      d.style.top = `${y + 11}px`;
+      // the whole group's box (a marker + its heading + its line), badge just outside its top-left corner
+      const mates = b.frame.group
+        ? all.filter((x) => x.frame.group === b.frame.group && x.reveal?.order === r.order)
+        : [b];
+      const boxes = mates.map((x) => aabb(x.frame));
+      const bx = Math.min(...boxes.map((q) => q.x));
+      const by = Math.min(...boxes.map((q) => q.y));
+      const [x, y] = this.view.toView([bx, by]);
+      d.style.left = `${x - 14}px`;
+      d.style.top = `${y - 14}px`;
       this.overlay.append(d);
     }
   }
@@ -929,7 +964,7 @@ export class CanvasEditor {
   private drawBar() {
     const sel = this.core.selected;
     const bar = this.bar;
-    if (!sel.length || this.core.gesture) {
+    if (!sel.length || this.core.gesture || this.menu) {
       bar.hidden = true;
       if (!sel.length) this.closePop();
       return;
@@ -1222,7 +1257,7 @@ export class CanvasEditor {
       out.push({ label: tx("editText", this.lang), icon: "edit", kbd: "↵", run: () => this.openText(one.id) });
     out.push(
       { label: this.w("copy"), icon: "copy", kbd: k("⌘C"), run: cmd({ k: "copy" }) },
-      { label: this.w("cut"), icon: "delete", kbd: k("⌘X"), disabled: locked, run: cmd({ k: "cut" }) },
+      { label: this.w("cut"), icon: "cut", kbd: k("⌘X"), disabled: locked, run: cmd({ k: "cut" }) },
       { label: this.w("paste"), icon: "paste", kbd: k("⌘V"), run: cmd({ k: "paste" }) },
       { label: tx("duplicate", this.lang), icon: "duplicate", kbd: k("⌘D"), disabled: locked, run: cmd({ k: "duplicate" }) },
     );
@@ -1293,6 +1328,8 @@ export class CanvasEditor {
     });
     this.el.append(m);
     this.menu = m;
+    // one menu at a time: the floating format bar steps aside while the context menu is open
+    this.bar.hidden = true;
     const er = this.el.getBoundingClientRect();
     const host = this.el.parentElement;
     const vx0 = host && this.zoom > 1 ? host.scrollLeft : 0;
@@ -1308,8 +1345,10 @@ export class CanvasEditor {
     requestAnimationFrame(() => m.querySelector<HTMLButtonElement>(".sle-menu-it:not(:disabled)")?.focus({ preventScroll: true }));
   }
   closeMenu() {
+    const had = !!this.menu;
     this.menu?.remove();
     this.menu = null;
+    if (had) this.schedule();
   }
 
   // ---------------------------------------------------------------- text marks

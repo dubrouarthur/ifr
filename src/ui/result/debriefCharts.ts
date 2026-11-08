@@ -472,10 +472,12 @@ export function lanesSvg(
   const phH = 18;
   const trH = touch ? 32 : 40;
   const lnH = touch ? 22 : 20;
-  const lanes = LANES.filter((k) => show.has(k));
+  // a lane with nothing on this flight is not drawn; with nothing at all, one line says so
+  const lanes = LANES.filter((k) => show.has(k) && m.lanes[k].length > 0);
+  const quiet = lanes.length === 0;
   const py = phH + 6;
   const ly = py + trH + 8;
-  const H = ly + lanes.length * lnH + 24;
+  const H = ly + (quiet ? 1 : lanes.length) * lnH + 24;
   let g = "";
   // the whole area takes the scrub gesture
   g += `<rect x="0" y="0" width="${W}" height="${H}" class="scrub-hit"/>`;
@@ -485,7 +487,7 @@ export function lanesSvg(
     const w = Math.max(0, X(p.t1) - x0 - 2);
     g += `<rect x="${f1(x0)}" y="0" width="${f1(w)}" height="${phH}" rx="3" class="ph${i % 2 ? " odd" : ""}"/>`;
     if (w > 40) {
-      const max = Math.floor((w - 12) / 6.3);
+      const max = Math.floor((w - 12) / 6.9);
       const lbl =
         p.label.length > max
           ? `${p.label.slice(0, Math.max(1, max - 1)).trimEnd()}…`
@@ -559,7 +561,7 @@ export function lanesSvg(
               : `<circle cx="${f1(x)}" cy="${f1(y)}" r="4" class="mk proc ${it.kind}"/>`;
       g += `<g class="evg" data-t="${it.t.toFixed(2)}">${mk}`;
       const lbl = it.label.length > 30 ? `${it.label.slice(0, 29)}…` : it.label;
-      const tw = lbl.length * 5.9 + 12;
+      const tw = lbl.length * 6.5 + 12;
       if (x + 8 > freeX && x + 8 + tw < W - RG + 6 && x + 8 + tw < nextX - 6) {
         g += `<text x="${f1(x + 8)}" y="${f1(y + 3.8)}" class="ev-t"><title>${esc(it.label)}</title>${esc(lbl)}</text>`;
         freeX = x + 8 + tw;
@@ -567,8 +569,10 @@ export function lanesSvg(
       g += `</g>`;
     });
   });
+  if (quiet)
+    g += `<text x="${LG + 4}" y="${f1(ly + lnH / 2 + 4)}" class="none">${esc(dx(L, "l.allNone"))}</text>`;
   // time axis
-  const ay = ly + lanes.length * lnH + 16;
+  const ay = ly + (quiet ? 1 : lanes.length) * lnH + 16;
   const every =
     [15, 30, 60, 120, 300, 600, 900].find((s) => (T / s) * 64 <= W - LG - RG) ??
     1200;

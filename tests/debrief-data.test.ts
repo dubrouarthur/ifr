@@ -259,7 +259,9 @@ describe("fromReport: an exercise, graded by its own standards", () => {
     expect(m.standards.length).toBe(rep.standards.length);
     expect(m.standards[0].verdict).toBe("not-met");
     expect(m.kpis[0].bad).toBe(true);
-    expect(m.task).toMatch(/IR\.IV\.A/);
+    // plain words, not the FAA code (the code is the report's reference)
+    expect(m.task).toBe(rep.task);
+    expect(rep.taskRef).toMatch(/IR\.IV\.A/);
   });
   it("moves every time onto the replay clock", () => {
     const f = m.findings[0];
