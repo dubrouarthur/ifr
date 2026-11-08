@@ -33,7 +33,7 @@ registerStrings("en", {
   "cf.briefK": "Course flight",
   "cf.goals": "Goals",
   "cf.keys": "Keys to success",
-  "cf.start": "Start",
+  "cf.start": "Start the flight",
   "cf.waiting": "The simulation waits at the start position.",
   "cf.openBrief": "Open the briefing",
   "cf.briefFor": "Briefing course",
@@ -41,7 +41,7 @@ registerStrings("en", {
     "Read the briefing course for this lesson in the Ground school (opens a new tab)",
   "cf.previewN": "Showing {n} s ago",
   "cf.captureShort": "Capture",
-  "cf.preparing": "Preparing your course flight…",
+  "cf.preparing": "Preparing the flight…",
   "cf.leaveQ": "Leave without a result?",
   "cf.leave": "Leave",
   "cf.keepFlying": "Keep flying",
@@ -52,6 +52,10 @@ registerStrings("en", {
   "cf.panel.steam": "Instrument panel for this flight: classic six-pack",
   "cf.panel.airliner": "Instrument panel for this flight: airliner PFD / ND",
   "cf.lessonFor": "This lesson is a step of the course",
+  "cf.kCourse": "Course",
+  "cf.stepOf": "Step {n} of {t}",
+  "cf.backingQ": "Back to the course…",
+  "cf.backCourseN": "Back to the course (step {n})",
 });
 registerStrings("fr", {
   "cf.capturing": "Capture pour",
@@ -74,7 +78,7 @@ registerStrings("fr", {
   "cf.briefK": "Vol du cours",
   "cf.goals": "Objectifs",
   "cf.keys": "Les clés",
-  "cf.start": "Commencer",
+  "cf.start": "Commencer le vol",
   "cf.waiting": "La simulation attend à la position de départ.",
   "cf.openBrief": "Ouvrir le briefing",
   "cf.briefFor": "Cours de briefing",
@@ -82,7 +86,7 @@ registerStrings("fr", {
     "Lire le cours de briefing de cette leçon à l’École au sol (nouvel onglet)",
   "cf.previewN": "Il y a {n} s",
   "cf.captureShort": "Capture",
-  "cf.preparing": "Préparation du vol du cours…",
+  "cf.preparing": "Préparation du vol…",
   "cf.leaveQ": "Partir sans résultat ?",
   "cf.leave": "Partir",
   "cf.keepFlying": "Continuer le vol",
@@ -93,6 +97,10 @@ registerStrings("fr", {
   "cf.panel.steam": "Tableau de bord de ce vol : six instruments classiques",
   "cf.panel.airliner": "Tableau de bord de ce vol : PFD / ND de ligne",
   "cf.lessonFor": "Cette leçon est une étape du cours",
+  "cf.kCourse": "Cours",
+  "cf.stepOf": "Étape {n} sur {t}",
+  "cf.backingQ": "Retour au cours…",
+  "cf.backCourseN": "Retour au cours (étape {n})",
 });
 
 export const l10n = (t: L10n | undefined): string =>
@@ -108,7 +116,7 @@ export interface CourseStripState {
     hasEditor: boolean;
   };
   /** a course flight in progress; hasResult: the exercise ended (leaving sends that result) */
-  flight?: { course: string; step: string; hasResult: boolean };
+  flight?: { course: string; step: string; hasResult: boolean; n?: number; of?: number };
   /** a ?fly= link is being resolved (the course store, the handoff, the samples load) */
   loading?: boolean;
 }
@@ -172,6 +180,8 @@ export class CourseFlightUi {
   });
   readonly card = h("div", { class: "cf-card-wrap", hidden: true });
   /** the loading card over the whole cockpit while a course flight is being prepared (main.ts appends it to body) */
+  private readonly veilMsg = h("b", {}, tr("cf.preparing"));
+  private readonly veilSub = h("small", { hidden: true });
   readonly veil = h(
     "div",
     { class: "cf-veil", hidden: true },
@@ -179,9 +189,18 @@ export class CourseFlightUi {
       "div",
       { class: "cf-veil-card", role: "status" },
       h("i", { class: "cf-spin", "aria-hidden": "true" }),
-      h("b", {}, tr("cf.preparing")),
+      h("div", { class: "cf-veil-t" }, this.veilMsg, this.veilSub),
     ),
   );
+  /** the hand-over to the course page: « Retour au cours… » and its title, never a blank page (UX logic §7) */
+  private leavingTo: string | null = null;
+  leaving(course: string) {
+    this.leavingTo = course;
+    this.veilMsg.textContent = tr("cf.backingQ");
+    this.veilSub.textContent = course;
+    this.veilSub.hidden = !course;
+    this.veil.hidden = false;
+  }
   private key = "";
   constructor(private act: CourseFlightActions) {}
 
@@ -278,13 +297,16 @@ export class CourseFlightUi {
     } else if (s.flight) {
       const f = s.flight;
       this.strip.setAttribute("aria-label", tr("cf.course"));
+      // « Cours · <course> · Étape 13 sur 14 » (the step's own title is the brief card's, and this line's tooltip)
+      const where = f.n && f.of ? tr("cf.stepOf", { n: f.n, t: f.of }) : f.step;
       this.strip.append(
         h(
           "div",
-          { class: "cf-what" },
+          { class: "cf-what", title: `${f.course} — ${f.step}` },
           svgIcon(I.learn, 16),
-          h("small", { class: "cf-course" }, f.course),
-          h("b", {}, f.step),
+          h("small", { class: "cf-kind" }, tr("cf.kCourse")),
+          h("b", { class: "cf-course-t" }, f.course),
+          h("span", { class: "cf-stepn" }, where),
         ),
         this.confirming
           ? h(
@@ -303,8 +325,9 @@ export class CourseFlightUi {
           : h(
               "div",
               { class: "cf-acts" },
+              // secondary, never filled: before take-off the one primary is « Commencer le vol » (UX logic §7)
               btn(
-                "primary",
+                "cf-back",
                 tr("cf.backCourse"),
                 tr("cf.backCourseTip"),
                 () => {
@@ -319,7 +342,7 @@ export class CourseFlightUi {
                     this.render(this.last);
                   }
                 },
-                svgIcon(I.arrow, 14),
+                h("span", { class: "cf-larr", "aria-hidden": "true" }, svgIcon(I.arrow, 14)),
               ),
             ),
       );
@@ -337,7 +360,11 @@ export class CourseFlightUi {
     this.strip.hidden = !s.capture && !s.flight && !s.loading;
     // while a ?fly= link resolves, the whole cockpit waits under one card: the previous panel and outside view never
     // show before the course step's own
-    this.veil.hidden = !s.loading;
+    if (this.leavingTo === null) {
+      this.veilMsg.textContent = tr("cf.preparing");
+      this.veilSub.hidden = true;
+      this.veil.hidden = !s.loading;
+    }
     return wasHidden !== this.strip.hidden;
   }
 

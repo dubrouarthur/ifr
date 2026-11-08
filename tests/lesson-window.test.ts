@@ -277,7 +277,7 @@ describe("lesson window: attention and status", () => {
   });
 
   it("step labels", () => {
-    expect(stepLabel(view({ step: 1, steps: 5 }))).toBe("Step 2 of 5");
+    expect(stepLabel(view({ step: 1, steps: 5 }))).toBe("Point 2 of 5");
     expect(stepLabel(view({ step: 1, steps: 5 }), true)).toBe("2/5");
     expect(stepLabel(view({ steps: 1 }))).toBe("Exercise");
     expect(stepLabel(view({ finished: true }))).toBe("Exercise complete");

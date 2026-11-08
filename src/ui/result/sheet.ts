@@ -47,6 +47,8 @@ export interface ResultDeps {
   onDrill?: () => void;
   /** another exercise (practise next) */
   onLesson?: (ex: Exercise) => void;
+  /** « ← Accueil »: the home page */
+  onHome?: () => void;
 }
 
 export interface ResultOpenOpts {
@@ -361,11 +363,21 @@ export class ResultSheet extends Modal {
       h(
         "div",
         { class: "rh-top" },
-        verdictChip(rep.outcome),
+        // one word: Réussi · Presque (one standard short) · À retravailler
+        verdictChip(rep.outcome, rep.outcome === "not-met" && rep.gradedCount >= 2 && rep.metCount >= rep.gradedCount - 1),
         rep.withHelp
           ? h("span", { class: "rs-chip help" }, rt("v.metHelp"))
           : null,
-        h("span", { class: "rs-eyebrow" }, rep.eyebrow),
+        // plain words; the FAA / ACS code is a reference in the tooltip (« Norme du test en vol »), never shown
+        rep.taskRef
+          ? h(
+              "span",
+              { class: "rs-eyebrow", title: rt("sheet.norm", { ref: rep.taskRef }) },
+              rep.eyebrow.endsWith(` · ${rep.taskRef}`)
+                ? rep.eyebrow.slice(0, -(rep.taskRef.length + 3))
+                : rep.eyebrow,
+            )
+          : h("span", { class: "rs-eyebrow" }, rep.eyebrow),
       ),
       h("h2", { id: "rs-hl" }, rep.headline),
       h(
@@ -423,16 +435,17 @@ export class ResultSheet extends Modal {
     // one primary per screen: the footer's primary runs the first row (unless it leads back to a course). An
     // ungraded attempt the pilot can resume: the footer says "Resume at 0:46", so the list keeps the other ways
     // ("Or · Restart") and does not repeat it
-    const footRow = this.opts.backToCourse ? undefined : plan.items[0];
-    const dropResume = ungraded && footRow?.kind === "resume" && plan.items.length > 1;
-    const listPlan: NextPlan = dropResume
-      ? { ...plan, why: { lead: "", text: "" }, items: plan.items.slice(1) }
-      : plan;
+    // one primary per screen: the footer's (« ← Retour au cours » from a course, else « Recommencer le vol »);
+    // the list's rows are plain buttons, and a « fly it again » row would repeat the footer's primary
+    const back0 = !!this.opts.backToCourse;
+    const listItems = plan.items
+      .filter((it) => back0 || (it.kind !== "retry" && it.kind !== "restart"))
+      .map((it) => ({ ...it, primary: false }));
+    const listPlan: NextPlan = { ...plan, items: listItems };
     this.pnEl = nextList(
       listPlan,
-      rt(dropResume ? "sec.other" : ungraded && plan.items[0]?.kind === "resume" ? "sec.pickUp" : "sec.next"),
+      rt(ungraded && listItems[0]?.kind === "resume" ? "sec.pickUp" : "sec.next"),
       (it) => this.runItem(it),
-      footRow,
     );
 
     // ---- spatial view
@@ -735,110 +748,41 @@ export class ResultSheet extends Modal {
   ): HTMLElement {
     const run = this.run!;
     const ungraded = rep.outcome === "ungraded";
-    const row1 = plan.items[0];
+    void plan;
     const back = this.opts.backToCourse;
-    const primaryLabel = (it: NextItem) =>
-      it.kind === "next-lesson"
-        ? rt("foot.nextLesson", { title: it.label })
-        : it.kind === "retry"
-          ? rt("foot.again")
-          : it.label;
+    const larr = () => h("span", { class: "rs-larr", "aria-hidden": "true" }, svgIcon(I.arrow, 15));
+    // the primary depends on where the flight came from (UX logic §7): back to the course, else fly it again
     const primary = back
       ? h(
           "button",
           { class: "rs-btn primary", onclick: () => this.act(back.run) },
-          svgIcon(I.learn, 16),
+          larr(),
           back.label,
         )
-      : row1
-        ? h(
-            "button",
-            { class: "rs-btn primary", onclick: () => this.runItem(row1) },
-            svgIcon(
-              row1.kind === "drill"
-                ? I.target
-                : row1.kind === "brief" || row1.kind === "lesson"
-                  ? I.learn
-                  : I.play,
-              16,
-            ),
-            primaryLabel(row1),
-          )
-        : h(
-            "button",
-            { class: "rs-btn primary", onclick: () => this.close() },
-            rt("foot.close"),
-          );
-    const primaryKind = back ? "course" : (row1?.kind ?? "close");
+      : h(
+          "button",
+          { class: "rs-btn primary", onclick: () => this.act(() => this.deps.onRetry(run.ex)) },
+          svgIcon(I.restart, 15),
+          rt("foot.retry"),
+        );
+    // the other ways on (resume, restart, the next lesson) are the rows of « Pour progresser » above: the footer
+    // keeps « ← Accueil », « Voir le débriefing » and the one primary (UX logic §7)
     const sec: HTMLElement[] = [];
-    if (back && row1)
-      sec.push(
-        h(
-          "button",
-          { class: "rs-btn", onclick: () => this.runItem(row1) },
-          primaryLabel(row1),
-        ),
-      );
-    if (ungraded) {
-      sec.unshift(
-        h(
-          "button",
-          { class: "rs-btn ghost", onclick: () => this.close() },
-          rt("foot.close"),
-        ),
-      );
-      if (
-        rep.resumable &&
-        this.deps.onResume &&
-        primaryKind !== "resume" &&
-        !(back && row1?.kind === "resume")
-      )
-        sec.push(
-          h(
-            "button",
-            {
-              class: "rs-btn",
-              onclick: () => this.act(() => this.deps.onResume!(run)),
-            },
-            svgIcon(I.play, 14),
-            rt("foot.resume", { t: mmss(rep.flown.sec) }),
-          ),
-        );
-    } else {
-      if (
-        next &&
-        primaryKind !== "next-lesson" &&
-        !(back && row1?.kind === "next-lesson")
-      )
-        sec.push(
-          h(
-            "button",
-            {
-              class: "rs-btn ghost",
-              onclick: () => this.act(() => this.deps.onNext(next)),
-            },
-            rt("foot.next"),
-          ),
-        );
-      if (primaryKind !== "retry" && !(back && row1?.kind === "retry"))
-        sec.push(
-          h(
-            "button",
-            {
-              class: "rs-btn",
-              onclick: () => this.act(() => this.deps.onRetry(run.ex)),
-            },
-            svgIcon(I.restart, 15),
-            rt(primaryKind === "next-lesson" ? "foot.again" : "foot.retry"),
-          ),
-        );
-    }
+    void next;
     const debrief = h(
       "button",
       { class: "rs-btn", onclick: () => this.act(() => this.deps.onDebrief()) },
       svgIcon(I.chart, 16),
       rt(ungraded ? "foot.replayFlown" : "foot.debrief"),
     );
+    const home = this.deps.onHome
+      ? h(
+          "button",
+          { class: "rs-btn rs-home", onclick: () => this.act(() => this.deps.onHome!()) },
+          larr(),
+          rt("foot.home"),
+        )
+      : null;
     const note = ungraded
       ? null
       : h(
@@ -852,7 +796,7 @@ export class ResultSheet extends Modal {
       role: "menu",
       hidden: true,
     });
-    const moreItems = [debrief, ...sec].map((b) => {
+    const moreItems = [debrief, ...sec, ...(home ? [home] : [])].map((b) => {
       const c = b.cloneNode(true) as HTMLElement;
       c.className = "rs-mi";
       c.setAttribute("role", "menuitem");
@@ -884,7 +828,7 @@ export class ResultSheet extends Modal {
     return h(
       "footer",
       { class: "rs-foot" },
-      h("div", { class: "wide-only l" }, debrief, note),
+      h("div", { class: "wide-only l" }, home, debrief, note),
       h("span", { class: "sp" }),
       h("div", { class: "wide-only r" }, ...sec),
       h("div", { class: "narrow-only" }, more, menu),

@@ -4,9 +4,10 @@ import { svgIcon, I } from "../icons";
 import { mmss, rt } from "./i18n";
 import type { HelpUse, Outcome, StandardResult } from "./types";
 
-export function verdictChip(o: Outcome): HTMLElement {
-  const cls = o === "met" ? "pass" : o === "not-met" ? "fail" : "none";
-  const key = o === "met" ? "v.met" : o === "not-met" ? "v.notMet" : "v.ungraded";
+/** the verdict in one word (UX logic §7): « Réussi » · « Presque » (one standard short) · « À retravailler » */
+export function verdictChip(o: Outcome, almost = false): HTMLElement {
+  const cls = o === "met" ? "pass" : o === "not-met" ? (almost ? "almost fail" : "fail") : "none";
+  const key = o === "met" ? "v.met" : o === "not-met" ? (almost ? "v.almost" : "v.notMet") : "v.ungraded";
   return h("span", { class: `rs-verdict ${cls}` }, h("i", { "aria-hidden": "true" }), rt(key));
 }
 

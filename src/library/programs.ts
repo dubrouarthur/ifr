@@ -38,6 +38,8 @@ export interface ProgramDef {
   frame: L10n;
   /** one line: what a student finds there */
   blurb: L10n;
+  /** the student's own words for « this one is for me » (the library's formation cards: « Je débute le pilotage ») */
+  who?: L10n;
   /** the level a course filed here gets when it names none */
   level: Level;
   /** the subject a course of this programme lands in when nothing better is known */
@@ -334,13 +336,14 @@ export const PROGRAMS: readonly ProgramDef[] = [
     code: { en: "LAPL · PPL", fr: "LAPL · PPL" },
     title: { en: "Pilot licence, aeroplane", fr: "Licence de pilote avion" },
     frame: {
-      en: "EASA Part-FCL · LAPL(A) and PPL(A)",
-      fr: "EASA Part-FCL · LAPL(A) et PPL(A)",
+      en: "EASA Part-FCL · on the Cessna 172",
+      fr: "EASA Part-FCL · sur Cessna 172",
     },
     blurb: {
-      en: "The 9 theory subjects and the flight modules, on the C172S",
-      fr: "Les 9 matières théoriques et les modules en vol, sur C172S",
+      en: "The 9 theory subjects, then flying: circuits, failures, navigation.",
+      fr: "Les 9 matières de la théorie, puis le pilotage : tour de piste, pannes, navigation.",
     },
+    who: { en: "I am learning to fly", fr: "Je débute le pilotage" },
     level: 1,
     fallback: "ppl.prep",
   },
@@ -348,41 +351,41 @@ export const PROGRAMS: readonly ProgramDef[] = [
     id: "night",
     code: { en: "Night", fr: "Vol de nuit" },
     title: { en: "Night rating", fr: "Qualification vol de nuit" },
-    frame: { en: "EASA FCL.810 · SERA", fr: "EASA FCL.810 · SERA" },
+    frame: { en: "EASA rating · after the PPL", fr: "Qualification EASA · après le PPL" },
     blurb: {
-      en: "When the horizon goes: rules, vision, failures at night",
-      fr: "Quand l’horizon disparaît : règles, vision, pannes de nuit",
+      en: "Rules and minima, night vision, navigation and failures at night.",
+      fr: "Règles et minima, vision de nuit, navigation et pannes de nuit.",
     },
+    who: { en: "I have my PPL", fr: "J’ai mon PPL" },
     level: 2,
     fallback: "night.rules",
   },
   {
     id: "ir",
     code: { en: "IR", fr: "IR" },
-    title: {
-      en: "Instrument rating",
-      fr: "Qualification de vol aux instruments",
-    },
-    frame: { en: "EASA IR · FAA Instrument", fr: "EASA IR · FAA Instrument" },
+    title: { en: "Instrument rating", fr: "Vol aux instruments" },
+    frame: { en: "EASA and FAA · on the Cessna 172", fr: "EASA et FAA · sur Cessna 172" },
     blurb: {
-      en: "From the first scan to the checkride, in syllabus order",
-      fr: "Du premier circuit visuel au test, dans l’ordre du programme",
+      en: "Seven subjects, from attitude instrument flying to the checkride.",
+      fr: "Sept matières, du pilotage aux instruments jusqu’au test pratique.",
     },
+    who: { en: "I am preparing the IR", fr: "Je prépare l’IR" },
     level: 2,
     fallback: "ir.proc",
   },
   {
     id: "atpl",
     code: { en: "ATPL", fr: "ATPL" },
-    title: { en: "ATPL theory", fr: "Théorique ATPL" },
+    title: { en: "ATPL theory", fr: "Théorie ATPL" },
     frame: {
       en: "EASA ATPL(A) · 13 subjects",
       fr: "EASA ATPL(A) · 13 matières",
     },
     blurb: {
-      en: "The subjects where live instruments and calculations help most",
-      fr: "Les matières où instruments en direct et calculs aident le plus",
+      en: "The 13 exam subjects, 010 to 090. The first courses are ready.",
+      fr: "Les 13 matières de l’examen, de 010 à 090. Premiers cours disponibles.",
     },
+    who: { en: "I am preparing ATPL theory", fr: "Je prépare la théorie ATPL" },
     level: 3,
     fallback: "atpl.010",
   },
@@ -392,8 +395,8 @@ export const PROGRAMS: readonly ProgramDef[] = [
     title: { en: "Club life", fr: "Vie du club" },
     frame: { en: "Your club’s own", fr: "Propre à votre club" },
     blurb: {
-      en: "What your club adds: its essentials, its checks, its courses",
-      fr: "Ce que votre club ajoute : son essentiel, ses contrôles, ses cours",
+      en: "The checklists and drills your club has adapted",
+      fr: "Les check-lists et les exercices adaptés par votre club",
     },
     level: 1,
     fallback: "club.courses",
@@ -407,8 +410,8 @@ export const PROGRAMS: readonly ProgramDef[] = [
       fr: "Créer · présenter · suivre",
     },
     blurb: {
-      en: "Build a course, teach it in class, follow your students",
-      fr: "Créer un cours, l’enseigner en salle, suivre vos élèves",
+      en: "Your courses and drafts, the templates, importing your slides",
+      fr: "Vos cours et brouillons, les modèles, l’import de diapositives",
     },
     level: 1,
     fallback: "instructors.mine",
@@ -424,7 +427,7 @@ export const programDef = (id: ProgramId): ProgramDef =>
 export const isProgramId = (x: unknown): x is ProgramId =>
   typeof x === "string" && (PROGRAM_IDS as readonly string[]).includes(x);
 export const GROUP_TITLE: Record<SubjectGroup, L10n> = {
-  theory: { en: "Theory · the 9 subjects", fr: "Théorie · les 9 matières" },
+  theory: { en: "Theory", fr: "Théorie" },
   flight: { en: "In flight", fr: "En vol" },
 };
 
@@ -474,7 +477,7 @@ export const KIND_ORDER: readonly LibKind[] = ["course", "sim", "proc"];
 export const KIND_FILTER: Record<LibKind, L10n> = {
   course: { en: "Courses", fr: "Cours" },
   sim: { en: "In the simulator", fr: "Au simulateur" },
-  proc: { en: "Procedures and checklists", fr: "Procédures et check-lists" },
+  proc: { en: "Checklists", fr: "Check-lists" },
 };
 export const KIND_OF: Record<LibSub, LibKind> = {
   course: "course",
@@ -488,7 +491,7 @@ export const KIND_OF: Record<LibSub, LibKind> = {
 /** The word on a card. Never "Vol", "Scénario" or "Circuit école". */
 export const SUB_LABEL: Record<LibSub, L10n> = {
   course: { en: "Course", fr: "Cours" },
-  lesson: { en: "Sim lesson", fr: "Leçon au simulateur" },
+  lesson: { en: "Simulator lesson", fr: "Leçon au simulateur" },
   drill: { en: "Failure drill", fr: "Exercice de panne" },
   circuit: { en: "Graded route", fr: "Parcours noté" },
   scenario: { en: "Free practice", fr: "Entraînement libre" },
@@ -497,7 +500,7 @@ export const SUB_LABEL: Record<LibSub, L10n> = {
 };
 export const SUB_PLURAL: Record<LibSub, L10n> = {
   course: { en: "Courses", fr: "Cours" },
-  lesson: { en: "Sim lessons", fr: "Leçons au simulateur" },
+  lesson: { en: "Simulator lessons", fr: "Leçons au simulateur" },
   drill: { en: "Failure drills", fr: "Exercices de panne" },
   circuit: { en: "Graded routes", fr: "Parcours notés" },
   scenario: { en: "Free practice", fr: "Entraînements libres" },
@@ -526,8 +529,8 @@ export const ROW_SUBS: ReadonlySet<LibSub> = new Set<LibSub>([
 ]);
 
 export const LEVELS: readonly { id: Level; title: L10n }[] = [
-  { id: 1, title: { en: "Getting started", fr: "Débuter" } },
-  { id: 2, title: { en: "Core", fr: "Fondamentaux" } },
+  { id: 1, title: { en: "Beginner", fr: "Débutant" } },
+  { id: 2, title: { en: "Intermediate", fr: "Intermédiaire" } },
   { id: 3, title: { en: "Advanced", fr: "Avancé" } },
 ];
 export const levelTitle = (l: Level): L10n =>

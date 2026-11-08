@@ -1312,8 +1312,9 @@ body.touch .modal.dbx {
 .dbx-top .sp {
   flex: 1;
 }
+/* « ← Résultat »: the arrow points back (the span flips it, ui-result.css end) */
 .dbx-back svg {
-  transform: rotate(90deg);
+  transform: none;
 }
 .dbx-ttl {
   display: flex;
@@ -2633,4 +2634,19 @@ body.touch .modal.dbx .dbx-sochip {
 .dbx-so-check.bad {
   color: var(--bad);
   font-weight: 700;
+}
+
+/* ------------------------------------------------------------------ UX logic §7: « ← » before a way back, the
+   verdict « Presque » (one standard short) in amber, not red */
+.rs-larr {
+  display: inline-flex;
+  transform: scaleX(-1);
+}
+.rs-verdict.almost {
+  color: #8a4b00;
+  background: #fff4e0;
+  border-color: #f1d3a1;
+}
+.rs-verdict.almost i {
+  background: #c77700;
 }

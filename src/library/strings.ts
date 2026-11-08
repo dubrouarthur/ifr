@@ -5,27 +5,24 @@ import { BRAND } from "../brand";
 
 const S = {
   eyebrow: { en: "Library", fr: "Bibliothèque" },
-  title: {
-    en: "Everything we teach, shelved by licence",
-    fr: "Tout ce que l’on enseigne, rangé par licence",
-  },
+  title: { en: "Choose your programme", fr: "Choisissez votre formation" },
   lead: {
-    en: "Every course, sim lesson and checklist has one place: its programme, then its subject, in training order.",
-    fr: "Chaque cours, leçon au simulateur et check-list a une seule place : son programme, puis sa matière, dans l’ordre de la formation.",
+    en: "Each programme is shelved by subject, in the order of the official syllabus.",
+    fr: "Chaque formation est rangée par matière, dans l’ordre du programme officiel.",
+  },
+  eyebrowN: {
+    en: "{n} courses, lessons and checklists",
+    fr: "{n} cours, leçons et check-lists",
   },
   search: {
     en: "Search a course, a lesson, a checklist",
     fr: "Rechercher un cours, une leçon, une check-list",
   },
   searchIn: { en: "Search in {p}", fr: "Rechercher dans {p}" },
-  searchAll: { en: "in the whole library", fr: "dans toute la bibliothèque" },
   items: { en: "{n} items", fr: "{n} éléments" },
   item1: { en: "1 item", fr: "1 élément" },
-  itemsWord: { en: "items", fr: "éléments" },
-  itemWord: { en: "item", fr: "élément" },
   doneN: { en: "{n} done", fr: "{n} terminés" },
   done1: { en: "1 done", fr: "1 terminé" },
-  doneWord: { en: "done", fr: "terminés" },
   all: { en: "All", fr: "Tout" },
   newCourse: { en: "New course", fr: "Nouveau cours" },
   library: { en: "Library", fr: "Bibliothèque" },
@@ -34,102 +31,19 @@ const S = {
   continue: { en: "Continue", fr: "Reprendre" },
   continueSub: { en: "Where you left off", fr: "Là où vous vous êtes arrêté" },
   where: { en: "Where to start?", fr: "Où commencer ?" },
-  whereSub: {
-    en: "Pick the one that fits you",
-    fr: "Choisissez ce qui vous ressemble",
-  },
-  routePpl: { en: "I am learning to fly", fr: "Je débute le pilotage" },
-  routePplShort: { en: "I am learning to fly", fr: "Je débute le pilotage" },
-  routePplBody: {
-    en: "The 9 theory subjects, then the flight modules: circuits, failures and emergencies, navigation.",
-    fr: "Les 9 matières de la théorie, puis les modules en vol : tour de piste, pannes et urgences, navigation.",
-  },
-  routePplFirst: { en: "First step:", fr: "Premier pas :" },
-  routePplGo: { en: "Open LAPL · PPL", fr: "Ouvrir LAPL · PPL" },
-  routeIr: {
-    en: "I am preparing the instrument rating",
-    fr: "Je prépare la qualification IR",
-  },
-  routeIrShort: { en: "I am preparing the IR", fr: "Je prépare l’IR" },
-  routeIrBody: {
-    en: "Seven modules in syllabus order, from the instrument scan to the checkride.",
-    fr: "Sept modules dans l’ordre du programme, du circuit visuel au test pratique.",
-  },
-  routeIrFirst: { en: "Module 1:", fr: "Module 1 :" },
-  routeIrGo: { en: "Start module 1", fr: "Commencer le module 1" },
-  routeFi: { en: "I teach", fr: "J’enseigne" },
-  routeFiBody: {
-    en: "Build a course from a template or your own slides, present it in class, follow your students.",
-    fr: "Créer un cours depuis un modèle ou vos diapositives, le présenter en salle, suivre vos élèves.",
-  },
-  routeFiFirst: { en: "The quickest:", fr: "Le plus rapide :" },
-  routeFiPdf: {
-    en: "start from a ready-made template",
-    fr: "partir d’un modèle tout prêt",
-  },
   newHere: { en: `New to ${BRAND.name}?`, fr: `Nouveau sur ${BRAND.name} ?` },
-  productDeck: {
-    en: `Discover ${BRAND.name}`,
-    fr: `Découvrir ${BRAND.name}`,
-  },
-  programs: { en: "The programmes", fr: "Les programmes" },
-  programsSub: { en: "In training order", fr: "Dans l’ordre de la formation" },
-  openShelf: { en: "Open", fr: "Ouvrir" },
-  alsoHereN: {
-    en: "+ {n} from other programmes",
-    fr: "+ {n} d’autres programmes",
-  },
-  alsoHere1: {
-    en: "+ 1 from another programme",
-    fr: "+ 1 d’un autre programme",
-  },
   toolsN: { en: "{n} tools", fr: "{n} outils" },
   // programme page
-  index: { en: "Programme", fr: "Programme" },
-  otherPrograms: { en: "Other programmes", fr: "Autres programmes" },
-  contents: { en: "Contents", fr: "Sommaire" },
-  playLessons: { en: "Fly the lessons in order", fr: "Enchaîner les leçons" },
-  aboutSim: {
-    en: "about {n} min in the simulator",
-    fr: "environ {n} min de vol",
-  },
-  soonLine: {
-    en: "Coming soon:",
-    fr: "À venir :",
-  },
-  alsoIn: { en: "Also useful in {p}", fr: "Aussi utile en {p}" },
-  alsoHere: { en: "Also useful here", fr: "Aussi utile ici" },
-  alsoHereSub: {
-    en: "from another programme",
-    fr: "d’un autre programme",
-  },
-  shelvedIn: { en: "shelved in {p}", fr: "rangé dans {p}" },
-  see: { en: "See {p}", fr: "Voir {p}" },
-  nothingKind: {
-    en: "Nothing of this kind in {p} yet.",
-    fr: "Rien de ce type dans {p} pour l’instant.",
-  },
+  index: { en: "Contents", fr: "Sommaire" },
   // search
   results: { en: "{n} results for “{q}”", fr: "{n} résultats pour « {q} »" },
   result1: { en: "1 result for “{q}”", fr: "1 résultat pour « {q} »" },
-  resultsWhere: {
-    en: "Shelved where they live: {s}, {p}.",
-    fr: "Rangés là où ils vivent : {s}, {p}.",
-  },
   subjectsN: { en: "{n} subjects", fr: "{n} matières" },
   subject1: { en: "1 subject", fr: "1 matière" },
-  programsN: { en: "in {n} programmes", fr: "dans {n} programmes" },
-  program1: { en: "in one programme", fr: "dans un seul programme" },
   noResults: {
     en: "Nothing matches “{q}”",
     fr: "Rien ne correspond à « {q} »",
   },
-  noResultsBody: {
-    en: "Try another word, a licence (PPL, IR), an aircraft or a navaid.",
-    fr: "Essayez un autre mot, une licence (PPL, IR), un avion ou une balise.",
-  },
-  clearSearch: { en: "Clear the search", fr: "Effacer la recherche" },
-  tryWords: { en: "Try:", fr: "Essayez :" },
   // cards
   steps: { en: "{n} steps", fr: "{n} étapes" },
   step1: { en: "1 step", fr: "1 étape" },
@@ -140,8 +54,6 @@ const S = {
   triesBest: { en: "{a} · best {n}%", fr: "{a} · meilleur {n} %" },
   attemptsN: { en: "{n} attempts", fr: "{n} essais" },
   attempt1: { en: "1 attempt", fr: "1 essai" },
-  lessonWord: { en: "Lesson", fr: "Leçon" },
-  ofN: { en: "of {n}", fr: "sur {n}" },
   briefingFlight: { en: "Briefing + flight", fr: "Briefing + vol" },
   assignedTag: { en: "Assigned", fr: "Assigné" },
   draftTag: { en: "Draft", fr: "Brouillon" },
@@ -177,11 +89,6 @@ const S = {
   },
   // instructors' tools
   tools: { en: "Instructor tools", fr: "Outils de l’instructeur" },
-  toolNew: { en: "New course", fr: "Nouveau cours" },
-  toolNewSub: {
-    en: "Start from a beautiful deck, then add live instruments",
-    fr: "Partir d’un beau modèle, puis ajouter des instruments en direct",
-  },
   toolPdf: { en: "Import your slides", fr: "Importer vos diapositives" },
   toolPdfSub: {
     en: "Your presentation as a PDF: each page becomes a step",
@@ -201,21 +108,21 @@ const S = {
     fr: "Fenêtre projecteur et notes du présentateur",
   },
   draftsEmpty: {
-    en: "Your own courses appear here.",
-    fr: "Vos propres cours apparaîtront ici.",
+    en: "You have not created a course yet.",
+    fr: "Vous n’avez pas encore créé de cours.",
   },
   draftsEmptyBody: {
-    en: "Start from a deck in the classroom theme, or bring the slides you already teach with.",
-    fr: "Partez d’un modèle en thème « salle de cours », ou reprenez les diapositives avec lesquelles vous enseignez déjà.",
+    en: "Start from a template: it is ready in ten minutes.",
+    fr: "Partez d’un modèle : c’est prêt en dix minutes.",
   },
   // file a course
   file: { en: "File in a subject…", fr: "Classer dans une matière…" },
   fileTitle: { en: "File “{t}”", fr: "Classer « {t} »" },
   fileBody: {
     en: "A course lives in one place: a programme, then one of its subjects.",
-    fr: "Un cours a une seule place : un programme, puis l’une de ses matières.",
+    fr: "Un cours a une seule place : une formation, puis l’une de ses matières.",
   },
-  fileProgram: { en: "Programme", fr: "Programme" },
+  fileProgram: { en: "Programme", fr: "Formation" },
   fileSubject: { en: "Subject", fr: "Matière" },
   fileNone: { en: "Not filed (my courses)", fr: "Non classé (mes cours)" },
   level: { en: "Level", fr: "Niveau" },
@@ -239,57 +146,23 @@ const S = {
   close: { en: "Close", fr: "Fermer" },
   // pointers, planned courses, empty subjects
   lessonN: { en: "Lesson {n}:", fr: "Leçon {n} :" },
-  orFree: { en: "Or a first free flight:", fr: "Ou un premier vol libre :" },
-  soon: { en: "Coming soon", fr: "À venir" },
-  create: { en: "Create", fr: "Créer" },
-  soonCourse: { en: "Course coming soon", fr: "Cours à venir" },
-  soonHead: {
-    en: "Coming soon",
-    fr: "À venir",
-  },
-  pointerHead: { en: "From {p}", fr: "Du programme {p}" },
-  pointerSub: {
-    en: "These come from another programme.",
-    fr: "Ils viennent d’un autre programme.",
-  },
-  pointersN: { en: "{n} elsewhere", fr: "{n} ailleurs" },
-  usefulElsewhere: {
-    en: "{n} in other programmes",
-    fr: "{n} dans d’autres programmes",
-  },
-  pointerTip: {
-    en: "{n} useful items, shelved in another programme",
-    fr: "{n} éléments utiles, rangés dans un autre programme",
-  },
-  notYet: { en: "Coming soon:", fr: "À venir :" },
-  emptyRailN: {
-    en: "Coming soon: {n} subjects",
-    fr: "À venir : {n} matières",
-  },
-  emptyRail1: {
-    en: "Coming soon: 1 subject",
-    fr: "À venir : 1 matière",
-  },
+  notYet: { en: "Coming soon:", fr: "Bientôt :" },
   // search: subjects and planned courses
   hitSubjects: { en: "Subjects", fr: "Matières" },
   hitSubject: { en: "Subject", fr: "Matière" },
   hitSoon: { en: "Coming to the library", fr: "Bientôt dans la bibliothèque" },
   subjectOnly: {
-    en: "“{q}” in the syllabus",
-    fr: "« {q} » dans le programme",
+    en: "“{q}”: coming to the library",
+    fr: "« {q} » : bientôt dans la bibliothèque",
   },
   subjectOnlyBody: {
-    en: "No course, lesson or checklist has these words yet; the subject below is where they will live.",
-    fr: "Aucun cours, leçon ou check-list ne porte encore ces mots ; la matière ci-dessous est l’endroit où ils seront rangés.",
+    en: "No course, lesson or checklist has these words yet. Here is the subject where they will be filed.",
+    fr: "Aucun cours, leçon ou check-list ne porte encore ces mots. Voici la matière où ils seront rangés.",
   },
   suggest: { en: "Closest subjects:", fr: "Matières les plus proches :" },
   // club tools
   clubTools: { en: "Club tools", fr: "Outils du club" },
-  clubNew: { en: "New club course", fr: "Nouveau cours du club" },
-  clubNewSub: {
-    en: "Filed straight in Club › Club courses",
-    fr: "Rangé directement dans Club › Cours du club",
-  },
+  clubNew: { en: "Create a club course", fr: "Créer un cours du club" },
   clubPack: { en: "Import the club pack", fr: "Importer le pack du club" },
   clubPackSub: {
     en: "The club’s checklists and drills, from a link or a file",
@@ -320,24 +193,83 @@ const S = {
   },
   clubImport: { en: "Import a course", fr: "Importer un cours" },
   // every flight of the simulator
-  flightsTitle: { en: "In the simulator", fr: "Au simulateur" },
-  flightsEyebrow: { en: "All flights", fr: "Tous les vols" },
+  flightsTitle: {
+    en: "Simulator lessons and practice",
+    fr: "Leçons et entraînements au simulateur",
+  },
   flightsLead: {
     en: "Every sim lesson, failure drill, graded route and free practice, shelved in its programme and subject.",
-    fr: "Chaque leçon au simulateur, exercice de panne, parcours noté et entraînement libre, rangé dans son programme et sa matière.",
-  },
-  flightsWord: { en: "flights", fr: "vols" },
-  flightsLink: {
-    en: "All flights in the simulator · {n}",
-    fr: "Tous les vols au simulateur · {n}",
+    fr: "Chaque leçon au simulateur, exercice de panne, parcours noté et entraînement libre, rangé dans sa formation et sa matière.",
   },
   // the Flight Center's entry
   fcLibrary: { en: "Library", fr: "Bibliothèque" },
   fcLibrarySub: {
     en: "Courses, sim lessons and checklists, by programme",
-    fr: "Cours, leçons au simulateur et check-lists, par programme",
+    fr: "Cours, leçons au simulateur et check-lists, par formation",
   },
   fcOpen: { en: "Open the library", fr: "Ouvrir la bibliothèque" },
+  // UX logic step B: the library home, the formation pages, search
+  resumeBtn: { en: "Resume", fr: "Reprendre" },
+  stepOf: { en: "step {n} of {m}", fr: "étape {n} sur {m}" },
+  startWith: { en: "Start with", fr: "Commencer par" },
+  continueWith: { en: "Continue with", fr: "Continuer par" },
+  forClub: {
+    en: "For the club and instructors",
+    fr: "Pour le club et les instructeurs",
+  },
+  coursesN: { en: "{n} courses", fr: "{n} cours" },
+  course1: { en: "1 course", fr: "1 cours" },
+  discover: {
+    en: `Discover ${BRAND.name} in 1 minute`,
+    fr: `Découvrir ${BRAND.name} en 1 minute`,
+  },
+  doneOf: { en: "{d} of {n} done", fr: "{d} sur {n} terminés" },
+  start: { en: "Start", fr: "Commencer" },
+  startLesson: { en: "Start: lesson {n}", fr: "Commencer : leçon {n}" },
+  goOn: { en: "Continue", fr: "Continuer" },
+  goOnLesson: { en: "Continue: lesson {n}", fr: "Continuer : leçon {n}" },
+  inSim: { en: "in the simulator", fr: "au simulateur" },
+  allDone: { en: "Everything is done", fr: "Tout est terminé" },
+  syllabusHint: {
+    en: "The subjects follow the official syllabus, {a} to {b}.",
+    fr: "Les matières suivent le programme officiel, de {a} à {b}.",
+  },
+  soonOne: {
+    en: "Coming to {b}: “{t}” is being written.",
+    fr: "Bientôt dans {b} : « {t} » est en préparation.",
+  },
+  soonMany: {
+    en: "Coming to {b}: {t} are being written.",
+    fr: "Bientôt dans {b} : {t} sont en préparation.",
+  },
+  soonBare: { en: "Coming to {b}.", fr: "Bientôt dans {b}." },
+  soonWord: { en: "soon", fr: "bientôt" },
+  createHere: { en: "Create a course here", fr: "Créer un cours ici" },
+  fromProgram: { en: "From the {p} programme", fr: "Vient de la formation {p}" },
+  noneOfKind: {
+    en: "Nothing under “{k}” here.",
+    fr: "Rien dans « {k} » ici.",
+  },
+  showAllN: { en: "Show all · {n}", fr: "Tout afficher · {n}" },
+  about: { en: "about {t}", fr: "environ {t}" },
+  contentsAt: { en: "Contents: {s}", fr: "Sommaire : {s}" },
+  noHits: { en: "No results for “{q}”", fr: "Aucun résultat pour « {q} »" },
+  noHitsTry: { en: "Try", fr: "Essayez" },
+  or: { en: "or", fr: "ou" },
+  orBrowse: { en: "or browse", fr: "ou parcourez" },
+  searchAllBtn: {
+    en: "Search the whole library",
+    fr: "Chercher dans toute la bibliothèque",
+  },
+  and: { en: "and", fr: "et" },
+  clubNothing: {
+    en: "Your club has not added anything here yet.",
+    fr: "Votre club n’a encore rien ajouté ici.",
+  },
+  clubNoLists: {
+    en: "Your club has not adapted a checklist yet. The library’s checklists apply.",
+    fr: "Votre club n’a encore adapté aucune check-list. Les check-lists de la bibliothèque s’appliquent.",
+  },
   // a11y
   kindsNav: { en: "What to show", fr: "Ce qu’il faut afficher" },
   crumbNav: { en: "Where you are", fr: "Où vous êtes" },

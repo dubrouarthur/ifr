@@ -13,8 +13,8 @@ const EN = {
   groundSchoolLead:
     "The platform for aviation education: slides and a flight simulator in one tool, for aeroclubs and flight schools, from LAPL and PPL to IR and ATPL theory.",
   tileDesc: "Build courses with live instruments, teach them, fly them.",
-  flightCenter: "Flight Center",
-  openSim: "Open the Flight Center",
+  flightCenter: "Home",
+  openSim: "Open the simulator",
   search: "Search courses",
   searchShort: "Search",
   // filters
@@ -156,11 +156,11 @@ const EN = {
   undo: "Undo",
   redo: "Redo",
   // your turn (on a slide)
-  yourTurn: "Your turn",
+  yourTurn: "Try it",
   backToSlide: "Back to the slide",
   yourTurnMet: "Done: {t}",
   yourTurnSim:
-    "This Your turn opens the full simulator: fly it from the cockpit with the course open in another tab.",
+    "This exercise happens in the full simulator: fly it from the cockpit, the course stays open in another tab.",
   // presenter
   presentMissing:
     "The presenter console is not installed in this build: the course opens in the player instead.",
@@ -172,8 +172,8 @@ const FR: Record<CourseStringKey, string> = {
   groundSchoolLead:
     "La plateforme de l’éducation aéronautique : diapositives et simulateur de vol dans un seul outil, pour les aéroclubs et les écoles de pilotage, du LAPL et du PPL jusqu’à l’IR et la théorie ATPL.",
   tileDesc: "Créez des cours avec instruments en direct, enseignez-les, volez-les.",
-  flightCenter: "Flight Center",
-  openSim: "Ouvrir le Flight Center",
+  flightCenter: "Accueil",
+  openSim: "Ouvrir le simulateur",
   search: "Rechercher un cours",
   searchShort: "Rechercher",
   fAll: "Tous",
@@ -305,11 +305,11 @@ const FR: Record<CourseStringKey, string> = {
   sampleCopy: "Les exemples sont en lecture seule : voici votre copie.",
   undo: "Annuler",
   redo: "Rétablir",
-  yourTurn: "À vous",
+  yourTurn: "Manipulation",
   backToSlide: "Retour à la diapositive",
   yourTurnMet: "Réussi : {t}",
   yourTurnSim:
-    "Ce « À vous » ouvre le simulateur complet : volez-le au cockpit, le cours ouvert dans un autre onglet.",
+    "Cet exercice se fait dans le simulateur complet : volez-le au cockpit, le cours reste ouvert dans un autre onglet.",
   presentMissing:
     "La console du présentateur n’est pas installée dans cette version : le cours s’ouvre dans le lecteur.",
 };

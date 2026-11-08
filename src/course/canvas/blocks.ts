@@ -953,6 +953,7 @@ function quizBlock(b: Of<"quiz">, env: BlockEnv): BlockView {
             why.replaceChildren(verdict, richFragment(loc(o.why ?? q.explain, env.lang), { lang: env.lang }));
             why.classList.remove("is-reserve");
             env.fire("answered");
+            env.fire(i === q.answer ? "quizRight" : "quizWrong");
           });
         list.append(opt);
       });
@@ -1094,6 +1095,7 @@ function calcBlock(b: Of<"calc">, env: BlockEnv): BlockView {
                 ? "Pas tout à fait : reprenez le calcul."
                 : "Not quite: work it through again.";
           env.fire("answered");
+          env.fire(r.ok ? "calcRight" : "calcWrong");
         });
         input.addEventListener("keydown", (e) => {
           if (e.key === "Enter") btn.click();

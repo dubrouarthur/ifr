@@ -61,7 +61,7 @@ import {
   hasDoThis,
   hasPresenterReveal,
   icon,
-  kindChip,
+  isTask,
   L,
   ps,
   ReaderView,
@@ -69,6 +69,7 @@ import {
   richEl,
   stepMeta,
   takeawaysOf,
+  taskChip,
   textEl,
   type ReaderRevealState,
 } from "./reader";
@@ -82,7 +83,7 @@ import {
   type CalcUiState,
 } from "./calcStep";
 import { DrillView, type DrillRun } from "./drill";
-import { markText, OutlineSheet, ticksEl, type StepMark } from "./outline";
+import { markText, OutlineSheet, type StepMark } from "./outline";
 import {
   FlyItView,
   flownText,
@@ -107,6 +108,8 @@ export interface SlideContext {
   onAction(a: BlockAction): void;
   /** the problem the student is solving / solved in a calc step (blocks with fromCalc, bindings) */
   calcProblem?(stepId: string): CalcProblem | null;
+  /** an event on the slide: « answered », « quizRight » / « quizWrong », « goalMet »… (the step's marks) */
+  onEvent?(when: string): void;
 }
 /** The default slide renderer: the canvas package's SlideView in play mode. */
 export const canvasSlideRenderer: SlideRenderer = (ctx) => {
@@ -124,8 +127,15 @@ export const canvasSlideRenderer: SlideRenderer = (ctx) => {
     label: L(ctx.step.title, ctx.lang),
     calcProblem: (id) => ctx.calcProblem?.(id) ?? null,
     onAction: (a) => ctx.onAction(a),
+    onEvent: (w) => ctx.onEvent?.(w),
   });
-  return { el, next: () => v.next(), prev: () => v.prev(), setLang: (l) => v.setLang(l), destroy: () => v.destroy() };
+  return {
+    el,
+    next: () => v.next(),
+    prev: () => v.prev(),
+    setLang: (l) => v.setLang(l),
+    destroy: () => v.destroy(),
+  };
 };
 export interface SlideHost {
   el: HTMLElement;
@@ -235,8 +245,10 @@ export interface PlayerOptions {
   stepId?: string;
   /** #a=<token>: back from the cockpit */
   token?: string;
-  /** the subtitle's mode word (default "self-study") */
+  /** the subtitle's mode word (the editor's student preview says « Aperçu élève ») */
   mode?: string;
+  /** the context line under the title: where the course is filed (« IR › Radionavigation ») */
+  context?: (l: Lang) => string;
   refresher?: boolean;
   level?: GuidanceLevel;
   /** designed slides (default: the canvas renderer, course/canvas/render.ts); null shows their linear text */
@@ -250,6 +262,8 @@ export interface PlayerOptions {
   onReplay?: (attempt: AttemptRecord, step: Step) => void;
   /** the back button */
   onExit?: () => void;
+  /** the back button's word: where it goes (« Bibliothèque », « Accueil », « LAPL · PPL »); default the library */
+  backLabel?: (l: Lang) => string;
   onLang?: (l: Lang) => void;
   /** the current step changed (the host keeps #play=…&s= in sync) */
   onStep?: (stepId: string) => void;
@@ -452,8 +466,10 @@ export class CoursePlayer {
     const want = Math.max(0, Math.floor(n));
     if (this.slide) {
       let guard = 64;
-      while (st.reveal < want && guard-- > 0 && this.slide.next?.()) st.reveal++;
-      while (st.reveal > want && guard-- > 0 && this.slide.prev?.()) st.reveal--;
+      while (st.reveal < want && guard-- > 0 && this.slide.next?.())
+        st.reveal++;
+      while (st.reveal > want && guard-- > 0 && this.slide.prev?.())
+        st.reveal--;
       this.syncFoot();
       this.syncSlideText();
     } else {
@@ -465,7 +481,11 @@ export class CoursePlayer {
   }
   private emitState() {
     if (!this.summaryOn && this.ctx.steps[this.i])
-      this.o.onState?.({ stepId: this.step.id, index: this.i, reveal: this.state(this.step).reveal });
+      this.o.onState?.({
+        stepId: this.step.id,
+        index: this.i,
+        reveal: this.state(this.step).reveal,
+      });
   }
   openOutline() {
     if (this.outline?.isOpen) return;
@@ -555,16 +575,15 @@ export class CoursePlayer {
     const lang = this.lang;
     const c = this.course;
     const steps = this.ctx.steps;
+    // one labelled way back, which names where it goes (UX logic §1 rule 2)
+    const backWord = this.ctx.briefingOf
+      ? ps("backToFlyIt", lang)
+      : (this.o.backLabel?.(lang) ?? ps("library", lang));
     const back = h(
       "button",
-      {
-        type: "button",
-        class: "cp-btn iconbtn",
-        "aria-label": this.ctx.briefingOf
-          ? ps("backToFlyIt", lang)
-          : ps("backToLibrary", lang),
-      },
+      { type: "button", class: "cp-btn cp-backto" },
       icon("back"),
+      h("span", { class: "cp-backto-w" }, backWord),
     );
     back.addEventListener("click", () =>
       this.ctx.briefingOf
@@ -573,26 +592,46 @@ export class CoursePlayer {
           ? this.o.onExit()
           : history.back(),
     );
+    // the title and one line of context: « Cours · IR › Radionavigation » (never an internal mode word)
+    const where = this.o.context?.(lang) ?? "";
     const sub = this.ctx.briefingOf
       ? `${ps("briefing", lang)} · ${L(this.ctx.briefingOf.step.title, lang)}`
-      : [c.author.club, c.author.name, this.o.mode ?? ps("selfStudy", lang)]
+      : [this.o.mode ?? ps("courseCtx", lang), where]
           .filter(Boolean)
           .join(" · ");
     const title = textEl("b", c.title, lang);
     const ttl = h("div", { class: "cp-ttl" }, title, h("span", {}, sub));
-    const count = h(
-      "span",
-      { class: "cp-count num" },
-      this.summaryOn
-        ? `${steps.length} / ${steps.length}`
-        : `${this.i + 1} / ${steps.length}`,
+    // « Étape 10 sur 14 » and one continuous bar (no colour code to learn, one Tab stop less per step)
+    const n = this.summaryOn ? steps.length : this.i + 1;
+    const pct = steps.length ? Math.round((n / steps.length) * 100) : 0;
+    const prog = h(
+      "div",
+      { class: "cp-prog" },
+      h(
+        "span",
+        { class: "cp-count num" },
+        ps("stepOf", lang, { n, total: steps.length }),
+      ),
+      h(
+        "span",
+        {
+          class: "cp-bar",
+          role: "progressbar",
+          "aria-valuemin": "0",
+          "aria-valuemax": String(steps.length),
+          "aria-valuenow": String(n),
+          "aria-label": ps("stepOf", lang, { n, total: steps.length }),
+        },
+        h("i", { style: `width:${pct}%` }),
+      ),
     );
+    // FR | EN, always in that order (the app bar's control)
     const seg = h("div", {
       class: "cp-langseg",
       role: "group",
       "aria-label": ps("language", lang),
     });
-    for (const l of ["en", "fr"] as Lang[]) {
+    for (const l of ["fr", "en"] as Lang[]) {
       const b = h(
         "button",
         {
@@ -606,19 +645,18 @@ export class CoursePlayer {
       b.addEventListener("click", () => this.setLang(l));
       seg.append(b);
     }
-    const ol = btn(ps("outline", lang), "sm", () => this.openOutline(), "menu");
+    const ol = btn(
+      ps("outline", lang),
+      "cp-olbtn",
+      () => this.openOutline(),
+      "menu",
+    );
     ol.setAttribute("aria-keyshortcuts", "O");
+    ol.setAttribute("aria-haspopup", "dialog");
     const parts: (HTMLElement | null)[] = [
       back,
-      ttl,
       h("div", { class: "cp-div" }),
-      ticksEl(
-        steps,
-        this.marks(),
-        this.summaryOn ? steps.length : this.i,
-        lang,
-      ),
-      count,
+      ttl,
       h("div", { class: "sp" }),
     ];
     if (this.pill) parts.push(this.pill);
@@ -630,11 +668,7 @@ export class CoursePlayer {
           ps("notSaved", lang),
         ),
       );
-    if (this.ctx.briefingOf)
-      parts.push(
-        btn(ps("backToFlyIt", lang), "sm quiet", () => this.endBriefing(true)),
-      );
-    parts.push(seg, ol);
+    parts.push(prog, ol, seg);
     this.top.replaceChildren(...parts.filter((x): x is HTMLElement => !!x));
   }
 
@@ -677,7 +711,8 @@ export class CoursePlayer {
         skipped: true,
       });
     }
-    if (!done) m.skipped = true;
+    // only a task left without an attempt is « skipped »; a reading step is simply seen
+    if (!done && isTask(step)) m.skipped = true;
   }
   /** Render the current step; `fresh` re-applies the stage (a language switch keeps the stage as it is). */
   private show(fresh: boolean) {
@@ -692,7 +727,9 @@ export class CoursePlayer {
     this.summaryOn = false;
     this.scroll.replaceChildren();
     this.wideCol.replaceChildren();
-    this.stageCol.querySelectorAll(".cp-stage-close").forEach((e) => e.remove());
+    this.stageCol
+      .querySelectorAll(".cp-stage-close")
+      .forEach((e) => e.remove());
     // a calc step's solution cover belongs to that step only: never left over the next step's stage
     if (this.posedStepId !== step.id) {
       this.setCover(null);
@@ -725,7 +762,8 @@ export class CoursePlayer {
     this.el.dataset.layout = layout;
     // the chrome around a designed slide follows the course theme (SPEC slides v2 §10): never a dark slide in a
     // white frame
-    this.el.dataset.chrome = layout === "canvas" ? baseThemeId(this.course.theme) : "";
+    this.el.dataset.chrome =
+      layout === "canvas" ? baseThemeId(this.course.theme) : "";
     // stage
     if (fresh) {
       if (layout === "split" || layout === "stageWide") {
@@ -739,15 +777,21 @@ export class CoursePlayer {
       } else this.frame.show(null, this.env());
     }
     // header
+    // a step with a task shows one chip (Exercice, Calcul, Quiz…), its time and whether it is graded; a reading
+    // step has no chip
+    const chip = taskChip(step, lang);
+    const meta = stepMeta(step, lang);
     const head = h(
       "div",
       { class: "cp-head" },
-      h(
-        "div",
-        { class: "cp-meta" },
-        kindChip(step.kind, lang),
-        h("span", { class: "cp-muted" }, stepMeta(step, lang)),
-      ),
+      chip || meta
+        ? h(
+            "div",
+            { class: "cp-meta" },
+            chip,
+            meta ? h("span", { class: "cp-muted" }, meta) : null,
+          )
+        : null,
       textEl("h1", step.title, lang, "cp-h1"),
     );
     // content
@@ -970,7 +1014,14 @@ export class CoursePlayer {
             kind: "calc",
             correct: e.verdict.ok,
             answer: e.response.answer,
-            calc: { generatorId: e.problem.generatorId, seed: e.problem.seed, params: e.problem.params, response: e.response, verdict: e.verdict, solutionSteps: e.solutionSteps },
+            calc: {
+              generatorId: e.problem.generatorId,
+              seed: e.problem.seed,
+              params: e.problem.params,
+              response: e.response,
+              verdict: e.verdict,
+              solutionSteps: e.solutionSteps,
+            },
           });
         this.renderTopTicks();
       },
@@ -985,8 +1036,16 @@ export class CoursePlayer {
     const st = this.state(step);
     const revealed = calcRevealed(st.calc) || !!st.peek;
     // the diagram beside the instrument only on a very wide stage (two panes side by side stay legible)
-    const wide = this.stageCol.clientWidth > 0 && this.stageCol.clientWidth / Math.max(1, this.stageCol.clientHeight) >= 2.1;
-    const v = calcStageView(p, step.calc ?? { generatorId: p.generatorId }, revealed, wide);
+    const wide =
+      this.stageCol.clientWidth > 0 &&
+      this.stageCol.clientWidth / Math.max(1, this.stageCol.clientHeight) >=
+        2.1;
+    const v = calcStageView(
+      p,
+      step.calc ?? { generatorId: p.generatorId },
+      revealed,
+      wide,
+    );
     // diagrams are drawn in one language: a language switch draws them again (a live instrument keeps flying)
     const live = v?.kind === "hint" && v.hint.mode === "live";
     const key = `${p.seed}|${revealed}|${wide}|${live ? "" : this.lang}`;
@@ -994,9 +1053,16 @@ export class CoursePlayer {
     this.calcPosed = key;
     this.setCover(null);
     if (!v) this.frame.show(null, this.env());
-    else if (v.kind === "hint") this.frame.showHint(v.hint, this.env(), { labels: [L(step.title, this.lang)] });
+    else if (v.kind === "hint")
+      this.frame.showHint(v.hint, this.env(), {
+        labels: [L(step.title, this.lang)],
+      });
     else {
-      this.frame.show({ panes: [{ kind: "diagram", d: v.d }], mode: "frozen" }, this.env(), { labels: [L(step.title, this.lang)] });
+      this.frame.show(
+        { panes: [{ kind: "diagram", d: v.d }], mode: "frozen" },
+        this.env(),
+        { labels: [L(step.title, this.lang)] },
+      );
       if (v.kind === "covered")
         this.setCover(() => {
           st.peek = true;
@@ -1013,13 +1079,22 @@ export class CoursePlayer {
       h(
         "div",
         { class: "cp-cover" },
-        h("div", { class: "box" }, icon("sigma", "i big"), h("b", {}, ps("coverTitle", lang)), h("span", {}, ps("coverBody", lang)), btn(ps("coverShow", lang), "sm", reveal)),
+        h(
+          "div",
+          { class: "box" },
+          icon("sigma", "i big"),
+          h("b", {}, ps("coverTitle", lang)),
+          h("span", {}, ps("coverBody", lang)),
+          btn(ps("coverShow", lang), "sm", reveal),
+        ),
       ),
     );
   }
   /** The problem of a calc step by id (the numbers this student has on it). */
   private calcProblemOf(id: string): CalcProblem | null {
-    const src = this.course.steps.find((s) => s.id === id) ?? this.ctx.steps.find((s) => s.id === id);
+    const src =
+      this.course.steps.find((s) => s.id === id) ??
+      this.ctx.steps.find((s) => s.id === id);
     if (!src?.calc) return null;
     const st = this.state(src);
     st.calc ??= newCalcState(src.calc);
@@ -1031,10 +1106,11 @@ export class CoursePlayer {
   }
   /** The problem of the calc step a Try it / Fly it links to (the numbers the student solved). */
   private linkedProblem(step: Step): CalcProblem | null {
-    const ref = step.calcLink?.step ?? (step.flyIt?.target.kind === "calc" ? step.flyIt.target.step : undefined);
+    const ref =
+      step.calcLink?.step ??
+      (step.flyIt?.target.kind === "calc" ? step.flyIt.target.step : undefined);
     return ref ? this.calcProblemOf(ref) : null;
   }
-
 
   // ---------------- goal ("Do this", live)
   private renderGoal(step: Step, st: StepState, linked: CalcProblem | null) {
@@ -1073,12 +1149,20 @@ export class CoursePlayer {
     };
     walk(step.reader);
     // a language switch keeps the live progress (sticky ticks, the hold timer): the same tracker, new words
-    const kept = !this.freshShow && this.keptTracker && sameGoal(this.keptTracker.checks, goal.all) ? this.keptTracker : null;
+    const kept =
+      !this.freshShow &&
+      this.keptTracker &&
+      sameGoal(this.keptTracker.checks, goal.all)
+        ? this.keptTracker
+        : null;
     if (kept) (kept as unknown as { lang: Lang }).lang = lang;
     this.tracker = kept ?? new GoalTracker(goal, lang, texts);
     this.keptTracker = null;
     this.trackerGoal = goal;
-    if (this.reader && hasDoThis(step.reader) && (goal.holdS ?? 0) > 0) this.reader.ensureHoldRow(rowsFor(goal, lang).find((r) => r.check === -1)?.text ?? "");
+    if (this.reader && hasDoThis(step.reader) && (goal.holdS ?? 0) > 0)
+      this.reader.ensureHoldRow(
+        rowsFor(goal, lang).find((r) => r.check === -1)?.text ?? "",
+      );
     if (this.reader && !hasDoThis(step.reader)) {
       const rows = rowsFor(goal, lang).map((r) => ({
         text: r.check >= 0 ? (texts[r.check] ?? r.text) : r.text,
@@ -1124,13 +1208,23 @@ export class CoursePlayer {
   private foldWhy() {
     const r = this.reader?.el;
     if (!r || r.querySelector(":scope > .cp-why")) return;
-    const parts = [...r.querySelectorAll<HTMLElement>(":scope > .cp-take, :scope > .cp-units")];
+    const parts = [
+      ...r.querySelectorAll<HTMLElement>(
+        ":scope > .cp-take, :scope > .cp-units",
+      ),
+    ];
     if (!parts.length) return;
     const body = h("div", { class: "cp-why-b" });
     const box = h(
       "details",
       { class: "cp-why" },
-      h("summary", {}, icon("bookmark"), h("span", {}, ps("why", this.lang)), icon("down", "i cp-why-chev")),
+      h(
+        "summary",
+        {},
+        icon("bookmark"),
+        h("span", {}, ps("why", this.lang)),
+        icon("down", "i cp-why-chev"),
+      ),
       body,
     );
     parts[0].before(box);
@@ -1166,6 +1260,7 @@ export class CoursePlayer {
         this.lastRows = sig;
         this.rowT = 0;
         this.reader?.setRows(g.rows);
+        this.syncDone();
         st.checks = g.rows.filter((r) => r.check >= 0).map((r) => r.ticked);
         this.frame.host.setReveal(this.revealState(step));
         this.frame.setGoal({
@@ -1242,14 +1337,35 @@ export class CoursePlayer {
       announce: (t) => this.announce(t),
       onAction: (a) => this.blockAction(a),
       calcProblem: (id) => this.calcProblemOf(id),
+      onEvent: (w) => this.slideEvent(step, w),
     });
     this.slide = host;
     // a tablet in portrait, a narrow window, 200 % zoom: the 16:9 slide fits the width and its words follow at
     // reading size under it (CSS shows the panel only there; screen readers already read the slide itself)
     this.slideText = h("div", { class: "cp-slidetext", "aria-hidden": "true" });
-    this.wideCol.append(h("div", { class: "cp-canvaswrap" }, host.el), this.slideText);
+    this.wideCol.append(
+      h("div", { class: "cp-canvaswrap" }, host.el),
+      this.slideText,
+    );
     this.syncSlideText();
     this.bottom.append(this.foot);
+  }
+  /** A quiz or a goal on a designed slide writes the step's marks (the end screen says juste / faux / fait). */
+  private slideEvent(step: Step, when: string) {
+    if (this.step !== step) return;
+    const st = this.state(step);
+    const m = st.mark;
+    if (when === "answered") m.answered = true;
+    else if (when === "quizRight" || when === "calcRight") {
+      m.answered = true;
+      m.correct = true;
+    } else if (when === "quizWrong" || when === "calcWrong") m.answered = true;
+    else if (when === "goalMet" || when === "yourTurnDone") m.goalMet = true;
+    else return;
+    if (when === "quizRight" || when === "quizWrong")
+      this.record(step, { kind: "answer", correct: when === "quizRight" });
+    this.persistSoon();
+    this.renderTopTicks();
   }
   private slideText: HTMLElement | null = null;
   /** the words of the designed slide shown so far, in reading order (the narrow-screen panel under the slide) */
@@ -1272,7 +1388,9 @@ export class CoursePlayer {
       if (b.presenterOnly || !isRevealed(b, steps, reveal, none)) continue;
       if (b.kind === "text" && b.bind) {
         // a live value: the words as the slide draws them now (refreshed below while the panel shows)
-        const live = host.querySelector<HTMLElement>(`[data-id="${CSS.escape(b.id)}"]`)?.textContent?.trim();
+        const live = host
+          .querySelector<HTMLElement>(`[data-id="${CSS.escape(b.id)}"]`)
+          ?.textContent?.trim();
         if (live) {
           out.push(h("div", { class: "cp-rich cp-st-body" }, h("p", {}, live)));
           continue;
@@ -1281,20 +1399,39 @@ export class CoursePlayer {
       if (b.kind === "text") {
         const big = b.style === "display" || b.style === "title";
         const head = b.style === "heading";
-        const small = ["eyebrow", "label", "caption", "small", "foot"].includes(b.style);
+        const small = ["eyebrow", "label", "caption", "small", "foot"].includes(
+          b.style,
+        );
         out.push(
-          richEl(txt(b.text), lang, undefined, `cp-rich cp-st-${big ? "title" : head ? "heading" : small ? "small" : "body"}${b.style === "eyebrow" || b.style === "label" ? " cp-st-eyebrow" : ""}`),
+          richEl(
+            txt(b.text),
+            lang,
+            undefined,
+            `cp-rich cp-st-${big ? "title" : head ? "heading" : small ? "small" : "body"}${b.style === "eyebrow" || b.style === "label" ? " cp-st-eyebrow" : ""}`,
+          ),
         );
       } else if (b.kind === "callout") {
-        const el = richEl(txt(b.text), lang, undefined, "cp-rich cp-st-body cp-st-callout");
-        if (b.n !== undefined) el.prepend(h("span", { class: "cp-st-n num" }, String(b.n)));
+        const el = richEl(
+          txt(b.text),
+          lang,
+          undefined,
+          "cp-rich cp-st-body cp-st-callout",
+        );
+        if (b.n !== undefined)
+          el.prepend(h("span", { class: "cp-st-n num" }, String(b.n)));
         out.push(el);
       } else if (b.kind === "checklist") {
         out.push(
           h(
             "ul",
             { class: "cp-st-list" },
-            ...b.rows.map((r) => h("li", {}, richEl(txt(r.text), lang, undefined, "cp-rich cp-st-body"))),
+            ...b.rows.map((r) =>
+              h(
+                "li",
+                {},
+                richEl(txt(r.text), lang, undefined, "cp-rich cp-st-body"),
+              ),
+            ),
           ),
         );
       }
@@ -1305,7 +1442,10 @@ export class CoursePlayer {
       box.replaceChildren(...out);
     }
     box.hidden = !out.length;
-    if (this.slideTextTimer === null && slide.blocks.some((b) => b.kind === "text" && b.bind))
+    if (
+      this.slideTextTimer === null &&
+      slide.blocks.some((b) => b.kind === "text" && b.bind)
+    )
       this.slideTextTimer = window.setInterval(() => {
         if (this.slideText?.offsetParent) this.syncSlideText();
       }, 1000);
@@ -1353,13 +1493,21 @@ export class CoursePlayer {
       author: this.course.author.name,
       workedS: fly.worked ? this.course.clips[fly.worked]?.durS : undefined,
       canFly: !!this.store && (this.bridge() || !!legacyFlyLink(fly.target)),
-      message: this.store || this.o.preview ? undefined : ps("flyNoStore", this.lang),
-      note: !this.store && this.o.preview
-        ? ps("flyPreview", this.lang)
-        : !this.store || this.bridge()
-        ? undefined
-        : ps(legacyFlyLink(fly.target) ? "flyLegacy" : "flyNoBridge", this.lang),
-      flyLabel: this.store && !this.bridge() && legacyFlyLink(fly.target) ? ps("flyLegacyGo", this.lang) : undefined,
+      message:
+        this.store || this.o.preview ? undefined : ps("flyNoStore", this.lang),
+      note:
+        !this.store && this.o.preview
+          ? ps("flyPreview", this.lang)
+          : !this.store || this.bridge()
+            ? undefined
+            : ps(
+                legacyFlyLink(fly.target) ? "flyLegacy" : "flyNoBridge",
+                this.lang,
+              ),
+      flyLabel:
+        this.store && !this.bridge() && legacyFlyLink(fly.target)
+          ? ps("flyLegacyGo", this.lang)
+          : undefined,
     };
     this.fly = new FlyItView(model, {
       onFly: (opts) => void this.flyIt(step, opts),
@@ -1369,7 +1517,9 @@ export class CoursePlayer {
         : undefined,
       onSelfGrade: (g) => void this.selfGrade(step, g),
       onWatch: fly.worked ? () => this.watchWorked(step) : undefined,
-      onReplay: this.o.onReplay ? () => this.flyAttempt && this.o.onReplay!(this.flyAttempt, step) : undefined,
+      onReplay: this.o.onReplay
+        ? () => this.flyAttempt && this.o.onReplay!(this.flyAttempt, step)
+        : undefined,
     });
     this.wideCol.append(this.fly.el);
     this.bottom.append(this.foot);
@@ -1402,8 +1552,19 @@ export class CoursePlayer {
     const sim = this.flySim;
     const sc = this.flyScene(this.step);
     if (!sim || !sc) return;
-    const kind = sc.cockpit === "steam" ? "six" : sc.cockpit === "airliner" ? "airlinerPfd" : "pfd";
-    renderPane(c, sim, paneFrame({ kind }, sc.cockpit), newInstrumentStates(), 0);
+    const kind =
+      sc.cockpit === "steam"
+        ? "six"
+        : sc.cockpit === "airliner"
+          ? "airlinerPfd"
+          : "pfd";
+    renderPane(
+      c,
+      sim,
+      paneFrame({ kind }, sc.cockpit),
+      newInstrumentStates(),
+      0,
+    );
   }
   private flySceneRows(
     step: Step,
@@ -1495,8 +1656,11 @@ export class CoursePlayer {
       if (this.fly !== view) return;
       const token = attempt?.fly?.token;
       const selfGraded = !!token && readFlag(`ifr.course.sg.${token}`);
-      if (attempt?.fly && !stopped) st.mark.flown = { passed: attempt.fly.passed };
-      const no = attempt ? all.findIndex((a) => a.fly?.token === token) + 1 || all.length : 0;
+      if (attempt?.fly && !stopped)
+        st.mark.flown = { passed: attempt.fly.passed };
+      const no = attempt
+        ? all.findIndex((a) => a.fly?.token === token) + 1 || all.length
+        : 0;
       view.update({ status, attempt, attemptNo: no || undefined, selfGraded });
       if (attempt && selfGraded && this.o.loadTrace) {
         const tr = await this.o.loadTrace(attempt, step);
@@ -1674,33 +1838,87 @@ export class CoursePlayer {
   }
 
   // ---------------- footer
+  /** The step's task is open: it has one (a question, an exercise, a calculation, a flight) and the student has
+   *  not attempted it yet. While it is, the step's own button (« Vérifier », « Commencer la série », « Voler ») is the
+   *  one primary and « Suivant » is secondary; once it is attempted, « Suivant » becomes the primary. */
+  private taskOpen(step: Step | undefined = this.step): boolean {
+    if (!step || this.summaryOn) return false;
+    const m = this.state(step).mark;
+    // a designed slide that hands the instrument to the student (« Manipuler l’instrument »): its button leads
+    // until the student has tried it
+    if (!isTask(step))
+      return (
+        !!step.slide?.blocks.some(
+          (b) => "yourTurn" in b && b.yourTurn && !b.presenterOnly,
+        ) && !m.goalMet
+      );
+    return !(
+      m.answered ||
+      m.goalMet ||
+      m.calcOk !== undefined ||
+      m.drill ||
+      m.flown
+    );
+  }
+  /** « 1 sur 4 fait » under an exercise's checklist (null when the step has none) */
+  private doneText(): string | null {
+    const g = this.tracker?.state();
+    if (!g) return null;
+    const rows = g.rows.filter((r) => r.check >= 0);
+    if (!rows.length) return null;
+    const st = this.state(this.step);
+    const n = st.goalMet ? rows.length : rows.filter((r) => r.ticked).length;
+    return ps("doneOf", this.lang, { n, total: rows.length });
+  }
+  private doneEl: HTMLElement | null = null;
+  /** the bottom bar: « ← Précédent » and « Un indice » on the left, « 1 sur 4 fait » and « Suivant → » on the right */
   private syncFoot() {
     const lang = this.lang;
     const step = this.step;
     const f = this.foot;
     f.replaceChildren();
+    this.doneEl = null;
     if (this.summaryOn || !step) return;
     const layout = this.body.dataset.layout;
-    const backB = h(
-      "button",
-      {
-        type: "button",
-        class: "cp-btn iconbtn quiet cp-navb",
-        "aria-label": ps("back", lang),
-        "aria-keyshortcuts": "ArrowLeft PageUp",
-      },
-      icon("back"),
-    );
+    const open = this.taskOpen(step);
+    // one primary per screen: while the task is open the step's own button is it, then « Suivant » (CSS turns the
+    // step's buttons secondary when data-next="go")
+    this.el.dataset.next = open ? "wait" : "go";
+    const backB = btn(ps("back", lang), "cp-navb", () => this.back(), "back");
+    backB.setAttribute("aria-keyshortcuts", "ArrowLeft PageUp");
     backB.disabled = this.i === 0 && !this.ctx.briefingOf;
-    backB.addEventListener("click", () => this.back());
-    if (layout === "fly") {
-      const prevB = btn(
-        this.i > 0 ? ps("stepN", lang, { n: this.i }) : ps("back", lang),
+    f.append(backB);
+    const hint = step.kind === "calc" ? !!this.calc : !!step.hint;
+    if (hint && layout !== "fly") {
+      const st = this.state(step);
+      const on = step.kind === "calc" ? !!this.calc?.state.hint : !!st.hint;
+      const hb = btn(
+        on ? ps("hideHint", lang) : ps("hint", lang),
         "",
-        () => this.back(),
-        "back",
+        () => this.toggleHint(),
+        "bulb",
       );
-      prevB.disabled = backB.disabled;
+      hb.setAttribute("aria-expanded", String(on));
+      hb.setAttribute("aria-keyshortcuts", "H");
+      f.append(hb);
+    }
+    const clip = step.showMe ? this.course.clips[step.showMe] : undefined;
+    if (clip && step.stage && layout !== "fly") {
+      const on = !!this.state(step).showMe;
+      const sb = btn(
+        on ? ps("myTurn", lang) : ps("showMe", lang),
+        "",
+        () => this.toggleShowMe(!on),
+        on ? "back" : "play",
+      );
+      if (!on)
+        sb.append(
+          h("span", { class: "cp-dur num" }, `· ${fmtClock(clip.durS)}`),
+        );
+      f.append(sb);
+    }
+    f.append(h("div", { class: "sp" }));
+    if (layout === "fly") {
       const handout = this.inHandout(step.id);
       const hb = btn(
         handout ? ps("inHandout", lang) : ps("addHandout", lang),
@@ -1712,56 +1930,28 @@ export class CoursePlayer {
         handout ? "check" : undefined,
       );
       hb.setAttribute("aria-pressed", String(handout));
-      const nextB = btn(
-        this.i + 1 < this.ctx.steps.length
-          ? ps("stepN", lang, { n: this.i + 2 })
-          : ps("next", lang),
-        "",
-        () => this.next(),
-        "next",
-        true,
-      );
-      f.append(prevB, h("div", { class: "sp" }), hb, nextB);
-      return;
-    }
-    f.append(backB);
-    const hint = step.kind === "calc" ? !!this.calc : !!step.hint;
-    if (hint) {
-      const st = this.state(step);
-      const on = step.kind === "calc" ? !!this.calc?.state.hint : !!st.hint;
-      const hb = btn(
-        on ? ps("hideHint", lang) : ps("hint", lang),
-        "quiet",
-        () => this.toggleHint(),
-      );
-      hb.setAttribute("aria-expanded", String(on));
-      hb.setAttribute("aria-keyshortcuts", "H");
       f.append(hb);
     }
-    const clip = step.showMe ? this.course.clips[step.showMe] : undefined;
-    if (clip && step.stage) {
-      const on = !!this.state(step).showMe;
-      const sb = btn(
-        on ? ps("myTurn", lang) : ps("showMe", lang),
-        "quiet",
-        () => this.toggleShowMe(!on),
-        on ? "back" : "play",
+    const done = this.doneText();
+    if (done) {
+      this.doneEl = h(
+        "span",
+        { class: "cp-donecount num", "aria-live": "polite" },
+        done,
       );
-      if (!on)
-        sb.append(
-          h("span", { class: "cp-dur num" }, `· ${fmtClock(clip.durS)}`),
-        );
-      f.append(sb);
+      f.append(this.doneEl);
     }
-    f.append(h("div", { class: "sp" }));
     // a designed slide counts its click reveals, a reader step its reveal blocks: while some remain, Next says it
     // shows more of this step (the step counter does not move) and how far it is
-    const n = layout === "canvas" && step.slide ? clickSteps(step.slide).length : this.revealsOf(step);
+    const n =
+      layout === "canvas" && step.slide
+        ? clickSteps(step.slide).length
+        : this.revealsOf(step);
     const st = this.state(step);
     const more = n - st.reveal;
     const nextB = btn(
       more > 0 ? ps("showMore", lang) : ps("next", lang),
-      "primary",
+      open ? "cp-next" : "primary cp-next",
       () => this.next(),
       "next",
       true,
@@ -1772,13 +1962,15 @@ export class CoursePlayer {
       nextB.append(
         h(
           "span",
-          { class: "cp-more num", "aria-label": ps("moreLeft", lang, { n: more }) },
+          {
+            class: "cp-more num",
+            "aria-label": ps("moreLeft", lang, { n: more }),
+          },
           `${st.reveal + 1}/${n + 1}`,
         ),
       );
     f.append(nextB);
-    if (layout === "canvas") this.bottom.append(f);
-    else if (f.parentElement !== this.readerCol) this.readerCol.append(f);
+    if (f.parentElement !== this.bottom) this.bottom.append(f);
   }
   private toggleHint() {
     const step = this.step;
@@ -1810,17 +2002,17 @@ export class CoursePlayer {
       });
     this.syncFoot();
   }
+  /** a task was attempted (answered, checked, met, flown): « Suivant » takes the primary, the marks follow */
   private renderTopTicks() {
-    const old = this.top.querySelector(".cp-ticks");
-    if (old)
-      old.replaceWith(
-        ticksEl(
-          this.ctx.steps,
-          this.marks(),
-          this.summaryOn ? this.ctx.steps.length : this.i,
-          this.lang,
-        ),
-      );
+    if (this.summaryOn) return;
+    const want = this.taskOpen() ? "wait" : "go";
+    if (this.el.dataset.next !== want) this.syncFoot();
+  }
+  /** a row of the checklist ticked: « 1 sur 4 fait » follows */
+  private syncDone() {
+    const t = this.doneText();
+    if (this.doneEl && t && this.doneEl.textContent !== t)
+      this.doneEl.textContent = t;
   }
 
   // ---------------- summary + handout
@@ -1832,7 +2024,8 @@ export class CoursePlayer {
     this.body.dataset.layout = "readerOnly";
     this.body.dataset.kind = "summary";
     this.el.dataset.layout = "readerOnly";
-    // the result sheet sits on the same calm paper-grey stage as the slides
+    this.el.dataset.next = "";
+    // the result sheet sits on the same calm paper stage as the slides
     this.el.dataset.chrome = "classroom";
     this.scroll.replaceChildren();
     this.wideCol.replaceChildren();
@@ -1842,18 +2035,32 @@ export class CoursePlayer {
       this.readerCol.append(this.foot);
     const steps = this.ctx.steps;
     const marks = this.marks();
+    // honest counts (UX logic §6): only the steps with a task, and only what was really attempted
+    const attempted = (s: Step) => {
+      const m = marks[s.id];
+      return !!(
+        m &&
+        (m.answered ||
+          m.goalMet ||
+          m.calcOk !== undefined ||
+          m.drill ||
+          m.flown)
+      );
+    };
+    const tasks = steps.filter(isTask);
+    const left = tasks.filter((s) => !attempted(s));
     const acting = steps.filter((s) => s.goal && s.kind === "try");
     const met = acting.filter((s) => marks[s.id]?.goalMet).length;
-    const asked = steps.filter((s) => stepQuiz(s) || s.kind === "calc");
+    const asked = steps.filter(
+      (s) => stepQuiz(s) || s.kind === "calc" || s.kind === "quiz",
+    );
     const right = asked.filter(
       (s) => marks[s.id]?.correct || marks[s.id]?.calcOk,
     ).length;
     const flights = steps.filter((s) => s.kind === "fly");
     const flown = flights.filter((s) => marks[s.id]?.flown).length;
-    const skipped = steps.filter(
-      (s) =>
-        marks[s.id]?.skipped && !marks[s.id]?.answered && !marks[s.id]?.goalMet,
-    ).length;
+    const n = left.length;
+    const allDone = n === 0;
     const tile = (label: string, v: string) =>
       h(
         "div",
@@ -1864,80 +2071,120 @@ export class CoursePlayer {
     const list = h("ol", { class: "cp-sum-list" });
     steps.forEach((s, i) => {
       const m = marks[s.id];
+      const chip = taskChip(s, lang);
+      const open = isTask(s) && !attempted(s);
+      const word = open ? ps("todoShort", lang) : markText(s, m, lang);
+      const ok = !!(m?.goalMet || m?.correct || m?.calcOk || m?.flown?.passed);
       const b = h(
         "button",
-        { type: "button", class: "cp-ol-row" },
+        { type: "button", class: `cp-ol-row${open ? " is-todo" : ""}` },
         h("span", { class: "n num" }, String(i + 1)),
         h(
           "span",
           { class: "mid" },
           textEl("span", s.title, lang, "t"),
-          h("span", { class: "meta" }, kindChip(s.kind, lang)),
+          chip ? h("span", { class: "meta" }, chip) : null,
         ),
         h(
           "span",
           { class: "st" },
-          m?.goalMet || m?.correct || m?.calcOk || m?.flown?.passed
-            ? icon("check", "i ok")
-            : null,
-          h("span", {}, markText(s, m, lang)),
+          ok ? icon("check", "i ok") : null,
+          h("span", {}, word),
         ),
       );
       b.addEventListener("click", () => this.goTo(i));
       list.append(h("li", {}, b));
     });
+    const firstLeft = left[0] ? steps.indexOf(left[0]) : -1;
+    // the title says what is true: « Cours terminé » only when every task is done
+    const titleWord = allDone
+      ? ps("courseDone", lang)
+      : `${ps("courseWalked", lang)} — ${n === 1 ? ps("exerciseLeft", lang) : ps("exercisesLeft", lang, { n })}`;
+    const back = this.o.onExit
+      ? btn(
+          this.o.backLabel?.(lang) ?? ps("library", lang),
+          "",
+          () => this.o.onExit!(),
+          "back",
+        )
+      : null;
+    const actions =
+      this.o.preview && this.o.onExit
+        ? h(
+            "div",
+            { class: "cp-qact" },
+            btn(
+              ps("backToEditor", lang),
+              "primary",
+              () => this.o.onExit!(),
+              "back",
+            ),
+            btn(ps("startOver", lang), "", () => this.startOver(), "refresh"),
+          )
+        : h(
+            "div",
+            { class: "cp-qact" },
+            firstLeft >= 0
+              ? btn(
+                  ps("remaining", lang),
+                  "primary",
+                  () => this.goTo(firstLeft),
+                  "next",
+                  true,
+                )
+              : null,
+            btn(
+              ps("printHandout", lang),
+              firstLeft >= 0 ? "" : "primary",
+              () => this.printHandout(),
+              "print",
+            ),
+            back,
+          );
     this.scroll.append(
       h(
         "div",
         { class: "cp-summary" },
-        h(
-          "div",
-          { class: "cp-meta" },
-          h(
-            "span",
-            { class: "cp-kind k-try" },
-            h("span", { class: "dot" }),
-            ps("courseDone", lang),
-          ),
-        ),
+        h("p", { class: `cp-sum-eyebrow${allDone ? " ok" : ""}` }, titleWord),
         textEl("h1", this.course.title, lang, "cp-h1"),
-        h("p", { class: "cp-lead" }, ps("courseDoneSub", lang)),
+        h(
+          "p",
+          { class: "cp-lead" },
+          allDone ? ps("courseDoneSub", lang) : ps("courseWalkedSub", lang),
+        ),
         h(
           "div",
           { class: "cp-tiles" },
           // a tile only for what the course has (no "0 / 0" for a course without goals or flights)
-          acting.length ? tile(ps("goalsMet", lang), `${met} / ${acting.length}`) : null,
-          asked.length ? tile(ps("answeredRight", lang), `${right} / ${asked.length}`) : null,
-          flights.length ? tile(ps("flights", lang), `${flown} / ${flights.length}`) : null,
-          tile(ps("skippedSteps", lang), String(skipped)),
+          acting.length
+            ? tile(ps("goalsMet", lang), `${met} / ${acting.length}`)
+            : null,
+          asked.length
+            ? tile(ps("answeredRight", lang), `${right} / ${asked.length}`)
+            : null,
+          flights.length
+            ? tile(ps("flights", lang), `${flown} / ${flights.length}`)
+            : null,
+          tasks.length ? tile(ps("skippedSteps", lang), String(n)) : null,
         ),
-        // a test run from the editor ends back in the editor (the main action); a student's run, the handout
-        this.o.preview && this.o.onExit
-          ? h(
-              "div",
-              { class: "cp-qact" },
-              btn(ps("backToEditor", lang), "primary", () => this.o.onExit!(), "back"),
-              btn(ps("startOver", lang), "", () => this.startOver(), "refresh"),
-            )
+        actions,
+        list,
+        this.o.preview
+          ? null
           : h(
               "div",
-              { class: "cp-qact" },
+              { class: "cp-sum-again" },
               btn(
-                ps("printHandout", lang),
-                "primary",
-                () => this.printHandout(),
-                "print",
+                ps("startOver", lang),
+                "ghost",
+                () => this.startOver(),
+                "refresh",
               ),
-              btn(ps("startOver", lang), "", () => this.startOver(), "refresh"),
-              this.o.onExit
-                ? btn(ps("backToLibrary", lang), "ghost", () => this.o.onExit!())
-                : null,
             ),
-        list,
       ),
     );
     this.renderTop();
-    this.announce(ps("courseDone", lang));
+    this.announce(titleWord);
   }
   private startOver() {
     this.states.clear();
@@ -2142,9 +2389,12 @@ export class CoursePlayer {
     )
       return;
     const layout = this.body.dataset.layout;
+    // the arrow keys turn the instrument only when one of its controls has the focus; otherwise they page the steps
     if (
       (layout === "split" || layout === "stageWide") &&
       this.step?.stage?.controls?.length &&
+      !!t &&
+      this.stageCol.contains(t) &&
       this.frame.handleKey(e, true)
     ) {
       e.preventDefault();
@@ -2188,7 +2438,8 @@ export class CoursePlayer {
 }
 
 // ------------------------------------------------------------------ small utils
-const sameGoal = (a: readonly unknown[], b: readonly unknown[]): boolean => JSON.stringify(a) === JSON.stringify(b);
+const sameGoal = (a: readonly unknown[], b: readonly unknown[]): boolean =>
+  JSON.stringify(a) === JSON.stringify(b);
 function hashStr(s: string): number {
   let x = 2166136261;
   for (let i = 0; i < s.length; i++)

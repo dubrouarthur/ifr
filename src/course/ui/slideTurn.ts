@@ -237,6 +237,7 @@ export function yourTurnSlideRenderer(o: YourTurnRendererOptions): SlideRenderer
       label: loc(ctx.step.title, ctx.lang),
       calcProblem: (sid) => ctx.calcProblem?.(sid) ?? null,
       onAction: (a) => ctx.onAction(a),
+      onEvent: (w) => ctx.onEvent?.(w),
       binding: bind,
       onYourTurn: (b, yt) =>
         void run({

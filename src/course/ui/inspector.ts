@@ -5407,7 +5407,7 @@ export class Inspector {
   private layersGroup(c: SlideCanvas): HTMLElement {
     const sel = new Set(this.host.selection.map((b) => b.id));
     const list = [...c.blocks].sort((a, b) => b.frame.z - a.frame.z);
-    return group(this.t("Layers", "Calques"), [
+    return group(this.t("Elements on the slide", "Éléments de la diapo"), [
       h(
         "div",
         { class: "ce-layers" },
@@ -5476,8 +5476,8 @@ export class Inspector {
           "p",
           { class: "ce-note muted" },
           this.t(
-            "One theme for the whole course. Classroom (light) by default; Cockpit (dark) for a night or IMC scene.",
-            "Un thème pour tout le cours. Salle de cours (clair) par défaut ; Cockpit (sombre) pour une scène de nuit ou en IMC.",
+            "One theme for the whole course: Light by default, Dark if you prefer.",
+            "Un thème pour tout le cours : Clair par défaut, Sombre si vous préférez.",
           ),
         ),
         course.theme === "brand" ? this.brandFields() : null,

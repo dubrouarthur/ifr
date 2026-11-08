@@ -1,12 +1,14 @@
 // Presenter console (package G, SPEC §6.3): academy.html#present=<id>[&s=<step>]. The current step at about 65 %
 // (the real player, which the CFI operates), the next step, the presenter notes, the timer against the planned
-// minutes, the reveal position, a black-screen toggle and the projector window. Keys: → / PageDown / Space next,
-// ← / PageUp back, B or . black screen, R reset the scene, P open the projector, Esc leave.
+// minutes, the reveal position, a black-screen toggle, the projector window and a strip of every step (a click moves
+// the projector there). Keys: → / PageDown / Space next, ← / PageUp back, N (or B, .) black screen, P open the
+// projector screen, Esc leaves (after lifting a black screen). Student-only buttons never show here or on the
+// projector (UX logic §6).
 import type { Course, Lang, Step } from "../types";
 import type { CourseStore } from "../store";
 import { h } from "../../ui/dom";
 import { playCourse, type CoursePlayer, type SlideRenderer } from "./player";
-import { btn, kindChip, L } from "./reader";
+import { btn, L, taskChip } from "./reader";
 import { courseMinutes } from "./outline";
 import { stagePoseOf } from "../scene";
 import { renderThumb } from "../canvas/render";
@@ -21,7 +23,7 @@ import { academyHref } from "./library";
 const S = {
   presenter: ["Presenter", "Présentateur"],
   step: ["Step {n} of {t}", "Étape {n} sur {t}"],
-  next: ["Next", "Suivante"],
+  next: ["Next step", "Étape suivante"],
   end: ["End of the course", "Fin du cours"],
   notes: ["Notes", "Notes"],
   noNotes: [
@@ -29,11 +31,15 @@ const S = {
     "Pas de notes pour cette étape.",
   ],
   reveal: ["Reveal {r} of {n}", "Affichage {r} sur {n}"],
-  projector: ["Open the projector", "Ouvrir le projecteur"],
-  projectorOn: ["Projector open", "Projecteur ouvert"],
+  projector: ["Open the projector screen", "Ouvrir l’écran de projection"],
+  projectorOn: ["Projector screen open ✓", "Écran de projection ouvert ✓"],
   projectorHint: [
-    "Drag the projector window to the second screen, then press F11 (or ⌃⌘F) for full screen.",
-    "Glissez la fenêtre du projecteur sur le second écran, puis F11 (ou ⌃⌘F) pour le plein écran.",
+    "Drag the projector screen to the second display, then press F11 (or ⌃⌘F) for full screen. The class sees only that screen.",
+    "Glissez l’écran de projection sur le second écran, puis F11 (ou ⌃⌘F) pour le plein écran. La classe ne voit que cet écran.",
+  ],
+  strip: [
+    "Every step: a click shows it on the projector",
+    "Toutes les étapes : un clic l’affiche sur la projection",
   ],
   noChannel: [
     "This browser cannot link two windows: present from this window.",
@@ -41,11 +47,11 @@ const S = {
   ],
   black: ["Black screen", "Écran noir"],
   blackOn: ["Screen is black", "Écran noir actif"],
-  exit: ["Leave", "Quitter"],
+  exit: ["Leave the presentation", "Quitter la présentation"],
   planned: ["planned {m} min", "prévu {m} min"],
   keys: [
-    "→ next · ← back · B black · R reset scene · P projector",
-    "→ suivant · ← retour · B noir · R scène initiale · P projecteur",
+    "→ next · ← previous · N black screen · Esc leave",
+    "→ suivant · ← précédent · N écran noir · Échap quitter",
   ],
   late: ["behind the plan", "en retard sur le plan"],
 } as const;
@@ -90,6 +96,9 @@ export class Presenter {
   private projBtn: HTMLButtonElement;
   private state = { stepId: "", index: 0, reveal: 0 };
   private thumbDestroy: (() => void) | null = null;
+  private strip: HTMLElement;
+  private stripViews: { destroy(): void }[] = [];
+  private stripLang: Lang | null = null;
   private ready = false;
 
   constructor(private o: PresenterOptions) {
@@ -111,7 +120,25 @@ export class Presenter {
       "aria-label": st("presenter", this.lang),
     });
     const main = h("div", { class: "pr-main" });
-    this.el.append(this.head, h("div", { class: "pr-body" }, main, this.side));
+    this.strip = h("ol", { class: "pr-strip" });
+    this.el.append(
+      this.head,
+      h(
+        "div",
+        { class: "pr-body" },
+        h(
+          "div",
+          { class: "pr-col" },
+          main,
+          h(
+            "nav",
+            { class: "pr-stripwrap", "aria-label": st("strip", this.lang) },
+            this.strip,
+          ),
+        ),
+        this.side,
+      ),
+    );
     this.player = playCourse(main, {
       course: o.course,
       store: o.store,
@@ -129,6 +156,7 @@ export class Presenter {
         if (!this.ready) return;
         this.renderSide();
         this.renderHead();
+        this.syncStrip();
       },
     });
     this.link.on((m) => {
@@ -139,6 +167,7 @@ export class Presenter {
     this.timer = window.setInterval(() => this.tick(), 250);
     this.renderHead();
     this.renderSide();
+    this.renderStrip();
   }
   mount(root: HTMLElement) {
     root.append(this.el);
@@ -156,6 +185,7 @@ export class Presenter {
     this.blackBtn.textContent = this.black ? st("blackOn", l) : st("black", l);
     this.renderHead();
     this.renderSide();
+    this.renderStrip();
   }
   destroy() {
     window.clearInterval(this.timer);
@@ -163,6 +193,7 @@ export class Presenter {
     this.link.post({ t: "bye" });
     this.link.close();
     this.thumbDestroy?.();
+    for (const v of this.stripViews.splice(0)) v.destroy();
     this.player.destroy();
     this.el.remove();
   }
@@ -219,6 +250,13 @@ export class Presenter {
     }
     this.renderHead();
     window.setTimeout(() => this.sync(), 800);
+    // the projector closed by hand: the button says so again
+    const poll = window.setInterval(() => {
+      if (!this.projector || this.projector.closed) {
+        window.clearInterval(poll);
+        if (this.ready) this.renderHead();
+      }
+    }, 1000);
   }
   private onKey = (e: KeyboardEvent) => {
     const t = e.target as HTMLElement | null;
@@ -231,18 +269,18 @@ export class Presenter {
     )
       return;
     const k = e.key;
-    if (k === "b" || k === "B" || k === ".") {
+    if (k === "n" || k === "N" || k === "b" || k === "B" || k === ".") {
       this.setBlack(!this.black);
-      e.preventDefault();
-    } else if (k === "r" || k === "R") {
-      this.player.frame.host.reset();
       e.preventDefault();
     } else if (k === "p" || k === "P") {
       this.openProjector();
       e.preventDefault();
-    } else if (k === "Escape" && this.black) {
-      this.setBlack(false);
+    } else if (k === "Escape") {
+      // Esc lifts a black screen first, then leaves the presentation (back to where it was opened)
+      if (e.defaultPrevented) return;
       e.preventDefault();
+      if (this.black) this.setBlack(false);
+      else this.o.onExit();
     }
   };
 
@@ -266,16 +304,23 @@ export class Presenter {
       t: n,
     });
     this.renderClock();
-    this.projBtn.textContent =
-      this.projector && !this.projector.closed
-        ? st("projectorOn", lang)
-        : st("projector", lang);
+    const open = !!this.projector && !this.projector.closed;
+    this.projBtn.textContent = open
+      ? st("projectorOn", lang)
+      : st("projector", lang);
+    // one primary: « Ouvrir l’écran de projection » until it is open, then « Suivant » leads
+    this.projBtn.classList.toggle("primary", !open);
+    this.el.classList.toggle("proj-on", open || !this.link.ok);
     this.projBtn.disabled = !this.link.ok;
     // the same EN / FR segment as the player and the library (a white pill on grey)
     const langSeg = h(
       "div",
-      { class: "cp-langseg pr-lang", role: "group", "aria-label": lang === "fr" ? "Langue" : "Language" },
-      ...(["en", "fr"] as Lang[]).map((l) =>
+      {
+        class: "cp-langseg pr-lang",
+        role: "group",
+        "aria-label": lang === "fr" ? "Langue" : "Language",
+      },
+      ...(["fr", "en"] as Lang[]).map((l) =>
         h(
           "button",
           {
@@ -303,6 +348,69 @@ export class Presenter {
       this.blackBtn,
       this.projBtn,
     );
+  }
+  /** Every step as a thumbnail: a click moves the presentation (and the projector) to that step. */
+  private renderStrip() {
+    for (const v of this.stripViews.splice(0)) v.destroy();
+    this.stripLang = this.lang;
+    const lang = this.lang;
+    const c = this.o.course;
+    this.strip.replaceChildren(
+      ...this.player.steps.map((s, i) => {
+        const pic = h("span", { class: "pr-st-pic", "aria-hidden": "true" });
+        const b = h(
+          "button",
+          {
+            type: "button",
+            class: "pr-st",
+            "data-i": String(i),
+            title: `${i + 1}. ${L(s.title, lang)}`,
+            "aria-label": `${lang === "fr" ? "Étape" : "Step"} ${i + 1} : ${L(s.title, lang)}`,
+          },
+          pic,
+          h("span", { class: "pr-st-n num" }, String(i + 1)),
+        );
+        // drawn once the console is on the page (the strip is built before it is mounted)
+        let tries = 0;
+        const draw = () => {
+          if (this.stripLang !== lang || tries++ > 60) return;
+          if (!pic.isConnected || !pic.clientWidth) {
+            requestAnimationFrame(draw);
+            return;
+          }
+          {
+            try {
+              const v = renderThumb(s.slide!, pic, {
+                lang,
+                theme: c.theme,
+                brand: c.brand,
+                scenes: c.scenes,
+                cockpit: c.cockpit,
+              });
+              if (v) this.stripViews.push(v);
+            } catch {
+              /* the number and the title say it */
+            }
+          }
+        };
+        if (s.slide) requestAnimationFrame(draw);
+        else pic.append(h("span", { class: "pr-st-t" }, L(s.title, lang)));
+        b.addEventListener("click", () => this.player.goTo(i));
+        return h("li", {}, b);
+      }),
+    );
+    this.syncStrip();
+  }
+  private syncStrip() {
+    const cur = this.player.stepIndex;
+    this.strip.querySelectorAll<HTMLElement>(".pr-st").forEach((b) => {
+      const on = Number(b.dataset.i) === cur;
+      b.classList.toggle("on", on);
+      if (on) {
+        b.setAttribute("aria-current", "step");
+        b.scrollIntoView({ block: "nearest", inline: "nearest" });
+      } else b.removeAttribute("aria-current");
+    });
   }
   private renderSide() {
     const lang = this.lang;
@@ -338,7 +446,7 @@ export class Presenter {
             h(
               "div",
               { class: "pr-next-t" },
-              kindChip(nxt.kind, lang),
+              taskChip(nxt, lang),
               h("b", {}, L(nxt.title, lang)),
             ),
           )

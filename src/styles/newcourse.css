@@ -1,0 +1,460 @@
+/* « Nouveau cours » (src/course/ui/newCourse.ts): a light page of its own, the focus bar, three fields, the
+   templates as real covers, a sticky bar with the one primary « Créer le cours » (UX logic §3, §6). */
+.nc-page {
+  --paper: #fbfaf7;
+  --raise: #f3f1ec;
+  --card: #ffffff;
+  --ink: #14181f;
+  --ink-2: #353c47;
+  --mute: #5d6671;
+  --faint: #8a929b;
+  --rule: #e4e1da;
+  --rule-strong: #cbc7be;
+  --accent: #1d5fd1;
+  --accent-soft: #e8effc;
+  --sh-card:
+    0 1px 2px rgba(20, 24, 31, 0.04), 0 4px 16px rgba(20, 24, 31, 0.05);
+  --sh-lift:
+    0 2px 4px rgba(20, 24, 31, 0.05), 0 12px 32px rgba(20, 24, 31, 0.09);
+  --gutter: 40px;
+  display: grid;
+  grid-template-rows: 64px minmax(0, 1fr) auto;
+  height: 100%;
+  background: var(--paper);
+  color: var(--ink);
+  font:
+    400 0.9375rem/1.45 "Inter",
+    system-ui,
+    sans-serif;
+  font-feature-settings: "cv05", "ss03";
+  -webkit-font-smoothing: antialiased;
+}
+.nc-page *,
+.nc-page *::before,
+.nc-page *::after {
+  box-sizing: border-box;
+}
+.nc-page.is-busy {
+  cursor: progress;
+}
+
+/* ---------- buttons: secondary (white, rule) and the one primary */
+.nc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 18px;
+  border-radius: 10px;
+  border: 1px solid var(--rule-strong);
+  background: var(--card);
+  color: var(--ink);
+  font:
+    600 0.9375rem/1 "Inter",
+    system-ui,
+    sans-serif;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color 0.12s,
+    background 0.12s;
+}
+.nc-btn:hover {
+  border-color: #aeb3ab;
+  background: #fdfcfa;
+}
+.nc-btn:focus-visible,
+.nc-card:focus-visible,
+.nc-input:focus-visible,
+.nc-lang button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.nc-btn.nc-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  padding: 0 22px;
+  box-shadow: 0 1px 2px rgba(29, 95, 209, 0.3);
+}
+.nc-btn.nc-primary:hover {
+  background: #1853ba;
+}
+.nc-page.is-busy .nc-primary {
+  opacity: 0.7;
+}
+
+/* ---------- the focus bar */
+.nc-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 24px;
+  background: var(--card);
+  border-bottom: 1px solid var(--rule);
+  min-width: 0;
+}
+.nc-back {
+  padding: 0 16px 0 12px;
+}
+.nc-rule {
+  width: 1px;
+  height: 28px;
+  background: var(--rule);
+  flex: none;
+}
+.nc-ttl {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+.nc-ttl b {
+  font-size: 0.97rem;
+  font-weight: 650;
+}
+.nc-ttl span {
+  font-size: 0.8125rem;
+  color: var(--mute);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nc-sp {
+  flex: 1;
+}
+.nc-lang {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--raise);
+  border: 1px solid var(--rule);
+  flex: none;
+}
+.nc-lang button {
+  min-height: 38px;
+  min-width: 44px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  font:
+    600 0.8125rem "Inter",
+    system-ui,
+    sans-serif;
+  color: var(--mute);
+  cursor: pointer;
+}
+.nc-lang button.on {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgba(20, 24, 31, 0.08);
+}
+
+/* ---------- the page */
+.nc-main {
+  overflow-y: auto;
+  min-height: 0;
+}
+.nc-in {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 36px var(--gutter) 40px;
+}
+.nc-eyebrow {
+  margin: 0 0 6px;
+  font:
+    700 0.78rem/1.2 "Inter",
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.nc-h1 {
+  margin: 0;
+  font-size: 2.25rem;
+  line-height: 1.12;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.nc-h1:focus {
+  outline: none;
+}
+.nc-lead {
+  margin: 10px 0 0;
+  max-width: 640px;
+  font-size: 1.0625rem;
+  color: var(--ink-2);
+}
+.nc-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 28px;
+}
+.nc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.nc-field label {
+  font-size: 0.875rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+.nc-field label small {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--mute);
+}
+.nc-input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--ink);
+  font:
+    400 1rem "Inter",
+    system-ui,
+    sans-serif;
+}
+.nc-input::placeholder {
+  color: var(--faint);
+}
+.nc-input:disabled {
+  background: var(--raise);
+  color: var(--mute);
+}
+.nc-select {
+  appearance: none;
+  padding-right: 40px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2314181f' stroke-width='2' stroke-linecap='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 18px;
+  cursor: pointer;
+}
+.nc-h2row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 36px 0 14px;
+}
+.nc-h2 {
+  margin: 0;
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.nc-h2-sub {
+  font-size: 0.9375rem;
+  color: var(--mute);
+}
+
+/* ---------- the starting points: real covers, one checked */
+.nc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 18px;
+}
+.nc-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: var(--sh-card);
+  overflow: hidden;
+  cursor: pointer;
+  transition:
+    border-color 0.12s,
+    transform 0.12s,
+    box-shadow 0.12s;
+}
+.nc-card:hover {
+  border-color: var(--rule-strong);
+  transform: translateY(-2px);
+}
+.nc-card.on {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    var(--sh-lift);
+}
+.nc-cover {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: var(--raise);
+  border-bottom: 1px solid var(--rule);
+  overflow: hidden;
+}
+.nc-cover > * {
+  position: absolute;
+  inset: 0;
+}
+.nc-cover.is-blank {
+  display: grid;
+  place-items: center;
+  background: repeating-linear-gradient(
+    135deg,
+    #f6f4ef 0 10px,
+    #efece5 10px 20px
+  );
+}
+.nc-cover.is-blank > .nc-plus {
+  position: static;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--card);
+  border: 1px solid var(--rule-strong);
+  color: var(--accent);
+}
+.nc-tick {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 0 0 2px #fff;
+}
+.nc-card.on .nc-tick {
+  display: grid;
+}
+.nc-card-b {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px 16px;
+}
+.nc-card-t {
+  font-size: 1rem;
+  font-weight: 650;
+}
+.nc-card-p {
+  font-size: 0.875rem;
+  color: var(--mute);
+  line-height: 1.4;
+}
+.nc-card-m {
+  margin-top: 6px;
+  font-size: 0.8125rem;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- import a PDF (only when the build has the importer) */
+.nc-import {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 22px;
+  padding: 16px 18px;
+  border: 1.5px dashed var(--rule-strong);
+  border-radius: 14px;
+}
+.nc-import > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.nc-import span {
+  font-size: 0.875rem;
+  color: var(--mute);
+}
+.nc-file {
+  display: none;
+}
+
+/* ---------- the sticky bar */
+.nc-foot {
+  background: rgba(255, 255, 255, 0.97);
+  border-top: 1px solid var(--rule);
+}
+.nc-foot-in {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 12px var(--gutter);
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+.nc-what {
+  margin: 0;
+  font-size: 0.9375rem;
+  color: var(--ink-2);
+  min-width: 0;
+}
+
+/* ---------- iPad and portrait */
+@media (max-width: 1300px) {
+  .nc-page {
+    --gutter: 28px;
+  }
+}
+@media (max-width: 900px) {
+  .nc-page {
+    --gutter: 20px;
+  }
+  .nc-bar {
+    padding: 0 16px;
+    gap: 12px;
+  }
+  .nc-fields {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .nc-field.is-title {
+    grid-column: 1 / -1;
+  }
+  .nc-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .nc-h1 {
+    font-size: 2rem;
+  }
+}
+@media (max-width: 560px) {
+  .nc-fields,
+  .nc-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .nc-ttl span {
+    display: none;
+  }
+  .nc-what {
+    display: none;
+  }
+}
+@media (pointer: coarse) {
+  .nc-btn,
+  .nc-input {
+    min-height: 48px;
+  }
+  .nc-lang button {
+    min-height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nc-card,
+  .nc-btn {
+    transition: none;
+  }
+  .nc-card:hover {
+    transform: none;
+  }
+}

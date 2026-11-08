@@ -396,9 +396,13 @@ describe("outline and progress", () => {
     expect(tickClass(ex, "current")).toBe("now");
     expect(tickClass(tr, "missed")).toBe("do done miss");
     expect(courseMinutes([ex, fl, tr])).toBe(9);
-    expect(markText(tr, { visited: true, goalMet: true }, "fr")).toBe(
-      "Objectif atteint",
-    );
+    expect(markText(tr, { visited: true, goalMet: true }, "fr")).toBe("fait");
+    // a question says right or wrong, a task never attempted is still to do, a reading step is seen
+    const q = step({ id: "q", kind: "quiz" });
+    expect(markText(q, { visited: true, answered: true, correct: true }, "fr")).toBe("juste");
+    expect(markText(q, { visited: true, answered: true }, "fr")).toBe("faux");
+    expect(markText(q, { visited: true, skipped: true }, "fr")).toBe("à faire");
+    expect(markText(ex, { visited: true }, "fr")).toBe("vu");
     expect(markText(tr, undefined, "en")).toBe("");
   });
 });
@@ -660,9 +664,9 @@ describe("reader rules", () => {
       fallback: false,
     });
     expect(ps("stepOf", "fr", { n: 3, total: 12 })).toBe("Étape 3 sur 12");
-    expect(kindLabel("try", "fr")).toBe("À vous");
+    expect(kindLabel("try", "fr")).toBe("Manipulation");
     expect(stepMeta(step({ kind: "calc", minutes: 3 }), "en")).toBe(
-      "about 3 min · practice only, never graded",
+      "about 3 min · practice, not graded",
     );
     expect(
       stepMeta(
@@ -677,7 +681,7 @@ describe("reader rules", () => {
         }),
         "en",
       ),
-    ).toBe("not graded");
+    ).toBe("practice, not graded");
     expect(
       stepMeta(
         step({
@@ -687,6 +691,6 @@ describe("reader rules", () => {
         }),
         "en",
       ),
-    ).toBe("practice, checked by the sim");
+    ).toBe("practice, checked for you");
   });
 });

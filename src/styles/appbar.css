@@ -1,0 +1,276 @@
+/* The app bar (src/ui/appBar.ts) and the shared page tokens of the "place" pages (Accueil, Simulateur; the
+   library has the same values in library.css). Light paper, one accent, three button styles (UX logic §3). */
+.wd-appbar,
+.wd-page {
+  --wd-paper: #fbfaf7;
+  --wd-raise: #f3f1ec;
+  --wd-card: #ffffff;
+  --wd-ink: #14181f;
+  --wd-ink-2: #353c47;
+  --wd-mute: #5d6671;
+  --wd-faint: #8a929b;
+  --wd-rule: #e4e1da;
+  --wd-rule-strong: #cbc7be;
+  --wd-accent: #1d5fd1;
+  --wd-accent-soft: #e8effc;
+  --wd-sim: #a8238f;
+  --wd-sim-soft: #f8e9f5;
+  --wd-ok: #17763c;
+  --wd-r-card: 16px;
+  --wd-r-ctl: 10px;
+  --wd-sh-card:
+    0 1px 2px rgba(20, 24, 31, 0.04), 0 4px 16px rgba(20, 24, 31, 0.05);
+  --wd-sh-lift:
+    0 2px 4px rgba(20, 24, 31, 0.05), 0 12px 32px rgba(20, 24, 31, 0.09);
+  --wd-gutter: 40px;
+  font-family: "Inter", system-ui, sans-serif;
+  font-feature-settings: "cv05", "ss03";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- the bar ----------
+   (header.wd-appbar.wd-appbar: the bar also sits in index.html's page box, whose ".modal header" rules must not
+   reach it) */
+header.wd-appbar.wd-appbar {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  box-sizing: border-box;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 0 var(--wd-gutter);
+  padding-left: max(var(--wd-gutter), env(safe-area-inset-left));
+  padding-right: max(var(--wd-gutter), env(safe-area-inset-right));
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom: 1px solid var(--wd-rule);
+  color: var(--wd-ink);
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  text-align: left;
+}
+.wd-appbar * {
+  box-sizing: border-box;
+}
+.wd-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-weight: 650;
+  font-size: 1.125rem;
+  letter-spacing: -0.01em;
+  color: var(--wd-ink);
+  text-decoration: none;
+  white-space: nowrap;
+  border-radius: 8px;
+}
+.wd-brand-mark {
+  display: inline-flex;
+  color: var(--wd-ink);
+}
+.wd-tabs {
+  display: flex;
+  gap: 4px;
+  height: 100%;
+  align-self: stretch;
+}
+.wd-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  min-width: 44px;
+  font-size: 0.9375rem;
+  font-weight: 550;
+  color: var(--wd-mute);
+  border-bottom: 2.5px solid transparent;
+  border-top: 2.5px solid transparent;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.wd-tab-ic {
+  display: inline-flex;
+  opacity: 0.85;
+}
+.wd-tab:hover {
+  color: var(--wd-ink);
+}
+.wd-tab.on {
+  color: var(--wd-ink);
+  border-bottom-color: var(--wd-accent);
+}
+.wd-sp {
+  flex: 1;
+}
+.wd-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 360px;
+  min-width: 0;
+  height: 42px;
+  padding: 0 12px 0 14px;
+  border: 1px solid var(--wd-rule-strong);
+  border-radius: var(--wd-r-ctl);
+  background: var(--wd-card);
+  color: var(--wd-mute);
+  cursor: text;
+}
+.wd-search:focus-within {
+  border-color: var(--wd-accent);
+  box-shadow: 0 0 0 3px rgba(29, 95, 209, 0.18);
+}
+.wd-search-ic {
+  display: inline-flex;
+  flex: none;
+}
+.wd-appbar .wd-search-in {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 0.90625rem;
+  color: var(--wd-ink);
+  padding: 0;
+}
+.wd-appbar .wd-search-in::placeholder {
+  color: var(--wd-mute);
+  opacity: 1;
+}
+.wd-search-in::-webkit-search-cancel-button {
+  cursor: pointer;
+}
+.wd-search kbd {
+  flex: none;
+  font:
+    500 0.75rem Inter,
+    system-ui,
+    sans-serif;
+  color: var(--wd-mute);
+  border: 1px solid var(--wd-rule-strong);
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+.wd-lang {
+  display: flex;
+  flex: none;
+  border: 1px solid var(--wd-rule);
+  background: var(--wd-raise);
+  border-radius: var(--wd-r-ctl);
+  padding: 3px;
+}
+.wd-lang-b {
+  min-width: 42px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  font:
+    600 0.8125rem Inter,
+    system-ui,
+    sans-serif;
+  color: var(--wd-mute);
+  border-radius: 7px;
+  cursor: pointer;
+}
+.wd-lang-b.on {
+  background: var(--wd-card);
+  color: var(--wd-ink);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.wd-appbar :is(a, button, input):focus-visible {
+  outline: 2px solid var(--wd-accent);
+  outline-offset: 2px;
+}
+.wd-appbar .wd-search-in:focus-visible {
+  outline: 0;
+}
+
+@media (max-width: 1200px) {
+  .wd-appbar,
+  .wd-page {
+    --wd-gutter: 28px;
+  }
+  header.wd-appbar.wd-appbar {
+    gap: 20px;
+  }
+  .wd-search {
+    width: 300px;
+  }
+}
+/* portrait tablet: the tabs keep their words, the icons go; the search narrows */
+@media (max-width: 900px) {
+  .wd-appbar,
+  .wd-page {
+    --wd-gutter: 20px;
+  }
+  header.wd-appbar.wd-appbar {
+    gap: 12px;
+  }
+  .wd-tab {
+    padding: 0 10px;
+  }
+  .wd-tab-ic {
+    display: none;
+  }
+  .wd-search {
+    width: auto;
+    flex: 0 1 220px;
+  }
+  .wd-search kbd {
+    display: none;
+  }
+}
+/* phone width: the brand keeps its mark, the bar wraps the search to a second row */
+@media (max-width: 640px) {
+  header.wd-appbar.wd-appbar {
+    height: auto;
+    flex-wrap: wrap;
+    row-gap: 0;
+    padding-top: 6px;
+    padding-bottom: 8px;
+  }
+  .wd-brand-w {
+    display: none;
+  }
+  .wd-tabs {
+    height: 52px;
+    order: 1;
+  }
+  .wd-sp {
+    order: 2;
+  }
+  .wd-lang {
+    order: 3;
+  }
+  .wd-search {
+    order: 4;
+    flex: 1 1 100%;
+  }
+}
+@media (pointer: coarse) {
+  .wd-lang {
+    padding: 2px;
+  }
+  .wd-lang-b {
+    min-width: 44px;
+    height: 44px;
+  }
+  .wd-search {
+    height: 44px;
+  }
+}
+/* the page's global field styles (border, focus ring) stay off the bar's field: the box around it carries them */
+.wd-appbar .wd-search-in,
+.wd-appbar .wd-search-in:focus {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}

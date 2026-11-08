@@ -80,8 +80,8 @@
   padding: 0 9px;
   border: 1px solid var(--ck-line-hi);
   border-radius: 7px;
-  font: 700 11px/1 var(--cs-font);
-  letter-spacing: 0.08em;
+  font: 650 12.5px/1 var(--cs-font);
+  letter-spacing: 0.01em;
   color: var(--ck-muted);
   white-space: nowrap;
 }
@@ -419,8 +419,10 @@
 .cs-plan-h {
   display: flex;
   justify-content: space-between;
+  gap: 8px;
+  white-space: nowrap;
   padding: 7px 10px 0;
-  font: 700 10px/1 var(--cs-font);
+  font: 700 11px/1 var(--cs-font);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ck-muted);
@@ -589,10 +591,11 @@
 }
 .cs-ctl .n,
 .cs-locked .n {
-  font: 600 10.5px/1 var(--cs-font);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font: 600 12.5px/1.2 var(--cs-font);
+  letter-spacing: 0.01em;
   color: var(--ck-muted);
+  text-align: center;
+  white-space: nowrap;
 }
 .cs-kzone {
   display: flex;
@@ -601,10 +604,15 @@
   touch-action: none;
   cursor: grab;
 }
+/* the − and + sides of a knob are visible tap targets (a tap turns one step; dragging still works) */
 .cs-kzone .tz {
-  width: 22px;
-  text-align: center;
-  color: var(--ck-faint);
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--ck-line-hi);
+  color: var(--ck-text);
   font: 600 18px/1 var(--cs-font);
 }
 .cs-knob {

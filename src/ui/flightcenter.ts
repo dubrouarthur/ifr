@@ -1,7 +1,8 @@
-// Flight Center: the single hub after the start page. The home screen has ONE primary action (Build a flight), a
-// one-click Quick start, Continue (syllabus / last flight), the tools in a visible toolbar and six photo tiles.
-// The full catalogue (every flight by type, search, filters, learning paths, detail pane) sits one click deeper,
-// behind "Browse all flights".
+// The index.html page box: Accueil and Simulateur (UX logic §4, drawn by ui/home.ts) under the shared app bar
+// (ui/appBar.ts), and the pages below them (the club's tools, the instructor's page, the simulator's flight lists and
+// a flight's detail). It is an opaque light page, not a dialog over the cockpit: Esc does not close it, and it holds
+// the page's one <main>. The library lives in academy.html only: the old embedded library view leaves for it.
+// (The class keeps its historical name, FlightCenter; the UI never shows it.)
 import { h, clear, store } from "./dom";
 import { LESSON_META, LESSON_ORDER } from "../library/meta";
 import { CLASSIFICATION } from "../library/classification";
@@ -20,6 +21,9 @@ import { history } from "./history";
 import { approachPlate } from "../plates/plates";
 import { findApproach, TRAINING_REGION } from "../nav/data";
 import { I, svgIcon } from "./icons";
+import { appBar, type AppBar, type Place } from "./appBar";
+import { BRAND, brandTagline, brandTitle } from "../brand";
+import { homeView, simView, type HomeHooks, type QuickKind as PlaceQuick } from "./home";
 import type { AssessSettings, Scenario } from "../sim/sim";
 import type { Exercise } from "../train/engine";
 import type { Attempt } from "./history";
@@ -32,7 +36,6 @@ import {
   lang as uiLang,
   setLang,
   onLangChange,
-  type UiLang,
 } from "./i18n";
 import { PHASES, listDrills, type DrillEntry } from "../train/drills";
 import {
@@ -103,6 +106,8 @@ export type ClubTab = "drills" | "library" | "results" | "pack";
 
 type View =
   | { type: "home" }
+  /** the Simulateur place: Vol rapide, Préparer un vol, the last flights */
+  | { type: "sim" }
   | { type: "instructor" }
   | { type: "all" }
   | { type: "cat"; cat: CatId; sub: string | null }
@@ -189,6 +194,16 @@ const PATH_SHORT_FR: Record<string, string> = {
   ckp: "Préparation au test",
 };
 const QUICK_KEY = "ifr.fc.quick";
+/** « aujourd’hui », « hier », « il y a 3 jours », else the date (the last flights) */
+function whenLabel(iso: string, fr: boolean, now = Date.now()): string {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return "";
+  const d = Math.floor((now - t) / 86400000);
+  if (d <= 0) return fr ? "aujourd’hui" : "today";
+  if (d === 1) return fr ? "hier" : "yesterday";
+  if (d < 7) return fr ? `il y a ${d} jours` : `${d} days ago`;
+  return new Date(t).toLocaleDateString(fr ? "fr-FR" : "en-GB", { day: "numeric", month: "short" });
+}
 
 const pathLabel = (p: Path) =>
   (uiLang() === "fr" ? PATH_SHORT_FR[p.id] : undefined) ??
@@ -524,8 +539,8 @@ registerStrings("en", {
   "ch.title": "Procedures · Flying club",
   "ch.sub":
     "Test your students on failures and emergencies: fly a drill, adapt the checklists to your club, follow the results.",
-  "ch.back": "Flight Center",
-  "ch.searchAll": "Search all flights",
+  "ch.back": "Home",
+  "ch.searchAll": "Search courses, lessons…",
   "ch.lang": "Language",
   "ch.tab.drills": "Drills",
   "ch.tab.library": "Procedures",
@@ -535,11 +550,11 @@ registerStrings("en", {
   "ch.d.studentPh": "Name (for the records)",
   "ch.d.new": "Create a drill",
   "ch.d.newTip":
-    "In the flight builder: where and when, the failure and its trigger, training or test",
+    "In “Plan a flight”: where and when, the failure and its trigger, training or test",
   "ch.d.club": "Club drills",
   "ch.d.clubNone": "No club drill yet",
   "ch.d.clubNoneSub":
-    "Open a template, adjust it in the flight builder and Save: it appears here for every instructor and student.",
+    "Open a template, adjust it in “Plan a flight” and Save: it appears here for every instructor and student.",
   "ch.d.mine": "Assigned to {s}",
   "ch.d.tpl": "Templates",
   "ch.d.tplSub": "Ready to fly at your airport. Edit one to make a club drill.",
@@ -553,7 +568,7 @@ registerStrings("en", {
   "ch.d.unassign": "Remove",
   "ch.d.assignDone": "“{d}” assigned to {s}",
   "ch.d.noBuild":
-    "No airport of the loaded data fits this drill: it opens in the flight builder.",
+    "No airport of the loaded data fits this drill: it opens in “Plan a flight”.",
   "ch.d.training": "Training",
   "ch.d.test": "Test",
   "ch.d.trainingTip":
@@ -660,8 +675,8 @@ registerStrings("fr", {
   "ch.title": "Procédures · Aéroclub",
   "ch.sub":
     "Entraînez et contrôlez vos élèves sur les pannes et les urgences : lancez un exercice, adaptez les check-lists à votre club, suivez les résultats.",
-  "ch.back": "Flight Center",
-  "ch.searchAll": "Rechercher un vol",
+  "ch.back": "Accueil",
+  "ch.searchAll": "Rechercher un cours, une leçon…",
   "ch.lang": "Langue",
   "ch.tab.drills": "Exercices",
   "ch.tab.library": "Procédures",
@@ -846,7 +861,6 @@ export class FlightCenter extends Modal {
   private searchInput!: HTMLInputElement;
   private searchClear!: HTMLElement;
   private plateView: HTMLElement | null = null;
-  private quickPop: HTMLElement | null = null;
   // procedures mode page
   private flash: { text: string; kind: "ok" | "warn" } | null = null;
   private assignFor: string | null = null;
@@ -861,17 +875,24 @@ export class FlightCenter extends Modal {
     typeof location !== "undefined" ? shareCodeFromUrl(location.href) : null;
 
   constructor(private hooks: FcHooks) {
-    super("Flight Center");
-    this.box.classList.add("fc");
+    super(LL("Home", "Accueil"));
+    // Accueil is a page, not a dialog over the cockpit (UX logic §1 rule 5): opaque, light, the app bar on top,
+    // one <main>; Esc does not close it (there is nothing "behind" it to go back to)
+    this.escCloses = false;
+    this.box.classList.add("fc", "fc-page");
+    this.bg.classList.add("fc-page-bg");
+    this.box.removeAttribute("role");
+    this.box.removeAttribute("aria-modal");
+    this.box.removeAttribute("aria-label");
     clear(this.body);
     this.side = h("nav", {
       class: "fc-side",
-      "aria-label": "Flight Center sections",
+      "aria-label": LL("Flights", "Vols"),
     });
-    this.main = h("section", { class: "fc-main" });
+    this.main = h("main", { class: "fc-main" });
     this.detail = h("aside", {
       class: "fc-detail",
-      "aria-label": "Flight details",
+      "aria-label": LL("Flight details", "Détails du vol"),
     });
     this.gridEl = h(
       "div",
@@ -883,105 +904,57 @@ export class FlightCenter extends Modal {
     this.body.append(this.gridEl);
     this.foot.remove();
     this.buildHeader();
-    // the procedures page follows the FR / EN switch and the club library
-    onLangChange(() => this.isOpen && this.render());
+    // the page follows the FR / EN switch and the club library
+    onLangChange((l) => {
+      this.bar.setLang(l === "fr" ? "fr" : "en");
+      if (this.isOpen) this.render();
+    });
     onProceduresChange(
       () => this.isOpen && this.view.type === "club" && this.renderMain(),
     );
-    // "/" focuses the search field; Esc closes the plate viewer / Quick start before it closes the Flight Center
+    // Esc closes the plate viewer first
     window.addEventListener(
       "keydown",
       (e) => {
-        // another window stacked over the Flight Center (procedure editor) owns the keyboard
+        // another window stacked over the page (procedure editor) owns the keyboard
         if (!this.isOpen || Modal.stack[Modal.stack.length - 1] !== this)
           return;
-        if (e.key === "Escape" && (this.plateView || this.quickPop)) {
+        if (e.key === "Escape" && this.plateView) {
           e.stopImmediatePropagation();
           e.preventDefault();
-          if (this.quickPop) this.closeQuick(true);
-          else this.closePlate();
-          return;
-        }
-        const t = e.target as HTMLElement | null;
-        const typing =
-          !!t &&
-          (t.tagName === "INPUT" ||
-            t.tagName === "SELECT" ||
-            t.tagName === "TEXTAREA");
-        if (e.key === "/" && !typing && !e.ctrlKey && !e.metaKey) {
-          e.preventDefault();
-          // the Library has its own search (courses, procedures and flights)
-          if (this.view.type === "courses" && this.courseLib)
-            this.courseLib.focusSearch();
-          else this.searchInput.focus();
+          this.closePlate();
         }
       },
       true,
     );
   }
 
-  /** header: "Flight Center" (back to the home screen) › section, the search field, close */
+  /** the app bar (ui/appBar.ts): the mark, Accueil · Bibliothèque · Simulateur, the library search, FR | EN */
+  private bar!: AppBar;
   private buildHeader() {
     const head = this.box.querySelector("header")!;
-    const title = head.querySelector("h2")!;
-    clear(title);
-    title.classList.add("fc-title");
-    this.crumb = h("span", { class: "fc-crumb" });
-    title.append(
-      h(
-        "button",
-        {
-          class: "fc-title-home",
-          title: LL("Flight Center home", "Accueil du Flight Center"),
-          onclick: () => this.go({ type: "home" }),
-        },
-        "Flight Center",
-      ),
-      this.crumb,
-    );
-    const search = h("input", {
-      type: "search",
-      placeholder: t("ch.searchAll"),
-      "aria-label": t("ch.searchAll"),
-      enterkeyhint: "search",
-    }) as HTMLInputElement;
-    const clearBtn = h(
-      "button",
-      {
-        class: "fc-search-x",
-        title: "Clear search",
-        "aria-label": "Clear search",
-        hidden: true,
-        onclick: () => {
-          search.value = "";
-          this.onSearch("");
-          search.focus();
-        },
+    this.crumb = h("div", { class: "fc-backrow", hidden: true });
+    this.bar = appBar({
+      place: "home",
+      lang: uiLang() === "fr" ? "fr" : "en",
+      onLang: (l) => setLang(l),
+      go: (p) => {
+        if (p === "lib") return false;
+        this.showPlace(p);
+        return true;
       },
-      "×",
-    );
-    search.addEventListener("input", () => this.onSearch(search.value));
-    search.addEventListener("keydown", (e) => {
-      e.stopPropagation();
-      if (e.key === "Escape" && search.value) {
-        e.preventDefault();
-        search.value = "";
-        this.onSearch("");
-      }
+      search: {
+        // the search always searches the library (UX logic §3): Enter opens it with the words typed
+        submit: (q) =>
+          this.leave(() =>
+            location.assign(`academy.html#library&q=${encodeURIComponent(q)}`),
+          ),
+      },
     });
-    this.searchInput = search;
-    this.searchClear = clearBtn;
-    head.insertBefore(
-      h(
-        "div",
-        { class: "fc-search" },
-        h("span", { class: "fc-search-ic" }, svgIcon(I.target, 15)),
-        search,
-        clearBtn,
-        h("kbd", { class: "fc-kbd", title: "Press / to search" }, "/"),
-      ),
-      head.querySelector(".x"),
-    );
+    head.replaceWith(this.bar.el);
+    this.body.prepend(this.crumb);
+    this.searchInput = this.bar.input;
+    this.searchClear = h("span", { hidden: true });
   }
 
   open() {
@@ -989,15 +962,16 @@ export class FlightCenter extends Modal {
     if (this.pendingShare && this.view.type !== "club")
       return this.openClub("pack");
     this.items = catalog();
+    // Accueil opens on Accueil (a deep page such as a flight's detail opens through its own entry)
+    if (this.view.type === "search" || this.view.type === "courses")
+      this.view = { type: "home" };
     this.render();
     super.open();
   }
 
-  /** open on the Ground school page: every slide deck (the top bar's Courses button); `intent` creates a course or
-   *  picks one to present once the library is up */
+  /** the library lives in one place, academy.html (UX logic §1 rule 4): « Créer un cours » opens the new course
+   *  page, « Présenter » the instructors' page, anything else the library itself */
   openCourses(intent?: CourseIntent) {
-    this.items = catalog();
-    if (!this.isOpen) super.open();
     this.go({ type: "courses", ...(intent ? { intent } : {}) });
   }
 
@@ -1009,17 +983,18 @@ export class FlightCenter extends Modal {
   }
 
   close() {
+    const was = this.isOpen;
     this.closePlate();
     this.closeQuick();
-    this.bg.classList.remove("fc-solid-bg");
+    this.placeView?.destroy();
+    this.placeView = null;
     super.close();
+    // the cockpit's title again (main.ts syncDocLang writes the same)
+    if (was) document.title = `${BRAND.name} · ${brandTagline(uiLang() === "fr" ? "fr" : "en")}`;
   }
 
-  /** at launch the Flight Center is the first page, not a window over a cockpit nobody has flown yet: an opaque
-   *  light backdrop (the start page's and the course pages' surface) until it closes */
-  solidBackdrop() {
-    this.bg.classList.add("fc-solid-bg");
-  }
+  /** kept for callers: Accueil is always an opaque light page now */
+  solidBackdrop() {}
 
   /** on open the focus goes to the page's heading, so Tab starts at the top of the page */
   protected initialFocus(): HTMLElement | null {
@@ -1030,6 +1005,17 @@ export class FlightCenter extends Modal {
   }
 
   private go(v: View) {
+    if (v.type === "courses") {
+      const r: string = v.intent === "new"
+        ? "#new"
+        : v.intent === "present"
+          ? "#library&p=instructors"
+          : v.flights
+            ? "#library&v=sim"
+            : `#library${v.program ? `&p=${v.program}` : ""}${v.program && v.subject ? `&s=${v.subject}` : ""}`;
+      this.leave(() => goToCourse(`academy.html${r}`));
+      return;
+    }
     this.flash = null;
     if (v.type === "club") store.set(CLUB_TAB_KEY, v.tab);
     this.view = v;
@@ -1043,29 +1029,41 @@ export class FlightCenter extends Modal {
     this.closeQuick();
     this.render();
     this.main.scrollTop = 0;
+    this.body.scrollTop = 0;
   }
 
-  /** leave the Flight Center and run a tool */
+  /** leave the page and run a tool */
   private leave(fn: () => void) {
-    // the focus leaves with the dialog (the keyboard flies the aircraft), it does not go back to the opener
+    // the focus leaves with the page (the keyboard flies the aircraft), it does not go back to the opener
     this.leavingForTool = true;
     this.close();
     fn();
   }
 
   render() {
+    const v = this.view;
     const home =
-      this.view.type === "home" ||
-      this.view.type === "instructor" ||
-      this.view.type === "club" ||
-      this.view.type === "courses";
+      v.type === "home" ||
+      v.type === "sim" ||
+      v.type === "instructor" ||
+      v.type === "club" ||
+      v.type === "courses";
     this.gridEl.classList.toggle("home", home);
     this.box.classList.toggle("fc-is-home", home);
-    this.box.classList.toggle("fc-lib-view", this.view.type === "courses");
-    this.searchClear.hidden = !this.q;
-    // the search field follows the FR / EN switch of the procedures page
-    this.searchInput.placeholder = t("ch.searchAll");
-    this.searchInput.setAttribute("aria-label", t("ch.searchAll"));
+    this.box.classList.toggle("fc-is-place", v.type === "home" || v.type === "sim");
+    this.box.classList.toggle("fc-lib-view", false);
+    // the tab that is current: Accueil, Simulateur (its flights and lessons too); the club's tools sit under none
+    const place: Place | null =
+      v.type === "home"
+        ? "home"
+        : v.type === "sim" || v.type === "all" || v.type === "cat" || v.type === "path" || v.type === "search"
+          ? "sim"
+          : null;
+    this.bar.setPlace(place);
+    // the tab's title says where you are (« Accueil — Wingdeck »)
+    document.title = brandTitle(
+      v.type === "home" ? LL("Home", "Accueil") : v.type === "sim" ? LL("Simulator", "Simulateur") : v.type === "club" ? t("ch.title") : LL("Home", "Accueil"),
+    );
     this.renderCrumb();
     if (home) clear(this.side);
     else this.renderSide();
@@ -1073,35 +1071,40 @@ export class FlightCenter extends Modal {
     this.renderDetail();
   }
 
+  /** the pages under a place (club tools, instructor, flight lists) get one labelled way back, top left */
   private renderCrumb() {
-    const v = this.view;
-    const label =
-      v.type === "home"
-        ? ""
-        : v.type === "instructor"
-          ? LL("Instructor", "Instructeur")
-          : v.type === "courses"
-            ? v.flights
-              ? LL("All flights", "Tous les vols")
-              : groundSchoolLabel()
-            : v.type === "club"
-              ? t("ch.title")
-              : v.type === "all"
-                ? LL("All flights", "Tous les vols")
-                : v.type === "search"
-                  ? LL("Search", "Recherche")
-                  : v.type === "path"
-                    ? pathLabel(v.path)
-                    : catTitle(CATEGORIES.find((c) => c.id === v.cat)!);
     clear(this.crumb);
-    if (label)
-      this.crumb.append(
-        h("span", { class: "fc-crumb-sep", "aria-hidden": "true" }, "/"),
-        h("span", {}, label),
-      );
-    this.box
-      .querySelector(".fc-title-home")
-      ?.classList.toggle("link", v.type !== "home");
+    const v = this.view;
+    const place = v.type === "home" || v.type === "sim";
+    this.crumb.hidden = place;
+    if (place) return;
+    // the flight lists belong to the Simulateur; the club's tools and the instructor's page to Accueil
+    const toSim = v.type === "all" || v.type === "cat" || v.type === "path" || v.type === "search";
+    const here =
+      v.type === "instructor" || v.type === "club"
+        ? ""
+        : v.type === "all"
+            ? LL("All flights", "Tous les vols")
+            : v.type === "search"
+              ? LL("Search", "Recherche")
+              : v.type === "path"
+                ? pathLabel(v.path)
+                : v.type === "cat"
+                  ? catTitle(CATEGORIES.find((c) => c.id === v.cat)!)
+                  : "";
+    this.crumb.append(
+      h(
+        "button",
+        {
+          class: "fc-backto",
+          type: "button",
+          onclick: () => this.showPlace(toSim ? "sim" : "home"),
+        },
+        h("span", { class: "fc-backto-ic", html: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="m11 6-6 6 6 6"/></svg>' }),
+        toSim ? LL("Simulator", "Simulateur") : LL("Home", "Accueil"),
+      ),
+      here ? h("span", { class: "fc-backto-here" }, here) : "",
+    );
   }
 
   /** select a flight (or clear the selection): fills the detail column without rebuilding the list */
@@ -1141,7 +1144,7 @@ export class FlightCenter extends Modal {
       navBtn(LL("Home", "Accueil"), false, () => this.go({ type: "home" }), {
         icon: svgIcon(I.home),
         key: "home",
-        tip: LL("Flight Center home", "Accueil du Flight Center"),
+        tip: LL("Home", "Accueil"),
       }),
       // one catalogue: "All flights" is the library's simulator view, shelved by programme and subject
       navBtn(
@@ -1210,12 +1213,12 @@ export class FlightCenter extends Modal {
       run: () => void;
     }[] = [
       {
-        label: LL("Flight builder", "Éditeur de vol"),
+        label: LL("Plan a flight", "Préparer un vol"),
         sub: LL("Route, procedures, weather", "Route, procédures, météo"),
         icon: I.plan,
         tip: LL(
-          "The flight builder, where every flight and IFR circuit is set up (reopens your last flight)",
-          "L’éditeur de vol, où se prépare chaque vol et circuit IFR (rouvre votre dernier vol)",
+          "Where every flight and IFR circuit is set up (reopens your last flight)",
+          "Là où se prépare chaque vol et circuit IFR (rouvre votre dernier vol)",
         ),
         run: () => hk.openBuilder(),
       },
@@ -1513,11 +1516,11 @@ export class FlightCenter extends Modal {
   private renderMain() {
     this.courseLib?.destroy();
     this.courseLib = null;
-    this.deckHome?.destroy();
-    this.deckHome = null;
+    this.placeView?.destroy();
+    this.placeView = null;
     clear(this.main);
     const v = this.view;
-    if (v.type === "home") return this.renderHome();
+    if (v.type === "home" || v.type === "sim") return this.renderPlace(v.type);
     if (v.type === "instructor") return this.renderInstructor();
     if (v.type === "courses")
       return this.renderCourses(v.intent, v.program, v.subject, v.flights);
@@ -1679,7 +1682,7 @@ export class FlightCenter extends Modal {
             h(
               "span",
               {},
-              "In the flight builder: chain departures, holds and approaches into one graded session, then share it with a link.",
+              "In “Plan a flight”: chain departures, holds and approaches into one graded session, then share it with a link.",
             ),
           ),
           h(
@@ -1689,7 +1692,7 @@ export class FlightCenter extends Modal {
               onclick: () => this.leave(() => this.hooks.openBuilder()),
             },
             svgIcon(I.plan),
-            "Open the flight builder",
+            "Plan a flight",
           ),
         ),
       );
@@ -1722,612 +1725,151 @@ export class FlightCenter extends Modal {
               "No flights of your own yet",
               undefined,
               undefined,
-              "Flights you save in the flight builder, or open from a shared link, appear here.",
+              "Flights you save in “Plan a flight”, or open from a shared link, appear here.",
             )
           : this.grid(list, "tag", false),
       );
     }
   }
 
-  // ------------------------------------------------------------------ home
-  /** the slide decks drawn on the home screen (course/ui/deckHome.ts, loaded on demand) */
-  private deckHome: { destroy(): void } | null = null;
+  // ------------------------------------------------------------------ Accueil and Simulateur (ui/home.ts)
+  /** the page drawn in the main column (Accueil or Simulateur): its covers are released on the next render */
+  private placeView: { destroy(): void } | null = null;
+  /** set when « Préparer un vol » leaves this page: the Simulateur comes back if it closes without a flight */
+  returnTo: { view: View; focus: string } | null = null;
 
-  /** Home: the slides lead (SPEC slides v2 §12). A light hero band with a real deck drawn live, the three teaching
-   *  actions, then every deck as a slide card; the flying entries (build a flight, Quick start, the syllabus,
-   *  tools, flight types) follow under "Fly". */
-  private renderHome() {
-    const ci = continueInfo(this.items);
+  /** what the two places need from the simulator (ui/home.ts HomeHooks) */
+  private homeHooks(): HomeHooks {
     const fr = uiLang() === "fr";
-    const L = (en: string, frText: string) => (fr ? frText : en);
-    const visual = h("div", {
-      class: "fc-sh-vis dh-visual",
-      "aria-label": L("A course, drawn live", "Un cours, dessiné en direct"),
-    });
-    const shelf = h("div", {
-      class: "fc-deck-row dh-shelf",
-      role: "list",
-      "aria-label": L("Courses", "Cours"),
-    });
-    // placeholders the size of the slides, so nothing moves when the engine arrives
-    visual.append(h("div", { class: "dh-stage dh-wait" }));
-    const slidesHero = h(
-      "section",
-      { class: "fc-sh", "aria-labelledby": "fc-sh-t" },
-      h(
-        "div",
-        { class: "fc-sh-txt" },
-        // a task header, not the pitch again: the start page has just said what the product is
-        h("h1", { id: "fc-sh-t" }, L("What would you like to do?", "Que voulez-vous faire\u00a0?")),
-        h(
-          "p",
-          {},
-          L(
-            "Open a course to teach or revise, build your own, or practise on the simulator on your own.",
-            "Ouvrez un cours pour enseigner ou réviser, créez le vôtre, ou entraînez-vous seul au simulateur.",
-          ),
-        ),
-        h(
-          "div",
-          { class: "fc-sh-acts" },
-          h(
-            "button",
-            {
-              class: "btn primary fc-sh-open",
-              type: "button",
-              onclick: () => this.go({ type: "courses" }),
-              title: L(
-                "Every course: samples, your club’s and your drafts",
-                "Tous les cours : exemples, ceux du club et vos brouillons",
-              ),
-            },
-            svgIcon(I.learn, 20),
-            L("Open a course", "Ouvrir un cours"),
-          ),
-          h(
-            "button",
-            {
-              class: "btn fc-sh-b fc-sh-new",
-              type: "button",
-              onclick: () => this.go({ type: "courses", intent: "new" }),
-              title: L(
-                "A new deck from a template, in the course builder",
-                "Un nouveau cours à partir d’un modèle, dans l’éditeur",
-              ),
-            },
-            svgIcon(I.plus, 18),
-            L("Create a course", "Créer un cours"),
-          ),
-        ),
-        // the quieter ways in: teach a class, or fly the simulator on its own (it scrolls to "Fly")
-        h(
-          "div",
-          { class: "fc-sh-more" },
-          h(
-            "button",
-            {
-              class: "fc-sh-link fc-sh-present",
-              type: "button",
-              onclick: () => this.go({ type: "courses", intent: "present" }),
-              title: L(
-                "Projector window and presenter notes on one computer",
-                "Fenêtre projecteur et notes du présentateur sur un seul ordinateur",
-              ),
-            },
-            svgIcon(I.screen, 18),
-            L("Present to a class", "Présenter à une classe"),
-          ),
-          h(
-            "button",
-            {
-              class: "fc-sh-link fc-sh-fly",
-              type: "button",
-              onclick: (e: Event) =>
-                (e.currentTarget as HTMLElement)
-                  .closest(".fc-home")
-                  ?.querySelector<HTMLElement>(".fc-fly")
-                  ?.scrollIntoView({
-                    behavior: matchMedia("(prefers-reduced-motion: reduce)")
-                      .matches
-                      ? "auto"
-                      : "smooth",
-                    block: "start",
-                  }),
-            },
-            svgIcon(I.plane, 18),
-            L("Fly the simulator on its own", "Voler le simulateur seul"),
-          ),
-        ),
-      ),
-      visual,
-    );
-    // the library's single entry: Continue and the six shelf tiles, drawn by the library itself (one model, one card)
-    const libHost = h("div", { class: "fc-lib-entry" });
-    void Promise.all([
-      import("../course/ui/library"),
-      import("../course/store"),
-    ]).then(([m, st]) => {
-      if (!libHost.isConnected || this.view.type !== "home") return;
-      this.courseLib?.destroy();
-      this.courseLib = m.mountLibrary(libHost, {
-        lang: uiLang(),
-        store: st.courseStore(),
-        page: "academy.html",
-        entry: {
-          openLibrary: (program, subject) =>
-            this.go({
-              type: "courses",
-              ...(program ? { program } : {}),
-              ...(subject ? { subject } : {}),
-            }),
-          openFlights: () => this.go({ type: "courses", flights: true }),
-        },
-        navigate: (url) => this.leave(() => goToCourse(url)),
-        openSim: (t) => this.openLibraryItem(t),
-        editProcedure: (id) => this.openProc(id),
-        openClub: (tab) => this.goClub(tab),
-      });
-    });
-    void Promise.all([
-      import("../course/ui/deckHome"),
-      import("../course/store"),
-    ]).then(([m, st]) => {
-      if (!visual.isConnected || this.view.type !== "home") return;
-      this.deckHome?.destroy();
-      this.deckHome = m.mountDeckHome({
-        lang: fr ? "fr" : "en",
-        visual,
-        // the decks themselves are in the library entry below: the hero keeps its live slide only
-        shelf,
-        shelfMax: 0,
-        page: "academy.html",
-        store: st.courseStore(),
-        navigate: (url) => this.leave(() => goToCourse(url)),
-      });
-    });
-    // Fly: the simulator, also on its own. One light card (build a flight or Quick start, beside Continue) and four
-    // shortcuts; every flight, path and tool (the instructor's included) is one click deeper, behind "All flights".
-    const flyCard = h(
-      "div",
-      { class: "fc-fly-card" },
-      h(
-        "div",
-        { class: "fc-fly-main" },
-        h(
-          "h3",
-          {},
-          L("What are we flying today?", "Qu’est-ce qu’on vole aujourd’hui ?"),
-        ),
-        h(
-          "p",
-          {},
-          L(
-            "Every flight is set up in the flight builder: airports, route, holds and approaches, weather and failures. Or let Quick start pick one for you.",
-            "Chaque vol se prépare dans l’éditeur de vol : aérodromes, route, attentes et approches, météo et pannes. Ou laissez Départ rapide en choisir un.",
-          ),
-        ),
-        h(
-          "div",
-          { class: "fc-hero-acts" },
-          h(
-            "button",
-            {
-              class: "btn fc-go",
-              title: L(
-                "Open the flight builder: departure, route, approach, weather, failures",
-                "Ouvrir l’éditeur de vol : départ, route, approche, météo, pannes",
-              ),
-              onclick: () => this.leave(() => this.hooks.planFlight()),
-            },
-            svgIcon(I.plan, 20),
-            L("Build a flight", "Préparer un vol"),
-          ),
-          h(
-            "button",
-            {
-              class: "btn fc-quick-b",
-              "aria-haspopup": "dialog",
-              "aria-expanded": "false",
-              title: L(
-                "One click: a random approach or hold, flown straight away",
-                "Un clic : une approche ou une attente au hasard, volée tout de suite",
-              ),
-              onclick: (e: Event) =>
-                this.quickPop
-                  ? this.closeQuick()
-                  : this.openQuick(e.currentTarget as HTMLElement),
-            },
-            svgIcon(I.dice, 18),
-            L("Quick start", "Départ rapide"),
-            svgIcon(I.chevDown, 14),
-          ),
-        ),
-      ),
-      this.continueCard(ci),
-    );
-    const jump = (
-      icon: Node,
-      label: string,
-      meta: string,
-      run: () => void,
-      cls = "",
-    ) =>
-      h(
-        "button",
-        {
-          class: `fc-jump${cls ? ` ${cls}` : ""}`,
-          type: "button",
-          onclick: run,
-        },
-        h("span", { class: "fc-jump-ic" }, icon),
-        h(
-          "span",
-          { class: "fc-jump-t" },
-          h("b", {}, label),
-          h("small", {}, meta),
-        ),
-      );
-    const jumps = h(
-      "nav",
-      { class: "fc-jumps", "aria-label": L("Shortcuts", "Raccourcis") },
-      jump(
-        svgIcon(I.plane, 18),
-        L("All flights", "Tous les vols"),
-        L(
-          "In the library, by programme and subject",
-          "Dans la bibliothèque, par programme et matière",
-        ),
-        () => this.go({ type: "courses", flights: true }),
-      ),
-      jump(
-        pIcon("drill"),
-        t("ch.nav"),
-        t("ch.tileMeta", {
-          d: listDrills(uiL()).length,
-          p: effectiveProcedures(uiL()).length,
-        }),
-        () => this.goClub(),
-        "fc-jump-club",
-      ),
-    );
-    const flyHead = h(
-      "div",
-      { class: "fc-sec-h fc-fly-h" },
-      h("h2", { id: "fc-fly-t" }, L("Fly", "Voler")),
-      h(
-        "span",
-        { class: "fc-sec-sub" },
-        L(
-          "The built-in simulator, also on its own",
-          "Le simulateur intégré, utilisable aussi seul",
-        ),
-      ),
-      h(
-        "button",
-        {
-          class: "fc-sec-link",
-          type: "button",
-          onclick: () => this.go({ type: "courses", flights: true }),
-          title: L(
-            "Every flight of the simulator, in the library: by programme and subject",
-            "Tous les vols du simulateur, dans la bibliothèque : par programme et matière",
-          ),
-        },
-        L("All flights", "Tous les vols"),
-        svgIcon(I.arrow, 16),
-      ),
-    );
-    this.main.append(
-      h(
-        "div",
-        { class: "fc-home" },
-        slidesHero,
-        libHost,
-        h(
-          "section",
-          { class: "fc-fly", "aria-labelledby": "fc-fly-t" },
-          flyHead,
-          flyCard,
-          jumps,
-        ),
-      ),
-    );
-  }
-
-  private continueCard(ci: ReturnType<typeof continueInfo>): HTMLElement {
-    const fr = uiLang() === "fr";
-    const L = (en: string, frText: string) => (fr ? frText : en);
-    const card = h("aside", {
-      class: "fc-cont",
-      "aria-label": L("Continue", "Reprendre"),
-    });
-    card.append(
-      h(
-        "div",
-        { class: "fc-cont-k" },
-        ci.started
-          ? L("Continue", "Reprendre")
-          : L("Start here", "Pour commencer"),
-      ),
-    );
-    if (ci.next) {
-      // the library's numbering and progress: the lesson's subject ("Aircraft handling · Lesson 1 of 6", 0/6)
-      const pos = ci.next.ex ? libraryLessonPos(ci.next.ex.id, fr) : null;
-      const done = progress.all();
-      const subjTotal = pos ? pos.ids.length : ci.total;
-      const subjPassed = pos
-        ? pos.ids.filter((x) => done[x]?.passed).length
-        : ci.passed;
-      card.append(
-        h(
-          "div",
-          { class: "fc-cont-sub" },
-          // numbered as the library numbers it (its subject), not as a 44-lesson path
-          pos?.label ??
-            `${pathLabel(ci.path)} · ${L(`Lesson ${ci.lesson} of ${ci.total}`, `Leçon ${ci.lesson} sur ${ci.total}`)}`,
-        ),
-        h(
-          "b",
-          { class: "fc-cont-t" },
-          (fr && ci.next.ex ? LESSON_META[ci.next.ex.id]?.fr : undefined) ??
-            ci.next.title,
-        ),
-        h(
-          "div",
-          { class: "fc-cont-prog" },
-          h(
-            "div",
-            { class: "lp-bar" },
-            h("i", { style: `width:${(subjPassed / subjTotal) * 100}%` }),
-          ),
-          h("span", {}, `${subjPassed}/${subjTotal}`),
-        ),
-        h(
-          "button",
-          {
-            class: "btn fc-cont-go",
-            title: L(
-              "Brief and fly the next lesson",
-              "Briefer et voler la leçon suivante",
-            ),
-            onclick: () => this.fly(ci.next!, ci.path),
-          },
-          ci.started
-            ? L("Continue lesson", "Reprendre la leçon")
-            : L("Start lesson 1", "Commencer la leçon 1"),
-          svgIcon(I.arrow, 16),
-        ),
-      );
-    } else {
-      card.append(
-        h(
-          "b",
-          { class: "fc-cont-t" },
-          L("Syllabus complete", "Syllabus terminé"),
-        ),
-        h(
-          "div",
-          { class: "fc-cont-sub" },
-          L(
-            `All ${ci.total} lessons passed. Keep current with the checkride profiles.`,
-            `Les ${ci.total} leçons sont réussies. Restez en forme avec les profils de test.`,
-          ),
-        ),
-        h(
-          "button",
-          {
-            class: "btn fc-cont-go",
-            onclick: () =>
-              this.go({ type: "cat", cat: "checkride", sub: null }),
-          },
-          L("Checkride profiles", "Profils de test"),
-          svgIcon(I.arrow, 16),
-        ),
-      );
-    }
-    if (ci.last) {
-      const last = ci.last;
-      card.append(
-        h(
-          "div",
-          { class: "fc-cont-last" },
-          h(
-            "div",
-            {},
-            h("small", {}, `${L("Last flight", "Dernier vol")} · ${last.when}`),
-            h("span", { title: last.item.title }, last.item.title),
-          ),
-          h(
-            "button",
-            {
-              class: "btn ghost",
-              title: L(
-                `Fly “${last.item.title}” again`,
-                `Revoler « ${last.item.title} »`,
-              ),
-              onclick: () => this.fly(last.item),
-            },
-            svgIcon(I.restart, 15),
-            L("Fly again", "Revoler"),
-          ),
-        ),
-      );
-    }
-    return card;
-  }
-
-  // ------------------------------------------------------------------ Quick start
-  private quickPrefs(): { apt: string } {
-    return store.get<{ apt: string }>(QUICK_KEY, { apt: "" });
-  }
-
-  private openQuick(anchor: HTMLElement) {
-    this.closeQuick();
-    const fr = uiLang() === "fr";
-    const L = (en: string, frText: string) => (fr ? frText : en);
-    const nFlights = (n: number) =>
-      fr ? `${n} vol${n === 1 ? "" : "s"}` : plural(n, "flight");
-    const pref = this.quickPrefs();
-    const apts = [
-      ...new Set(
-        [
-          ...quickPool(this.items, "approach", ""),
-          ...quickPool(this.items, "hold", ""),
-        ].map((i) => i.airport),
-      ),
-    ].sort();
-    if (pref.apt && !apts.includes(pref.apt)) pref.apt = "";
-    const pop = h("div", {
-      class: "fc-pop",
-      role: "dialog",
-      "aria-label": L("Quick start", "Départ rapide"),
-    });
-    const opts = h("div", { class: "fc-pop-opts" });
-    const fill = () => {
-      clear(opts);
-      const kinds: [QuickKind, string, keyof typeof I, string][] = [
-        [
-          "approach",
-          L("Random approach", "Approche au hasard"),
-          I.approach,
-          L("ILS, LOC, VOR, NDB or RNAV", "ILS, LOC, VOR, NDB ou RNAV"),
-        ],
-        [
-          "hold",
-          L("Random hold", "Attente au hasard"),
-          I.hold,
-          L("Entries, timing, wind", "Entrées, chronométrage, vent"),
-        ],
-      ];
-      for (const [k, label, icon, sub] of kinds) {
-        const pool = quickPool(this.items, k, pref.apt);
-        opts.append(
-          h(
-            "button",
-            {
-              class: "fc-pop-b",
-              disabled: !pool.length,
-              title: pool.length
-                ? L(
-                    `Fly one of ${plural(pool.length, "flight")} at random`,
-                    `Voler l’un des ${nFlights(pool.length)} au hasard`,
-                  )
-                : L(
-                    `No ${k} at ${pref.apt} yet`,
-                    `Rien de ce type à ${pref.apt} pour l’instant`,
-                  ),
-              onclick: () => {
-                const it = pool[Math.floor(Math.random() * pool.length)];
-                if (it) this.fly(it);
-              },
-            },
-            h("span", { class: "fc-pop-ic" }, svgIcon(icon, 20)),
-            h(
-              "span",
-              { class: "fc-pop-tx" },
-              h("b", {}, label),
-              h(
-                "small",
-                {},
-                pool.length
-                  ? `${sub} · ${nFlights(pool.length)}`
-                  : L("None at this airport", "Aucun sur cet aérodrome"),
-              ),
-            ),
-            svgIcon(I.arrow, 16),
-          ),
-        );
-      }
-    };
-    const sel = h(
-      "select",
-      {
-        "aria-label": L("Airport", "Aérodrome"),
-        onchange: (e: Event) => {
-          pref.apt = (e.target as HTMLSelectElement).value;
-          store.set(QUICK_KEY, pref);
-          fill();
-        },
+    const pool = (kind: PlaceQuick, apt: string) =>
+      kind === "any"
+        ? [
+            ...quickPool(this.items, "approach", apt),
+            ...quickPool(this.items, "hold", apt),
+          ]
+        : quickPool(this.items, kind, apt);
+    return {
+      lang: fr ? "fr" : "en",
+      nav: (url) => this.leave(() => goToCourse(url)),
+      showSim: () => this.showPlace("sim"),
+      intro: () => this.leave(() => location.assign("index.html?intro=1")),
+      quickFly: (kind, apt) => {
+        const p = pool(kind, apt);
+        const it = p[Math.floor(Math.random() * p.length)];
+        if (!it) return false;
+        // the briefing cancelled: back here, on the button that flew
+        this.returnTo = {
+          view: this.view,
+          focus: this.view.type === "sim" ? ".wd-quick-go" : ".wd-door.sim .wd-door-alt",
+        };
+        this.fly(it);
+        return true;
       },
-      h(
-        "option",
-        { value: "", selected: !pref.apt },
-        L("Any airport", "Tous les aérodromes"),
-      ),
-      ...apts.map((a) =>
-        h(
-          "option",
-          { value: a, selected: a === pref.apt },
-          `${a} · ${aptName(a)}`,
-        ),
-      ),
-    );
-    fill();
-    pop.append(
-      h(
-        "div",
-        { class: "fc-pop-head" },
-        h("b", {}, L("Quick start", "Départ rapide")),
-        h(
-          "span",
-          {},
-          L(
-            "Flies straight away, current weather",
-            "Décolle tout de suite, météo actuelle",
+      quickCount: (kind, apt) => pool(kind, apt).length,
+      quickAirports: () =>
+        [
+          ...new Set(
+            pool("any", "").map((i) => i.airport).filter(Boolean) as string[],
           ),
-        ),
-      ),
-      h(
-        "label",
-        { class: "fc-pop-apt" },
-        h(
-          "span",
-          {},
-          L("Airport · training region", "Aérodrome · région d’entraînement"),
-        ),
-        sel,
-      ),
-      opts,
-    );
-    // under the button, inside the Flight Center box
-    const box = this.box.getBoundingClientRect();
-    const r = anchor.getBoundingClientRect();
-    pop.style.left = `${Math.max(12, r.left - box.left)}px`;
-    pop.style.top = `${r.bottom - box.top + 8}px`;
-    this.box.append(pop);
-    // above the button when it would run past the bottom of the box (the Fly card sits low on the page)
-    const ph = pop.getBoundingClientRect().height;
-    if (r.bottom + 8 + ph > box.bottom - 12 && r.top - 8 - ph > box.top + 12)
-      pop.style.top = `${r.top - box.top - 8 - ph}px`;
-    this.quickPop = pop;
-    anchor.setAttribute("aria-expanded", "true");
-    const off = (e: Event) => {
-      if (!pop.contains(e.target as Node) && !anchor.contains(e.target as Node))
-        this.closeQuick();
+        ]
+          .sort()
+          .map((icao) => ({ icao, name: aptName(icao) })),
+      quickPref: () => {
+        const p = store.get<{ kind?: PlaceQuick; apt?: string }>(QUICK_KEY, {});
+        return {
+          kind: p.kind === "approach" || p.kind === "hold" ? p.kind : "any",
+          apt: typeof p.apt === "string" ? p.apt : "",
+        };
+      },
+      setQuickPref: (p) => store.set(QUICK_KEY, p),
+      planFlight: () => {
+        this.returnTo = { view: this.view, focus: ".wd-plan-b" };
+        this.leave(() => this.hooks.planFlight());
+      },
+      recent: () =>
+        history
+          .all()
+          .slice(0, 8)
+          .map((a) => {
+            const item = this.items.find((i) =>
+              a.exercise
+                ? i.id === a.exercise
+                : i.kind === "scenario" && i.title === a.scenario,
+            );
+            if (!item) return null;
+            const title =
+              (fr && item.ex ? LESSON_META[item.ex.id]?.fr : undefined) ??
+              item.title;
+            return {
+              title,
+              when: whenLabel(a.date, fr),
+              verdict:
+                a.graded === false
+                  ? ("ungraded" as const)
+                  : (a.passed ?? a.score >= 70)
+                    ? ("passed" as const)
+                    : ("failed" as const),
+              again: () => {
+                this.returnTo = { view: this.view, focus: "h1" };
+                this.fly(item);
+              },
+            };
+          })
+          .filter((x): x is NonNullable<typeof x> => !!x),
+      lessonToRedo: () => {
+        const all = progress.all();
+        const row = Object.entries(all)
+          .filter(([, p]) => !p.passed && p.attempts > 0)
+          .sort((a, b) => (a[1].last < b[1].last ? 1 : -1))[0];
+        if (!row) return null;
+        const item = this.items.find((i) => i.ex?.id === row[0]);
+        if (!item) return null;
+        const p = row[1];
+        return {
+          title:
+            (fr && item.ex ? LESSON_META[item.ex.id]?.fr : undefined) ??
+            item.title,
+          meta: fr
+            ? `${p.attempts} essai${p.attempts > 1 ? "s" : ""} · meilleur ${Math.round(p.best)} %`
+            : `${p.attempts} attempt${p.attempts > 1 ? "s" : ""} · best ${Math.round(p.best)}%`,
+          again: () => {
+            this.returnTo = { view: this.view, focus: "h1" };
+            this.fly(item);
+          },
+        };
+      },
     };
-    setTimeout(() => document.addEventListener("pointerdown", off, true));
-    pop.dataset.off = "1";
-    (pop as HTMLElement & { _off?: (e: Event) => void })._off = off;
-    requestAnimationFrame(() =>
-      pop
-        .querySelector<HTMLElement>(".fc-pop-b:not([disabled])")
-        ?.focus({ preventScroll: true }),
-    );
   }
 
-  private closeQuick(refocus = false) {
-    const pop = this.quickPop as
-      | (HTMLElement & { _off?: (e: Event) => void })
-      | null;
-    if (!pop) return;
-    if (pop._off) document.removeEventListener("pointerdown", pop._off, true);
-    pop.remove();
-    this.quickPop = null;
-    const b = this.box.querySelector<HTMLElement>(".fc-quick-b");
-    b?.setAttribute("aria-expanded", "false");
-    if (refocus) b?.focus({ preventScroll: true });
+  /** Accueil or Simulateur, in this page (the app bar's tabs and the doors) */
+  showPlace(p: "home" | "sim", focus = "h1") {
+    const v: View = p === "sim" ? { type: "sim" } : { type: "home" };
+    if (!this.isOpen) {
+      this.items = catalog();
+      this.view = v;
+      this.render();
+      super.open();
+    } else this.go(v);
+    const hash = p === "sim" ? "#simulateur" : "#accueil";
+    if (location.hash !== hash)
+      window.history.replaceState(null, "", location.pathname + location.search + hash);
+    // the page's title: where you are
+    // after the page's own first focus (Modal.trapFocus, a timer too): the title, or the button that opened a
+    // dialog which has just closed
+    setTimeout(() => {
+      if (this.isOpen)
+        this.main.querySelector<HTMLElement>(focus)?.focus({ preventScroll: true });
+    }, 0);
   }
 
+  private renderPlace(p: "home" | "sim") {
+    const view = p === "sim" ? simView(this.homeHooks()) : homeView(this.homeHooks());
+    this.placeView = view;
+    this.main.append(view.el);
+  }
+
+  /** Quick start lived in a pop-over: it is the Simulateur page's Vol rapide now (nothing to close) */
+  private closeQuick() {}
   // ------------------------------------------------------------------ instructor
   // ------------------------------------------------------------------ Ground school (the course library)
   private courseLib: { destroy(): void; focusSearch(): void } | null = null;
@@ -2468,8 +2010,8 @@ export class FlightCenter extends Modal {
       {
         icon: I.plan,
         title: "Build a lesson",
-        desc: "In the flight builder: chain a departure, holds and approaches with weather and scheduled failures, or start from a school preset. Share it with a link.",
-        label: "Open the flight builder",
+        desc: "In “Plan a flight”: chain a departure, holds and approaches with weather and scheduled failures, or start from a school preset. Share it with a link.",
+        label: "Plan a flight",
         run: () => hk.openBuilder(),
         leave: true,
       },
@@ -2508,13 +2050,8 @@ export class FlightCenter extends Modal {
           h(
             "div",
             {},
-            h(
-              "button",
-              { class: "fc-back", onclick: () => this.go({ type: "home" }) },
-              svgIcon(I.arrow, 14),
-              "Flight Center",
-            ),
-            h("h2", {}, "Instructor"),
+            // the way back is the frame's (« ← Accueil », top left): the page says where you are
+            h("h1", {}, LL("Instructor", "Instructeur")),
             h(
               "p",
               { class: "muted" },
@@ -2570,22 +2107,6 @@ export class FlightCenter extends Modal {
     const drills = listDrills(l);
     const procs = effectiveProcedures(l);
     const nRes = procedureRows(history.all()).length;
-    const langSeg = h(
-      "div",
-      { class: "seg ch-lang", role: "group", "aria-label": t("ch.lang") },
-      ...(["fr", "en"] as UiLang[]).map((x) =>
-        h(
-          "button",
-          {
-            class: uiLang() === x ? "on" : "",
-            "aria-pressed": String(uiLang() === x),
-            title: x === "fr" ? "Français" : "English",
-            onclick: () => setLang(x),
-          },
-          x === "fr" ? "FR" : "EN",
-        ),
-      ),
-    );
     const tabs: [ClubTab, PIcon, string, number | null][] = [
       ["drills", "drill", t("ch.tab.drills"), drills.length],
       ["library", "book", t("ch.tab.library"), procs.length],
@@ -2601,16 +2122,9 @@ export class FlightCenter extends Modal {
         h(
           "div",
           {},
-          h(
-            "button",
-            { class: "fc-back", onclick: () => this.go({ type: "home" }) },
-            svgIcon(I.arrow, 14),
-            t("ch.back"),
-          ),
-          h("h2", {}, t("ch.title")),
+          h("h1", {}, t("ch.title")),
           h("p", { class: "muted" }, t("ch.sub")),
         ),
-        langSeg,
       ),
       h(
         "div",
@@ -4051,7 +3565,7 @@ export class FlightCenter extends Modal {
             },
           },
           svgIcon(I.plan),
-          "Edit in the flight builder",
+          "Edit in “Plan a flight”",
         ),
       );
     const label =
@@ -4189,10 +3703,11 @@ export function coursesTopbarButton(open: () => void): HTMLElement {
   );
   const sync = () => {
     const fr = uiLang() === "fr";
-    lbl.textContent = fr ? "Cours" : "Courses";
+    // the place's one name (UX logic §2): the library, where every course, lesson and check-list lives
+    lbl.textContent = fr ? "Bibliothèque" : "Library";
     b.title = fr
-      ? "Cours en diapositives : ouvrir, créer, présenter à une classe"
-      : "Slide courses: open, create, present to a class";
+      ? "La bibliothèque : cours, leçons au simulateur et check-lists"
+      : "The library: courses, simulator lessons and checklists";
   };
   sync();
   onLangChange(sync);

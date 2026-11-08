@@ -329,7 +329,7 @@ export function deckStarterGallery(
               : [
                   d.level ? (fr ? (d.level.fr ?? d.level.en) : d.level.en) : "",
                   `${d.slides.length} ${fr ? (d.slides.length > 1 ? "diapos" : "diapo") : d.slides.length > 1 ? "slides" : "slide"}`,
-                  theme === "classroom" ? (fr ? "Salle de cours" : "Classroom") : fr ? "Sombre" : "Dark",
+                  theme === "classroom" ? (fr ? "Clair" : "Light") : fr ? "Sombre" : "Dark",
                 ]
                   .filter(Boolean)
                   .join(" · "),
@@ -382,7 +382,7 @@ export function deckStarterGallery(
   });
   const segOpts: [typeof mode, string][] = [
     ["auto", fr ? "Clair (recommandé)" : "Light (recommended)"],
-    ["cockpit", fr ? "Sombre, pour la nuit ou l’IMC" : "Dark, for night or IMC"],
+    ["cockpit", fr ? "Sombre" : "Dark"],
   ];
   const drawSeg = () => {
     seg.replaceChildren(

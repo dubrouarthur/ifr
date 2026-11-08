@@ -1,28 +1,23 @@
-// View dock (always visible on the outside view: five labelled cameras, the current screen layout, Pause) and the
-// View panel (cameras, the four screen layouts, the instrument panel, auto-hide). One tap reaches Chase from
-// anywhere; the layout is named in words, never hidden behind an icon. Styles: src/styles/ui-viewdock.css.
+// The view selector of the cockpit top bar: one labelled dropdown, « Vue : Cockpit ▾ », that opens the View panel
+// (the five cameras, the four screen layouts, the instrument panel, auto-hide). Every word follows the UI language
+// (UX logic §7: Cockpit · Extérieur · Orbite · Tour · Passage). Styles: src/styles/ui-viewdock.css.
 import { h } from "./dom";
 import { svgIcon, I } from "./icons";
+import { registerStrings, t as tr, onLangChange } from "./i18n";
 // type only: the camera module pulls three.js, which stays in the lazily loaded 3D chunk
 import type { ViewMode } from "../avionics/cameras";
 
 export type DockLayout = "normal" | "big" | "visual" | "none";
 export type DockPanel = "g1000" | "steam" | "airliner";
 
-/** the four screen layouts: the same names everywhere (dock, View panel, Tab toast, Settings, tour) */
+/** the four screen layouts: the same names everywhere (selector, View panel, Tab toast, Settings, tour). The words
+ *  are the English keys of the string table below; layoutName() gives them in the UI language. */
 export const LAYOUTS: readonly (readonly [DockLayout, string, string])[] = [
   ["normal", "Standard", "View above the panel"],
   ["big", "Large view", "Bigger view, PFD + MFD"],
   ["visual", "Immersive", "Full view, floating PFD"],
   ["none", "Instruments", "Panel only, pure IFR"],
 ];
-export const layoutName = (m: DockLayout): string =>
-  LAYOUTS.find((x) => x[0] === m)?.[1] ?? "Standard";
-/** Tab / Shift+Tab: the next or previous layout */
-export const nextLayout = (m: DockLayout, dir: 1 | -1): DockLayout => {
-  const i = LAYOUTS.findIndex((x) => x[0] === m);
-  return LAYOUTS[(Math.max(0, i) + dir + LAYOUTS.length) % LAYOUTS.length][0];
-};
 
 /** the instrument panels: honest names (the aircraft and its flight model stay the C172 in all three) */
 export const PANELS: readonly (readonly [DockPanel, string, string])[] = [
@@ -62,6 +57,73 @@ const CAMERA_ICON: Record<ViewMode, string> = {
 };
 const NO_GL = "The 3D view is not available on this device";
 
+registerStrings("fr", {
+  "cam.Cockpit": "Cockpit",
+  "cam.Chase": "Extérieur",
+  "cam.Orbit": "Orbite",
+  "cam.Tower": "Tour",
+  "cam.Fly-by": "Passage",
+  "From the pilot seat — drag to look around (V)": "Depuis le siège du pilote : faites glisser pour regarder autour (V)",
+  "Behind the aircraft — drag to move the camera, pinch or scroll to zoom (V)": "Derrière l’avion : faites glisser pour déplacer la caméra, pincez ou faites défiler pour zoomer (V)",
+  "Around the aircraft — drag to orbit (V)": "Autour de l’avion : faites glisser pour tourner autour (V)",
+  "From the control tower of the nearest airport (V)": "Depuis la tour de contrôle de l’aérodrome le plus proche (V)",
+  "A fixed camera ahead on the flight path (V)": "Une caméra fixe devant, sur la trajectoire (V)",
+  [NO_GL]: "La vue 3D n’est pas disponible sur cet appareil",
+  "lay.Standard": "Normale",
+  "lay.Large view": "Grande vue",
+  "lay.Immersive": "Immersive",
+  "lay.Instruments": "Instruments seuls",
+  "View above the panel": "La vue au-dessus du tableau de bord",
+  "Bigger view, PFD + MFD": "Vue agrandie, PFD et MFD",
+  "Full view, floating PFD": "Plein écran, PFD flottant",
+  "Panel only, pure IFR": "Le tableau de bord seul, IFR pur",
+  "G1000 glass": "G1000 (écrans)",
+  "Six-pack": "Instruments classiques",
+  "Airliner PFD / ND": "PFD / ND de ligne",
+  "Garmin PFD and MFD": "PFD et MFD Garmin",
+  "Classic gauges and radio stack": "Six instruments à aiguille et radios",
+  "Display style with a mode control panel": "Présentation de ligne avec panneau de pilote automatique",
+  "vd.view": "Vue",
+  "vd.viewOf": "Vue : {v}",
+  "vd.tip": "Vue : caméra, disposition de l’écran et tableau de bord (V caméra · Tab disposition)",
+  "vd.aria": "Vue : {v}. Changer de caméra, de disposition ou de tableau de bord",
+  "vd.camera": "Caméra",
+  "vd.layout": "Disposition de l’écran",
+  "vd.panel": "Tableau de bord",
+  "vd.note": "Chaque tableau de bord pilote le même modèle de vol du Cessna 172. D’autres avions arrivent.",
+  "vd.autoHide": "Masquer la barre du haut en vol",
+  "vd.keysCam": "V · Maj V",
+  "vd.keysLay": "Tab · Maj Tab",
+});
+registerStrings("en", {
+  "vd.view": "View",
+  "vd.viewOf": "View: {v}",
+  "vd.tip": "View: camera, screen layout and instrument panel (V camera · Tab layout)",
+  "vd.aria": "View: {v}. Change the camera, the layout or the instrument panel",
+  "vd.camera": "Camera",
+  "vd.layout": "Screen layout",
+  "vd.panel": "Instrument panel",
+  "vd.note": "Every panel flies the same Cessna 172 flight model. More aircraft are coming.",
+  "vd.autoHide": "Auto-hide the top bar in flight",
+  "vd.keysCam": "V · Shift V",
+  "vd.keysLay": "Tab · Shift Tab",
+});
+/** a word of the table above in the UI language (English keys fall back to themselves) */
+const w = (prefix: string, en: string) => {
+  const v = tr(`${prefix}.${en}`);
+  return v === `${prefix}.${en}` ? en : v;
+};
+/** a camera's name in the UI language (FR: Cockpit · Extérieur · Orbite · Tour · Passage) */
+export const cameraName = (v: ViewMode): string => w("cam", CAMERA_NAMES[v]);
+/** a layout's name in the UI language */
+export const layoutName = (m: DockLayout): string =>
+  w("lay", LAYOUTS.find((x) => x[0] === m)?.[1] ?? "Standard");
+/** Tab / Shift+Tab: the next or previous layout */
+export const nextLayout = (m: DockLayout, dir: 1 | -1): DockLayout => {
+  const i = LAYOUTS.findIndex((x) => x[0] === m);
+  return LAYOUTS[(Math.max(0, i) + dir + LAYOUTS.length) % LAYOUTS.length][0];
+};
+
 export interface ViewDockHooks {
   onView: (v: ViewMode) => void;
   onLayout: (m: DockLayout) => void;
@@ -84,95 +146,38 @@ export class ViewDock {
   private layout: DockLayout = "normal";
   private view: ViewMode = "cockpit";
   private panel: DockPanel = "g1000";
-  private paused = false;
   private gl = false;
-  private names: Record<ViewMode, string> = { ...CAMERA_NAMES };
-  private readonly camBtns: HTMLButtonElement[];
-  private readonly camSeg: HTMLElement;
-  private readonly layBtn: HTMLButtonElement;
-  private readonly layPic: HTMLElement;
-  private readonly layLbl: HTMLElement;
-  private readonly backBtn: HTMLButtonElement;
-  private readonly pauseBtn: HTMLButtonElement;
+  /** the one button: « Vue : Cockpit ▾ » */
+  private readonly selBtn: HTMLButtonElement;
+  private readonly selIco: HTMLElement;
+  private readonly selK: HTMLElement;
+  private readonly selV: HTMLElement;
   private anchor: HTMLElement | null = null;
 
   constructor(private readonly hooks: ViewDockHooks) {
-    this.camBtns = CAMERAS.map(
-      (v) =>
-        h(
-          "button",
-          {
-            type: "button",
-            class: "vd-cam",
-            role: "radio",
-            "aria-checked": "false",
-            "data-v": v,
-            title: CAMERA_TIPS[v],
-            onclick: () => this.pickView(v),
-          },
-          svgIcon(CAMERA_ICON[v], 18),
-          h("span", { class: "vd-l" }, CAMERA_NAMES[v]),
-        ) as HTMLButtonElement,
-    );
-    this.camSeg = h(
-      "div",
-      { class: "vd-cams", role: "radiogroup", "aria-label": "Camera" },
-      ...this.camBtns,
-    );
-    this.layPic = pictogram("normal");
-    this.layLbl = h("span", { class: "vd-l" }, "Standard");
-    this.layBtn = h(
+    this.selIco = h("span", { class: "vd-ico", "aria-hidden": "true" });
+    this.selK = h("span", { class: "vd-k" });
+    this.selV = h("span", { class: "vd-v" });
+    this.selBtn = h(
       "button",
       {
         type: "button",
-        class: "vd-lay",
+        class: "vd-sel",
         "aria-haspopup": "dialog",
         "aria-expanded": "false",
-        title: "Screen layout, camera and instrument panel (Tab · Shift+Tab)",
         onclick: (e: Event) => {
           e.stopPropagation();
-          this.toggle(this.layBtn, this.popDir);
+          this.toggle(this.selBtn, this.popDir);
         },
       },
-      this.layPic,
-      this.layLbl,
-      svgIcon(I.chevUp, 14),
+      this.selIco,
+      h("span", { class: "vd-l" }, this.selK, this.selV),
+      h("span", { class: "vd-chev", "aria-hidden": "true" }, svgIcon(I.chevDown, 14)),
     ) as HTMLButtonElement;
-    // Instruments: the dock sits in the situation bar; this key goes back to the outside view with the last camera
-    this.backBtn = h(
-      "button",
-      {
-        type: "button",
-        class: "vd-back",
-        onclick: () => this.hooks.onLayout("normal"),
-      },
-      svgIcon(I.camCockpit, 18),
-      h("span", { class: "vd-l" }, "Outside view"),
-    ) as HTMLButtonElement;
-    this.pauseBtn = h(
-      "button",
-      {
-        type: "button",
-        class: "vd-pause",
-        "aria-label": "Pause",
-        title: "Pause (Esc)",
-        onclick: () => this.hooks.onPause(),
-      },
-      svgIcon(I.pause, 18),
-    ) as HTMLButtonElement;
-    this.el = h(
-      "div",
-      { class: "view-dock", role: "toolbar", "aria-label": "View" },
-      this.camSeg,
-      h("i", { class: "vd-sep", "aria-hidden": "true" }),
-      this.backBtn,
-      this.layBtn,
-      this.pauseBtn,
-    );
+    this.el = h("div", { class: "view-dock" }, this.selBtn);
     this.pop = h("div", {
       class: "view-pop",
       role: "dialog",
-      "aria-label": "View",
       hidden: "",
     });
     this.pop.addEventListener("keydown", (e) => {
@@ -192,20 +197,15 @@ export class ViewDock {
       true,
     );
     window.addEventListener("resize", () => this.close());
+    onLangChange(() => this.sync());
     this.sync();
   }
 
   get isOpen(): boolean {
     return !this.pop.hidden;
   }
-  /** camera names from the 3D module once it is loaded */
-  setNames(n: Record<ViewMode, string>): void {
-    this.names = { ...CAMERA_NAMES, ...n };
-    this.camBtns.forEach(
-      (b) =>
-        (b.querySelector(".vd-l")!.textContent =
-          this.names[b.dataset.v as ViewMode]),
-    );
+  /** kept for the 3D module's names: the selector always shows the names of the UI language */
+  setNames(_n: Record<ViewMode, string>): void {
     this.sync();
   }
   setLayout(m: DockLayout): void {
@@ -220,29 +220,17 @@ export class ViewDock {
     this.panel = p;
     if (this.isOpen) this.render();
   }
-  setPaused(p: boolean): void {
-    if (p === this.paused) return;
-    this.paused = p;
-    this.pauseBtn.replaceChildren(svgIcon(p ? I.play : I.pause, 18));
-    this.pauseBtn.setAttribute("aria-label", p ? "Resume" : "Pause");
-    this.pauseBtn.title = p ? "Resume (Esc)" : "Pause (Esc)";
-    this.pauseBtn.classList.toggle("on", p);
-  }
-  /** where the View panel opens from the dock's layout button: above it (dock over the outside view) or below it
-   *  (dock in the top bar) */
+  /** Pause is the top bar's own button: the selector shows nothing of it */
+  setPaused(_p: boolean): void {}
+  /** where the View panel opens from the selector: above it or below it (the top bar) */
   popDir: "up" | "down" = "up";
-  /** without WebGL the cameras stay (disabled), so the dock never changes shape */
-  /** keep the labels when there is room; else icons only (the active camera keeps its name); else, when even that
-   *  does not fit (a narrow top bar), only the layout button, which opens the View panel with the cameras */
+  /** keep « Vue : Cockpit » when there is room; else « Vue » alone (the word stays, UX logic §7) */
   fit(avail: number): void {
     const el = this.el;
     if (avail <= 0 || !el.isConnected) return;
     el.classList.remove("narrow", "tiny");
     if (el.scrollWidth <= avail) return;
     el.classList.add("narrow");
-    if (el.scrollWidth <= avail) return;
-    el.classList.remove("narrow");
-    el.classList.add("tiny");
   }
   setAvailable(gl: boolean): void {
     this.gl = gl;
@@ -257,9 +245,10 @@ export class ViewDock {
     this.render();
     this.pop.hidden = false;
     const r = anchor.getBoundingClientRect();
-    const w = Math.min(440, innerWidth - 16);
-    this.pop.style.width = `${w}px`;
-    this.pop.style.left = `${Math.round(Math.max(8, Math.min(innerWidth - w - 8, r.right - w)))}px`;
+    const wd = Math.min(440, innerWidth - 16);
+    this.pop.style.width = `${wd}px`;
+    // under its button, left-aligned with it (the button sits left of centre in the top bar)
+    this.pop.style.left = `${Math.round(Math.max(8, Math.min(innerWidth - wd - 8, r.left)))}px`;
     this.pop.style.maxHeight = "none";
     this.pop.style.top = "0px";
     this.pop.style.bottom = "";
@@ -298,29 +287,23 @@ export class ViewDock {
     if (this.layout === "none") this.hooks.onLayout("normal");
   }
 
+  /** what the selector names: the camera, or « Instruments seuls » when the outside view is folded away */
+  private current(): { label: string; icon: string } {
+    if (this.layout === "none")
+      return { label: layoutName("none"), icon: "" };
+    return { label: cameraName(this.view), icon: CAMERA_ICON[this.view] };
+  }
+
   private sync(): void {
     this.el.dataset.layout = this.layout;
-    this.el.classList.toggle("compact", this.layout === "none");
     this.el.classList.toggle("no-gl", !this.gl);
-    for (const b of this.camBtns) {
-      const on = b.dataset.v === this.view;
-      b.classList.toggle("on", on);
-      b.setAttribute("aria-checked", String(on));
-      b.disabled = !this.gl;
-      b.title = this.gl ? CAMERA_TIPS[b.dataset.v as ViewMode] : NO_GL;
-    }
-    this.layPic.className = `vd-pic vd-pic-${this.layout}`;
-    this.layLbl.textContent = layoutName(this.layout);
-    this.layBtn.setAttribute(
-      "aria-label",
-      `Layout: ${layoutName(this.layout)}. Change the layout or the camera`,
-    );
-    this.backBtn.replaceChildren(
-      svgIcon(CAMERA_ICON[this.view], 18),
-      h("span", { class: "vd-l" }, "Outside view"),
-    );
-    this.backBtn.title = `Back to the outside view (${this.names[this.view]})`;
-    this.backBtn.setAttribute("aria-label", this.backBtn.title);
+    const c = this.current();
+    this.selIco.replaceChildren(c.icon ? svgIcon(c.icon, 16) : pictogram("none"));
+    this.selK.textContent = tr("vd.view");
+    this.selV.textContent = c.label;
+    this.selBtn.title = tr("vd.tip");
+    this.selBtn.setAttribute("aria-label", tr("vd.aria", { v: c.label }));
+    this.pop.setAttribute("aria-label", tr("vd.view"));
     if (this.isOpen) this.render();
   }
 
@@ -333,26 +316,27 @@ export class ViewDock {
         h("span", {}, t),
         hint ? h("kbd", {}, hint) : null,
       );
+    const noGl = tr(NO_GL);
     const cams = CAMERAS.map((v) =>
       h(
         "button",
         {
           type: "button",
-          class: `vp-cam${v === this.view ? " on" : ""}`,
+          class: `vp-cam${v === this.view && this.layout !== "none" ? " on" : ""}`,
           role: "radio",
-          "aria-checked": String(v === this.view),
+          "aria-checked": String(v === this.view && this.layout !== "none"),
           disabled: this.gl ? null : "",
-          title: this.gl ? CAMERA_TIPS[v] : NO_GL,
+          title: this.gl ? tr(CAMERA_TIPS[v]) : noGl,
           onclick: () => {
             this.pickView(v);
             this.render();
           },
         },
         svgIcon(CAMERA_ICON[v], 20),
-        h("span", {}, this.names[v]),
+        h("span", {}, cameraName(v)),
       ),
     );
-    const lays = LAYOUTS.map(([m, t, d]) =>
+    const lays = LAYOUTS.map(([m, _t, d]) =>
       h(
         "button",
         {
@@ -366,7 +350,7 @@ export class ViewDock {
           },
         },
         pictogram(m),
-        h("span", {}, h("b", {}, t), h("small", {}, d)),
+        h("span", {}, h("b", {}, layoutName(m)), h("small", {}, tr(d))),
       ),
     );
     const pans = PANELS.map(([p, t, d]) =>
@@ -384,7 +368,7 @@ export class ViewDock {
           },
         },
         h("i", { class: `vp-pan-ic vp-pan-${p}`, "aria-hidden": "true" }),
-        h("span", {}, h("b", {}, t), h("small", {}, d)),
+        h("span", {}, h("b", {}, tr(t)), h("small", {}, tr(d))),
       ),
     );
     const auto = this.hooks.autoHide();
@@ -400,38 +384,34 @@ export class ViewDock {
           this.render();
         },
       },
-      h("span", {}, "Auto-hide the top bar in flight"),
+      h("span", {}, tr("vd.autoHide")),
       h("i", { class: `sw${auto ? " on" : ""}`, "aria-hidden": "true" }),
     );
     this.pop.replaceChildren(
-      head("Camera", "V · Shift V"),
+      head(tr("vd.camera"), tr("vd.keysCam")),
       h(
         "div",
-        { class: "vp-cams", role: "radiogroup", "aria-label": "Camera" },
+        { class: "vp-cams", role: "radiogroup", "aria-label": tr("vd.camera") },
         ...cams,
       ),
-      ...(this.gl ? [] : [h("p", { class: "vp-note" }, NO_GL)]),
-      head("Screen layout", "Tab · Shift Tab"),
+      ...(this.gl ? [] : [h("p", { class: "vp-note" }, noGl)]),
+      head(tr("vd.layout"), tr("vd.keysLay")),
       h(
         "div",
-        { class: "vp-lays", role: "radiogroup", "aria-label": "Screen layout" },
+        { class: "vp-lays", role: "radiogroup", "aria-label": tr("vd.layout") },
         ...lays,
       ),
-      head("Instrument panel", ""),
+      head(tr("vd.panel"), ""),
       h(
         "div",
         {
           class: "vp-pans",
           role: "radiogroup",
-          "aria-label": "Instrument panel",
+          "aria-label": tr("vd.panel"),
         },
         ...pans,
       ),
-      h(
-        "p",
-        { class: "vp-note" },
-        "Every panel flies the same Cessna 172 flight model. More aircraft are coming.",
-      ),
+      h("p", { class: "vp-note" }, tr("vd.note")),
       sw,
     );
   }

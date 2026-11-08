@@ -8,7 +8,9 @@
 // A "Your turn" on a designed slide (package Q) runs here when no dedicated runner is installed: the slide's
 // instrument becomes a live Try-it stage over the slide, its goal checked live, and the result comes back to the
 // slide (the yourTurnDone reveal, the bound values, an AttemptRecord of kind 'yourTurn').
-import { BRAND, brandMarkSvg, brandTitle } from "../brand";
+import { BRAND, brandTitle } from "../brand";
+import { appBar, placeName, PLACE_HREF } from "../ui/appBar";
+import { isProgramId, programDef } from "../library/programs";
 import "../styles/course.css";
 import type {
   Course,
@@ -31,6 +33,8 @@ import {
 import {
   academyHash,
   academyRoute,
+  BACK_ITEM_KEY,
+  courseHomeLine,
   mountLibrary,
   type AcademyRoute,
   type CourseLibrary,
@@ -41,7 +45,11 @@ import {
   type CoursePlayer,
   type SlideRenderer,
 } from "../course/ui/player";
-import { runSlideYourTurn, yourTurnSlideRenderer, type YourTurnCtx } from "./slideTurn";
+import {
+  runSlideYourTurn,
+  yourTurnSlideRenderer,
+  type YourTurnCtx,
+} from "./slideTurn";
 
 const root =
   document.getElementById("academy") ??
@@ -51,8 +59,14 @@ document.documentElement.classList.add("ga-doc");
 
 let lang: Lang = courseLang();
 let storeP: Promise<CourseStore | null> = courseStore().catch(() => null);
-let view: { destroy(): void; setLang?(l: Lang): void; goTo?(stepId: string): void } | null = null;
+let view: {
+  destroy(): void;
+  setLang?(l: Lang): void;
+  goTo?(stepId: string): void;
+} | null = null;
 let routeKey = "";
+/** the route being drawn (its page may still be loading a chunk or the store) */
+let loadingKey = "";
 
 // optional modules other packages ship (resolved at build time: absent files simply give no entry)
 type YourTurnModule = {
@@ -67,7 +81,11 @@ type YourTurnModule = {
 };
 const YOURTURN = import.meta.glob<YourTurnModule>("../course/yourTurn.ts");
 type PdfModule = {
-  importPdfCourse?: (store: CourseStore, file: File, lang: Lang) => Promise<{ id: string } | null>;
+  importPdfCourse?: (
+    store: CourseStore,
+    file: File,
+    lang: Lang,
+  ) => Promise<{ id: string } | null>;
 };
 const PDF = import.meta.glob<PdfModule>("../course/pdfImport.ts");
 async function optional<T>(
@@ -87,7 +105,8 @@ async function optional<T>(
 /** A step change inside the player, the editor or the presenter is not a new route. */
 function routeKeyOf(r: AcademyRoute): string {
   if (r.k === "play") return `play:${r.id}:${r.a ?? ""}`;
-  if (r.k === "edit" || r.k === "present" || r.k === "project") return `${r.k}:${r.id}`;
+  if (r.k === "edit" || r.k === "present" || r.k === "project")
+    return `${r.k}:${r.id}`;
   // the library keeps its programme and subject in the hash itself (#library&p=ir&s=ir.hold)
   if (r.k === "library") return "library";
   return academyHash(r);
@@ -102,12 +121,16 @@ async function route() {
   const r = academyRoute(location.hash);
   // the player keeps #play=…&s= in sync itself: a step change is not a new route
   const key = routeKeyOf(r);
+  // the same route while it is still loading (go() routes, then the hashchange routes again): one page, not two
+  if (key === routeKey && !view && loadingKey === key) return;
   if (key === routeKey && view) {
     // a link to another step of the course already open
-    if ((r.k === "play" || r.k === "present" || r.k === "edit") && r.s) view.goTo?.(r.s);
+    if ((r.k === "play" || r.k === "present" || r.k === "edit") && r.s)
+      view.goTo?.(r.s);
     return;
   }
   routeKey = key;
+  loadingKey = key;
   view?.destroy();
   view = null;
   root.replaceChildren();
@@ -116,7 +139,7 @@ async function route() {
     case "library":
       return showLibrary();
     case "play":
-      return showPlayer(r.id, { stepId: r.s, token: r.a });
+      return showPlayer(r.id, { stepId: r.s, token: r.a, from: r.from });
     case "edit":
       return showEditor(r.id);
     case "present":
@@ -124,6 +147,8 @@ async function route() {
       return showPresent(r.k, r.id);
     case "share":
       return openShare(r.code);
+    case "new":
+      return showNewCourse(r);
   }
 }
 window.addEventListener("hashchange", () => void route());
@@ -136,9 +161,9 @@ onCourseLang((l) => {
 document.documentElement.lang = lang;
 
 // ------------------------------------------------------------------ library
-/** a course opened from the Flight Center's library goes back there (flightcenter.ts COURSE_FROM_KEY) */
+/** a course opened from Accueil (index.html) goes back there (flightcenter.ts COURSE_FROM_KEY) */
 const COURSE_FROM_KEY = "ifr.courseFrom";
-function leftFlightCenter(): boolean {
+function leftHome(): boolean {
   try {
     const was = sessionStorage.getItem(COURSE_FROM_KEY) === "fc";
     sessionStorage.removeItem(COURSE_FROM_KEY);
@@ -147,74 +172,85 @@ function leftFlightCenter(): boolean {
     return false;
   }
 }
-/** the player's, the presenter's and the editor's way back: where the course was opened from */
+/** Where a course was opened from (#play=…&from=home|lib|<formation>): kept per course for the session, so the
+ *  way back survives the round trip to the cockpit (its return link carries no from=). */
+const FROM_KEY = (id: string) => `ifr.courseFrom.${id}`;
+function courseFrom(id: string, from?: string): string {
+  try {
+    if (from) {
+      sessionStorage.setItem(FROM_KEY(id), from);
+      return from;
+    }
+    const kept = sessionStorage.getItem(FROM_KEY(id));
+    if (kept) return kept;
+  } catch {
+    /* storage blocked */
+  }
+  return leftHome() ? "home" : "lib";
+}
+/** the labelled way back of a course: its word and where it goes */
+function backTarget(
+  from: string,
+  courseId: string,
+): { label: (l: Lang) => string; go: () => void } {
+  if (from === "home")
+    return {
+      label: (l) => placeName("home", l),
+      go: () => location.assign(PLACE_HREF.home),
+    };
+  if (isProgramId(from))
+    return {
+      label: (l) => loc(programDef(from).code, l),
+      go: () => {
+        // the formation page opens with this course's card in view
+        try {
+          sessionStorage.setItem(BACK_ITEM_KEY, `course:${courseId}`);
+        } catch {
+          /* storage blocked */
+        }
+        go({ k: "library", p: from });
+      },
+    };
+  return { label: (l) => placeName("lib", l), go: () => go({ k: "library" }) };
+}
+/** where a presentation was opened (« edit:<id> »): its « Quitter la présentation » returns there */
+const PRESENT_FROM_KEY = "ifr.presentFrom";
+/** the presenter's and the editor's way back: the library, or Accueil when they were opened from there */
 function exitToLibrary() {
-  if (leftFlightCenter()) location.assign("index.html#courses");
+  if (leftHome()) location.assign(PLACE_HREF.home);
   else go({ k: "library" });
 }
-function topBar(): HTMLElement {
-  const seg = h(
-    "div",
-    { class: "ga-lang", role: "group", "aria-label": "Language" },
-    // the same order as the start page (FR, EN)
-    ...(["fr", "en"] as Lang[]).map((l) =>
-      h(
-        "button",
-        {
-          type: "button",
-          class: l === lang ? "on" : "",
-          "aria-pressed": l === lang ? "true" : "false",
-          onclick: () => {
-            setCourseLang(l);
-            seg.querySelectorAll("button").forEach((b, i) => {
-              const on = (i === 0 ? "fr" : "en") === l;
-              b.classList.toggle("on", on);
-              b.setAttribute("aria-pressed", on ? "true" : "false");
-            });
-          },
-        },
-        l.toUpperCase(),
-      ),
-    ),
-  );
-  const sim = h(
-    "a",
-    { class: "ga-link", href: "index.html" },
-    ct("openSim", lang),
-  );
-  const bar = h(
-    "header",
-    { class: "ga-top" },
-    h(
-      "a",
-      {
-        // home is the library (the simulator has its own link on the right); the name starts with the visible text
-        class: "ga-brand",
-        href: "#library",
-        "aria-label": `${BRAND.name} – ${ct("groundSchool", lang)}`,
-      },
-      h("span", { class: "ga-brand-mark", "aria-hidden": "true", html: brandMarkSvg(24) }),
-      BRAND.name,
-    ),
-    h("span", { class: "ga-crumb-sep", "aria-hidden": "true" }, "/"),
-    h("span", { class: "ga-crumb" }, ct("groundSchool", lang)),
-    h("span", { class: "ga-sp" }),
-    seg,
-    sim,
-  );
+/** The app bar (ui/appBar.ts): the same header as Accueil and Simulateur, Bibliothèque current. */
+function topBar(): {
+  el: HTMLElement;
+  input: HTMLInputElement;
+  setLang(l: Lang): void;
+} {
+  const bar = appBar({
+    place: "lib",
+    lang,
+    onLang: (l) => setCourseLang(l),
+    go: (p) => {
+      if (p !== "lib") return false;
+      go({ k: "library" });
+      return true;
+    },
+  });
   return bar;
 }
-function showLibrary() {
+function showLibrary(intent?: "new" | "present") {
   const page = h("div", { class: "ga-page" });
-  let bar = topBar();
-  // the library is the page's main content (one main landmark; the top bar is its banner)
+  const bar = topBar();
+  // the library is the page's main content (one main landmark; the app bar is its banner)
   const scroller = h("main", { class: "ga-scroll" });
   // this page's own library: a course opened from here comes back here
-  leftFlightCenter();
-  page.append(bar, scroller);
+  leftHome();
+  page.append(bar.el, scroller);
   root.append(page);
   const lib: CourseLibrary = mountLibrary(scroller, {
     lang,
+    searchInput: bar.input,
+    ...(intent ? { intent } : {}),
     store: storeP.then((s) => s ?? Promise.reject(new Error("no store"))),
     navigate: (url) => {
       const hash = url.slice(url.indexOf("#"));
@@ -233,9 +269,60 @@ function showLibrary() {
     destroy: () => lib.destroy(),
     setLang: (l) => {
       lib.setLang(l);
-      const nb = topBar();
-      bar.replaceWith(nb);
-      bar = nb;
+      bar.setLang(l);
+    },
+  };
+}
+
+// ------------------------------------------------------------------ Nouveau cours
+/** « Créer un cours » (Accueil, the library, an empty subject): the Nouveau cours page. Nothing is saved before its
+ *  « Créer le cours »; its way back returns to where it was opened. */
+async function showNewCourse(r: Extract<AcademyRoute, { k: "new" }>) {
+  loading("new");
+  const key = routeKey;
+  const { mountNewCourse } = await import("../course/ui/newCourse");
+  if (key !== routeKey) return;
+  root.replaceChildren();
+  const from = r.from ?? (leftHome() ? "home" : "lib");
+  const back =
+    from === "home"
+      ? {
+          label: (l: Lang) => placeName("home", l),
+          go: () => location.assign(PLACE_HREF.home),
+        }
+      : from !== "lib" && isProgramId(from)
+        ? {
+            label: (l: Lang) => loc(programDef(from).code, l),
+            go: () => go({ k: "library", p: from }),
+          }
+        : {
+            label: (l: Lang) => placeName("lib", l),
+            go: () => go({ k: "library" }),
+          };
+  const page = mountNewCourse(root, {
+    lang,
+    store: storeP,
+    ...(r.p ? { program: r.p } : {}),
+    ...(r.s ? { subject: r.s } : {}),
+    backLabel: back.label,
+    onBack: () => back.go(),
+    onLang: (l) => setCourseLang(l),
+    onCreated: (id) => go({ k: "edit", id }),
+    ...(PDF["../course/pdfImport.ts"]
+      ? {
+          importPdf: async (s: CourseStore, f: File, l: Lang) => {
+            const m = await optional(PDF, "../course/pdfImport.ts");
+            return m?.importPdfCourse ? m.importPdfCourse(s, f, l) : null;
+          },
+        }
+      : {}),
+  });
+  document.title = brandTitle(lang === "fr" ? "Nouveau cours" : "New course");
+  view = {
+    destroy: () => page.destroy(),
+    setLang: (l) => {
+      page.setLang(l);
+      document.title = brandTitle(l === "fr" ? "Nouveau cours" : "New course");
     },
   };
 }
@@ -256,13 +343,14 @@ async function loadCourse(
 }
 /** A course with no step yet: nothing to present or play, one way back to the editor (never a blank page). */
 function emptyCourse(id: string) {
+  loadingKey = "";
   root.replaceChildren(
     h(
       "div",
       { class: "ga-page" },
-      topBar(),
+      topBar().el,
       h(
-        "div",
+        "main",
         { class: "ga-center" },
         h(
           "div",
@@ -284,13 +372,14 @@ function emptyCourse(id: string) {
   );
 }
 function notFound(id: string) {
+  loadingKey = "";
   root.replaceChildren(
     h(
       "div",
       { class: "ga-page" },
-      topBar(),
+      topBar().el,
       h(
-        "div",
+        "main",
         { class: "ga-center" },
         h(
           "div",
@@ -312,16 +401,47 @@ function notFound(id: string) {
     ),
   );
 }
-function loading() {
+/** The same skeleton as academy.html's first frame: the focus bar and a sentence that says what is opening. */
+function loading(what: "course" | "editor" | "new" = "course") {
+  const fr = lang === "fr";
+  const text =
+    what === "editor"
+      ? fr
+        ? "Ouverture de l’éditeur de cours…"
+        : "Opening the course editor…"
+      : what === "new"
+        ? fr
+          ? "Ouverture de Nouveau cours…"
+          : "Opening New course…"
+        : fr
+          ? "Ouverture du cours…"
+          : "Opening the course…";
   root.replaceChildren(
-    h("div", { class: "ga-loading", role: "status" }, ct("loading", lang)),
+    h(
+      "div",
+      { class: "ga-boot", role: "status" },
+      h(
+        "div",
+        { class: "ga-boot-top" },
+        h("i", { "aria-hidden": "true" }),
+        BRAND.name,
+      ),
+      h("p", { class: "ga-boot-t" }, text),
+      h("div", { class: "ga-boot-line", "aria-hidden": "true" }, h("i")),
+    ),
   );
 }
 
 // ------------------------------------------------------------------ player
 async function showPlayer(
   id: string,
-  o: { stepId?: string; token?: string; mode?: string; notice?: string } = {},
+  o: {
+    stepId?: string;
+    token?: string;
+    mode?: string;
+    notice?: string;
+    from?: string;
+  } = {},
 ) {
   loading();
   const key = routeKey;
@@ -334,6 +454,7 @@ async function showPlayer(
   root.append(host);
   let player: CoursePlayer | null = null;
   const slideRenderer = academySlideRenderer(store, () => player?.el ?? null);
+  const back = backTarget(courseFrom(course.id, o.from), course.id);
   player = playCourse(host, {
     course,
     store,
@@ -343,7 +464,15 @@ async function showPlayer(
     token: o.token,
     ...(o.mode ? { mode: o.mode } : {}),
     renderSlide: slideRenderer,
-    onExit: () => exitToLibrary(),
+    onExit: () => back.go(),
+    backLabel: back.label,
+    context: (l) => {
+      try {
+        return courseHomeLine(course, l);
+      } catch {
+        return "";
+      }
+    },
     onLang: (l) => setCourseLang(l),
     onStep: (sid) => {
       const hash = academyHash({ k: "play", id: course.id, s: sid });
@@ -352,7 +481,7 @@ async function showPlayer(
     },
   });
   store?.setLast(course.id, o.stepId);
-  document.title = `${loc(course.title, lang)} — ${ct("groundSchool", lang)}`;
+  document.title = brandTitle(loc(course.title, lang));
   if (store && storageNotice(store, lang)) toast(storageNotice(store, lang)!);
   if (o.notice) toast(o.notice);
   view = {
@@ -369,7 +498,12 @@ function academySlideRenderer(
   store: CourseStore | null,
   playerEl: () => HTMLElement | null,
 ): SlideRenderer {
-  return yourTurnSlideRenderer({ store, playerEl, root: () => root, run: yourTurn });
+  return yourTurnSlideRenderer({
+    store,
+    playerEl,
+    root: () => root,
+    run: yourTurn,
+  });
 }
 
 // ------------------------------------------------------------------ Your turn on a slide
@@ -377,7 +511,14 @@ async function yourTurn(c: YourTurnCtx): Promise<YourTurnResult | null> {
   // a dedicated runner (package Q) when the build has one
   const q = await optional(YOURTURN, "../course/yourTurn.ts");
   if (q?.runYourTurn)
-    return q.runYourTurn({ course: c.course, step: c.step, block: c.block, yourTurn: c.yt, lang: c.lang, store: c.store });
+    return q.runYourTurn({
+      course: c.course,
+      step: c.step,
+      block: c.block,
+      yourTurn: c.yt,
+      lang: c.lang,
+      store: c.store,
+    });
   if (c.yt.where === "sim") {
     toast(ct("yourTurnSim", c.lang));
     return null;
@@ -429,7 +570,10 @@ async function showPresent(k: "present" | "project", id: string) {
   if (!course.steps.length) return emptyCourse(id);
   root.replaceChildren();
   let el: HTMLElement | null = null;
-  const renderSlide = academySlideRenderer(k === "present" ? store : null, () => el);
+  const renderSlide = academySlideRenderer(
+    k === "present" ? store : null,
+    () => el,
+  );
   if (k === "present") {
     const { mountPresenter } = await import("../course/ui/presenter");
     if (key !== routeKey) return;
@@ -440,7 +584,18 @@ async function showPresent(k: "present" | "project", id: string) {
       lang,
       ...(r.k === "present" && r.s ? { stepId: r.s } : {}),
       renderSlide,
-      onExit: () => exitToLibrary(),
+      onExit: () => {
+        // back to where the presentation was opened: the editor, else the library (or Accueil)
+        let from: string | null = null;
+        try {
+          from = sessionStorage.getItem(PRESENT_FROM_KEY);
+          sessionStorage.removeItem(PRESENT_FROM_KEY);
+        } catch {
+          from = null;
+        }
+        if (from === `edit:${course.id}`) go({ k: "edit", id: course.id });
+        else exitToLibrary();
+      },
       onLang: (l) => setCourseLang(l),
       onStep: (s) => {
         const hash = academyHash({ k: "present", id: course.id, s });
@@ -448,8 +603,14 @@ async function showPresent(k: "present" | "project", id: string) {
       },
     });
     el = v.el;
-    document.title = `${loc(course.title, lang)} — ${ct("groundSchool", lang)}`;
-    view = { destroy: () => v.destroy(), setLang: (l) => v.setLang(l), goTo: (sid) => v.goTo(sid) };
+    document.title = brandTitle(
+      `${loc(course.title, lang)} — ${lang === "fr" ? "Présentation" : "Presenting"}`,
+    );
+    view = {
+      destroy: () => v.destroy(),
+      setLang: (l) => v.setLang(l),
+      goTo: (sid) => v.goTo(sid),
+    };
     return;
   }
   const { mountProjector } = await import("../course/ui/projector");
@@ -457,7 +618,7 @@ async function showPresent(k: "present" | "project", id: string) {
   document.documentElement.classList.add("ga-projector");
   const v = mountProjector(root, { course, lang, renderSlide });
   el = v.el;
-  document.title = `${loc(course.title, lang)} — ${ct("groundSchool", lang)}`;
+  document.title = `${loc(course.title, lang)} — ${lang === "fr" ? "Projection" : "Projector"}`;
   view = {
     destroy: () => {
       document.documentElement.classList.remove("ga-projector");
@@ -468,7 +629,7 @@ async function showPresent(k: "present" | "project", id: string) {
 
 // ------------------------------------------------------------------ builder
 async function showEditor(id: string) {
-  loading();
+  loading("editor");
   const key = routeKey;
   const store = await storeP;
   if (key !== routeKey) return;
@@ -488,13 +649,18 @@ async function showEditor(id: string) {
     history.replaceState(
       null,
       "",
-      academyHash({ k: "edit", id: course.id, ...(r0.k === "edit" && r0.s ? { s: r0.s } : {}) }),
+      academyHash({
+        k: "edit",
+        id: course.id,
+        ...(r0.k === "edit" && r0.s ? { s: r0.s } : {}),
+      }),
     );
   }
   if (!course) return notFound(id);
   // the course editor (package F): one builder for courses, briefings and designed slides (a lazy chunk)
   const editor = await import("../course/ui/editor");
-  if (key !== routeKey && routeKey !== routeKeyOf({ k: "edit", id: course.id })) return;
+  if (key !== routeKey && routeKey !== routeKeyOf({ k: "edit", id: course.id }))
+    return;
   root.replaceChildren();
   const c = course;
   const r = academyRoute(location.hash);
@@ -503,13 +669,22 @@ async function showEditor(id: string) {
     store,
     lang,
     ...(r.k === "edit" && r.s ? { stepId: r.s } : {}),
-    onExit: () => exitToLibrary(),
+    // « ← Mes cours »: the instructor's own courses and drafts
+    onExit: () => go({ k: "library", p: "instructors" }),
     onLang: (l) => setCourseLang(l),
     onStep: (s) => {
       const hash = academyHash({ k: "edit", id: c.id, s });
       if (location.hash !== hash) history.replaceState(null, "", hash);
     },
-    onPresent: (cid, sid) => go({ k: "present", id: cid, ...(sid ? { s: sid } : {}) }),
+    onPresent: (cid, sid) => {
+      // « Quitter la présentation » comes back to this editor
+      try {
+        sessionStorage.setItem(PRESENT_FROM_KEY, `edit:${cid}`);
+      } catch {
+        /* storage blocked */
+      }
+      go({ k: "present", id: cid, ...(sid ? { s: sid } : {}) });
+    },
   });
   if (notice) toast(notice);
   view = {

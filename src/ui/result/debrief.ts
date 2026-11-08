@@ -76,6 +76,8 @@ export interface DebriefDeps {
   onNew: () => void;
   /** the aircraft was handed over at clip time t: the flight goes on from there */
   onTakeOver?: (t: number) => void;
+  /** « ← Accueil » (a debrief with no result to go back to) */
+  onHome?: () => void;
 }
 
 export interface DebriefOpen {
@@ -91,6 +93,9 @@ export interface DebriefOpen {
   at?: number;
   /** "‹ Result" goes back to the exercise result */
   onBack?: () => void;
+  /** the screen's one primary, the same as the result's (UX logic §7): « ← Retour au cours (étape N) » from a
+   *  course, else « Recommencer le vol » */
+  primary?: { label: string; run: () => void; back?: boolean };
 }
 
 type Tab = "pfd" | "mfd" | "steam";
@@ -145,8 +150,8 @@ export class DebriefView extends Modal {
     return this.t;
   }
 
-  show(o: DebriefOpen) {
-    this.o = o;
+  show(o: DebriefOpen, primary?: DebriefOpen["primary"]) {
+    this.o = primary ? { ...o, primary } : o;
     this.tookOver = false;
     this.loop = null;
     this.allEvents = false;
@@ -334,12 +339,13 @@ export class DebriefView extends Modal {
     return h(
       "header",
       { class: "dbx-top" },
-      o.onBack
+      // one labelled way back: « ← Résultat », or « ← Accueil » when there is no result sheet (a free flight)
+      o.onBack || this.deps.onHome
         ? h(
             "button",
             { class: "rs-btn ghost dbx-back", onclick: () => this.back() },
-            svgIcon(I.chevDown, 15),
-            drt("d.result"),
+            h("span", { class: "rs-larr", "aria-hidden": "true" }, svgIcon(I.arrow, 15)),
+            o.onBack ? drt("d.result") : curLang() === "fr" ? "Accueil" : "Home",
           )
         : null,
       h(
@@ -365,6 +371,23 @@ export class DebriefView extends Modal {
         svgIcon(I.feather, 15),
         h("span", { class: "lbl" }, drt("d.signoff")),
       ),
+      o.primary
+        ? h(
+            "button",
+            {
+              class: "rs-btn primary dbx-primary",
+              onclick: () => {
+                const p = o.primary!;
+                this.close();
+                p.run();
+              },
+            },
+            o.primary.back
+              ? h("span", { class: "rs-larr", "aria-hidden": "true" }, svgIcon(I.arrow, 15))
+              : svgIcon(I.restart, 15),
+            o.primary.label,
+          )
+        : null,
       langSeg,
       h(
         "button",
@@ -383,7 +406,7 @@ export class DebriefView extends Modal {
   }
 
   private back() {
-    const b = this.o?.onBack;
+    const b = this.o?.onBack ?? this.deps.onHome;
     this.close();
     b?.();
   }
@@ -565,7 +588,7 @@ export class DebriefView extends Modal {
       h(
         "div",
         { class: "ma" },
-        this.flyBtn(true, Math.max(0, x.t0 - 20)),
+        this.flyBtn(false, Math.max(0, x.t0 - 20)),
         h(
           "button",
           {
@@ -768,7 +791,7 @@ export class DebriefView extends Modal {
     const play = h(
       "button",
       {
-        class: "rs-btn primary ic dbx-play",
+        class: "rs-btn ic dbx-play",
         "aria-label": drt("k.play"),
         onclick: () => this.togglePlay(),
       },
@@ -914,7 +937,7 @@ export class DebriefView extends Modal {
     const hb = helpBox(m.help);
     if (hb) left.append(hb);
     right.append(this.signOff(m));
-    const plan = this.planFor(m);
+    const plan = this.o?.primary ? { why: { lead: "", text: "" }, items: [] } : this.planFor(m);
     if (plan.items.length)
       right.append(
         nextList(plan, drt("p.title"), (it) => {

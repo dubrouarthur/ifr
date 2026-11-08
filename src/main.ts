@@ -18,7 +18,7 @@ import { fitCanvas } from './avionics/draw';
 import { h, store, fmtTime } from './ui/dom';
 import { knob, bkey, autoRepeat, openSteps, closeSteps, installLongPressTips, fmsSteps, type StepRow } from './ui/knob';
 import { svgIcon, I } from './ui/icons';
-import { ViewDock, layoutName, nextLayout, shellKeyIntent, lessonZone, lessonColumnW, type LessonZone } from './ui/viewDock';
+import { ViewDock, cameraName, layoutName, nextLayout, shellKeyIntent, lessonZone, lessonColumnW, type LessonZone } from './ui/viewDock';
 import { ChartsDrawer } from './ui/charts';
 import { InstructorDrawer, HistoryModal } from './ui/instructor';
 import { LearnModal, BriefingModal, HoldDrillModal } from './ui/learn';
@@ -26,7 +26,7 @@ import { createResultSheet, ResultObserver, buildReport, type ResultOpenOpts } f
 import { DebriefView } from './ui/result/debrief';
 import { debriefOpen, type ExerciseCtx, type FlightCtx } from './ui/result/debriefSource';
 import { computeDebrief } from './sim/recorder';
-import { FlightCenter, coursesTopbarButton } from './ui/flightcenter';
+import { FlightCenter } from './ui/flightcenter';
 import { FlightSetup } from './ui/flightsetup';
 import { SettingsModal } from './ui/settings';
 import { WeatherStation } from './ui/weather';
@@ -67,6 +67,7 @@ import type { CourseBridge, CockpitHost, FlyOutcome } from './course/cockpitBrid
 import type { CalcProblem } from './course/types';
 import { markCockpitBridge } from './course/cockpitLink';
 import { BRAND, brandMarkSvg, brandTagline } from './brand';
+import { scenarioName, scenarioDesc, scenarioKind, aircraftLabel } from './ui/scenarioText';
 
 // pedestal and procedures-mode words of the shell (FR/EN)
 registerStrings('en', {
@@ -86,8 +87,8 @@ registerStrings('en', {
   'course.surpriseNot': 'Surprise failure drawn for this attempt: {t} (it had not fired yet)',
   'course.captureHint': 'Capture mode: fly to the moment you want, then press C (scene) or Shift+C (the last 60 s)',
   'course.backTooSoon': 'Fly a few seconds first: nothing to go back to yet',
-  'course.procMissing': 'This procedure drill is not available here: pick one in the Flight Center',
-  'course.lessonMissing': 'Lesson "{t}" not found: pick one in the Flight Center',
+  'course.procMissing': 'This procedure drill is not available here: pick one in the library',
+  'course.lessonMissing': 'Lesson "{t}" not found: pick one in the library',
   'course.freeFlight': 'Free flight',
   'ex.resumed': 'Exercise resumed: {title}',
   'ex.started': 'Exercise started: {title}',
@@ -106,6 +107,14 @@ registerStrings('en', {
   'look.hintTouch': 'Drag to look around · double-tap to recentre',
   'pv.paused': 'Paused',
   'pv.orEsc': 'or press Esc',
+  'tb.home': 'Home',
+  'tb.homeTip': 'Back to the home page: learn, teach or pick another flight (F2)',
+  'tb.rate': 'Simulation speed: {r}',
+  'tb.restart': 'Restart the flight',
+  'tb.end': 'End and debrief',
+  'tb.library': 'Library',
+  'tb.toastView': 'View: {v} — {h}',
+  'tb.toastLayout': 'Layout: {v}',
 });
 registerStrings('fr', {
   'ped.throttle': 'Gaz',
@@ -124,8 +133,8 @@ registerStrings('fr', {
   'course.surpriseNot': 'Panne surprise tirée pour cet essai : {t} (pas encore déclenchée)',
   'course.captureHint': 'Mode capture : volez jusqu’au moment voulu, puis appuyez sur C (scène) ou Maj+C (les 60 dernières s)',
   'course.backTooSoon': 'Volez quelques secondes d’abord : rien à revoir pour l’instant',
-  'course.procMissing': 'Cet exercice de procédure n’est pas disponible ici : choisissez-en un dans le Flight Center',
-  'course.lessonMissing': 'Leçon « {t} » introuvable : choisissez-en une dans le Flight Center',
+  'course.procMissing': 'Cet exercice de procédure n’est pas disponible ici : choisissez-en un dans la bibliothèque',
+  'course.lessonMissing': 'Leçon « {t} » introuvable : choisissez-en une dans la bibliothèque',
   'course.freeFlight': 'Vol libre',
   'ex.resumed': 'Exercice repris : {title}',
   'ex.started': 'Exercice commencé : {title}',
@@ -144,11 +153,25 @@ registerStrings('fr', {
   'look.hintTouch': 'Faites glisser pour regarder autour · double-touchez pour recentrer',
   'pv.paused': 'En pause',
   'pv.orEsc': 'ou appuyez sur Échap',
+  'tb.home': 'Accueil',
+  'tb.homeTip': 'Retour à l’accueil : apprendre, enseigner ou choisir un autre vol (F2)',
+  'tb.rate': 'Vitesse de simulation : {r}',
+  'tb.restart': 'Recommencer le vol',
+  'tb.end': 'Terminer et débriefer',
+  'tb.library': 'Bibliothèque',
+  'tb.toastView': 'Vue : {v} — {h}',
+  'tb.toastLayout': 'Disposition : {v}',
+  'drag to look around': 'faites glisser pour regarder autour',
+  'drag to move the camera, pinch or scroll to zoom': 'faites glisser pour déplacer la caméra, pincez ou faites défiler pour zoomer',
+  'drag to orbit, pinch or scroll to zoom': 'faites glisser pour tourner autour, pincez ou faites défiler pour zoomer',
+  'from the tower of the nearest airport': 'depuis la tour de l’aérodrome le plus proche',
+  'a fixed camera ahead, the aircraft flies past': 'une caméra fixe devant, l’avion passe devant elle',
 });
 // the cockpit shell's own words (top bar, flight and More menus, pause veil): keyed by their English text, so
 // English needs no table (t() falls back to the key); lx() keeps each one in step with the FR / EN switch
 registerStrings('fr', {
-  'Flight Center: courses, flights, lessons and records (F2)': 'Flight Center : cours, vols, leçons et carnet (F2)',
+  'Home: learn, teach or fly (F2)': 'Accueil : apprendre, enseigner ou voler (F2)',
+  Home: 'Accueil',
   'EFB: charts, airport, navlog, weather, checklists (K)': 'EFB : cartes, aérodrome, log de navigation, météo, check-lists (K)',
   'FMC CDU: route, approach, legs, hold (F3)': 'CDU du FMC : route, approche, segments, attente (F3)',
   Instructor: 'Instructeur',
@@ -163,7 +186,11 @@ registerStrings('fr', {
   'Flight: restart, end, plan a new one': 'Vol : recommencer, terminer, en préparer un autre',
   'View: camera, screen layout and instrument panel (V camera · Tab layout)': 'Vue : caméra, disposition de l’écran et tableau de bord (V caméra · Tab disposition)',
   View: 'Vue',
-  'Restart this flight': 'Recommencer ce vol',
+  'Restart this flight': 'Recommencer le vol',
+  'Restart the flight': 'Recommencer le vol',
+  'End and debrief': 'Terminer et débriefer',
+  'Simulation speed': 'Vitesse de simulation',
+  Library: 'Bibliothèque',
   'End flight & debrief': 'Terminer le vol et débriefer',
   'Instrument panel…': 'Tableau de bord…',
   'Pair instructor (phone/tablet)…': 'Associer l’instructeur (téléphone ou tablette)…',
@@ -173,7 +200,7 @@ registerStrings('fr', {
   Debrief: 'Débriefing',
   Tools: 'Outils',
   'Weather station': 'Station météo',
-  'Flight builder': 'Éditeur de vol',
+  'Plan a flight': 'Préparer un vol',
   'CDU (flight computer)': 'CDU (ordinateur de vol)',
   Connections: 'Connexions',
   Learn: 'Apprendre',
@@ -205,7 +232,8 @@ registerStrings('fr', {
 // the situation bar and the exercise window's shell words (keyed by their English text, like the table above)
 registerStrings('fr', {
   'sb.Phase': 'Phase',
-  'sb.Next': 'Suivant',
+  'sb.Next': 'Prochain point',
+  'sb.Hold': 'Attente',
   'sb.Altitude': 'Altitude',
   'sb.Surface wind': 'Vent au sol',
   'sb.Wind at aircraft': 'Vent à l’avion',
@@ -218,7 +246,7 @@ registerStrings('fr', {
   'sb.Final approach': 'Approche finale',
   'sb.Missed approach': 'Approche interrompue',
   'sb.Landed': 'Posé',
-  'sb.Replay': 'Replay',
+  'sb.Replay': 'Revoir le vol',
   'sb.Crashed': 'Accident',
   'sb.Paused': 'En pause',
   'sb.no flight plan': 'pas de plan de vol',
@@ -356,6 +384,7 @@ const debrief = new DebriefView({
   onNext: (it) => lessonResult.runItem(it),
   onAgain: () => startScenario(lastScenario, lastWx, sim.assess),
   onNew: () => fc.open(),
+  onHome: () => fc.showPlace('home'),
   // "Fly from 5:03": a new practice flight from the replay (not graded); the exercise's record stays as flown.
   // A debrief opened while an exercise was still flying (Shift D) ends that exercise first, as not graded: the
   // takeover rewinds the aircraft, so the run's clock, steps and deviation spans no longer match the flight.
@@ -440,17 +469,12 @@ const setup = new FlightSetup({
 setup.toast = (m) => toast(m, 'good');
 /** full-screen start page at launch: its one action opens the Flight Center, the single place every flight starts */
 const intro = new Intro({
-  courses: () => {
-    fc.openCourses();
-    fc.solidBackdrop();
-  },
+  // « Explorer les cours »: the library (one library, academy.html)
+  courses: () => location.assign('academy.html#library'),
   // the 3D world was held back while the start page was up (its boot is one long main-thread task)
   closed: () => bootOutsideWhenIdle(),
   // the Flight Center takes the focus itself (its heading, at the top of the page: Tab then reaches the courses)
-  enter: () => {
-    fc.open();
-    fc.solidBackdrop();
-  },
+  enter: () => fc.showPlace('home'),
 });
 function applySetupPrefs(st: import('./ui/flightsetup').FlightSetupState) {
   if (st.cockpit !== cockpitType) setCockpit(st.cockpit);
@@ -473,6 +497,7 @@ const lessonResult = createResultSheet(
     onDebrief: (at) => openDebrief(at),
     onDrill: () => drill.open(),
     onResume: (run) => resumeLesson(run),
+    onHome: () => fc.showPlace('home'),
   },
   resultObs,
 );
@@ -620,7 +645,7 @@ function startScenario(sc: Scenario, wx: WxPreset, a: AssessSettings = launcher.
   if (charts.isOpen || sc.approachId) {
     if (sc.approachId) charts.show(sc.approachId);
   }
-  toast(`${sc.name} — good luck!`, 'info');
+  toast(uiLang() === 'fr' ? `${scenarioName(sc)} — bon vol !` : `${sc.name} — good luck!`, 'info');
   maybeTour();
   chromeAfterStart();
 }
@@ -637,7 +662,9 @@ const scnBtn = lx(h('button', { class: 'scn', 'aria-haspopup': 'menu', onclick: 
 const pauseBtn = h('button', { class: 'btn tb-pause', title: tr('tb.pauseTip'), onclick: () => togglePause() }, icon(I.pause), h('span', { class: 'lbl' }, tr('tb.pause')));
 /** simulation rate: one compact button next to Pause that cycles 1× → 2× → 4× */
 const RATES = [1, 2, 4];
-const rateBtn = lx(h('button', { class: 'btn tb-rate', onclick: () => setRate(RATES[(RATES.indexOf(sim.rate) + 1) % RATES.length] ?? 1) }, '1×'), 'Simulation rate: click to change (Ctrl+1 / 2 / 4)', 'title');
+/** the simulation speed: an item of More (« Vitesse : 1× », Ctrl+1 / 2 / 4), not a bare « 1× » in the top bar */
+const rateVal = h('kbd', {}, '1×');
+const rateBtn = lx(h('button', { class: 'menu-item tb-rate', role: 'menuitem', onclick: (e: Event) => { e.stopPropagation(); setRate(RATES[(RATES.indexOf(sim.rate) + 1) % RATES.length] ?? 1); } }, icon(I.rate), lx(h('span', {}), 'Simulation speed'), rateVal), 'Simulation rate: click to change (Ctrl+1 / 2 / 4)', 'title');
 // ------------------------------------------------------------------ view dock + View panel (cameras, layouts, instrument panel)
 /** always on the outside view (in the situation bar in Instruments): five labelled cameras, the layout, Pause */
 const viewDock = new ViewDock({
@@ -662,7 +689,6 @@ const tbViews = h('div', { class: 'tb-views' }, viewDock.el);
 // ------------------------------------------------------------------ exterior views (Cockpit / Chase / Orbit / Tower / Fly-by)
 /** the list and names come from the 3D module once it is loaded (outside3d re-exports them); these are the defaults */
 let viewList: readonly ViewMode[] = ['cockpit', 'chase', 'orbit', 'tower', 'flyby'];
-let viewNames: Record<ViewMode, string> = { cockpit: 'Cockpit', chase: 'Chase', orbit: 'Orbit', tower: 'Tower', flyby: 'Fly-by' };
 const VIEW_HINT: Record<ViewMode, string> = {
   cockpit: 'drag to look around',
   chase: 'drag to move the camera, pinch or scroll to zoom',
@@ -682,7 +708,7 @@ function setView(v: ViewMode, announce = false) {
   syncView();
   if (announce && !viewHintSeen.has(v)) {
     viewHintSeen.add(v);
-    toast(`View: ${viewNames[v]} — ${VIEW_HINT[v]}`, 'info', 2600);
+    toast(tr('tb.toastView', { v: cameraName(v), h: tr(VIEW_HINT[v]) }), 'info', 2600);
   }
 }
 function cycleView(dir: 1 | -1) {
@@ -780,16 +806,20 @@ const sensItem = lx(h('button', { class: 'menu-item', role: 'menuitem', onclick:
 } }, icon(I.keyboard), lx(h('span', {}), 'Keyboard sensitivity'), sensVal), 'How fast and how far the arrow keys move the yoke (click to change)', 'title');
 moreMenu.append(
   menuHead('Flight'),
+  rateBtn,
+  moreItem(I.restart, 'Restart the flight', '', () => restartFlight()),
+  moreItem(I.flag, 'End and debrief', '', () => endFlight()),
   moreItem(I.approach, 'Procedures', 'X', () => procModal.open()),
   moreItem(I.direct, 'Direct-To', 'D', () => directModal.open()),
   moreItem(I.chart, 'Debrief', 'Shift D', () => openDebrief()),
   menuHead('Tools'),
   moreItem(I.cloud, 'Weather station', '', () => weatherModal.open()),
-  moreItem(I.pattern, 'Flight builder', 'U', () => builder.edit()),
+  moreItem(I.pattern, 'Plan a flight', 'U', () => builder.edit()),
   cduMoreItem,
   moreItem(I.link, 'Connections', '', () => connect.open()),
   moreItem(I.instructor, 'Pair instructor (phone/tablet)…', '', () => void pairInstructor()),
   menuHead('Learn'),
+  moreItem(I.slides, 'Library', '', () => fc.openCourses()),
   moreItem(I.learn, 'Learning paths', 'J', () => learn.open()),
   moreItem(I.records, 'Training records', '', () => historyModal.open()),
   moreItem(I.compass, 'Guided tour', '', () => startTour()),
@@ -891,17 +921,19 @@ function syncAutoHide() {
   autoHideSw.classList.toggle('on', autoHide);
 }
 flightMenu.append(
-  flightItem(I.restart, 'Restart this flight', '', () => restartFlight()),
-  flightItem(I.flag, 'End flight & debrief', 'Shift D', () => endFlight()),
+  flightItem(I.restart, 'Restart the flight', '', () => restartFlight()),
+  flightItem(I.flag, 'End and debrief', 'Shift D', () => endFlight()),
   h('div', { class: 'menu-sep' }),
   flightItem(I.screen, 'Instrument panel…', '', () => openPanelPicker()),
   flightItem(I.instructor, 'Pair instructor (phone/tablet)…', '', () => void pairInstructor()),
   h('div', { class: 'menu-sep' }),
   flightItem(I.plan, 'Plan a new flight…', 'Shift N', () => setup.start()),
-  flightItem(I.plane, 'Flight Center', 'F2', () => fc.open()),
+  flightItem(I.home, 'Home', 'F2', () => fc.showPlace('home')),
 );
 const moreLbl = h('span', { class: 'lbl' }, tr('tb.more'));
-const moreBtn = h('button', { class: 'btn tb-more', title: tr('tb.moreTip'), 'aria-haspopup': 'menu', onclick: (e: Event) => { e.stopPropagation(); moreMenu.classList.toggle('open'); } }, icon(I.menu), moreLbl);
+/** the simulation speed when it is not 1× (the speed itself is chosen in this menu) */
+const moreRate = h('span', { class: 'tb-rate-chip', hidden: true });
+const moreBtn = h('button', { class: 'btn tb-more', title: tr('tb.moreTip'), 'aria-haspopup': 'menu', onclick: (e: Event) => { e.stopPropagation(); moreMenu.classList.toggle('open'); } }, icon(I.menu), moreLbl, moreRate);
 const iosLbl = h('span', { class: 'lbl' }, tr('tb.instructor'));
 // icon-only on narrow screens: the name stays (aria-label) in the UI language
 const iosBtn = h('button', { class: 'btn tb-ios', onclick: () => ios.toggle(), title: tr('tb.instructorTip'), 'aria-label': tr('tb.instructor') }, icon(I.instructor), iosLbl);
@@ -915,22 +947,23 @@ onLangChange(() => {
 document.addEventListener('click', (e) => { if (!moreMenu.contains(e.target as Node)) moreMenu.classList.remove('open'); });
 /** the FMC CDU: a top-bar button in the airliner only (G1000 and steam: More → Tools) */
 const cduBtn = lx(h('button', { class: 'btn tb-cdu', onclick: () => cduPanel.toggle(), 'aria-label': 'CDU' }, icon(I.keypad), h('span', { class: 'lbl' }, 'CDU')), 'FMC CDU: route, approach, legs, hold (F3)', 'title');
+/** « ← Accueil »: the one way home, with the product mark and the word (UX logic §7; it replaces the hub button) */
+const homeLbl = lx(h('span', { class: 'lbl' }), 'tb.home');
+const homeBtn = lx(h('button', { class: 'btn tb-fc tb-home', type: 'button', onclick: () => fc.showPlace('home') },
+  h('span', { class: 'tb-back', 'aria-hidden': 'true' }, svgIcon(I.arrow, 16)),
+  h('span', { class: 'logo brand-mark', 'aria-hidden': 'true', html: brandMarkSvg(22) }),
+  homeLbl), 'tb.homeTip', 'title');
 const topbar = h('header', { class: 'topbar' },
-  // the app mark is decorative (it used to be a hidden "pin the bar" toggle: that is the View panel switch now)
-  // the product's one name and mark (src/brand.ts), the same as on the start page and the course pages
-  h('div', { class: 'brand', 'aria-hidden': 'true' }, h('span', { class: 'logo brand-mark', html: brandMarkSvg(26) }), h('span', { class: 'brand-t' }, h('b', {}, BRAND.name))),
+  homeBtn,
+  h('i', { class: 'tb-rule', 'aria-hidden': 'true' }),
   h('div', { class: 'menu-wrap scn-wrap' }, scnBtn, flightMenu),
   tbViews,
   h('div', { class: 'tb-actions' },
-    // the single way home: every flight, lesson and path starts in the Flight Center (Shift N still plans directly)
-    // the slide courses lead the product: one click from the cockpit to every deck (open, create, present)
-    coursesTopbarButton(() => fc.openCourses()),
-    // icon-only on narrow screens: each keeps an accessible name in the UI language (the hub keeps its word too)
-    lx(h('button', { class: 'btn tb-fc', onclick: () => fc.open(), 'aria-label': 'Flight Center' }, icon(I.plane), h('span', { class: 'lbl' }, 'Flight Center')), 'Flight Center: courses, flights, lessons and records (F2)', 'title'),
+    // every tool says its name, on a tablet too (UX logic §7): EFB, Instructeur, Pause, Plus
     lx(h('button', { class: 'btn tb-efb', onclick: () => charts.toggle(), 'aria-label': 'EFB' }, icon(I.tablet), h('span', { class: 'lbl' }, 'EFB')), 'EFB: charts, airport, navlog, weather, checklists (K)', 'title'),
     cduBtn,
     iosBtn,
-    h('div', { class: 'tb-sim' }, pauseBtn, rateBtn),
+    h('div', { class: 'tb-sim' }, pauseBtn),
     h('div', { class: 'menu-wrap' }, moreBtn, moreMenu),
   ),
 );
@@ -1093,7 +1126,10 @@ function syncCourseStrip() {
   const st: CourseStripState = {};
   const newest = b?.ring.newest;
   if (b?.capturing) st.capture = { title: captureTitle, previewAgo: previewT !== null && newest ? Math.round(newest.t - previewT) : null, canBack: canBack10(b), hasEditor: !!b.captureReturn };
-  else if (b?.handoff && b.course && b.step) st.flight = { course: l10n(b.course.title), step: l10n(b.step.title), hasResult: !!courseOutcome || (b.plan?.kind === 'scenario' && !lesson && (debriefShown || !!sim.ac.s.crashed)) };
+  else if (b?.handoff && b.course && b.step) {
+    const n = b.course.steps.findIndex((x) => x.id === b.step!.id) + 1;
+    st.flight = { course: l10n(b.course.title), step: l10n(b.step.title), hasResult: !!courseOutcome || (b.plan?.kind === 'scenario' && !lesson && (debriefShown || !!sim.ac.s.crashed)), ...(n > 0 ? { n, of: b.course.steps.length } : {}) };
+  }
   else if (!b && pendingFlight) st.flight = { ...pendingFlight, hasResult: false };
   else if (courseLoading) st.loading = true;
   // (the button's own display rule beats the hidden attribute: set it inline). The brief card's Start is the one
@@ -1115,9 +1151,17 @@ function tagCourseRecord(id: string | null | undefined) {
   const rec = history.all().find((x) => x.id === id);
   if (rec) history.upsert({ ...rec, course: tag });
 }
+/** « Retour au cours (étape 13) »: the step the course page opens on (the flown step, with its attempt) */
+function courseBackLabel(): string {
+  const b = courseBridge;
+  const n = b?.course && b.step ? b.course.steps.findIndex((x) => x.id === b.step!.id) + 1 : 0;
+  return n > 0 ? tr('cf.backCourseN', { n }) : tr('cf.backCourse');
+}
 async function backToCourse(o: FlyOutcome | null) {
   const b = courseBridge;
   if (!b?.handoff) return;
+  // « Retour au cours… » over the cockpit while the course page loads (never a blank frame)
+  courseUi.leaving(b.course ? l10n(b.course.title) : '');
   const url = o ? await b.finish(o) : b.returnUrl();
   if (url) location.href = url;
 }
@@ -1274,8 +1318,21 @@ function calcGivens(p: CalcProblem): { label: string; value: string }[] {
  *  flow in the instruments-only layout, where --ov-top does not count it) */
 function placeBriefCard() {
   const o = otw.getBoundingClientRect();
-  const top = Math.max(8, Math.round(sitRect().bottom - o.top + 10));
+  const sb = sitRect().bottom;
+  const top = Math.max(8, Math.round(sb - o.top + 10));
   courseUi.card.style.setProperty('--cf-top', `${top}px`);
+  // a short outside view (portrait, a tall panel): the card becomes a sheet over the panel, so « Commencer le vol »
+  // is always on screen (the flight waits paused; nothing on the panel is needed before it starts)
+  const sheet = otw.offsetParent !== null && o.bottom - sb < 260;
+  courseUi.card.classList.toggle('cf-sheet', sheet);
+  if (sheet) courseUi.card.style.setProperty('--cf-sheet-top', `${Math.round(Math.max(sb, 0) + 8)}px`);
+  // the sheet lives on body (above the panel and the autopilot bar); the card goes back over the outside view after
+  const host = sheet ? document.body : otw;
+  if (courseUi.card.parentElement !== host) {
+    if (sheet) document.body.append(courseUi.card);
+    else if (toasts.parentElement === otw) otw.insertBefore(courseUi.card, toasts);
+    else otw.append(courseUi.card);
+  }
 }
 /** a course flight starting: the flight it launches keeps its brief card (any other flight closes it) */
 let courseLaunching = false;
@@ -1337,8 +1394,7 @@ async function initOutside() {
     outside = new mod.Outside3D(glCanvas, gfx, timeOfDay);
     otw.classList.add('has-gl');
     viewList = mod.VIEWS;
-    viewNames = mod.VIEW_LABELS;
-    viewDock.setNames(viewNames);
+    viewDock.setNames(mod.VIEW_LABELS);
     viewDock.setAvailable(true);
     // the camera survives a rebuild (graphics quality, region change): re-apply the saved view
     outside.onViewChange = (v) => { viewMode = v; store.set('ifr.view', v); syncView(); };
@@ -1619,7 +1675,7 @@ function toggleExplain(force?: boolean) {
   if (explain.on) toast('Explain mode: hover any outlined instrument · F1 to exit', 'info', 5000);
 }
 const TOUR = [
-  { sel: '.tb-actions .tb-fc', title: 'Flight Center', text: 'Every flight lives here, sorted by type: approaches, holdings and procedures, IFR cross-country flights, basics, abnormals, checkrides, your own IFR circuits and the learning paths.' },
+  { sel: '.topbar .tb-home', title: 'Home', text: 'Back to the home page: learn with the courses, teach, or pick another flight in the Simulator.' },
   { sel: '.sitbar', title: 'Situation bar', text: 'The essentials at a glance: flight phase, next fix and its altitude constraint, selected altitude, wind with headwind/crosswind and drift, distance to minimums, IMC or VMC.' },
   { sel: '.otw', title: 'Outside view', text: 'A 3D view of the Ardent Islands with real runway lighting and PAPI. Drag to look around, double-click to recentre. Tab / Shift+Tab change the layout, V the camera.' },
   { sel: '.view-dock', title: 'View', text: 'Cockpit, Chase, Orbit, Tower and Fly-by are one tap away here. The button with the picture names the screen layout (Standard, Large view, Immersive, Instruments) and opens the View panel, which also picks the instrument panel. Pause is at the end.' },
@@ -1630,7 +1686,7 @@ const TOUR = [
   { sel: '.bezel.mfd', title: 'Multi-function display', text: 'Moving map with terrain and the active flight plan. RANGE zooms; PROC loads an approach; ACT activates it.' },
   { sel: '.footer', title: 'Flight controls', text: 'Throttle, flaps, trim and yoke position. Use a joystick or yoke (Controllers in the More menu), the keyboard (arrows, +/−, Home/End, F — sensitivity in the More menu), or the touch stick (drag it; it eases back to neutral when you let go).' },
   { sel: '.tb-actions .tb-efb', title: 'EFB', text: 'Approach plates (your aircraft is drawn on them), airport data, navlog, weather and checklists. In the airliner panel the CDU button beside it opens the flight management computer.' },
-  { sel: '.tb-actions .tb-more', title: 'More', text: 'Procedures, Direct-To and the debrief; the weather station and flight builder; learning paths, training records and keyboard shortcuts; Settings and controllers.' },
+  { sel: '.tb-actions .tb-more', title: 'More', text: 'Procedures, Direct-To and the debrief; the weather station and Plan a flight; learning paths, training records and keyboard shortcuts; Settings and controllers.' },
 ];
 function startTour() {
   Modal.closeAll();
@@ -1926,14 +1982,29 @@ function togglePause() {
   syncPauseBtn();
 }
 let pauseShown: boolean | null = null;
-onLangChange(() => { pauseShown = null; syncPauseBtn(); });
+let pauseVeilShown: boolean | null = null;
+/** the « En pause » veil is up: paused by the pilot (not a crash, the course brief card, the look-back or a link
+ *  loading, which pause on purpose and say so themselves) */
+const pauseVeilWanted = () => sim.paused && !sim.ac.s.crashed && !courseUi.briefOpen && previewT === null && !courseLoading
+  // portrait: the outside view is a thin band under the bars, the veil would not show; the top bar's highlighted
+  // « Reprendre » is the one way on
+  && !document.body.classList.contains('portrait');
+onLangChange(() => { pauseShown = null; pauseVeilShown = null; syncPauseBtn(); });
 /** the Pause button follows sim.paused whoever changed it (lessons, modals, crash, replay) */
 function syncPauseBtn() {
-  if (pauseShown === sim.paused) return;
+  // the pause veil carries the one « Reprendre » (UX logic §7): while it shows, the top bar's button stays « Pause »
+  // (pressed, not highlighted), so the screen never shows two or three resume controls
+  const veil = pauseVeilWanted();
+  if (pauseShown === sim.paused && pauseVeilShown === veil) return;
+  const was = pauseShown;
   pauseShown = sim.paused;
-  pauseBtn.replaceChildren(icon(sim.paused ? I.play : I.pause), h('span', { class: 'lbl' }, tr(sim.paused ? 'tb.resume' : 'tb.pause')));
+  pauseVeilShown = veil;
+  const resumeHere = sim.paused && !veil;
+  pauseBtn.replaceChildren(icon(resumeHere ? I.play : I.pause), h('span', { class: 'lbl' }, tr(resumeHere ? 'tb.resume' : 'tb.pause')));
   pauseBtn.title = tr(sim.paused ? 'tb.resumeTip' : 'tb.pauseTip');
-  pauseBtn.classList.toggle('on', sim.paused);
+  pauseBtn.setAttribute('aria-pressed', String(sim.paused));
+  pauseBtn.classList.toggle('on', resumeHere);
+  if (was === sim.paused) return;
   viewDock.setPaused(sim.paused);
   // paused: the top bar shows (Pause reads Resume); running again: it gets out of the way
   if (sim.paused) { clearTimeout(hideTimer); chromeShow(true); }
@@ -1943,9 +2014,12 @@ function syncPauseBtn() {
 }
 function setRate(r: number) {
   sim.rate = r;
-  rateBtn.textContent = `${r}×`;
+  rateVal.textContent = `${r}×`;
   rateBtn.classList.toggle('on', r !== 1);
-  toast(`Sim rate ${r}×`);
+  // faster than real time: the Plus button says so (the speed lives in its menu)
+  moreRate.textContent = r !== 1 ? `${r}×` : '';
+  moreRate.hidden = r === 1;
+  toast(tr('tb.rate', { r: `${r}×` }));
 }
 function setOtw(m: OtwMode, announce = false) {
   otwMode = m;
@@ -1958,7 +2032,7 @@ function setOtw(m: OtwMode, announce = false) {
   else if (autoHide && !chromeBusy()) scheduleHide(900);
   // the dock: bottom-right of the outside view, or the right end of the situation bar in Instruments
   viewDock.setLayout(m);
-  if (announce) toast(`Layout: ${layoutName(m)}`, 'info', 2200);
+  if (announce) toast(tr('tb.toastLayout', { v: layoutName(m) }), 'info', 2200);
   fitSoon();
 }
 function setQnh() {
@@ -2041,17 +2115,17 @@ function openDebrief(atLessonT?: number) {
       }
     }
     flight = {
-      title: lesson ? lesson.ex.title : sc && sc.id !== 'lesson' ? sc.name : (lastLessonEx?.title ?? (uiLang() === 'fr' ? 'Vol libre' : 'Free flight')),
+      title: lesson ? exTitle(lesson.ex) : sc && sc.id !== 'lesson' ? scenarioName(sc) : (lastLessonEx ? exTitle(lastLessonEx) : tr('course.freeFlight')),
       inProgress: !!lesson,
       attemptId: rec?.id ?? `rec-${sim.rec.startedAt}`,
     };
   }
-  debrief.show(debriefOpen(sim, ex, flight, { atLessonT, onBack: ex ? () => lessonResult.reopen() : undefined }));
-  // a course's scenario flight: its debrief goes back to the course with the result
-  if (courseBridge?.handoff && courseBridge.plan?.kind === 'scenario' && !lesson) {
-    debrief.foot.querySelectorAll('.btn.primary').forEach((x) => x.classList.remove('primary'));
-    debrief.foot.append(h('button', { class: 'btn primary res-course', onclick: () => void stripBackToCourse() }, svgIcon(I.arrow, 15), h('span', {}, tr('cf.backCourse'))));
-  }
+  // the same single primary as the result (UX logic §7): back to the course from a course flight, else fly it again
+  const fromCourse = !!courseBridge?.handoff && ((ex && run && isCourseRun(run.ex)) || (courseBridge.plan?.kind === 'scenario' && !lesson));
+  const primary = fromCourse
+    ? { label: courseBackLabel(), back: true, run: () => void (ex ? backToCourse(courseOutcome) : stripBackToCourse()) }
+    : { label: tr('tb.restart'), run: () => restartFlight() };
+  debrief.show(debriefOpen(sim, ex, flight, { atLessonT, onBack: ex ? () => lessonResult.reopen() : undefined }), primary);
 }
 
 function doAction(a: ButtonAction) {
@@ -2085,7 +2159,7 @@ window.addEventListener('keydown', (e) => {
   const tgt = e.target as HTMLElement;
   if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'SELECT' || tgt.tagName === 'TEXTAREA')) return;
   if (Modal.anyOpen()) {
-    if (e.key === 'Escape') Modal.closeAll();
+    if (e.key === 'Escape') Modal.escape();
     return;
   }
   const k = e.key;
@@ -2152,7 +2226,7 @@ window.addEventListener('keydown', (e) => {
     case 'x': g1kKey('proc', () => procModal.open()); break;
     case 'i': ios.toggle(); break;
     case 'j': learn.open(); break;
-    case 'f2': fc.open(); break;
+    case 'f2': fc.showPlace('home'); break;
     case 'u': builder.edit(); break;
     case 'f1': toggleExplain(); e.preventDefault(); break;
     case 'm': toggleMute(); break;
@@ -2178,29 +2252,29 @@ window.addEventListener('blur', () => input.keys.clear());
 
 // ------------------------------------------------------------------ header / coach
 const PHASE_LABEL: Record<Phase, string> = { ground: 'On ground', departure: 'Departure', enroute: 'Enroute', initial: 'Approach', final: 'Final approach', missed: 'Missed approach', landed: 'Landed' };
-const AIRCRAFT: Record<CockpitType, string> = { g1000: 'C172 G1000', steam: 'C172 steam gauges', airliner: '737-800' };
 /** an exercise's title in the UI language (the curriculum writes English; library/meta.ts holds the French) */
 function exTitle(ex: Exercise): string {
   return uiLang() === 'fr' ? (LESSON_META[ex.id]?.fr ?? ex.title) : ex.title;
 }
 /** top bar: the flight's name, and a short "airport · procedure · aircraft" descriptor (the sitbar owns flight state) */
 function updateHeader() {
-  const ex = lesson?.ex ?? lastLessonEx;
+  // the lesson flying, else the one being briefed (its window is up, the flight waits at its start position)
+  const ex = lesson?.ex ?? (briefing.isOpen ? briefing.run?.ex : null) ?? lastLessonEx;
   // a course flight loading: not the title of the previous flight
-  const name = courseLoading ? tr('cf.course') : ex ? exTitle(ex) : sim.scenario?.name ?? tr('course.freeFlight');
+  const name = courseLoading ? tr('cf.course') : ex ? exTitle(ex) : sim.scenario ? scenarioName(sim.scenario) : tr('course.freeFlight');
   const ap = sim.fp.approach;
   const hold = lesson?.rt.hold;
   const parts: string[] = [];
   if (courseLoading) { /* the aircraft only */ }
   else if (ap) parts.push(ap.airport, ap.name);
   else if (hold) parts.push(uiLang() === 'fr' ? tr('sb.holdAt', { fix: hold.fix.ident }) : `Hold at ${hold.fix.ident}`);
-  else if (!ex && sim.scenario?.kind) parts.push(sim.scenario.kind);
-  parts.push(AIRCRAFT[cockpitType]);
+  else if (!ex && sim.scenario?.kind && sim.scenario.id !== 'lesson') parts.push(scenarioKind(sim.scenario.kind));
+  parts.push(aircraftLabel(cockpitType));
   const sub = parts.join(' · ');
   setText(scnName, name);
   setText(scnSub, sub);
-  const full = `${name} — ${ex ? ex.summary : sim.scenario?.description ?? sub}`;
-  if (cached(scnBtn, 'title', full)) scnBtn.title = `${full}\nClick: restart, end or plan a new flight`;
+  const full = `${name} — ${ex ? ex.summary : sim.scenario ? scenarioDesc(sim.scenario) || sub : sub}`;
+  if (cached(scnBtn, 'title', full)) scnBtn.title = `${full}\n${tr('Flight: restart, end, plan a new one')}`;
 }
 let coachKey = '';
 let sitKey = '';
@@ -2221,7 +2295,7 @@ function updateSitbar() {
   const side = (v: number) => sbw(v >= 0 ? 'R' : 'L');
   const cells: [string, string, string][] = [
     [sbw('Phase'), sim.replaying ? sbw('Replay') : sim.ac.s.crashed ? sbw('Crashed') : sim.paused ? sbw('Paused') : sbw(PHASE_LABEL[ph]), sim.ac.s.crashed ? 'bad' : sim.replaying ? 'warn' : sim.paused ? 'paused' : ''],
-    [sbw('Next'), to ? `${g.holding ? 'HOLD ' : ''}${to.ident}${to.altMin ? ` ≥${to.altMin}` : ''} · ${g.distNm.toFixed(1)} NM${g.eteMin !== null ? ` · ${fmtTime(g.eteMin * 60)}` : ''}` : sbw('no flight plan'), 'mag'],
+    [sbw('Next'), to ? `${g.holding ? `${sbw('Hold')} ` : ''}${to.ident}${to.altMin ? ` ≥${to.altMin}` : ''} · ${g.distNm.toFixed(1)} NM${g.eteMin !== null ? ` · ${fmtTime(g.eteMin * 60)}` : ''}` : sbw('no flight plan'), 'mag'],
     [sbw('Altitude'), `${alt} ft → ${sel}${Math.abs(altDiff) > 100 ? ` (${altDiff > 0 ? '+' : ''}${altDiff})` : ' ✓'}`, Math.abs(altDiff) > 100 ? '' : 'good'],
     sim.ac.s.onGround
       ? [sbw('Surface wind'), `${String(Math.round(sim.weather.windDir)).padStart(3, '0')}°/${Math.round(sim.weather.windKt)}${gust} · ${sbw(hw >= 0 ? 'HW' : 'TW')} ${Math.abs(hw)} · ${sbw('XW')} ${Math.abs(xw)}${side(xw).trim()}`, Math.abs(xw) > 15 || hw < -5 ? 'warn' : '']
@@ -2230,13 +2304,18 @@ function updateSitbar() {
     [sbw('Conditions'), imc ? 'IMC' : 'VMC', imc ? 'imc' : 'good'],
   ];
   // the brief card and the 10 s look-back are paused on purpose: no "Paused" veil over them
-  pauseVeil.classList.toggle('on', sim.paused && !sim.ac.s.crashed && !courseUi.briefOpen && previewT === null && !courseLoading);
+  pauseVeil.classList.toggle('on', pauseVeilWanted());
   const key = cells.map((c) => c[0] + c[1]).join('|');
   if (key === sitKey) return;
   sitKey = key;
   sitCells.replaceChildren(...cells.map(([k, v, cls]) => h('div', { class: `sb ${cls}` }, h('small', {}, k), h('b', {}, v))), h('div', { class: 'sb-fill' }));
 }
-const foldBtn = (collapsed: boolean, fn: () => void, what: string) => h('button', { class: 'coach-fold', type: 'button', 'aria-expanded': String(!collapsed), 'aria-label': collapsed ? `Expand ${what}` : `Collapse ${what}`, title: collapsed ? `Expand ${what}` : `Collapse ${what}`, onclick: fn }, svgIcon(collapsed ? I.chevDown : I.chevUp, 15));
+/** the coach's words: English, or French (the coach writes its tips with numbers in them) */
+const cw = (en: string, fr: string) => (uiLang() === 'fr' ? fr : en);
+const foldBtn = (collapsed: boolean, fn: () => void) => {
+  const label = collapsed ? cw('Show the coach tips', 'Afficher les conseils') : cw('Reduce the coach tips', 'Réduire les conseils');
+  return h('button', { class: 'coach-fold', type: 'button', 'aria-expanded': String(!collapsed), 'aria-label': label, title: label, onclick: fn }, svgIcon(collapsed ? I.chevDown : I.chevUp, 15));
+};
 function updateCoach() {
   updateSitbar();
   updateHeader();
@@ -2257,8 +2336,8 @@ function updateCoach() {
     if (st?.setup && !ride0 && !run.finished) {
       try { setupItems = st.setup(ctx); } catch { setupItems = []; }
     }
-    // iPad portrait: the window covers the pause veil, so it carries the Resume button itself
-    const resumeHere = sim.paused && !sim.ac.s.crashed && !run.finished && document.body.classList.contains('portrait');
+    // one « Reprendre » on screen: the pause veil's, or (portrait, no veil) the top bar's; the window never adds one
+    const resumeHere = false;
     const ride = ride0;
     lwItems = setupItems;
     const n = run.rt.steps.length;
@@ -2315,7 +2394,7 @@ function updateCoach() {
     if (key !== coachKey) {
       coachKey = key;
       coach.innerHTML = '';
-      coach.append(h('h4', {}, 'Checkride in progress'), h('div', { class: 'next' }, sim.assess.student || 'Applicant'), h('ul', {}, h('li', {}, 'No coaching. Fly as briefed — the evaluator is recording.'), h('li', {}, 'Shift+D opens the report at any time.')));
+      coach.append(h('h4', {}, cw('Checkride in progress', 'Test en vol en cours')), h('div', { class: 'next' }, sim.assess.student || cw('Applicant', 'Candidat')), h('ul', {}, h('li', {}, cw('No coaching. Fly as briefed — the evaluator is recording.', 'Aucun conseil. Volez comme au briefing : l’examinateur enregistre.')), h('li', {}, cw('Shift+D opens the report at any time.', 'Maj+D ouvre le rapport à tout moment.'))));
     }
     return;
   }
@@ -2326,56 +2405,56 @@ function updateCoach() {
   let next = '';
   const hints: string[] = [];
   if (sim.ac.s.crashed) {
-    next = 'Flight ended';
-    hints.push('Your debrief is ready. Press Shift+D or fly it again.');
+    next = cw('Flight ended', 'Vol terminé');
+    hints.push(cw('Your debrief is ready. Press Shift+D or fly it again.', 'Votre débriefing est prêt. Appuyez sur Maj+D, ou recommencez le vol.'));
   } else if (ph === 'ground' && !sim.rec.touchdown) {
-    next = 'Ready for departure';
-    hints.push('Full throttle: key 0, PageUp or drag the THROTTLE lever. At 55 KIAS hold ↓ (pull) to rotate to ~8° nose-up.', 'Climb at 74 KIAS (Vy). AP: HDG + VS at 1000 ft AGL.');
+    next = cw('Ready for departure', 'Prêt au départ');
+    hints.push(cw('Full throttle: key 0, PageUp or drag the THROTTLE lever. At 55 KIAS hold ↓ (pull) to rotate to ~8° nose-up.', 'Plein gaz : touche 0, Page préc. ou faites glisser la manette des GAZ. À 55 kt, tirez (↓) pour une assiette d’environ 8° à cabrer.'), cw('Climb at 74 KIAS (Vy). AP: HDG + VS at 1000 ft AGL.', 'Montée à 74 kt (Vy). Pilote automatique : HDG + VS à 1000 ft sol.'));
   } else if (ph === 'landed') {
-    next = d.gsKt > 2 ? 'Rollout — brakes (Space)' : 'Stopped. Nice work.';
-    hints.push('Debrief opens automatically when you stop.');
+    next = d.gsKt > 2 ? cw('Rollout — brakes (Space)', 'Roulage — freins (Espace)') : cw('Stopped. Nice work.', 'Arrêté. Beau travail.');
+    hints.push(cw('Debrief opens automatically when you stop.', 'Le débriefing s’ouvre dès que vous êtes arrêté.'));
   } else if (g.valid && to) {
     const ete = g.eteMin !== null ? ` · ${fmtTime(g.eteMin * 60)}` : '';
-    next = `${g.holding ? 'Holding at' : 'Next'} <em>${to.ident}</em>${to.altMin ? ` · ≥ ${to.altMin} ft` : ''} · ${g.distNm.toFixed(1)} nm${ete}`;
+    next = `${g.holding ? cw('Holding at', 'Attente à') : cw('Next', 'Prochain point')} <em>${to.ident}</em>${to.altMin ? ` · ≥ ${to.altMin} ft` : ''} · ${g.distNm.toFixed(1)} nm${ete}`;
     const ap = fp.approach;
-    if (ap && !fp.approachActive) hints.push(cockpitType === 'g1000' ? 'Approach loaded but not active — PROC → Activate Approach (or Activate Vector-to-Final).' : 'Approach loaded but not active — Procedures (X) → Activate.');
+    if (ap && !fp.approachActive) hints.push(cockpitType === 'g1000' ? cw('Approach loaded but not active — PROC → Activate Approach (or Activate Vector-to-Final).', 'Approche chargée mais pas activée : PROC → Activate Approach (ou Activate Vector-to-Final).') : cw('Approach loaded but not active — Procedures (X) → Activate.', 'Approche chargée mais pas activée : Procédures (X) → Activer.'));
     if (ap && fp.approachActive && !fp.missedActive) {
       const navBased = ap.type === 'ILS' || ap.type === 'LOC' || ap.type === 'LOCBC' || ap.type === 'VOR' || ap.type === 'LDA';
       const faf = fp.wpts.find((x) => x.role === 'FAF' && x.appr === 'final');
       const dFaf = faf ? distanceNm(sim.ac.s, faf) : 99;
-      if (navBased && sim.av.cdi === 'GPS' && dFaf < 12) hints.push(cockpitType === 'g1000' && sim.autoCdi && ap.type !== 'VOR' ? 'Confirm the HSI switches to LOC1 (green needle) before the FAF.' : `Switch the CDI to ${ap.type === 'VOR' ? 'VOR1' : 'LOC1'} before the FAF (C key).`);
-      if (ap.type === 'NDB' && sim.av.bearing1 !== 'ADF') hints.push('Set BRG1 to ADF (PFD softkey) to see the NDB needle.');
-      if (sim.ap.engaged && !sim.ap.apprMode && dFaf < 15 && (ap.gsAngle || navBased)) hints.push('Press APR to arm the approach mode.');
-      if (to.altMin && sim.indicatedAlt() > to.altMin + 300 && g.distNm < 6 && ph === 'initial') hints.push(`Descend: you are ${Math.round(sim.indicatedAlt() - to.altMin)} ft above the ${to.ident} crossing altitude.`);
+      if (navBased && sim.av.cdi === 'GPS' && dFaf < 12) hints.push(cockpitType === 'g1000' && sim.autoCdi && ap.type !== 'VOR' ? cw('Confirm the HSI switches to LOC1 (green needle) before the FAF.', 'Vérifiez que le HSI passe sur LOC1 (aiguille verte) avant le FAF.') : cw(`Switch the CDI to ${ap.type === 'VOR' ? 'VOR1' : 'LOC1'} before the FAF (C key).`, `Passez le CDI sur ${ap.type === 'VOR' ? 'VOR1' : 'LOC1'} avant le FAF (touche C).`));
+      if (ap.type === 'NDB' && sim.av.bearing1 !== 'ADF') hints.push(cw('Set BRG1 to ADF (PFD softkey) to see the NDB needle.', 'Mettez BRG1 sur ADF (touche du PFD) pour voir l’aiguille du NDB.'));
+      if (sim.ap.engaged && !sim.ap.apprMode && dFaf < 15 && (ap.gsAngle || navBased)) hints.push(cw('Press APR to arm the approach mode.', 'Appuyez sur APR pour armer le mode approche.'));
+      if (to.altMin && sim.indicatedAlt() > to.altMin + 300 && g.distNm < 6 && ph === 'initial') hints.push(cw(`Descend: you are ${Math.round(sim.indicatedAlt() - to.altMin)} ft above the ${to.ident} crossing altitude.`, `Descendez : vous êtes ${Math.round(sim.indicatedAlt() - to.altMin)} ft au-dessus de l’altitude de passage de ${to.ident}.`));
       if (ph === 'final') {
         const mins = sim.av.minimums;
         if (mins !== null) {
           const above = Math.round(sim.indicatedAlt() - mins);
-          hints.push(above > 0 ? `Minimums ${mins}: ${above} ft to go.` : 'AT MINIMUMS — runway in sight? Land. Otherwise go around (G).');
+          hints.push(above > 0 ? cw(`Minimums ${mins}: ${above} ft to go.`, `Minima ${mins} : encore ${above} ft.`) : cw('AT MINIMUMS — runway in sight? Land. Otherwise go around (G).', 'AUX MINIMA : piste en vue ? Atterrissez. Sinon, remettez les gaz (G).'));
         }
-        if (d.iasKt > 105) hints.push('Fast: reduce power, target 90 KIAS.');
-        if (d.flapsDeg < 5 && d.aglFt < 1200) hints.push('Configure: flaps 10 (F).');
+        if (d.iasKt > 105) hints.push(cw('Fast: reduce power, target 90 KIAS.', 'Trop vite : réduisez, visez 90 kt.'));
+        if (d.flapsDeg < 5 && d.aglFt < 1200) hints.push(cw('Configure: flaps 10 (F).', 'Configurez : volets 10 (F).'));
       }
-      if (Math.abs(wrap180(sim.av.baro - sim.weather.qnh)) > 0.005) hints.push(`Altimeter not set (QNH ${sim.weather.qnh.toFixed(2)}) — press B.`);
+      if (Math.abs(wrap180(sim.av.baro - sim.weather.qnh)) > 0.005) hints.push(cw(`Altimeter not set (QNH ${sim.weather.qnh.toFixed(2)}) — press B.`, `Altimètre non calé (QNH ${sim.weather.qnh.toFixed(2)}) : appuyez sur B.`));
     }
-    if (fp.missedActive) hints.push('Climb to the missed approach altitude, then NAV + AP to fly the hold.');
-    if (g.suspended) hints.push(fp.out.suspReason === 'HOLD' ? 'In the hold — press SUSP (OBS softkey) to leave the hold at the next fix crossing.' : fp.out.suspReason === 'PILOT' ? 'Sequencing suspended (OBS) — press SUSP to resume the flight plan.' : 'SUSP at the MAP — press G / MISSED to sequence the missed approach.');
+    if (fp.missedActive) hints.push(cw('Climb to the missed approach altitude, then NAV + AP to fly the hold.', 'Montez à l’altitude de remise de gaz, puis NAV + AP pour voler l’attente.'));
+    if (g.suspended) hints.push(fp.out.suspReason === 'HOLD' ? cw('In the hold — press SUSP (OBS softkey) to leave the hold at the next fix crossing.', 'En attente : appuyez sur SUSP (touche OBS) pour quitter l’attente au prochain passage du point.') : fp.out.suspReason === 'PILOT' ? cw('Sequencing suspended (OBS) — press SUSP to resume the flight plan.', 'Séquencement suspendu (OBS) : appuyez sur SUSP pour reprendre le plan de vol.') : cw('SUSP at the MAP — press G / MISSED to sequence the missed approach.', 'SUSP au MAP : appuyez sur G / MISSED pour séquencer la remise de gaz.'));
   } else {
-    next = 'No flight plan';
-    hints.push('Press D for Direct-To, or Procedures to load an approach.');
+    next = cw('No flight plan', 'Pas de plan de vol');
+    hints.push(cw('Press D for Direct-To, or Procedures to load an approach.', 'Appuyez sur D pour un Direct-To, ou sur Procédures pour charger une approche.'));
   }
-  if (d.stallWarn) hints.unshift('STALL WARNING — lower the nose, add power!');
-  if (sim.paused && !sim.ac.s.crashed) hints.unshift('Paused — Esc to resume.');
-  const key = next + hints.join('|');
+  if (d.stallWarn) hints.unshift(cw('STALL WARNING — lower the nose, add power!', 'ALARME DE DÉCROCHAGE : rendez la main, remettez de la puissance !'));
+  if (sim.paused && !sim.ac.s.crashed) hints.unshift('__paused');
+  const key = uiLang() + next + hints.join('|');
   if (key === coachKey) return;
   coachKey = key;
   coach.innerHTML = '';
   const isMin = coach.classList.contains('min');
-  const minBtn = foldBtn(isMin, () => { coach.classList.toggle('min'); store.set('ifr.coachMin', coach.classList.contains('min')); coachKey = ''; updateCoach(); }, 'the coach tips');
-  const shown = hints.filter((t) => !t.startsWith('Paused'));
+  const minBtn = foldBtn(isMin, () => { coach.classList.toggle('min'); store.set('ifr.coachMin', coach.classList.contains('min')); coachKey = ''; updateCoach(); });
+  const shown = hints.filter((t) => t !== '__paused');
   coach.classList.toggle('empty', shown.length === 0);
   coach.classList.remove('details', 'collapsed');
-  coach.append(h('h4', { class: 'coach-k' }, h('span', { class: 'coach-step' }, 'Coach'), h('span', { class: 'coach-title' }, 'What to do now'), minBtn));
+  coach.append(h('h4', { class: 'coach-k' }, h('span', { class: 'coach-step' }, cw('Coach', 'Conseils')), h('span', { class: 'coach-title' }, cw('What to do now', 'Que faire maintenant')), minBtn));
   if (shown.length) coach.append(h('ul', {}, ...shown.slice(0, 4).map((t) => h('li', {}, t))));
   void next;
 }
@@ -2388,20 +2467,34 @@ let lastLessonEx: Exercise | null = null;
 // crash screen: a clear way out (retry / debrief / new flight / Flight Center)
 const crashVeil = h('div', { class: 'crash-veil', role: 'alertdialog', 'aria-label': 'Crash' });
 let crashShown = '';
+/** the crash reason (the aircraft model writes English) in the UI language */
+function crashText(r: string): string {
+  if (uiLang() !== 'fr') return r;
+  const hard = /^Hard impact \((-?\d+) fpm\)$/.exec(r);
+  if (hard) return `Impact trop dur (${hard[1]} ft/min)`;
+  const fr: Record<string, string> = {
+    'Wing strike on touchdown': 'Aile touchée au sol à l’atterrissage',
+    'Nose-wheel strike (nose-low touchdown)': 'Roulette avant touchée (posé à piquer)',
+    'Touched down off-airport': 'Posé hors de l’aérodrome',
+  };
+  return fr[r] ?? r;
+}
 function showCrash(reason: string) {
   crashShown = reason;
   if (!crashVeil.isConnected) document.body.append(crashVeil);
   crashVeil.innerHTML = '';
+  // the emergency card's ways out, in one card and in the UI language (UX logic §7)
+  crashVeil.setAttribute('aria-label', cw('Flight ended', 'Vol terminé'));
   crashVeil.append(
     h('div', { class: 'crash-card' },
-      h('div', { class: 'crash-k' }, 'Flight ended'),
-      h('h2', {}, reason),
-      h('p', {}, 'Review what happened in the debrief, or go again.'),
+      h('div', { class: 'crash-k' }, cw('Flight ended', 'Vol terminé')),
+      h('h2', {}, crashText(reason)),
+      h('p', {}, cw('Review what happened in the debrief, or go again.', 'Revoyez ce qui s’est passé dans le débriefing, ou recommencez.')),
       h('div', { class: 'crash-acts' },
-        h('button', { class: 'btn primary', onclick: () => restartFlight() }, 'Retry this flight'),
-        h('button', { class: 'btn', onclick: () => { hideCrash(); openDebrief(); } }, 'Debrief'),
-        h('button', { class: 'btn', onclick: () => { hideCrash(); setup.start(); } }, 'Plan a new flight'),
-        h('button', { class: 'btn ghost', onclick: () => { hideCrash(); fc.open(); } }, 'Flight Center'),
+        h('button', { class: 'btn primary', onclick: () => restartFlight() }, tr('tb.restart')),
+        h('button', { class: 'btn', onclick: () => { hideCrash(); openDebrief(); } }, cw('See the debrief', 'Voir le débriefing')),
+        h('button', { class: 'btn', onclick: () => { hideCrash(); setup.start(); } }, tr('Plan a flight')),
+        h('button', { class: 'btn ghost', onclick: () => { hideCrash(); fc.showPlace('home'); } }, tr('tb.home')),
       ),
     ),
   );
@@ -2521,7 +2614,7 @@ function frameBody(now: number) {
     if (sp) extra.push(h('p', { class: 'muted cf-surprise' }, tr(sp.fired ? 'course.surprise' : 'course.surpriseNot', { t: sp.label })));
     lessonResult.show(run, lessonPath, {
       extra: extra.length ? extra : undefined,
-      backToCourse: course ? { label: tr('cf.backCourse'), run: () => void backToCourse(courseOutcome) } : backToCourseFor.get(run),
+      backToCourse: course ? { label: courseBackLabel(), run: () => void backToCourse(courseOutcome) } : backToCourseFor.get(run),
     });
     if (course) {
       // the attempt the course records (the strip's "Back to the course" sends the same one)
@@ -3006,12 +3099,14 @@ function fitSides() {
   const sbH = (sitbar.offsetHeight || 44) + (courseUi.strip.hidden ? 0 : courseUi.strip.offsetHeight);
   const room = zone === 'column' ? otw.clientHeight - sbH : otwMode === 'none' ? 0 : otwMode === 'visual' ? otw.clientHeight - pfdBezel.offsetHeight - 150 : otw.clientHeight - 120;
   cockpit.classList.toggle('coach-compact', room < 300);
-  // the dock keeps its labels when its zone is wide enough: right of the lesson column, or of the floating PFD
-  if (otwMode !== 'none') {
-    const o = otw.getBoundingClientRect();
-    const leftEdge = otwMode === 'visual' ? pfdBezel.getBoundingClientRect().right : zone === 'column' ? o.left + lessonColumnW(window.innerWidth, touchUi) : o.left;
-    void leftEdge;
-    viewDock.fit(tbViews.clientWidth - 8);
+  // the view selector reads « Vue : Cockpit » while the flight title keeps 160 px; else « Vue » (the word stays)
+  {
+    const acts = topbar.querySelector<HTMLElement>('.tb-actions');
+    const cs = getComputedStyle(topbar);
+    const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+    const gap = parseFloat(cs.columnGap) || 8;
+    const used = homeBtn.offsetWidth + (acts?.offsetWidth ?? 0) + 1 + gap * 4 + pad;
+    viewDock.fit(topbar.clientWidth - used - 160);
   }
   document.body.style.setProperty('--vd-dock-h', '0px');
   // exterior cameras frame the aircraft in the free part of the 3D view: under the situation bar, above the dock,
@@ -3103,7 +3198,7 @@ if (courseLink) {
   if (!ok) {
     fc.open();
     const what = deepDrill ?? deepFlight;
-    toast(uiLang() === 'fr' ? `« ${what} » introuvable : choisissez-le dans le Flight Center` : `"${what}" not found — pick it in the Flight Center`, 'warn', 9000);
+    toast(uiLang() === 'fr' ? `« ${what} » introuvable : choisissez-le dans la bibliothèque` : `"${what}" not found — pick it in the library`, 'warn', 9000);
   }
 } else if (deepLesson) {
   try {
@@ -3112,19 +3207,28 @@ if (courseLink) {
     pickExercise(ex, path);
   } catch {
     fc.open();
-    toast(uiLang() === 'fr' ? `Leçon « ${deepLesson} » introuvable : choisissez-la dans le Flight Center` : `Lesson "${deepLesson}" not found — pick one in the Flight Center`, 'warn', 9000);
+    toast(uiLang() === 'fr' ? `Leçon « ${deepLesson} » introuvable : choisissez-la dans la bibliothèque` : `Lesson "${deepLesson}" not found — pick one in the library`, 'warn', 9000);
   }
 } else if (deepBuilder) builder.edit();
-// back from a course opened in the Flight Center's library (academy.html): the library again, not the start page
-else if (location.hash === '#courses') {
-  window.history.replaceState(null, '', location.pathname + location.search);
-  fc.openCourses();
-  fc.solidBackdrop();
-} else if (introWanted()) intro.show();
-else {
-  fc.open();
-  fc.solidBackdrop();
-}
+// a place of this page named in the link: index.html#simulateur, #accueil (the app bar's tabs, a course's way back)
+else if (location.hash === '#simulateur') fc.showPlace('sim');
+else if (location.hash === '#accueil' || location.hash === '#courses') fc.showPlace('home');
+else if (introWanted()) intro.show();
+else fc.showPlace('home');
+// the tabs of another page link here with a hash: follow it when it changes in this page too
+window.addEventListener('hashchange', () => {
+  if (location.hash === '#simulateur') fc.showPlace('sim');
+  else if (location.hash === '#accueil') fc.showPlace('home');
+});
+// « Préparer un vol » opened from the Simulateur page and closed without a flight: back to that page, the focus on
+// the button that opened it (a flight started, or another window opened, keeps the cockpit)
+Modal.onAllClosed = () => {
+  const r = fc.returnTo;
+  if (!r) return;
+  if (!sim.paused || lesson || intro.isOpen) { fc.returnTo = null; return; }
+  fc.returnTo = null;
+  fc.showPlace(r.view.type === 'sim' ? 'sim' : 'home', r.focus);
+};
 // a window closed with nothing to give the focus back to (the start page that opened it is gone): the hub button
 Modal.fallbackFocus = () => document.querySelector<HTMLElement>('.topbar .tb-fc');
 // shared circuit: #circuit=<base64>

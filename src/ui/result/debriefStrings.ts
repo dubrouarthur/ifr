@@ -174,8 +174,8 @@ const EN: Dict = {
   "p.title": "Practise next",
   "p.again": "Fly it again",
   "p.againSub": "Same flight, same weather",
-  "p.new": "Plan a new flight",
-  "p.newSub": "Flight Center",
+  "p.new": "Plan a flight",
+  "p.newSub": "Route, approach, weather, failures",
   "p.fly": "Fly",
   "p.open": "Open",
 };
@@ -341,8 +341,8 @@ const FR: Dict = {
   "p.title": "À travailler ensuite",
   "p.again": "Revoler ce vol",
   "p.againSub": "Même vol, même météo",
-  "p.new": "Préparer un nouveau vol",
-  "p.newSub": "Flight Center",
+  "p.new": "Préparer un vol",
+  "p.newSub": "Route, approche, météo, pannes",
   "p.fly": "Voler",
   "p.open": "Ouvrir",
 };

@@ -658,3 +658,179 @@ html body .topbar .scn-wrap {
     display: inline;
   }
 }
+
+/* ------------------------------------------------------------------ cockpit top bar (UX logic §7)
+   « ← Accueil » | flight title ▾ | « Vue : Cockpit ▾ » … EFB · Instructeur · Pause · Plus. Every control keeps its
+   word at every width (portrait iPad included); when the bar is short of room the title ellipsizes first, then the
+   selector drops its value (« Vue ▾ », fit() in viewDock.ts). */
+html body .topbar {
+  gap: 8px;
+  padding: 0 10px;
+}
+html body .topbar .tb-home {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px 0 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: none;
+  box-shadow: none;
+  color: #eef3f7;
+  font: 650 14px/1 var(--font);
+}
+html body .topbar .tb-home:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+html body .topbar .tb-home:focus-visible {
+  outline: 2px solid #00c4e0;
+  outline-offset: 1px;
+}
+.topbar .tb-home .tb-back {
+  display: inline-flex;
+  color: #aab6c2;
+  transform: scaleX(-1);
+}
+.topbar .tb-home .brand-mark {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  color: #e6ecf2;
+}
+.topbar .tb-home .brand-mark svg {
+  width: 22px;
+  height: 22px;
+}
+.topbar .tb-rule {
+  flex: none;
+  width: 1px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.12);
+}
+/* the flight title takes what is left, and ellipsizes first (its full text is in the button's tooltip) */
+html body .topbar .scn-wrap.scn-wrap {
+  flex: 1 1 auto;
+  min-width: 96px;
+  margin-left: 0;
+  padding-left: 0;
+  border-left: 0;
+}
+html body .topbar .tb-views {
+  flex: none;
+  justify-content: flex-start;
+  padding: 0;
+  overflow: visible;
+}
+html body .topbar .view-dock {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+html body .topbar .view-dock .vd-sel {
+  height: 36px;
+  padding: 0 10px 0 10px;
+  gap: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #eef3f7;
+  font: 600 13px/1 var(--font);
+}
+html body .topbar .view-dock .vd-sel:hover,
+html body .topbar .view-dock .vd-sel[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.view-dock .vd-ico {
+  display: inline-flex;
+  color: #aab6c2;
+}
+.view-dock .vd-ico .vd-pic {
+  width: 20px;
+  height: 14px;
+}
+.view-dock .vd-k {
+  color: #aab6c2;
+  font-weight: 550;
+}
+.view-dock .vd-k::after {
+  content: ":";
+}
+.view-dock .vd-k:lang(fr)::after {
+  content: "\00a0:";
+}
+.view-dock .vd-v {
+  margin-left: 0.35em;
+  color: #fff;
+}
+.view-dock .vd-chev {
+  display: inline-flex;
+  color: #8592a0;
+}
+/* short of room: « Vue ▾ » (the word stays) */
+.view-dock.narrow .vd-v,
+.view-dock.narrow .vd-k::after {
+  display: none;
+}
+.view-dock.narrow .vd-k::after {
+  content: none;
+}
+/* every tool keeps its word, at every width */
+html body .topbar .tb-actions .btn.btn .lbl {
+  display: inline;
+}
+html body .topbar .tb-sim .tb-pause.tb-pause {
+  border-radius: 8px;
+}
+.topbar .tb-more .tb-rate-chip {
+  padding: 2px 6px;
+  border-radius: 99px;
+  background: #00c4e0;
+  color: #04141a;
+  font: 700 11.5px/1 var(--font);
+  font-variant-numeric: tabular-nums;
+}
+.topbar .tb-more .tb-rate-chip[hidden] {
+  display: none;
+}
+.topbar .menu .menu-item.tb-rate.on kbd {
+  color: #00c4e0;
+  font-weight: 700;
+}
+/* touch: 44 px targets in a 52 px bar */
+html body.touch .topbar .tb-home,
+html body.touch .topbar .view-dock .vd-sel {
+  height: 44px;
+  min-height: 44px;
+}
+html body.touch .topbar .tb-actions .btn {
+  padding: 0 12px;
+}
+/* portrait and small windows: a tighter bar, the words stay */
+@media (max-width: 1000px) {
+  html body .topbar {
+    gap: 6px;
+    padding: 0 8px;
+  }
+  html body .topbar .tb-actions {
+    gap: 4px;
+  }
+  html body .topbar .tb-actions .btn,
+  html body.touch .topbar .tb-actions .btn {
+    padding: 0 10px;
+    gap: 6px;
+  }
+  html body .topbar .tb-home {
+    padding: 0 10px 0 6px;
+    gap: 6px;
+  }
+  .topbar .tb-home .brand-mark {
+    display: none;
+  }
+  .topbar .tb-rule {
+    display: none;
+  }
+}

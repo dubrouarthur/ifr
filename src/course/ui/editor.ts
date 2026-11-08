@@ -84,6 +84,7 @@ import {
   textIn,
   themePicker,
   type InspectorHost,
+  type MenuItem,
   type StageInfo,
 } from "./inspector";
 import { TrayView } from "./tray";
@@ -98,7 +99,7 @@ import {
 } from "./studio";
 import {
   addStarterDeck,
-  deckStarterGallery,
+  BLANK_STARTER,
   deckTitle,
   type DeckStarter,
 } from "./deckStarters";
@@ -431,13 +432,19 @@ export class CourseEditor implements InspectorHost {
     let covered = 0;
     for (const x of c.blocks) {
       if (x.id === b.id || x.hiddenInEditor) continue;
-      const ix = Math.min(f.x + f.w, x.frame.x + x.frame.w) - Math.max(f.x, x.frame.x);
-      const iy = Math.min(f.y + f.h, x.frame.y + x.frame.h) - Math.max(f.y, x.frame.y);
+      const ix =
+        Math.min(f.x + f.w, x.frame.x + x.frame.w) - Math.max(f.x, x.frame.x);
+      const iy =
+        Math.min(f.y + f.h, x.frame.y + x.frame.h) - Math.max(f.y, x.frame.y);
       if (ix > 0 && iy > 0) covered += ix * iy;
     }
     if (covered < 0.2 * f.w * f.h) return;
     this.toast(
-      t2(this.lang, "The slide is full: this block covers others.", "La diapo est pleine : ce bloc en recouvre d’autres."),
+      t2(
+        this.lang,
+        "The slide is full: this block covers others.",
+        "La diapo est pleine : ce bloc en recouvre d’autres.",
+      ),
       () => {
         this.canvasEd?.run({ k: "undo" });
         this.addTemplate("slide", { layout: "blank" });
@@ -481,15 +488,17 @@ export class CourseEditor implements InspectorHost {
     this.titleBtn.addEventListener("click", () => this.courseSettings());
     this.subEl = h("span", { class: "ce-sub-l" });
     this.statusEl = h("span", { class: "ce-status" });
-    this.checksBtn = btn(
-      fr ? "Vérifications" : "Checks",
-      () => this.openChecks(),
-      { cls: "sm ce-checks-b", icon: "checks" },
-    );
-    const back = btn("", () => this.exit(), {
-      cls: "ic",
+    // « Plus » holds the rest, each with its word: Relecture (« 2 points à revoir »), Capturer depuis le simulateur,
+    // Exporter (UX logic §6: three actions on the bar, one primary)
+    this.checksBtn = btn(fr ? "Plus" : "More", () => this.openMore(), {
+      cls: "sm ce-checks-b ce-more-b",
+      icon: "dots",
+    });
+    this.checksBtn.setAttribute("aria-haspopup", "menu");
+    // the labelled way back: the instructor's own courses
+    const back = btn(fr ? "Mes cours" : "My courses", () => this.exit(), {
+      cls: "sm ce-back-b",
       icon: "back",
-      title: fr ? "Retour à la bibliothèque" : "Back to the course library",
     });
     // one way to try the course as a student (from this slide): here, next to Present
     const preview = h(
@@ -497,10 +506,15 @@ export class CourseEditor implements InspectorHost {
       {
         type: "button",
         class: "ce-btn sm ce-preview",
-        title: fr ? "Tester comme élève depuis cette diapo (T)" : "Test as a student from this slide (T)",
+        title: fr
+          ? "Aperçu élève depuis cette diapo (T)"
+          : "Student preview from this slide (T)",
       },
-      railIcon("eye", "M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7z M12 15a3 3 0 1 0 0-6a3 3 0 0 0 0 6z"),
-      h("span", {}, fr ? "Tester comme élève" : "Test as student"),
+      railIcon(
+        "eye",
+        "M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7z M12 15a3 3 0 1 0 0-6a3 3 0 0 0 0 6z",
+      ),
+      h("span", {}, fr ? "Aperçu élève" : "Student preview"),
     );
     preview.addEventListener("click", () => {
       if (this.course.steps.length) this.testAsStudent(this.i);
@@ -511,7 +525,9 @@ export class CourseEditor implements InspectorHost {
       {
         type: "button",
         class: "ce-btn sm ce-present",
-        title: fr ? `Présenter en plein écran (${modKey()}P)` : `Present full screen (${modKey()}P)`,
+        title: fr
+          ? `Présenter en plein écran (${modKey()}P)`
+          : `Present full screen (${modKey()}P)`,
       },
       railIcon("play", "M8 5.5v13l11-6.5z"),
       h("span", {}, fr ? "Présenter" : "Present"),
@@ -531,22 +547,13 @@ export class CourseEditor implements InspectorHost {
         h("div", { class: "ce-ttl-s" }, this.subEl, this.statusEl),
       ),
       h("span", { class: "ce-sp" }),
-      ...(this.captureReady
-        ? [
-            btn(
-              fr ? "Voler pour capturer" : "Fly to capture",
-              () => this.flyToCapture(),
-              { cls: "sm hide-s", icon: "pulse", kbd: "⇧C" },
-            ),
-          ]
-        : []),
-      this.checksBtn,
       preview,
       presentB,
       (() => {
         const b = btn(
           fr ? "Partager" : "Share",
-          () => (this.course.steps.length ? this.share(b) : this.needStepFirst()),
+          () =>
+            this.course.steps.length ? this.share(b) : this.needStepFirst(),
           {
             cls: "sm ce-share-b",
             icon: "share",
@@ -555,6 +562,7 @@ export class CourseEditor implements InspectorHost {
         this.needSteps = [preview, presentB, b];
         return b;
       })(),
+      this.checksBtn,
     );
     // the rail: what can be added (templates, text, elements, instruments, diagrams, media, brand, cockpit)
     this.railEl = h("nav", {
@@ -665,7 +673,8 @@ export class CourseEditor implements InspectorHost {
         const b = ed.canvasEd?.add(d);
         if (b && ed.canvasEd) ed.offerNewSlideIfCrowded(b, d);
       },
-      dropDraft: (d: BlockDraft, x: number, y: number) => !!ed.canvasEd?.dropAt(d, x, y),
+      dropDraft: (d: BlockDraft, x: number, y: number) =>
+        !!ed.canvasEd?.dropAt(d, x, y),
       isOverSlide: (x: number, y: number) => !!ed.canvasEd?.isOverSlide(x, y),
       addTemplate: (id: TemplateId, o?: { layout?: SlideLayoutId }) => {
         ed.addTemplate(id, o ?? {});
@@ -675,7 +684,11 @@ export class CourseEditor implements InspectorHost {
         ed.applyLayout(id);
         ed.afterPanelAdd();
       },
-      addSlide: (slide: SlideCanvas, title: { en: string; fr?: string }, scenes?: Course["scenes"]) => {
+      addSlide: (
+        slide: SlideCanvas,
+        title: { en: string; fr?: string },
+        scenes?: Course["scenes"],
+      ) => {
         ed.addComposedSlide(slide, title, scenes);
         ed.afterPanelAdd();
       },
@@ -705,7 +718,9 @@ export class CourseEditor implements InspectorHost {
     const empty = !this.course.steps.length;
     this.railEl.replaceChildren(
       // the cockpit tray only once the cockpit can send captures (or has sent some): never a "coming soon" slot
-      ...RAIL_TABS.filter((t) => t !== "cockpit" || this.captureReady || this.tray.count > 0).map((t) => {
+      ...RAIL_TABS.filter(
+        (t) => t !== "cockpit" || this.captureReady || this.tray.count > 0,
+      ).map((t) => {
         // on an empty course these still work: they start a blank slide first
         const off = SLIDE_ONLY.has(t) && !onSlide && !empty;
         const on = this.studio.tab === t;
@@ -779,11 +794,15 @@ export class CourseEditor implements InspectorHost {
     walk(slide);
     const add: Course["scenes"] = {};
     const all = scenes ?? exampleScenes();
-    for (const id of used) if (all[id] && !this.course.scenes[id]) add[id] = all[id];
+    for (const id of used)
+      if (all[id] && !this.course.scenes[id]) add[id] = all[id];
     const base: Course = Object.keys(add).length
       ? { ...this.course, scenes: { ...this.course.scenes, ...add } }
       : this.course;
-    const made = makeStep(base, "slide", { layout: "blank", title: { en: title.en, fr: title.fr ?? title.en } });
+    const made = makeStep(base, "slide", {
+      layout: "blank",
+      title: { en: title.en, fr: title.fr ?? title.en },
+    });
     const s2 = clone(slide);
     delete s2.theme;
     this.insert({
@@ -802,11 +821,15 @@ export class CourseEditor implements InspectorHost {
     // a course still called "Untitled course" takes the deck's cover title
     const untitled =
       !tr(this.course.title, "en").trim() ||
-      /^(untitled course|cours sans titre)$/i.test(tr(this.course.title, "en").trim());
+      /^(untitled course|cours sans titre)$/i.test(
+        tr(this.course.title, "en").trim(),
+      );
     const dt = deckTitle(d);
     if (fresh && untitled && dt) r.course = { ...r.course, title: dt };
     this.apply(r.course, undefined, { centre: false, inspector: true });
-    const j = r.firstStepId ? this.course.steps.findIndex((s) => s.id === r.firstStepId) : -1;
+    const j = r.firstStepId
+      ? this.course.steps.findIndex((s) => s.id === r.firstStepId)
+      : -1;
     this.thumbs.clear();
     this.select(Math.max(0, j));
     this.renderCentre();
@@ -820,7 +843,9 @@ export class CourseEditor implements InspectorHost {
       () => {
         this.apply(before, undefined, { inspector: true });
         this.thumbs.clear();
-        this.select(Math.min(this.i, Math.max(0, this.course.steps.length - 1)));
+        this.select(
+          Math.min(this.i, Math.max(0, this.course.steps.length - 1)),
+        );
         this.renderCentre();
       },
     );
@@ -884,7 +909,11 @@ export class CourseEditor implements InspectorHost {
   private renderAll() {
     this.renderRail();
     // an empty course or an empty first slide opens on the templates
-    if ((this.course.steps.length === 1 && this.step?.slide && !this.step.slide.blocks.length))
+    if (
+      this.course.steps.length === 1 &&
+      this.step?.slide &&
+      !this.step.slide.blocks.length
+    )
       queueMicrotask(() => this.openPanel("templates"));
     this.renderTop();
     this.renderSteps();
@@ -909,14 +938,24 @@ export class CourseEditor implements InspectorHost {
     for (const b of this.needSteps) {
       b.setAttribute("aria-disabled", empty ? "true" : "false");
       b.classList.toggle("is-off", empty);
-      if (empty) b.title = fr ? "Ajoutez une diapo d’abord" : "Add a slide first";
+      if (empty)
+        b.title = fr
+          ? "Ajoutez une étape pour présenter"
+          : "Add a step to present";
     }
     if (!empty && this.needSteps.length === 3) {
-      this.needSteps[0].title = fr ? "Tester comme élève depuis cette diapo (T)" : "Test as a student from this slide (T)";
-      this.needSteps[1].title = fr ? `Présenter en plein écran (${modKey()}P)` : `Present full screen (${modKey()}P)`;
+      this.needSteps[0].title = fr
+        ? "Aperçu élève depuis cette diapo (T)"
+        : "Student preview from this slide (T)";
+      this.needSteps[1].title = fr
+        ? `Présenter en plein écran (${modKey()}P)`
+        : `Present full screen (${modKey()}P)`;
       this.needSteps[2].title = "";
     }
-    this.subEl.textContent = `${n} ${fr ? (n > 1 ? "étapes" : "étape") : n === 1 ? "step" : "steps"} · ${fr ? "environ" : "about"} ${courseMinutes(c)} min · ${langs} · `;
+    // an empty course says what to do in the status line too (the disabled buttons say it in their tooltip)
+    this.subEl.textContent = empty
+      ? `${fr ? "Ajoutez une étape pour présenter" : "Add a step to present"} · `
+      : `${n} ${fr ? (n > 1 ? "étapes" : "étape") : n === 1 ? "step" : "steps"} · ${fr ? "environ" : "about"} ${courseMinutes(c)} min · ${langs} · `;
     const dev = isIpad()
       ? fr
         ? "cet iPad"
@@ -956,21 +995,52 @@ export class CourseEditor implements InspectorHost {
     }
     if (st === "memory" && this.unexported) {
       // memory-only: nothing survives the tab, keep the export one tap away
-      const nudge = h("button", { type: "button", class: "ce-tag warn ce-nudge", title: fr ? "Ce navigateur ne garde pas les cours : exportez un fichier" : "This browser does not keep courses: export a file" }, fr ? "exportez avant de fermer" : "export before closing");
-      nudge.addEventListener("click", () => this.share(this.el.querySelector(".ce-top .ce-btn.primary") as HTMLElement));
+      const nudge = h(
+        "button",
+        {
+          type: "button",
+          class: "ce-tag warn ce-nudge",
+          title: fr
+            ? "Ce navigateur ne garde pas les cours : exportez un fichier"
+            : "This browser does not keep courses: export a file",
+        },
+        fr ? "exportez avant de fermer" : "export before closing",
+      );
+      nudge.addEventListener("click", () =>
+        this.share(
+          this.el.querySelector(".ce-top .ce-btn.primary") as HTMLElement,
+        ),
+      );
       this.statusEl.append(" ", nudge);
     } else if (stale) {
-      const nudge = h("button", { type: "button", class: "ce-tag warn ce-nudge", title: fr ? "Exportez une copie dans un fichier" : "Export a copy to a file" }, fr ? "pas exporté depuis 7 jours" : "not exported for 7 days");
-      nudge.addEventListener("click", () => this.share(this.el.querySelector(".ce-top .ce-btn.primary") as HTMLElement));
+      const nudge = h(
+        "button",
+        {
+          type: "button",
+          class: "ce-tag warn ce-nudge",
+          title: fr
+            ? "Exportez une copie dans un fichier"
+            : "Export a copy to a file",
+        },
+        fr ? "pas exporté depuis 7 jours" : "not exported for 7 days",
+      );
+      nudge.addEventListener("click", () =>
+        this.share(
+          this.el.querySelector(".ce-top .ce-btn.primary") as HTMLElement,
+        ),
+      );
       this.statusEl.append(" ", nudge);
     }
     const errs = this.checks.filter((x) => x.level === "error").length;
     const warns = this.checks.length - errs;
     const badge =
-      this.checksBtn.querySelector(".ce-count") ??
+      this.checksBtn.querySelector<HTMLElement>(".ce-count") ??
       h("span", { class: "ce-count" });
+    // « Plus » carries the review's count: what needs a look is never hidden
     badge.textContent = String(this.checks.length);
     badge.className = `ce-count${errs ? " err" : warns ? " warn" : " ok"}`;
+    badge.title = this.reviewSub();
+    badge.hidden = !this.checks.length;
     if (!badge.parentElement) this.checksBtn.append(badge);
   }
   private kindChip(s: Step): HTMLElement {
@@ -1040,8 +1110,16 @@ export class CourseEditor implements InspectorHost {
             type: "button",
             "data-add": "",
             class: "ce-addtile",
-            title: t2(lang, "New slide or step (N)", "Nouvelle diapo ou étape (N)"),
-            "aria-label": t2(lang, "New slide or step", "Nouvelle diapo ou étape"),
+            title: t2(
+              lang,
+              "New slide or step (N)",
+              "Nouvelle diapo ou étape (N)",
+            ),
+            "aria-label": t2(
+              lang,
+              "New slide or step",
+              "Nouvelle diapo ou étape",
+            ),
           },
           railIcon("plus", "M12 5v14 M5 12h14"),
           h("span", {}, t2(lang, "Add", "Ajouter")),
@@ -1058,7 +1136,8 @@ export class CourseEditor implements InspectorHost {
       const r = selEl.getBoundingClientRect();
       const box = this.stepsEl.getBoundingClientRect();
       if (r.left < box.left) this.stepsEl.scrollLeft -= box.left - r.left + 8;
-      else if (r.right > box.right) this.stepsEl.scrollLeft += r.right - box.right + 8;
+      else if (r.right > box.right)
+        this.stepsEl.scrollLeft += r.right - box.right + 8;
     }
     // pacing advice lives in Checks only (its badge counts it): never a callout pinned over the strip
     this.adviceEl.hidden = true;
@@ -1247,7 +1326,12 @@ export class CourseEditor implements InspectorHost {
                 ...(s.slide ? [{ value: -1, label: fr ? "Tout" : "All" }] : []),
                 ...Array.from({ length: n + (s.slide ? 1 : 0) }, (_, k) => ({
                   value: s.slide ? k : k + 1,
-                  label: s.slide && k === 0 ? (fr ? "Début" : "Start") : String(s.slide ? k : k + 1),
+                  label:
+                    s.slide && k === 0
+                      ? fr
+                        ? "Début"
+                        : "Start"
+                      : String(s.slide ? k : k + 1),
                 })),
               ],
               this.reveal === null ? (s.slide ? -1 : n) : this.reveal,
@@ -1270,7 +1354,11 @@ export class CourseEditor implements InspectorHost {
               closePop();
               this.applyLayout(id);
             }),
-            { width: 520, title: fr ? "Mise en page de cette diapo" : "This slide's layout", cls: "scroll" },
+            {
+              width: 520,
+              title: fr ? "Mise en page de cette diapo" : "This slide's layout",
+              cls: "scroll",
+            },
           );
         },
         { cls: "sm ghost", icon: "layout" },
@@ -1303,8 +1391,8 @@ export class CourseEditor implements InspectorHost {
               "p",
               { class: "ce-note muted" },
               fr
-                ? "Un thème par cours. Salle de cours (clair) par défaut ; Cockpit (sombre) pour une scène de nuit ou en IMC."
-                : "One theme per course. Classroom (light) by default; Cockpit (dark) for a night or IMC scene.",
+                ? "Un thème pour tout le cours : Clair par défaut, Sombre si vous préférez."
+                : "One theme for the whole course: Light by default, Dark if you prefer.",
             ),
           );
           popover(themeB, box, {
@@ -1315,20 +1403,29 @@ export class CourseEditor implements InspectorHost {
         { cls: "sm ghost", icon: "theme" },
       );
       // always-visible Undo / Redo (an iPad has no ⌘Z)
-      const undoB = btn("", () => this.undo(), {
-        cls: "sm ic ghost ce-undo",
+      // icons always come with a word (UX logic §3)
+      const undoB = btn(fr ? "Annuler" : "Undo", () => this.undo(), {
+        cls: "sm ghost ce-undo",
         icon: "undo",
         title: t2(this.lang, `Undo (${modKey()}Z)`, `Annuler (${modKey()}Z)`),
         disabled: !this.history.canUndo,
       });
-      const redoB = btn("", () => this.redo(), {
-        cls: "sm ic ghost ce-redo",
+      const redoB = btn(fr ? "Rétablir" : "Redo", () => this.redo(), {
+        cls: "sm ghost ce-redo",
         icon: "redo",
-        title: t2(this.lang, `Redo (${isMac ? "⇧⌘Z" : "Ctrl+Y"})`, `Rétablir (${isMac ? "⇧⌘Z" : "Ctrl+Y"})`),
+        title: t2(
+          this.lang,
+          `Redo (${isMac ? "⇧⌘Z" : "Ctrl+Y"})`,
+          `Rétablir (${isMac ? "⇧⌘Z" : "Ctrl+Y"})`,
+        ),
         disabled: !this.history.canRedo,
       });
       // zoom: − 100 % + (pinch and ⌘ + wheel too)
-      const zoomBox = h("div", { class: "ce-zoom", role: "group", "aria-label": fr ? "Zoom" : "Zoom" });
+      const zoomBox = h("div", {
+        class: "ce-zoom",
+        role: "group",
+        "aria-label": fr ? "Zoom" : "Zoom",
+      });
       const zOut = btn("", () => this.setZoom(this.zoom / 1.25), {
         cls: "sm ic ghost",
         icon: "minus",
@@ -1342,7 +1439,11 @@ export class CourseEditor implements InspectorHost {
           class: "ce-zoom-v",
           title: fr ? "Ajuster à l’écran" : "Fit to screen",
         },
-        this.zoom <= 1 ? (fr ? "Ajusté" : "Fit") : `${Math.round(this.zoom * 100)} %`,
+        this.zoom <= 1
+          ? fr
+            ? "Ajusté"
+            : "Fit"
+          : `${Math.round(this.zoom * 100)} %`,
       );
       zVal.addEventListener("click", () => this.setZoom(1));
       const zIn = btn("", () => this.setZoom(this.zoom * 1.25), {
@@ -1364,8 +1465,11 @@ export class CourseEditor implements InspectorHost {
             ? "Sélection multiple : chaque toucher ajoute un bloc (Maj + clic au clavier)"
             : "Select several: each tap adds a block (Shift + click with a keyboard)",
         },
-        railIcon("multi", "M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M15 15l2 2 4-4"),
-        h("span", {}, fr ? "Multiple" : "Multi"),
+        railIcon(
+          "multi",
+          "M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M15 15l2 2 4-4",
+        ),
+        h("span", {}, fr ? "Sélectionner plusieurs" : "Select several"),
       );
       multiB.addEventListener("click", () => {
         this.canvasEd?.setMultiSelect(!multi);
@@ -1375,7 +1479,7 @@ export class CourseEditor implements InspectorHost {
         "button",
         {
           type: "button",
-          class: `ce-btn sm ic ghost ce-insp-t${this.inspOpen ? " on" : ""}`,
+          class: `ce-btn sm ghost ce-insp-t${this.inspOpen ? " on" : ""}`,
           "aria-pressed": this.inspOpen ? "true" : "false",
           title: this.inspOpen
             ? fr
@@ -1384,9 +1488,9 @@ export class CourseEditor implements InspectorHost {
             : fr
               ? "Afficher les propriétés"
               : "Show the properties",
-          "aria-label": fr ? "Propriétés" : "Properties",
         },
         railIcon("panel", "M4 4h16v16H4z M15 4v16"),
+        h("span", {}, fr ? "Propriétés" : "Properties"),
       );
       inspB.addEventListener("click", () => this.toggleInspector());
       this.toolEl.replaceChildren(
@@ -1405,7 +1509,12 @@ export class CourseEditor implements InspectorHost {
           // the slide's words in EN or FR (not the app's language): say so
           h(
             "span",
-            { class: "ce-ctool-l", title: fr ? "La langue du texte des diapos" : "The language of the slides’ text" },
+            {
+              class: "ce-ctool-l",
+              title: fr
+                ? "La langue du texte des diapos"
+                : "The language of the slides’ text",
+            },
             fr ? "Texte des diapos" : "Slide text",
           ),
           langSeg,
@@ -1468,28 +1577,47 @@ export class CourseEditor implements InspectorHost {
     this.startEl?.destroy();
     this.startEl = null;
     if (!s) {
-      // an empty course: start from a beautiful deck (live-rendered covers) or from scratch (the gallery's last card)
+      // an empty course: one sentence and two ways to start (UX logic §8); the templates are the rail's « Modèles »,
+      // highlighted — the gallery of whole courses lives on the Nouveau cours page, before the course exists
       this.teardownCentre();
       const fr = this.lang === "fr";
-      const g = deckStarterGallery(this.lang, this.course, (d, th) => this.addDeck(d, th));
-      this.startEl = g;
+      const pick = h(
+        "button",
+        { type: "button", class: "ce-btn ce-start-b primary" },
+        fr ? "Choisir un modèle" : "Choose a template",
+      );
+      pick.addEventListener("click", () => this.openPanel("templates"));
+      const blank = h(
+        "button",
+        { type: "button", class: "ce-btn ce-start-b" },
+        fr ? "Ajouter une diapo vierge" : "Add a blank slide",
+      );
+      blank.addEventListener("click", () =>
+        this.addDeck(BLANK_STARTER, this.course.theme ?? "classroom"),
+      );
       this.stageArea.replaceChildren(
         h(
           "div",
-          { class: "ce-start" },
+          { class: "ce-start ce-start-empty" },
           h(
             "div",
             { class: "ce-start-hd" },
-            h("h2", {}, fr ? "Partez d’une belle présentation" : "Start from a beautiful deck"),
+            h(
+              "h2",
+              {},
+              fr
+                ? "Ce cours n’a pas encore d’étape"
+                : "This course has no step yet",
+            ),
             h(
               "p",
               {},
               fr
-                ? "Un vrai contenu aéronautique, du LAPL à l’IR : modifiez les mots, gardez la mise en page."
-                : "Real aviation content, from LAPL to IR: change the words, keep the design.",
+                ? "Ajoutez une première étape : choisissez un modèle à gauche, ou une diapo vierge."
+                : "Add a first step: choose a template on the left, or a blank slide.",
             ),
+            h("div", { class: "ce-start-act" }, pick, blank),
           ),
-          g.el,
         ),
       );
       return;
@@ -1520,7 +1648,9 @@ export class CourseEditor implements InspectorHost {
           // the inspector reads the selected blocks: keep them the canvas's current ones (an inline text edit,
           // a drag) so it never shows, then writes back, a stale copy
           if (this.sel.length)
-            this.sel = this.sel.map((b) => c.blocks.find((x) => x.id === b.id) ?? b);
+            this.sel = this.sel.map(
+              (b) => c.blocks.find((x) => x.id === b.id) ?? b,
+            );
           if (!final) return;
           const st = this.step;
           if (!st || st.id !== this.canvasFor) return;
@@ -1595,10 +1725,26 @@ export class CourseEditor implements InspectorHost {
   private slideMenuItems() {
     const fr = this.lang === "fr";
     return [
-      { label: fr ? "Modèles de diapo…" : "Slide templates…", icon: "arrange", run: () => this.openPanel("templates") },
-      { label: fr ? "Ajouter un instrument…" : "Add an instrument…", icon: "center", run: () => this.openPanel("instruments") },
-      { label: fr ? "Ajouter un schéma…" : "Add a diagram…", icon: "center", run: () => this.openPanel("diagrams") },
-      { label: fr ? "Dupliquer la diapo" : "Duplicate the slide", icon: "duplicate", run: () => this.duplicate() },
+      {
+        label: fr ? "Modèles de diapo…" : "Slide templates…",
+        icon: "arrange",
+        run: () => this.openPanel("templates"),
+      },
+      {
+        label: fr ? "Ajouter un instrument…" : "Add an instrument…",
+        icon: "center",
+        run: () => this.openPanel("instruments"),
+      },
+      {
+        label: fr ? "Ajouter un schéma…" : "Add a diagram…",
+        icon: "center",
+        run: () => this.openPanel("diagrams"),
+      },
+      {
+        label: fr ? "Dupliquer la diapo" : "Duplicate the slide",
+        icon: "duplicate",
+        run: () => this.duplicate(),
+      },
     ];
   }
   private teardownCentre() {
@@ -1656,7 +1802,7 @@ export class CourseEditor implements InspectorHost {
             t2(
               this.lang,
               "In the preview, Fly it stays here: use Test as student.",
-              "Dans l’aperçu, En vol reste ici : utilisez Tester comme élève.",
+              "Dans l’aperçu, le vol reste ici : utilisez Aperçu élève.",
             ),
           ),
         onStep: (id) => {
@@ -1683,7 +1829,7 @@ export class CourseEditor implements InspectorHost {
             t2(
               this.lang,
               "This step cannot be previewed yet: see Checks.",
-              "Ce pas ne peut pas encore être prévisualisé : voir Vérifications.",
+              "Cette étape ne peut pas encore être prévisualisée : voir Plus › Relecture.",
             ),
           ),
         ),
@@ -1746,12 +1892,11 @@ export class CourseEditor implements InspectorHost {
     }
     this.stepBar.hidden = false;
     const t = stepBarText(this.course, this.i, this.lang);
-    const more = btn("", () => this.moreMenu(more), {
-      cls: "ic",
+    const more = btn(fr ? "Plus" : "More", () => this.moreMenu(more), {
+      cls: "sm ghost",
       icon: "dots",
       title: fr ? "Plus d’actions sur l’étape" : "More step actions",
     });
-    more.setAttribute("aria-label", fr ? "Plus d’actions sur l’étape" : "More step actions");
     this.stepBar.replaceChildren(
       this.kindChip(s),
       h(
@@ -1766,17 +1911,17 @@ export class CourseEditor implements InspectorHost {
         title: fr ? "Dupliquer (D)" : "Duplicate (D)",
       }),
       (() => {
-        const b = btn("", () => this.move(-1), {
-          cls: "ic ghost",
+        const b = btn(fr ? "Avant" : "Earlier", () => this.move(-1), {
+          cls: "sm ghost",
           title: fr ? "Déplacer avant (Alt+←)" : "Move earlier (Alt+←)",
           disabled: this.i === 0,
         });
-        b.append(railIcon("l", "M15 6l-6 6 6 6"));
+        b.prepend(railIcon("l", "M15 6l-6 6 6 6"));
         return b;
       })(),
       (() => {
-        const b = btn("", () => this.move(1), {
-          cls: "ic ghost",
+        const b = btn(fr ? "Après" : "Later", () => this.move(1), {
+          cls: "sm ghost",
           title: fr ? "Déplacer après (Alt+→)" : "Move later (Alt+→)",
           disabled: this.i >= this.course.steps.length - 1,
         });
@@ -1903,9 +2048,11 @@ export class CourseEditor implements InspectorHost {
     this.inspector.render();
     this.renderRail();
     // a rail tab that only fits a designed slide closes on a Reader + Stage step; others re-draw for the step
-    if (this.studio.tab && SLIDE_ONLY.has(this.studio.tab) && !this.step?.slide) this.closePanel();
+    if (this.studio.tab && SLIDE_ONLY.has(this.studio.tab) && !this.step?.slide)
+      this.closePanel();
     else if (changed && this.studio.tab === "templates") this.studio.refresh();
-    else if (changed && this.studio.tab && SLIDE_ONLY.has(this.studio.tab)) this.studio.refresh();
+    else if (changed && this.studio.tab && SLIDE_ONLY.has(this.studio.tab))
+      this.studio.refresh();
     if (notify && changed) this.o.onStep?.(this.step.id);
   }
   private insert(r: { course: Course; step: Step }) {
@@ -1967,7 +2114,15 @@ export class CourseEditor implements InspectorHost {
     ] as const) {
       if (!aid || this.course.assets[aid]) continue;
       const blob = await this.store?.getAsset(aid).catch(() => null);
-      if (blob) refs[aid] = { id: aid, mime: (blob.type || "image/jpeg") as AssetRef["mime"], w, h: hh, bytes: blob.size, role };
+      if (blob)
+        refs[aid] = {
+          id: aid,
+          mime: (blob.type || "image/jpeg") as AssetRef["mime"],
+          w,
+          h: hh,
+          bytes: blob.size,
+          role,
+        };
     }
     this.insert(
       stepFromTray(
@@ -2018,7 +2173,9 @@ export class CourseEditor implements InspectorHost {
     if (e.button !== 0) return;
     const touch = e.pointerType !== "mouse";
     // the filmstrip runs across (the list may still run down in a narrow layout)
-    const across = getComputedStyle(this.stepsEl).flexDirection.startsWith("row");
+    const across = getComputedStyle(this.stepsEl).flexDirection.startsWith(
+      "row",
+    );
     const pos = (ev: PointerEvent) => (across ? ev.clientX : ev.clientY);
     const d = {
       from: i,
@@ -2056,7 +2213,11 @@ export class CourseEditor implements InspectorHost {
       let to = rows.length - 1;
       for (let k = 0; k < rows.length; k++) {
         const r = rows[k].getBoundingClientRect();
-        if (across ? ev.clientX < r.left + r.width / 2 : ev.clientY < r.top + r.height / 2) {
+        if (
+          across
+            ? ev.clientX < r.left + r.width / 2
+            : ev.clientY < r.top + r.height / 2
+        ) {
           to = k > d.from ? k - 1 : k;
           break;
         }
@@ -2131,6 +2292,46 @@ export class CourseEditor implements InspectorHost {
     }, ms);
   }
   private checksPanel: ChecksPanel | null = null;
+  /** « 2 points à revoir » / « Rien à revoir » */
+  private reviewSub(): string {
+    const n = this.checks.length;
+    const fr = this.lang === "fr";
+    if (!n) return fr ? "Rien à revoir" : "Nothing to review";
+    return fr
+      ? `${n} ${n > 1 ? "points" : "point"} à revoir`
+      : `${n} ${n > 1 ? "points" : "point"} to review`;
+  }
+  /** « Plus »: Relecture, Capturer depuis le simulateur, Exporter */
+  private openMore() {
+    const fr = this.lang === "fr";
+    const items: MenuItem[] = [
+      {
+        label: fr ? "Relecture" : "Review",
+        sub: this.reviewSub(),
+        icon: "checks",
+        onClick: () => this.openChecks(),
+      },
+    ];
+    if (this.captureReady)
+      items.push({
+        label: fr
+          ? "Capturer depuis le simulateur"
+          : "Capture from the simulator",
+        sub: fr
+          ? "Réglez une scène au cockpit, elle revient ici (⇧C)"
+          : "Set a scene in the cockpit, it comes back here (⇧C)",
+        icon: "pulse",
+        onClick: () => this.flyToCapture(),
+      });
+    items.push({
+      label: fr ? "Exporter" : "Export",
+      sub: fr ? "Un fichier de cours, un lien" : "A course file, a link",
+      icon: "share",
+      disabled: !this.course.steps.length,
+      onClick: () => this.share(this.checksBtn),
+    });
+    popover(this.checksBtn, items, { align: "end", width: 320 });
+  }
   private openChecks() {
     const panel = new ChecksPanel({
       lang: this.lang,
@@ -2202,7 +2403,13 @@ export class CourseEditor implements InspectorHost {
   // ================================================================ test, present, share, settings
   /** An empty course: say what to do instead of opening an empty player or presenter. */
   private needStepFirst() {
-    this.toast(t2(this.lang, "Add a slide first: pick a deck or a first slide.", "Ajoutez une diapo d’abord : choisissez une présentation ou une première diapo."));
+    this.toast(
+      t2(
+        this.lang,
+        "Add a step first: pick a template on the left, or a blank slide.",
+        "Ajoutez une étape d’abord : choisissez un modèle à gauche, ou une diapo vierge.",
+      ),
+    );
   }
   testAsStudent(from: number) {
     if (this.testEl) return;
@@ -2215,7 +2422,7 @@ export class CourseEditor implements InspectorHost {
       class: "ce-test",
       role: "dialog",
       "aria-modal": "true",
-      "aria-label": t2(this.lang, "Test as student", "Tester comme élève"),
+      "aria-label": t2(this.lang, "Student preview", "Aperçu élève"),
     });
     document.body.append(host);
     this.testEl = host;
@@ -2230,7 +2437,11 @@ export class CourseEditor implements InspectorHost {
     };
     const onEsc = (e: KeyboardEvent) => {
       // Esc inside a slide's Your turn returns to the slide (the overlay handles it), not out of the test
-      if (e.key === "Escape" && !document.querySelector(".ce-pop") && !host.querySelector(".ga-yt")) {
+      if (
+        e.key === "Escape" &&
+        !document.querySelector(".ce-pop") &&
+        !host.querySelector(".ga-yt")
+      ) {
         e.preventDefault();
         close();
       }
@@ -2243,7 +2454,7 @@ export class CourseEditor implements InspectorHost {
         preview: true,
         lang: this.lang,
         stepId: s?.id,
-        mode: t2(this.lang, "test run, not recorded", "essai, non enregistré"),
+        mode: t2(this.lang, "Student preview · nothing is saved", "Aperçu élève · rien n’est enregistré"),
         assetUrl: (id) => this.assetUrl(id),
         // designed slides with Your turn: the same runner as the academy (nothing recorded in a test)
         renderSlide: yourTurnSlideRenderer({
@@ -2288,7 +2499,9 @@ export class CourseEditor implements InspectorHost {
     const status = h("p", { class: "ce-note muted" });
     const images = courseHasImages(c);
     const exp = btn(
-      fr ? "Exporter un fichier de cours Wingdeck" : "Export a Wingdeck course file",
+      fr
+        ? "Exporter un fichier de cours Wingdeck"
+        : "Export a Wingdeck course file",
       async () => {
         if (!this.store) return;
         status.textContent = fr ? "Export…" : "Exporting…";
@@ -2491,21 +2704,46 @@ export class CourseEditor implements InspectorHost {
   /** "/": find a step by its title (either language) or its kind. */
   private searchSteps() {
     const fr = this.lang === "fr";
-    const input = h("input", { type: "search", class: "ce-in", placeholder: fr ? "Titre ou type d’étape" : "Step title or kind", "aria-label": fr ? "Chercher une étape" : "Find a step" });
+    const input = h("input", {
+      type: "search",
+      class: "ce-in",
+      placeholder: fr ? "Titre ou type d’étape" : "Step title or kind",
+      "aria-label": fr ? "Chercher une étape" : "Find a step",
+    });
     const list = h("div", { class: "ce-found" });
-    const fold = (x: string) => x.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const fold = (x: string) =>
+      x
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
     let hits: number[] = [];
     const draw = () => {
       const q = fold(input.value.trim());
       hits = this.course.steps
         .map((s, i) => ({ s, i }))
-        .filter(({ s }) => !q || fold(`${s.title.en} ${s.title.fr ?? ""} ${kindLabel(s.kind, "en")} ${kindLabel(s.kind, "fr")}`).includes(q))
+        .filter(
+          ({ s }) =>
+            !q ||
+            fold(
+              `${s.title.en} ${s.title.fr ?? ""} ${kindLabel(s.kind, "en")} ${kindLabel(s.kind, "fr")}`,
+            ).includes(q),
+        )
         .map((x) => x.i)
         .slice(0, 12);
       list.replaceChildren(
         ...hits.map((i) => {
           const s = this.course.steps[i];
-          const b = h("button", { type: "button", class: "ce-menu-it" }, h("span", { class: "ce-st-n" }, String(i + 1)), this.kindChip(s), h("span", { class: "ce-menu-tx" }, h("b", {}, tr(s.title, this.lang))));
+          const b = h(
+            "button",
+            { type: "button", class: "ce-menu-it" },
+            h("span", { class: "ce-st-n" }, String(i + 1)),
+            this.kindChip(s),
+            h(
+              "span",
+              { class: "ce-menu-tx" },
+              h("b", {}, tr(s.title, this.lang)),
+            ),
+          );
           b.addEventListener("click", () => {
             closePop();
             this.select(i);
@@ -2523,7 +2761,15 @@ export class CourseEditor implements InspectorHost {
       }
     });
     draw();
-    popover(this.el.querySelector("[data-add]") as HTMLElement, h("div", { class: "ce-popbody" }, input, list), { width: 340, title: fr ? "Aller à l’étape" : "Go to step", cls: "scroll" });
+    popover(
+      this.el.querySelector("[data-add]") as HTMLElement,
+      h("div", { class: "ce-popbody" }, input, list),
+      {
+        width: 340,
+        title: fr ? "Aller à l’étape" : "Go to step",
+        cls: "scroll",
+      },
+    );
     input.focus();
   }
   private exit() {
@@ -2581,7 +2827,10 @@ export class CourseEditor implements InspectorHost {
     if (inCanvas) return;
     const meta = isMac ? e.metaKey : e.ctrlKey;
     if (meta) return;
-    if (e.altKey && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+    if (
+      e.altKey &&
+      ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)
+    ) {
       e.preventDefault();
       this.move(e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1 : 1);
       return;

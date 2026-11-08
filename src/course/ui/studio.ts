@@ -61,13 +61,13 @@ const RAIL_ICON: Record<RailTab, string> = {
 const RAIL_LABEL: Record<RailTab, [string, string]> = {
   templates: ["Templates", "Modèles"],
   text: ["Text", "Texte"],
-  elements: ["Elements", "Éléments"],
+  elements: ["Shapes", "Formes"],
   instruments: ["Instruments", "Instruments"],
   diagrams: ["Diagrams", "Schémas"],
-  media: ["Media", "Médias"],
-  interactive: ["Interactive", "Interactif"],
-  brand: ["Brand", "Marque"],
-  cockpit: ["Cockpit", "Cockpit"],
+  media: ["Images", "Images"],
+  interactive: ["Questions", "Questions"],
+  brand: ["Club logo", "Logo du club"],
+  cockpit: ["Simulator", "Simulateur"],
 };
 const RAIL_HINT: Record<RailTab, [string, string]> = {
   templates: [

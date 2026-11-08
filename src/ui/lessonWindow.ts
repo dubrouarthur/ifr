@@ -13,24 +13,36 @@ import { svgIcon, I } from "./icons";
 import { registerStrings, t as tr, tn, onLangChange } from "./i18n";
 
 registerStrings("en", {
-  "lw.stepOf": "Step {n} of {t}",
+  "lw.stepOf": "Point {n} of {t}",
   "lw.done": "Done",
   "lw.complete": "Exercise complete",
   "lw.exercise": "Exercise",
-  "lw.hideMore": "Hide the hint and steps",
-  "lw.more": "Hint and other steps",
+  "lw.hideMore": "Hide the hint and the points",
+  "lw.more": "A hint and the other points",
   "lw.showHint": "Show the hint",
   "lw.setupDone": "{n} of {t} done",
+  "lw.region": "Lesson panel",
+  "lw.reduce": "Reduce",
+  "lw.reduceTip": "Reduce the lesson panel",
+  "lw.options": "Options",
+  "lw.optionsTip": "Lesson panel options: size, open in a window, restart, end",
 });
 registerStrings("fr", {
-  "lw.stepOf": "Étape {n} sur {t}",
+  "lw.stepOf": "Point {n} sur {t}",
   "lw.done": "Terminé",
   "lw.complete": "Exercice terminé",
   "lw.exercise": "Exercice",
-  "lw.hideMore": "Masquer l’indice et les étapes",
-  "lw.more": "Indice et autres étapes",
+  "lw.hideMore": "Masquer l’indice et les points",
+  "lw.more": "Un indice et les autres points",
   "lw.showHint": "Afficher l’indice",
   "lw.setupDone": "{n} sur {t} faits",
+  "lw.region": "Fenêtre de la leçon",
+  "lw.reduce": "Réduire",
+  "lw.reduceTip": "Réduire la fenêtre de la leçon",
+  "lw.options": "Options",
+  "lw.optionsTip": "Options de la fenêtre : taille, ouvrir dans une fenêtre, recommencer, terminer",
+  "Open in a window": "Ouvrir dans une fenêtre",
+  "Put the window back in place": "Remettre la fenêtre à sa place",
 });
 // the window's other words, keyed by their English text (English needs no table: t() falls back to the key)
 registerStrings("en", {
@@ -47,9 +59,9 @@ registerStrings("fr", {
   Plate: "Carte",
   Enlarge: "Agrandir",
   "Normal size": "Taille normale",
-  "Float the window": "Détacher la fenêtre",
+  "Float the window": "Ouvrir dans une fenêtre",
   "Float the window (drag the header to move it)": "Détacher la fenêtre (faites glisser l’en-tête pour la déplacer)",
-  "Dock the window": "Ancrer la fenêtre",
+  "Dock the window": "Remettre la fenêtre à sa place",
   "Exercise options": "Options de l’exercice",
   Collapse: "Replier",
   "Exercise progress": "Progression de l’exercice",
@@ -589,14 +601,15 @@ export class LessonWindow {
       () => (this.st.float ? this.dock() : this.float()),
     );
     this.menuBtn = hb(
-      "lw-menu-btn",
-      "Exercise options",
-      lineIcon(IC.more, 20, 3.2),
+      "lw-menu-btn lw-word",
+      "lw.optionsTip",
+      lineIcon(IC.more, 18, 3),
       () => (this.menuOpen ? this.closeMenu(true) : this.openMenu()),
     );
+    this.menuBtn.append(h("span", { class: "lw-w" }, tr("lw.options")));
     this.menuBtn.setAttribute("aria-haspopup", "menu");
     this.menuBtn.setAttribute("aria-expanded", "false");
-    this.foldBtn = hb("lw-fold", "Collapse", svgIcon(I.chevUp, 16), () => {
+    this.foldBtn = hb("lw-fold lw-word", "lw.reduceTip", svgIcon(I.chevUp, 16), () => {
       // opened from the emergency pill: folding goes back to that pill, the pilot's own fold is kept
       if (this.view?.emergency && this.emOpen) {
         this.emOpen = false;
@@ -604,6 +617,7 @@ export class LessonWindow {
         this.pill.focus({ preventScroll: true });
       } else this.setCollapsed(true);
     });
+    this.foldBtn.append(h("span", { class: "lw-w" }, tr("lw.reduce")));
     this.head = h(
       "header",
       { class: "lw-h" },
@@ -612,10 +626,10 @@ export class LessonWindow {
       this.timeEl,
       h("span", { class: "lw-sp" }),
       this.plateBtn,
-      this.bigBtn,
-      this.popBtn,
-      this.menuBtn,
+      // icons always come with a word (UX logic §3): « Réduire » and « Options »; Enlarge and « Ouvrir dans une
+      // fenêtre » live in Options
       this.foldBtn,
+      this.menuBtn,
     );
     this.progBar = h("i");
     this.prog = h(
@@ -694,7 +708,7 @@ export class LessonWindow {
     });
     this.el = h(
       "section",
-      { class: "lw", role: "region", "aria-label": "Exercise" },
+      { class: "lw", role: "region", "aria-label": "Lesson panel" },
       this.head,
       this.prog,
       this.body,
@@ -746,14 +760,18 @@ export class LessonWindow {
     this.plateBtn.title = tr("Open the approach plate in the EFB");
     const pl = this.plateBtn.querySelector("span");
     if (pl) pl.textContent = tr("Plate");
-    set(this.menuBtn, "Exercise options");
-    set(this.foldBtn, "Collapse");
+    set(this.menuBtn, "lw.optionsTip");
+    set(this.foldBtn, "lw.reduceTip");
+    const mw = this.menuBtn.querySelector(".lw-w");
+    if (mw) mw.textContent = tr("lw.options");
+    const fw = this.foldBtn.querySelector(".lw-w");
+    if (fw) fw.textContent = tr("lw.reduce");
     this.prog.setAttribute("aria-label", tr("Exercise progress"));
     const cue = this.moreCue.querySelector(".lw-cue-t");
     if (cue) cue.textContent = tr("More below");
     set(this.sizeGrip, "Resize the window: drag, or use the arrow keys", "Drag to resize");
     this.menu.setAttribute("aria-label", tr("Exercise options"));
-    this.el.setAttribute("aria-label", tr("Exercise"));
+    this.el.setAttribute("aria-label", tr("lw.region"));
   }
 
   // ---------------------------------------------------------------- public API
@@ -910,7 +928,7 @@ export class LessonWindow {
     this.save();
     this.bodyKey = "";
     this.render();
-    if (inside) this.bigBtn.focus({ preventScroll: true });
+    if (inside) this.menuBtn.focus({ preventScroll: true });
   }
   destroy() {
     this.offLang();

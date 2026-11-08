@@ -78,7 +78,7 @@ registerStrings('en', {
   'ios.on': 'on',
   'ios.off': 'off',
   'ios.train.head': 'Training',
-  'ios.train.builder': 'Open the flight builder',
+  'ios.train.builder': 'Plan a flight',
   'ios.foot': 'All instructor actions are time-stamped in the flight record and appear in the debrief timeline.',
   'ios.st.student': 'Student',
   'ios.st.mode': 'Mode',

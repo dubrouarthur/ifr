@@ -33,6 +33,8 @@ export class Modal {
   /** set by a dialog that closes to launch a tool (a flight, another page): the focus is not handed back to the
    *  opener (it leaves the dialog, so the keyboard flies the aircraft) */
   protected leavingForTool = false;
+  /** Esc closes the dialog (false for a full page such as Accueil, which has nothing behind it to go back to) */
+  protected escCloses = true;
   constructor(title: string, size: '' | 'sm' | 'md' = '') {
     this.body = h('div', { class: 'body' });
     this.foot = h('footer', {});
@@ -43,7 +45,21 @@ export class Modal {
       this.body,
       this.foot,
     );
-    this.bg = h('div', { class: 'modal-bg', onclick: (e: Event) => e.target === this.bg && this.close() }, this.box);
+    this.bg = h('div', { class: 'modal-bg', onclick: (e: Event) => e.target === this.bg && this.escCloses && this.close() }, this.box);
+    // Esc closes the dialog wherever the focus is inside it. Capture phase: the dialog's fields stop every key
+    // (the cockpit must not fly while typing), so a bubbling listener would never hear it. A text field that holds
+    // text keeps its Esc (it clears first: a second Esc closes); an open list or menu inside (aria-expanded) too.
+    this.bg.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || !this.isOpen || !this.escCloses) return;
+      if (Modal.stack[Modal.stack.length - 1] !== this) return;
+      const t = e.target as HTMLElement | null;
+      const field = t && (t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && !/^(checkbox|radio|range|button|submit)$/i.test((t as HTMLInputElement).type)));
+      if (field && (t as HTMLInputElement).value) return;
+      if (t?.closest('[aria-expanded="true"]')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.close();
+    }, true);
     document.body.append(this.bg);
     onLangChange(() => {
       this.closeBtn.setAttribute('aria-label', closeLabel());
@@ -60,9 +76,17 @@ export class Modal {
     Modal.stack.push(this);
     if (!was) this.trapFocus();
   }
-  /** where the focus goes when the dialog opens: a [data-autofocus] element, else the dialog itself */
+  /** where the focus goes when the dialog opens: a [data-autofocus] element, else its title (a screen reader says
+   *  where the user is), else the dialog itself */
   protected initialFocus(): HTMLElement | null {
-    return this.box.querySelector<HTMLElement>('[data-autofocus]') ?? this.box;
+    const auto = this.box.querySelector<HTMLElement>('[data-autofocus]');
+    if (auto) return auto;
+    const title = this.box.querySelector<HTMLElement>(':scope > header h2, :scope > header h1');
+    if (title && title.offsetParent !== null) {
+      if (!title.hasAttribute('tabindex')) title.tabIndex = -1;
+      return title;
+    }
+    return this.box;
   }
   /** the element that opened the dialog, the rest of the page made inert, the focus moved inside */
   private trapFocus() {
@@ -103,12 +127,24 @@ export class Modal {
     }
     this.leavingForTool = false;
     this.onClose?.();
+    // nothing open any more (and nothing opening in its place): the shell may bring back the page it came from
+    if (was && Modal.onAllClosed) setTimeout(() => { if (!Modal.anyOpen()) Modal.onAllClosed?.(); }, 0);
   }
   static stack: Modal[] = [];
   /** where the focus goes back to when the element that opened a dialog is gone (main.ts: the top bar's hub button) */
   static fallbackFocus: (() => HTMLElement | null) | null = null;
+  /** called (once the stack is empty) after a dialog closes: main.ts brings back the Simulateur page when
+   *  « Préparer un vol » closes without a flight */
+  static onAllClosed: (() => void) | null = null;
   static closeAll() {
     [...Modal.stack].forEach((m) => m.close());
+  }
+  /** Esc with the focus outside every dialog: closes the top one, unless it is a page (Accueil) */
+  static escape(): boolean {
+    const top = Modal.stack[Modal.stack.length - 1];
+    if (!top || !top.escCloses) return false;
+    top.close();
+    return true;
   }
   static anyOpen() {
     return Modal.stack.length > 0;
@@ -534,12 +570,12 @@ export class HelpModal extends Modal {
       ['Instructor station', 'I'],
       ['Learn (paths & exercises)', 'J'],
       ['Sound on/off', 'M'],
-      ['Flight builder', 'U'],
+      ['Plan a flight', 'U'],
       ['Aircraft systems panel (switches, mixture, fuel)', 'Z'],
       ['Emergency checklist: open / fold', 'Shift+C'],
       ['Outside view (camera)', 'V / Shift+V'],
       ['Knob step buttons', 'right-click a knob (tap on a touch screen)'],
-      ['Flight Center', 'F2'],
+      ['Home', 'F2'],
       ['This help', '?'],
     ];
     // keys: chips; "or" and "/" are plain text between them; single keys in a row (", ." rudder, arrows) are chips each

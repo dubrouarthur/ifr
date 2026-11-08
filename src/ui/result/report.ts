@@ -23,6 +23,9 @@
 import { holdFrame, type HoldDef } from "../../nav/holding";
 import { bearingDeg, distanceNm } from "../../nav/geo";
 import { mmss, num, sgn, tx } from "./i18n";
+import { LESSON_META } from "../../library/meta";
+/** the exercise's title in the report's language (the curriculum writes English; library/meta.ts holds the French) */
+const exTitleIn = (L: Lang, ex: { id: string; title: string }) => (L === "fr" ? (LESSON_META[ex.id]?.fr ?? ex.title) : ex.title);
 import type {
   DevKind,
   Finding,
@@ -1896,10 +1899,10 @@ export function buildReport(inp: ResultInput): ResultReport {
       });
     else if (altStd && altStd.pct !== null)
       headline = tx(L, "h.metAlt", {
-        title: inp.ex.title,
+        title: exTitleIn(L, inp.ex),
         dev: num(L, Math.round(altStd.pct * 100)),
       });
-    else headline = tx(L, "h.met", { title: inp.ex.title });
+    else headline = tx(L, "h.met", { title: exTitleIn(L, inp.ex) });
     summary = exceeded.length
       ? exText()
       : watch.length === 0
@@ -1927,7 +1930,7 @@ export function buildReport(inp: ResultInput): ResultReport {
         alt: num(L, hold.altFt),
       }),
     );
-  else eb.push(inp.ex.title);
+  else eb.push(exTitleIn(L, inp.ex));
   if (inp.checkride) eb.push(tx(L, "eb.checkride"));
   eb.push(tx(L, inp.ex.allowAp ? "eb.ap" : "eb.hand"));
   if (inp.wx) {

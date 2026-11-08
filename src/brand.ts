@@ -20,12 +20,14 @@ export const BRAND = {
     en: "Slides · Flight simulator",
     fr: "Diapositives · Simulateur de vol",
   },
-  /** the one-sentence pitch under the tagline: one tool, slides and a simulator; build, teach, fly (no claims the
-   *  product does not back). FR says "pratiquez-les" ("volez-les" reads first as "steal them") and glues
-   *  "simulateur de vol" with no-break spaces, so a balanced wrap never splits the compound noun. */
+  /** the pitch under the tagline (« des instruments en direct », not « de vrais instruments », which reads as
+   *  physical ones): who makes what (instructors create and teach, students learn, then practise in the
+   *  built-in simulator, with a result and a debrief); no claim the product does not back. FR says « pratiquent »
+   *  (« volez-les » reads first as "steal them") and glues « simulateur intégré » and « en direct » with no-break
+   *  spaces, so a balanced wrap never splits them. */
   lead: {
-    en: "Slides and a flight\u00a0simulator in one tool: build your courses, teach them in class, then fly them in the simulator.",
-    fr: "Des diapositives et un simulateur\u00a0de\u00a0vol réunis\u00a0: créez vos cours, enseignez-les en salle, puis pratiquez-les au simulateur.",
+    en: "Instructors build beautiful courses with live instruments and teach them in class. Students learn them at their own pace, then practise them in the built\u2011in\u00a0simulator, with a result and a debrief.",
+    fr: "Les instructeurs créent de beaux cours avec des instruments en\u00a0direct et les présentent en salle. Les élèves les apprennent à leur rythme, puis les pratiquent dans le simulateur\u00a0intégré, avec un résultat et un débriefing.",
   },
   /** who it is for (under the pitch) */
   audience: {

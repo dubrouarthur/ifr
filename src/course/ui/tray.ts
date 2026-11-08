@@ -130,7 +130,7 @@ export class TrayView {
         return;
       }
       const fly = btn(
-        fr ? "Voler pour capturer" : "Fly to capture",
+        fr ? "Capturer depuis le simulateur" : "Capture from the simulator",
         () => this.o.onFlyToCapture(),
         { cls: "sm", icon: "pulse" },
       );

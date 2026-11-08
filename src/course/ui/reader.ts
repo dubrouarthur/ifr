@@ -25,23 +25,38 @@ import { getProcedure } from "../../train/procedureStore";
 const S = {
   // top bar, footer, navigation
   backToLibrary: ["Back to the library", "Retour à la bibliothèque"],
+  library: ["Library", "Bibliothèque"],
   backToEditor: ["Back to the editor", "Retour à l’éditeur"],
   reader: ["Lesson text", "Texte de la leçon"],
-  outline: ["Outline", "Plan"],
-  outlineTitle: ["Course outline", "Plan du cours"],
+  outline: ["Contents", "Sommaire"],
+  outlineTitle: ["Contents", "Sommaire"],
+  courseCtx: ["Course", "Cours"],
+  doneOf: ["{n} of {total} done", "{n} sur {total} fait"],
+  remaining: ["Do the remaining exercises", "Faire les exercices restants"],
+  courseWalked: ["Course gone through", "Cours parcouru"],
+  exercisesLeft: ["{n} exercises to do", "{n} exercices à faire"],
+  exerciseLeft: ["1 exercise to do", "1 exercice à faire"],
+  courseWalkedSub: [
+    "You reached the end. Some exercises are still to do: they are what makes the course stick.",
+    "Vous êtes arrivé au bout. Il reste des exercices : ce sont eux qui font retenir le cours.",
+  ],
+  seen: ["seen", "vu"],
+  right: ["right", "juste"],
+  wrong: ["wrong", "faux"],
+  todoShort: ["to do", "à faire"],
+  liveInstrument: ["Live instrument", "Instrument en direct"],
   language: ["Language", "Langue"],
   stepOf: ["Step {n} of {total}", "Étape {n} sur {total}"],
   next: ["Next", "Suivant"],
-  back: ["Back", "Précédent"],
+  back: ["Previous", "Précédent"],
   revealNext: ["Next point", "Point suivant"],
   showMore: ["Show more", "Afficher la suite"],
   moreLeft: ["{n} more on this step", "encore {n} sur cette étape"],
-  hint: ["Hint", "Indice"],
+  hint: ["A hint", "Un indice"],
   hideHint: ["Hide hint", "Masquer l’indice"],
   showMe: ["Show me", "Montre-moi"],
   myTurn: ["Back to my turn", "À moi"],
   close: ["Close", "Fermer"],
-  selfStudy: ["self-study", "en autonomie"],
   briefing: ["Briefing", "Briefing"],
   backToFlyIt: ["Back to Fly it", "Retour au vol"],
   notSaved: ["Not saved on this device", "Non enregistré sur cet appareil"],
@@ -58,21 +73,15 @@ const S = {
   ],
   // reader
   aboutMin: ["about {n} min", "environ {n} min"],
-  notGraded: ["not graded", "non noté"],
+  notGraded: ["practice, not graded", "pour s’entraîner, sans note"],
   practiceChecked: [
-    "practice, checked by the sim",
-    "entraînement, vérifié par le simulateur",
+    "practice, checked for you",
+    "pour s’entraîner, vérifié pour vous",
   ],
-  gradedAcs: [
-    "graded by the sim, worded like the ACS",
-    "noté par le simulateur, formulé comme l’ACS",
-  ],
-  practiceOnly: [
-    "practice only, never graded",
-    "entraînement seulement, jamais noté",
-  ],
+  gradedAcs: ["graded by the simulator", "noté par le simulateur"],
+  practiceOnly: ["practice, not graded", "pour s’entraîner, sans note"],
   doThis: ["Do this", "À faire"],
-  checkedBySim: ["Checked by the sim", "Vérifié par le simulateur"],
+  checkedBySim: ["Checked for you", "Vérifié pour vous"],
   keyToSuccess: ["Key to success", "La clé du succès"],
   takeaway: ["Takeaway", "À retenir"],
   why: ["Why?", "Pourquoi\u00a0?"],
@@ -146,8 +155,14 @@ const S = {
     "Mêmes valeurs pour toute la classe",
   ],
   calcStage: ["Diagram", "Schéma"],
-  coverTitle: ["The diagram shows the solution", "Le schéma montre la solution"],
-  coverBody: ["Work it out first: it appears when you check your answer.", "Cherchez d’abord : il s’affiche quand vous vérifiez votre réponse."],
+  coverTitle: [
+    "The diagram shows the solution",
+    "Le schéma montre la solution",
+  ],
+  coverBody: [
+    "Work it out first: it appears when you check your answer.",
+    "Cherchez d’abord : il s’affiche quand vous vérifiez votre réponse.",
+  ],
   coverShow: ["Show it now", "L’afficher maintenant"],
   // drill
   drill: ["Drill", "Série"],
@@ -176,7 +191,7 @@ const S = {
   youAnswered: ["You answered {a}", "Vous avez répondu {a}"],
   bestRun: ["Best run: {c} of {n}", "Meilleure série : {c} sur {n}"],
   // fly it + debrief
-  flyIt: ["Fly it", "Voler"],
+  flyIt: ["Fly", "Voler"],
   flyBrief: ["Brief", "Briefing"],
   flyBriefSub: ["read here", "à lire ici"],
   flyFly: ["Fly", "Vol"],
@@ -194,7 +209,7 @@ const S = {
   startBriefing: ["Start the briefing", "Commencer le briefing"],
   briefingPages: ["{n} pages, interactive", "{n} pages, interactif"],
   watchCfi: ["Watch the CFI", "Voir l’instructeur"],
-  flyAgain: ["Fly it again", "Revoler"],
+  flyAgain: ["Fly it again", "Recommencer le vol"],
   replayTrace: ["Replay with trace", "Rejouer avec la trace"],
   yourAttempt: ["Your attempt", "Votre essai"],
   gradeFirst: [
@@ -237,11 +252,11 @@ const S = {
   ],
   flyNoBridge: [
     "This step cannot be flown on this device. Practise with the Your turn steps instead.",
-    "Cette étape ne peut pas être volée sur cet appareil. Entraînez-vous avec les étapes « À vous ».",
+    "Cette étape ne peut pas être volée sur cet appareil. Entraînez-vous avec les exercices du cours.",
   ],
   flyPreview: [
-    "Preview: in the published course, Fly it opens the cockpit here.",
-    "Aperçu : dans le cours publié, En vol ouvre le cockpit ici.",
+    "Preview: in the published course, Fly opens the cockpit here.",
+    "Aperçu : dans le cours publié, Voler ouvre le cockpit ici.",
   ],
   flyLegacy: [
     "The simulator opens the lesson. You will grade the result yourself when you come back.",
@@ -251,9 +266,12 @@ const S = {
     "Open this procedure from Procedures in the simulator.",
     "Ouvrez cette procédure depuis Procédures dans le simulateur.",
   ],
-  flyLegacyGo: ["Open the lesson in the simulator", "Ouvrir la leçon dans le simulateur"],
-  addHandout: ["Add to my handout", "Ajouter à mon mémo"],
-  inHandout: ["In my handout", "Dans mon mémo"],
+  flyLegacyGo: [
+    "Open the lesson in the simulator",
+    "Ouvrir la leçon dans le simulateur",
+  ],
+  addHandout: ["Add to my summary sheet", "Ajouter à mon mémo"],
+  inHandout: ["In my summary sheet", "Dans mon mémo"],
   stepN: ["Step {n}", "Étape {n}"],
   start: ["Start", "Départ"],
   radios: ["Radios", "Radios"],
@@ -267,15 +285,15 @@ const S = {
   current: ["current", "en cours"],
   courseDone: ["Course complete", "Cours terminé"],
   courseDoneSub: [
-    "Here is what you did. Your handout collects the takeaways, your answers and your results.",
-    "Voici ce que vous avez fait. Votre mémo rassemble les points à retenir, vos réponses et vos résultats.",
+    "Every exercise is done. Your summary sheet collects the takeaways, your answers and your results.",
+    "Tous les exercices sont faits. Votre mémo rassemble les points à retenir, vos réponses et vos résultats.",
   ],
   goalsMet: ["Goals met", "Objectifs atteints"],
   answeredRight: ["Answered right", "Bonnes réponses"],
   skippedSteps: ["Steps skipped", "Étapes sautées"],
   flights: ["Flights", "Vols"],
-  printHandout: ["Print handout", "Imprimer le mémo"],
-  handoutTitle: ["Handout", "Mémo"],
+  printHandout: ["Print the summary sheet", "Imprimer le mémo"],
+  handoutTitle: ["Summary sheet", "Mémo"],
   myAnswer: ["My answer: {a}", "Ma réponse : {a}"],
 } as const satisfies Record<string, readonly [string, string]>;
 export type PlayerString = keyof typeof S;
@@ -328,12 +346,20 @@ export const KINDS: Record<StepKind, KindInfo> = {
   explain: { cls: "explain", label: ["Explain", "Explication"], acts: false },
   predict: { cls: "predict", label: ["Predict", "Prédire"], acts: true },
   watch: { cls: "watch", label: ["Watch", "Regarder"], acts: false },
-  try: { cls: "try", label: ["Try it", "À vous"], acts: true },
-  tap: { cls: "try", label: ["Tap", "Toucher"], acts: true },
+  try: { cls: "try", label: ["Try it", "Manipulation"], acts: true },
+  tap: { cls: "try", label: ["Exercise", "Exercice"], acts: true },
   quiz: { cls: "quiz", label: ["Quiz", "Quiz"], acts: true },
-  fly: { cls: "fly", label: ["Fly it", "En vol"], acts: true },
-  calc: { cls: "calc", label: ["Calc", "Calcul"], acts: true },
-  drill: { cls: "calc", label: ["Drill", "Série"], acts: true },
+  fly: {
+    cls: "fly",
+    label: ["Simulator flight", "Vol au simulateur"],
+    acts: true,
+  },
+  calc: { cls: "calc", label: ["Calculation", "Calcul"], acts: true },
+  drill: {
+    cls: "calc",
+    label: ["Calculation series", "Série de calculs"],
+    acts: true,
+  },
   debrief: { cls: "page", label: ["Debrief", "Débriefing"], acts: false },
   plate: {
     cls: "explain",
@@ -345,6 +371,51 @@ export const KINDS: Record<StepKind, KindInfo> = {
 };
 export const kindLabel = (k: StepKind, lang: Lang): string =>
   (KINDS[k] ?? KINDS.page).label[lang === "fr" ? 1 : 0];
+
+/** A step with a task the student does (a question, an exercise on the instrument, a calculation, a flight):
+ *  the end screen counts these, never the reading steps. A free manipulation without a goal is not a task. */
+export function isTask(step: Step): boolean {
+  const k = KINDS[step.kind];
+  if (!k?.acts) return false;
+  if (step.kind === "try") return !!step.goal;
+  return true;
+}
+/** The learner-side word of a step's task (UX logic §2): Manipulation · Exercice · Calcul · Quiz · Vol au
+ *  simulateur; a reading step has none (null). */
+export function taskLabel(step: Step, lang: Lang): string | null {
+  const fr = lang === "fr";
+  switch (step.kind) {
+    case "try":
+      return step.goal
+        ? fr
+          ? "Exercice"
+          : "Exercise"
+        : fr
+          ? "Manipulation"
+          : "Try it";
+    case "tap":
+    case "plate":
+      return fr ? "Exercice" : "Exercise";
+    case "calc":
+    case "drill":
+      return fr ? "Calcul" : "Calculation";
+    case "quiz":
+    case "predict":
+    case "decision":
+      return "Quiz";
+    case "fly":
+      return fr ? "Vol au simulateur" : "Simulator flight";
+    default:
+      return null;
+  }
+}
+/** The kind chip of a step with a task (null for a reading step: no chip). */
+export function taskChip(step: Step, lang: Lang): HTMLSpanElement | null {
+  const word = taskLabel(step, lang);
+  if (!word) return null;
+  const k = KINDS[step.kind] ?? KINDS.page;
+  return h("span", { class: `cp-kind k-${k.cls}` }, word);
+}
 
 /** "about 2 min · not graded" for a step header. */
 export function stepMeta(step: Step, lang: Lang): string {
@@ -623,7 +694,10 @@ export class ReaderView {
       r.row.classList.toggle("cur", !!st?.current && !ticked);
       r.check.className = `cp-check${ticked ? " ok" : st?.current ? " now" : ""}`;
       // every state has a name (an empty one is an unnamed image to a screen reader)
-      r.check.setAttribute("aria-label", ps(ticked ? "done" : st?.current ? "rowNow" : "rowTodo", this.lang));
+      r.check.setAttribute(
+        "aria-label",
+        ps(ticked ? "done" : st?.current ? "rowNow" : "rowTodo", this.lang),
+      );
       const ro = st?.readout ?? "";
       r.readout.textContent = ro;
       r.readout.className = `cp-readout${ticked ? " ok" : st?.current ? " live" : ""}`;
@@ -647,9 +721,19 @@ export class ReaderView {
     if (!this.rows.length || this.rows.some((r) => r.index === -1)) return;
     const list = this.rows[0].row.parentElement;
     if (!list) return;
-    const check = h("span", { class: "cp-check", role: "img", "aria-label": ps("rowTodo", this.lang) });
+    const check = h("span", {
+      class: "cp-check",
+      role: "img",
+      "aria-label": ps("rowTodo", this.lang),
+    });
     const readout = h("span", { class: "cp-readout" });
-    const row = h("div", { class: "cp-row", role: "listitem" }, check, h("span", { class: "t" }, text), readout);
+    const row = h(
+      "div",
+      { class: "cp-row", role: "listitem" },
+      check,
+      h("span", { class: "t" }, text),
+      readout,
+    );
     list.append(row);
     this.rows.push({ row, check, readout, index: -1, text });
   }

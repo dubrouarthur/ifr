@@ -216,7 +216,7 @@ function colorsOf(t: Tokens): SlideTheme["colors"] {
 
 const COCKPIT_THEME: SlideTheme = {
   id: "cockpit",
-  name: { en: "Cockpit (dark)", fr: "Cockpit (sombre)" },
+  name: { en: "Dark", fr: "Sombre" },
   dark: true,
   colors: colorsOf(COCKPIT),
   fonts: FONTS,
@@ -225,7 +225,7 @@ const COCKPIT_THEME: SlideTheme = {
 };
 const CLASSROOM_THEME: SlideTheme = {
   id: "classroom",
-  name: { en: "Classroom (light)", fr: "Salle de cours (clair)" },
+  name: { en: "Light", fr: "Clair" },
   dark: false,
   colors: colorsOf(CLASSROOM),
   fonts: FONTS,
@@ -260,16 +260,16 @@ export const THEMES: Record<ThemeId, SlideTheme> = {
     ...projectorBoost(CLASSROOM_THEME),
     id: "projector",
     name: {
-      en: "Classroom, bright projector",
-      fr: "Salle de cours, projecteur lumineux",
+      en: "Light, bright projector",
+      fr: "Clair, projecteur lumineux",
     },
   },
   brand: {
     ...CLASSROOM_THEME,
     id: "brand",
     name: {
-      en: "Classroom, school colour",
-      fr: "Salle de cours, couleur de l’école",
+      en: "Light, school colour",
+      fr: "Clair, couleur de l’école",
     },
   },
 };

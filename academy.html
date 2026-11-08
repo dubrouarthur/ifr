@@ -3,31 +3,47 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#eef1f5" />
+    <meta name="theme-color" content="#fbfaf7" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Ground school" />
     <meta name="description" content="%BRAND_TAGLINE_EN%: courses for aeroclubs and flight schools, from LAPL and PPL to IR and ATPL theory. Designed slides with live instruments, calculation exercises and quizzes, taught in class and then flown in the built-in simulator." />
-    <title>Courses — %BRAND_NAME%</title>
+    <title>Bibliothèque — %BRAND_NAME%</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,400..700;1,14..32,400..600&family=Roboto+Condensed:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
     <style>
-      html, body { margin: 0; height: 100%; background: #eef1f5; }
+      html, body { margin: 0; height: 100%; background: #fbfaf7; }
       #academy { height: 100%; }
-      /* the first frame, before the app draws (replaced by the router): the page's header and a quiet loading line,
-         never a blank page */
-      .ga-boot { height: 100%; display: flex; flex-direction: column; font: 600 16px/1 Inter, system-ui, sans-serif; color: #17202b; }
-      .ga-boot-top { height: 56px; flex: none; display: flex; align-items: center; padding: 0 20px; background: #fff; border-bottom: 1px solid #dfe4ea; }
-      .ga-boot-line { margin: 30vh auto 0; width: 160px; height: 3px; border-radius: 2px; background: #dfe4ea; overflow: hidden; }
+      /* the first frame, before the app draws (replaced by the router): the page's focus bar and a sentence that
+         says what is opening, never a blank page */
+      .ga-boot { height: 100%; display: flex; flex-direction: column; font: 400 15px/1.4 Inter, system-ui, sans-serif; color: #14181f; }
+      .ga-boot-top { height: 64px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 24px; background: #fff; border-bottom: 1px solid #e4e1da; box-sizing: border-box; font-weight: 650; font-size: 16px; }
+      .ga-boot-top i { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #14181f; box-sizing: border-box; }
+      .ga-boot-t { margin: 28vh auto 14px; font-size: 16px; color: #353c47; text-align: center; }
+      .ga-boot-line { margin: 0 auto; width: 160px; height: 3px; border-radius: 2px; background: #e4e1da; overflow: hidden; }
       .ga-boot-line i { display: block; width: 40%; height: 100%; background: #1d5fd1; animation: ga-boot 1.1s ease-in-out infinite; }
       @keyframes ga-boot { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
       @media (prefers-reduced-motion: reduce) { .ga-boot-line i { animation: none; } }
     </style>
   </head>
   <body>
-    <div id="academy"><div class="ga-boot" aria-hidden="true"><div class="ga-boot-top">%BRAND_NAME%</div><div class="ga-boot-line"><i></i></div></div></div>
-    <noscript>Ground school needs JavaScript.</noscript>
+    <div id="academy"><div class="ga-boot" role="status"><div class="ga-boot-top"><i aria-hidden="true"></i>%BRAND_NAME%</div><p class="ga-boot-t" id="ga-boot-t">Ouverture…</p><div class="ga-boot-line" aria-hidden="true"><i></i></div></div></div>
+    <script>
+      // the skeleton's sentence, in the reader's language, before the app module runs
+      (function () {
+        var l = "fr";
+        try { l = localStorage.getItem("ifr.lang") || (navigator.language || "fr").slice(0, 2); } catch (e) {}
+        var en = l === "en", h = location.hash, t;
+        if (/^#(play|present|project|c)=/.test(h)) t = en ? "Opening the course…" : "Ouverture du cours…";
+        else if (/^#edit=/.test(h)) t = en ? "Opening the course editor…" : "Ouverture de l’éditeur de cours…";
+        else if (/^#new/.test(h)) t = en ? "Opening New course…" : "Ouverture de Nouveau cours…";
+        else t = en ? "Opening the library…" : "Ouverture de la bibliothèque…";
+        document.documentElement.lang = en ? "en" : "fr";
+        document.getElementById("ga-boot-t").textContent = t;
+      })();
+    </script>
+    <noscript>Wingdeck a besoin de JavaScript. · Wingdeck needs JavaScript.</noscript>
     <script type="module" src="/src/learn/main.ts"></script>
   </body>
 </html>

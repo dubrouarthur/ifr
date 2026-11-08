@@ -1,7 +1,17 @@
 // Ground school player (package E) — progress marks, the top-bar progress ticks and the Outline sheet (every step
 // with its kind, minutes and status; tap to jump). Pure helpers are unit-tested.
 import type { L10n, Lang, Step } from "../types";
-import { h, icon, KINDS, kindChip, kindLabel, L, ps, textEl } from "./reader";
+import {
+  h,
+  icon,
+  isTask,
+  KINDS,
+  kindLabel,
+  L,
+  ps,
+  taskChip,
+  textEl,
+} from "./reader";
 
 // ------------------------------------------------------------------ marks (pure)
 /** What the student did on a step (kept by the player, summarised at the end and in the handout). */
@@ -64,7 +74,7 @@ export function markText(
   mark: StepMark | undefined,
   lang: Lang,
 ): string {
-  if (!mark?.visited) return "";
+  if (!mark?.visited) return isTask(step) && mark ? ps("todoShort", lang) : "";
   if (mark.drill)
     return ps("scoreLine", lang, {
       c: mark.drill.correct,
@@ -72,11 +82,13 @@ export function markText(
     });
   if (mark.flown)
     return mark.flown.passed ? ps("passed", lang) : ps("notYet", lang);
-  if (mark.goalMet) return ps("goalMet", lang);
-  if (mark.correct || mark.calcOk) return ps("correct", lang);
-  if (mark.answered || mark.calcOk === false) return ps("notQuite", lang);
-  if (KINDS[step.kind]?.acts && mark.skipped) return ps("skipped", lang);
-  return ps("done", lang);
+  if (mark.goalMet) return ps("done", lang);
+  // a question says right or wrong, never « done » (UX logic §6)
+  if (mark.correct || mark.calcOk) return ps("right", lang);
+  if (mark.answered || mark.calcOk === false) return ps("wrong", lang);
+  // a task never attempted is still to do: only what was done says « done »
+  if (isTask(step)) return ps("todoShort", lang);
+  return ps("seen", lang);
 }
 
 // ------------------------------------------------------------------ the ticks
@@ -98,7 +110,11 @@ export function ticksEl(
       h("i", {
         class: tickClass(s, st),
         title: `${ps("stepN", lang, { n: i + 1 })} · ${kindLabel(s.kind, lang)} · ${L(s.title, lang)}${
-          st === "current" ? ` · ${ps("current", lang)}` : what ? ` · ${what}` : ""
+          st === "current"
+            ? ` · ${ps("current", lang)}`
+            : what
+              ? ` · ${what}`
+              : ""
         }`,
       }),
     );
@@ -175,7 +191,7 @@ export class OutlineSheet {
           h(
             "span",
             { class: "meta" },
-            kindChip(s.kind, lang),
+            taskChip(s, lang),
             s.minutes
               ? h(
                   "span",

@@ -1387,9 +1387,6 @@
   .ce-zoom-v {
     min-width: 52px;
   }
-  .ce-multi span {
-    display: none;
-  }
 }
 /* portrait: the properties go under the canvas */
 @media (max-width: 1000px) {
@@ -1734,7 +1731,6 @@
 }
 @container (max-width: 900px) {
   .ce-ctool-l,
-  .ce-ctool .ce-multi > span,
   .ce-ctool .ce-reveal > .ce-muted {
     position: absolute;
     width: 1px;
@@ -1744,18 +1740,12 @@
     white-space: nowrap;
   }
 }
-@container (max-width: 720px) {
+/* the words stay (icons always come with a word): on a narrow canvas the zoom goes (pinch and « Ajusté » fit the
+   slide) and the row wraps rather than dropping the words */
+@container (max-width: 1000px) {
   .ce-ctool .ce-zoom,
   .ce-ctool .ce-zoom + .ce-vsep {
     display: none;
-  }
-  .ce-ctool .ce-btn.ghost > span:not(.ce-kbd) {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
   }
 }
 /* the floating format bar keeps its labels on one line, and steps aside under a panel that floats over the slide */
@@ -1797,4 +1787,47 @@
   .sle-surface:focus-visible > .sle-kbdhint {
     animation: none;
   }
+}
+
+/* ------------------------------------------------------------ UX logic step C: the editor's top bar and empty course */
+.is-studio .ce-top .ce-back-b {
+  padding: 0 14px 0 10px;
+}
+.is-studio .ce-top .ce-more-b .ce-count[hidden] {
+  display: none;
+}
+/* the words stay at every width (icons always come with a word) */
+@media (max-width: 1000px) {
+  .is-studio .ce-top .ce-checks-b > span:not(.ce-count),
+  .is-studio .ce-top .ce-preview > span,
+  .is-studio .ce-top .ce-share-b > span {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip: auto;
+  }
+  .is-studio .ce-top .ce-btn.sm {
+    padding: 0 10px;
+  }
+}
+.ce-start.ce-start-empty {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.ce-start-empty .ce-start-hd p {
+  margin-left: auto;
+  margin-right: auto;
+}
+.ce-start-act {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+.ce-start-act .ce-btn {
+  min-height: 46px;
+  padding: 0 18px;
 }

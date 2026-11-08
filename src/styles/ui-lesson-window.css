@@ -1048,3 +1048,34 @@ html body .cockpit .otw .atc-radio.atc-one .atc-body:focus-visible {
   outline-offset: 2px;
   border-radius: 4px;
 }
+
+/* ---------------------------------------------------------------- header words (UX logic §7)
+   « Réduire » and « Options » say what they do; Enlarge and « Ouvrir dans une fenêtre » live in Options */
+.lw .lw-h .lw-opt {
+  display: none;
+}
+.lw .lw-hb.lw-word {
+  padding: 0 9px 0 7px;
+  border-color: var(--lw-edge);
+  font: 600 12.5px/1 var(--font, "Inter", sans-serif);
+}
+.lw .lw-hb.lw-word .lw-w {
+  white-space: nowrap;
+}
+.lw .lw-hb.lw-word + .lw-hb.lw-word {
+  margin-left: 4px;
+}
+/* a narrow docked column (an iPad in landscape: 320 px): the words stay, the timer gives way (it is in the pill
+   and the result) */
+@container lw (max-width: 359px) {
+  .lw .lw-h .lw-time {
+    display: none;
+  }
+  .lw .lw-hb.lw-word {
+    padding: 0 8px 0 6px;
+    gap: 4px;
+  }
+  .lw .lw-h .lw-step {
+    letter-spacing: 0.5px;
+  }
+}

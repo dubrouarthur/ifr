@@ -1322,11 +1322,7 @@ body > .toasts.toasts-top .toast {
   border-radius: 0;
 }
 
-/* one Resume at a time: while the top bar shows (its Resume is highlighted), the veil keeps only its words; its own
-   Resume comes back when the bar is hidden or on a touch screen (no Esc key) */
-body:not(.touch):not(.chrome-hidden) .cockpit .pause-veil .pv-resume {
-  display: none;
-}
+/* one Resume at a time: the veil carries it; the top bar's Pause stays « Pause » (pressed) while the veil shows */
 
 /* the flight title never runs under the layout button: the button fills its slot and ellipsizes its two lines */
 html body .topbar .scn-wrap > .scn {

@@ -21,6 +21,7 @@ import {
   h,
   icon,
   kindChip,
+  taskChip,
   L,
   ps,
   richEl,
@@ -243,7 +244,7 @@ export class FlyItView {
       h(
         "div",
         { class: "cp-meta" },
-        kindChip("fly", lang),
+        taskChip(m.step, lang) ?? kindChip("fly", lang),
         h("span", { class: "cp-muted" }, stepMeta(m.step, lang)),
       ),
       textEl("h1", m.step.title, lang, "cp-h1"),
@@ -299,7 +300,10 @@ export class FlyItView {
     const top = h("div", { class: "cp-scene-top" });
     const thumb = h("div", { class: "cp-thumb" }, icon("plane", "i big"));
     Promise.resolve(m.still ?? null).then((url) => {
-      if (url) thumb.replaceChildren(h("img", { src: url, alt: "", decoding: "async" }));
+      if (url)
+        thumb.replaceChildren(
+          h("img", { src: url, alt: "", decoding: "async" }),
+        );
       else if (m.drawThumb) {
         const c = h("canvas", { class: "cp-thumbc", "aria-hidden": "true" });
         thumb.replaceChildren(c);
@@ -390,8 +394,15 @@ export class FlyItView {
                   ? ps("notYet", lang)
                   : "",
           }),
-          h("span", { class: "t" }, r.label),
-          h("span", { class: "acs" }, r.acs),
+          // the test standard's code (ACS / FCL) only in a tooltip: « Norme du test en vol »
+          h(
+            "span",
+            {
+              class: "t",
+              title: `${lang === "fr" ? "Norme du test en vol : " : "Flight test standard: "}${r.acs}`,
+            },
+            r.label,
+          ),
           h(
             "span",
             { class: `cp-readout${r.met === false ? " warn" : ""}` },
@@ -424,7 +435,11 @@ export class FlyItView {
             ? ps("stoppedTitle", lang, { t: flownText(stopped.secs, lang) })
             : ps("notFinished", lang),
         ),
-        h("p", { class: "cp-muted" }, ps(stopped ? "stoppedBody" : "notFinishedBody", lang)),
+        h(
+          "p",
+          { class: "cp-muted" },
+          ps(stopped ? "stoppedBody" : "notFinishedBody", lang),
+        ),
       );
     }
     if (m.fly.keys?.length)
@@ -459,10 +474,12 @@ export class FlyItView {
       .querySelector(".cp-brieflaunch")
       ?.addEventListener("click", () => this.on.onBriefing?.());
     if (m.message) card.append(h("p", { class: "cp-err" }, m.message));
-    if (m.note) card.append(h("p", { class: "cp-fly-note", role: "note" }, m.note));
+    if (m.note)
+      card.append(h("p", { class: "cp-fly-note", role: "note" }, m.note));
     const acts = h("div", { class: "cp-fly-acts" });
     const fly = btn(
-      m.flyLabel ?? (m.status === "notFinished" ? ps("flyAgain", lang) : ps("flyIt", lang)),
+      m.flyLabel ??
+        (m.status === "notFinished" ? ps("flyAgain", lang) : ps("flyIt", lang)),
       "primary lg",
       () => this.on.onFly(m.options),
       "plane",

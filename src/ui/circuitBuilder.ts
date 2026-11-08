@@ -198,6 +198,56 @@ export const EQUIP_PRESETS: {
 ];
 
 // ------------------------------------------------------------------ failure drills: strings (FR / EN)
+/** the builder's words that were written in English, in French (UX logic §7: the dialog speaks the UI language) */
+const FRX: Record<string, string> = {
+  "Flight library": "Bibliothèque de vols",
+  "Flight": "Vol",
+  "Map and profile": "Carte et profil",
+  "Import flights from a JSON file": "Importer des vols depuis un fichier JSON",
+  "Download all your flights as JSON": "Télécharger tous vos vols en JSON",
+  "Real world": "Monde réel",
+  "Editing a copy": "Copie en cours de modification",
+  "Choose the departure airport first: the template is built there": "Choisissez d’abord l’aérodrome de départ : le modèle y est construit",
+  "Flights you save appear here. They stay in this browser: Export all moves them to another computer.": "Les vols que vous enregistrez apparaissent ici. Ils restent dans ce navigateur : « Exporter » les emporte vers un autre ordinateur.",
+  "School presets": "Circuits de l’école",
+  "Choose the departure airport.": "Choisissez l’aérodrome de départ.",
+  "Training region": "Région d’entraînement",
+  "Navigation data": "Données de navigation",
+  "Departure": "Départ",
+  "Departure airport": "Aérodrome de départ",
+  "Destination airport": "Aérodrome d’arrivée",
+  "Departure: ICAO, name or city (e.g. KSFO)": "Départ : code OACI, nom ou ville (ex. LFPG)",
+  "Destination: ICAO, name or city (e.g. KSJC)": "Arrivée : code OACI, nom ou ville (ex. LFPO)",
+  "Popular IFR airports": "Terrains IFR fréquents",
+  "Where do you depart?": "D’où partez-vous ?",
+  "Where to?": "Où allez-vous ?",
+  "About 6,900 airports with real runways, navaids and terrain: official FAA procedures (SIDs, STARs, approaches) in the US, generated RNAV (GPS) approaches elsewhere.": "Environ 6 900 aérodromes avec leurs vraies pistes, balises et relief : procédures FAA officielles (SID, STAR, approches) aux États-Unis, approches RNAV (GPS) générées ailleurs.",
+  "The destination: same airport for local training, or another one up to 400 NM away.": "L’arrivée : le même terrain pour un entraînement local, ou un autre jusqu’à 400 NM.",
+  "Loading the real-world region…": "Chargement de la région réelle…",
+  "The map of your flight appears here": "La carte de votre vol apparaît ici",
+  "Navaids, procedures and terrain around the airports.": "Balises, procédures et relief autour des aérodromes.",
+  "Choose the departure and the destination: their region (navaids, airways, procedures, terrain) loads in a few seconds.": "Choisissez le départ et l’arrivée : leur région (balises, voies aériennes, procédures, relief) se charge en quelques secondes.",
+  "Choose the departure airport to start": "Choisissez l’aérodrome de départ pour commencer",
+  "Choose the destination airport": "Choisissez l’aérodrome d’arrivée",
+  "Share a link or a QR code students open to fly this flight": "Partager un lien ou un QR code que les élèves ouvrent pour voler ce vol",
+  "Download this flight as JSON": "Télécharger ce vol en JSON"
+};
+const tx = (en: string): string => (lang() === "fr" ? (FRX[en] ?? en) : en);
+/** the school's circuits and the templates, in French (their data stays in English) */
+const PRESET_FR: Record<string, [string, string]> = {
+  "p-classic": ["Circuit IR classique — Port Ardent", "Départ 27, attente à ARD, ILS 27 avec remise de gaz, puis NDB 27 par le virage conventionnel jusqu’à l’arrêt complet. L’exercice type de l’école."],
+  "p-valley": ["Boucle de Mistral Valley", "En vol à l’ouest de MSVL : RNAV 03 LNAV/VNAV et remise de gaz, attente à MSV, VOR/DME 21 par l’arc DME 10 jusqu’à l’atterrissage."],
+  "p-pp": ["Circuit en panel partiel (test)", "À la main. L’AHRS / la dépression tombe en panne après 3 minutes : attente non standard à gauche à KEDDY, puis l’ILS 27 sur les instruments de secours."],
+  "p-cross": ["Aller-retour PARD → MSVL → PARD", "Vers Mistral Valley pour l’ILS 03 et sa remise de gaz, retour par TOBEY pour l’ILS 27 avec une panne de glide en finale."],
+  "t-vorhold": ["Attente sur un VOR", "En vol à 10 NM : rejoignez le VOR, entrez et volez deux attentes standard (l’entrée est notée)."],
+  "t-ilsmissed": ["ILS avec remise de gaz et attente", "L’ILS (la meilleure approche de précision) jusqu’aux minima, la remise de gaz publiée et son attente."],
+  "t-ppndb": ["NDB en panel partiel", "Instruments classiques, à la main : l’horizon tombe en panne après deux minutes, puis une approche classique."],
+  "t-xc": ["Navigation avec SID et STAR", "Départ par la SID publiée, la route, la STAR et la meilleure approche jusqu’à l’arrêt complet."],
+  "t-acs": ["Test en vol blanc (IR)", "Profil du test de qualification de vol aux instruments : départ, attente, approche classique avec remise de gaz, puis approche de précision jusqu’à l’atterrissage. Une panne est cachée à l’élève."],
+};
+const presetName = (id: string, en: string) => (lang() === "fr" ? (PRESET_FR[id]?.[0] ?? en) : en);
+const presetDesc = (id: string, en: string) => (lang() === "fr" ? (PRESET_FR[id]?.[1] ?? en) : en);
+
 registerStrings("en", {
   "fbd.lib": "Failure drills",
   "fbd.libClub": "Club drill",
@@ -273,7 +323,7 @@ registerStrings("en", {
   "fbd.one": "1 failure",
   "fbd.built": "Drill built at {a}",
   // builder chrome (FR / EN)
-  "fb.title": "Flight builder",
+  "fb.title": "Plan a flight",
   "fb.namePh": "Name this flight",
   "fb.nameAria": "Flight name",
   "fb.lib": "Library",
@@ -399,7 +449,7 @@ registerStrings("fr", {
   "fbd.n": "{n} pannes",
   "fbd.one": "1 panne",
   "fbd.built": "Exercice construit à {a}",
-  "fb.title": "Éditeur de vols",
+  "fb.title": "Préparer un vol",
   "fb.namePh": "Nommez ce vol",
   "fb.nameAria": "Nom du vol",
   "fb.lib": "Bibliothèque",
@@ -600,15 +650,15 @@ export class CircuitBuilder extends Modal {
     private onFly: (c: Circuit) => void,
     private toast: (m: string, k?: "info" | "good" | "warn" | "bad") => void,
   ) {
-    super("Flight builder");
+    super("Plan a flight");
     shared = this;
     this.box.classList.add("cb", "cbx", "fb");
     clear(this.body);
-    this.lib = h("nav", { class: "cbx-lib", "aria-label": "Flight library" });
-    this.ed = h("section", { class: "cbx-ed", "aria-label": "Flight" });
+    this.lib = h("nav", { class: "cbx-lib", "aria-label": tx("Flight library") });
+    this.ed = h("section", { class: "cbx-ed", "aria-label": tx("Flight") });
     this.mapCol = h("section", {
       class: "cbx-map",
-      "aria-label": "Map and profile",
+      "aria-label": tx("Map and profile"),
     });
     this.body.append(
       h("div", { class: "cbx-grid" }, this.lib, this.ed, this.mapCol),
@@ -1041,6 +1091,9 @@ export class CircuitBuilder extends Modal {
   }
   /** the builder's fixed labels in the UI language (FR / EN) */
   private chrome() {
+    this.lib.setAttribute("aria-label", tx("Flight library"));
+    this.ed.setAttribute("aria-label", tx("Flight"));
+    this.mapCol.setAttribute("aria-label", tx("Map and profile"));
     const ttl = t("fb.title");
     const h2 = this.box.querySelector("header h2");
     if (h2) h2.textContent = ttl;
@@ -1159,7 +1212,7 @@ export class CircuitBuilder extends Modal {
           "button",
           {
             class: "btn ghost sm",
-            title: "Import flights from a JSON file",
+            title: tx("Import flights from a JSON file"),
             "data-fbt": "fb.import",
             onclick: () => file.click(),
           },
@@ -1169,7 +1222,7 @@ export class CircuitBuilder extends Modal {
           "button",
           {
             class: "btn ghost sm",
-            title: "Download all your flights as JSON",
+            title: tx("Download all your flights as JSON"),
             "data-fbt": "fb.exportAll",
             onclick: () =>
               this.download(circuitStore.list(), "ifr-flights.json"),
@@ -1215,7 +1268,7 @@ export class CircuitBuilder extends Modal {
       "button",
       {
         class: `cbx-item${cur ? " on" : ""}${src ? " src" : ""}`,
-        title: c.description || c.name,
+        title: kind === "preset" ? presetDesc(c.id, c.description || c.name) : c.description || c.name,
         onclick: () =>
           this.guard(() => {
             if (kind === "preset") {
@@ -1237,23 +1290,23 @@ export class CircuitBuilder extends Modal {
               void this.ensureRegion();
           }),
       },
-      h("b", {}, c.name),
+      h("b", {}, kind === "preset" ? presetName(c.id, c.name) : c.name),
       h(
         "small",
         {},
         [
           dest && dest !== where ? `${where} → ${dest}` : where,
           `~${circuitStats(c).minutes} min`,
-          c.drill ? (c.drill.mode === "test" ? t("fbd.test") : t("fbd.training")) : c.mode === "checkride" ? "Checkride" : "",
+          c.drill ? (c.drill.mode === "test" ? t("fbd.test") : t("fbd.training")) : c.mode === "checkride" ? (lang() === "fr" ? "Test en vol" : "Checkride") : "",
           c.assignee ? `${lang() === "fr" ? "pour" : "for"} ${c.assignee}` : "",
         ]
           .filter(Boolean)
           .join(" · "),
       ),
       src
-        ? h("em", {}, "Editing a copy")
+        ? h("em", {}, tx("Editing a copy"))
         : c.world === "real"
-          ? h("i", { class: "cbx-tag" }, "Real world")
+          ? h("i", { class: "cbx-tag" }, tx("Real world"))
           : null,
     );
   }
@@ -1297,7 +1350,7 @@ export class CircuitBuilder extends Modal {
           "button",
           {
             class: `cbx-item tpl${this.c.template === t.id && this.dirty && !this.isSaved() ? " on" : ""}`,
-            title: t.desc,
+            title: presetDesc(t.id, t.desc),
             onclick: () =>
               this.guard(() => {
                 const real = this.c.world === "real";
@@ -1309,7 +1362,7 @@ export class CircuitBuilder extends Modal {
                   if (at) void this.ensureRegion();
                   else
                     this.toast(
-                      "Choose the departure airport first: the template is built there",
+                      tx("Choose the departure airport first: the template is built there"),
                       "info",
                     );
                   return;
@@ -1334,8 +1387,8 @@ export class CircuitBuilder extends Modal {
                 this.render();
               }),
           },
-          h("b", {}, t.name),
-          h("small", {}, t.desc),
+          h("b", {}, presetName(t.id, t.name)),
+          h("small", {}, presetDesc(t.id, t.desc)),
         ),
       );
     // the club's drills are listed with the drills above
@@ -1349,7 +1402,7 @@ export class CircuitBuilder extends Modal {
         h(
           "p",
           { class: "cbx-empty" },
-          "Flights you save appear here. They stay in this browser: Export all moves them to another computer.",
+          tx("Flights you save appear here. They stay in this browser: Export all moves them to another computer."),
         ),
       );
     else if (!mine.length)
@@ -1361,7 +1414,7 @@ export class CircuitBuilder extends Modal {
       match(`${c.name} ${c.description}`),
     );
     this.libList.append(
-      sec("School presets", PRESET_CIRCUITS.length),
+      sec(tx("School presets"), PRESET_CIRCUITS.length),
     );
     presets.forEach((c) => this.libList.append(this.libItem(c, "preset")));
   }
@@ -1707,11 +1760,11 @@ export class CircuitBuilder extends Modal {
         );
     }
     if (this.c.world === "real" && !this.icaos().length)
-      general.unshift("Choose the departure airport.");
+      general.unshift(tx("Choose the departure airport."));
     return {
       all: [
         ...(this.c.world === "real" && !this.icaos().length
-          ? ["Choose the departure airport."]
+          ? [tx("Choose the departure airport.")]
           : []),
         ...all,
       ],
@@ -1872,20 +1925,20 @@ export class CircuitBuilder extends Modal {
     const world = this.seg(
       real ? "real" : "training",
       [
-        ["real", "Real world"],
-        ["training", "Training region"],
+        ["real", tx("Real world")],
+        ["training", tx("Training region")],
       ],
       (v) => this.switchWorld(v),
       "fb-world",
     );
-    world.setAttribute("aria-label", "Navigation data");
+    world.setAttribute("aria-label", tx("Navigation data"));
 
     // ---------------- departure
     const depIcao =
       c.start.type === "runway" ? c.start.airport || c.dep || "" : c.dep || "";
     box.append(
       head(
-        "Departure",
+        tx("Departure"),
         depIcao && c.start.type === "runway"
           ? h("small", {}, this.aptName(depIcao))
           : null,
@@ -2131,10 +2184,10 @@ export class CircuitBuilder extends Modal {
     const from = c.dep ? this.rows[c.dep] : undefined;
     if (which === "arr" && c.dep && !from) void this.rowFor(c.dep);
     const pick = this.airportPicker(
-      which === "dep" ? "Departure airport" : "Destination airport",
+      which === "dep" ? tx("Departure airport") : tx("Destination airport"),
       which === "dep"
-        ? "Departure: ICAO, name or city (e.g. KSFO)"
-        : "Destination: ICAO, name or city (e.g. KSJC)",
+        ? tx("Departure: ICAO, name or city (e.g. KSFO)")
+        : tx("Destination: ICAO, name or city (e.g. KSJC)"),
       (r) => {
         if (which === "dep") {
           c.dep = r[0];
@@ -2173,19 +2226,19 @@ export class CircuitBuilder extends Modal {
       },
       which === "arr" && from
         ? `Airports near ${from[0]}`
-        : "Popular IFR airports",
+        : tx("Popular IFR airports"),
       from,
     );
     return h(
       "div",
       { class: "fb-apt-card" },
-      h("b", {}, which === "dep" ? "Where do you depart?" : "Where to?"),
+      h("b", {}, which === "dep" ? tx("Where do you depart?") : tx("Where to?")),
       h(
         "small",
         {},
         which === "dep"
-          ? "About 6,900 airports with real runways, navaids and terrain: official FAA procedures (SIDs, STARs, approaches) in the US, generated RNAV (GPS) approaches elsewhere."
-          : "The destination: same airport for local training, or another one up to 400 NM away.",
+          ? tx("About 6,900 airports with real runways, navaids and terrain: official FAA procedures (SIDs, STARs, approaches) in the US, generated RNAV (GPS) approaches elsewhere.")
+          : tx("The destination: same airport for local training, or another one up to 400 NM away."),
       ),
       pick,
       which === "arr" && c.dep
@@ -3047,7 +3100,7 @@ export class CircuitBuilder extends Modal {
             if (!this.regionOk()) void this.ensureRegion();
           },
           async () => searchAirports("", 8),
-          L === "fr" ? "Terrains IFR fréquents" : "Popular IFR airports",
+          L === "fr" ? "Terrains IFR fréquents" : tx("Popular IFR airports"),
         ),
       );
     } else {
@@ -4044,7 +4097,7 @@ export class CircuitBuilder extends Modal {
         this.field(
           st.type === "runway"
             ? `SID · RWY ${st.runway}`
-            : "Departure",
+            : tx("Departure"),
           this.sel(
             l.id,
             [
@@ -4554,8 +4607,8 @@ export class CircuitBuilder extends Modal {
           "div",
           { class: "fb-mapempty" },
           svgIcon(I.map, 22),
-          h("b", {}, this.loading ? "Loading the real-world region…" : "The map of your flight appears here"),
-          h("span", {}, this.loading ? "Navaids, procedures and terrain around the airports." : "Choose the departure and the destination: their region (navaids, airways, procedures, terrain) loads in a few seconds."),
+          h("b", {}, this.loading ? tx("Loading the real-world region…") : tx("The map of your flight appears here")),
+          h("span", {}, this.loading ? tx("Navaids, procedures and terrain around the airports.") : tx("Choose the departure and the destination: their region (navaids, airways, procedures, terrain) loads in a few seconds.")),
         ),
       );
       return;
@@ -4780,9 +4833,9 @@ export class CircuitBuilder extends Modal {
     const pending = !real
       ? null
       : !this.icaos().length
-        ? "Choose the departure airport to start"
+        ? tx("Choose the departure airport to start")
         : !this.c.dest
-          ? "Choose the destination airport"
+          ? tx("Choose the destination airport")
           : null;
     const status = pending
       ? h("span", { class: "cbx-status" }, pending)
@@ -4791,7 +4844,7 @@ export class CircuitBuilder extends Modal {
           "span",
           { class: "cbx-status" },
           h("span", { class: "spin" }),
-          "Loading the real-world region…",
+          tx("Loading the real-world region…"),
         )
       : ok
         ? h(
@@ -4843,7 +4896,7 @@ export class CircuitBuilder extends Modal {
           {
             class: "btn ghost sm",
             disabled: empty,
-            title: "Share a link or a QR code students open to fly this flight",
+            title: tx("Share a link or a QR code students open to fly this flight"),
             onclick: (e: Event) => this.share(e.currentTarget as HTMLElement),
           },
           svgIcon(I.link, 14),
@@ -4854,7 +4907,7 @@ export class CircuitBuilder extends Modal {
           {
             class: "btn ghost sm",
             disabled: empty,
-            title: "Download this flight as JSON",
+            title: tx("Download this flight as JSON"),
             onclick: () =>
               this.download(
                 this.c,

@@ -4,17 +4,17 @@
    Restrained aviation look: flat surfaces, hairlines, one accent; kind colours are labels, never the only signal. */
 
 .cp-app {
-  --bg: #eef1f5;
+  --bg: #fbfaf7;
   --surface: #ffffff;
-  --surface-2: #f6f8fa;
-  --line: #e2e7ed;
-  --line-strong: #c8d0da;
-  --text: #0f1722;
-  --text-2: #344054;
-  --muted: #5f6b77;
-  --accent: #0b63ce;
-  --accent-rgb: 11 99 206;
-  --good: #127a52;
+  --surface-2: #f3f1ec;
+  --line: #e4e1da;
+  --line-strong: #cbc7be;
+  --text: #14181f;
+  --text-2: #353c47;
+  --muted: #5d6671;
+  --accent: #1d5fd1;
+  --accent-rgb: 29 95 209;
+  --good: #17763c;
   --good-bg: #eaf6f0;
   --good-line: #c4e6d4;
   --warn: #9a5a00;
@@ -37,7 +37,7 @@
   --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
   display: grid;
-  grid-template-rows: 60px minmax(0, 1fr) auto;
+  grid-template-rows: 64px minmax(0, 1fr) auto;
   height: 100%;
   min-height: 0;
   background: var(--bg);
@@ -3252,7 +3252,7 @@ html.ga-doc,
 html.ga-doc body {
   height: 100%;
   margin: 0;
-  background: #eef1f5;
+  background: #fbfaf7;
 }
 .ga {
   height: 100%;
@@ -4375,4 +4375,348 @@ html.ga-doc body {
     display: grid;
     gap: 6px;
   }
+}
+
+/* the course's labelled way back (« ← Bibliothèque », « ← Accueil », « ← LAPL · PPL ») */
+.cp-app .cp-btn.cp-backto {
+  padding: 0 16px 0 12px;
+  max-width: 240px;
+}
+.cp-app .cp-backto-w {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 700px) {
+  .cp-app .cp-btn.cp-backto {
+    max-width: 150px;
+  }
+}
+
+/* ------------------------------------------------------------ UX logic step C: the course's focus bar, the one
+   primary, the bottom bar, the honest end screen */
+.cp-top {
+  gap: 14px;
+  padding: 0 24px;
+}
+.cp-top .cp-ttl {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.cp-top .cp-ttl b {
+  font-size: 15.5px;
+  font-weight: 650;
+}
+.cp-top .cp-ttl span {
+  font-size: 13px;
+  margin-top: 2px;
+}
+.cp-prog {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+.cp-prog .cp-count {
+  font-size: 14px;
+  color: var(--muted);
+}
+.cp-bar {
+  display: block;
+  width: 180px;
+  height: 6px;
+  border-radius: 3px;
+  background: #e9e6df;
+  overflow: hidden;
+}
+.cp-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.cp-app .cp-btn.cp-olbtn {
+  flex: none;
+}
+.cp-top .cp-langseg {
+  background: var(--surface-2);
+}
+@media (max-width: 1300px) {
+  .cp-bar {
+    width: 120px;
+  }
+}
+@media (max-width: 1100px) {
+  .cp-top {
+    padding: 0 16px;
+    gap: 10px;
+  }
+  .cp-bar {
+    width: 72px;
+  }
+}
+@media (max-width: 900px) {
+  /* portrait: the title keeps one line, « Étape 4 sur 14 » stays, the bar goes */
+  .cp-bar,
+  .cp-top .cp-div {
+    display: none;
+  }
+  .cp-top .cp-ttl span {
+    display: none;
+  }
+}
+@media (max-width: 640px) {
+  .cp-prog .cp-count {
+    font-size: 13px;
+  }
+  .cp-app .cp-btn.cp-olbtn .cp-bl {
+    display: inline;
+  }
+}
+
+/* the bottom bar: one row under the whole page, whatever the layout */
+.cp-bottom .cp-foot {
+  padding: 12px 24px;
+  gap: 12px;
+}
+.cp-bottom .cp-foot .cp-btn {
+  min-width: 0;
+}
+.cp-app .cp-foot .cp-btn.cp-next {
+  min-width: 132px;
+}
+.cp-donecount {
+  font-size: 14px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+@media (max-width: 1100px) {
+  .cp-bottom .cp-foot {
+    padding: 10px 16px;
+  }
+}
+
+/* one filled button per screen: once the step's task is attempted, « Suivant » is the primary and the step's own
+   buttons (Vérifier, Recommencer la série, Voler…) look secondary */
+.cp-app[data-next="go"] .cp-body .cp-btn.primary {
+  background: var(--surface);
+  border-color: var(--line-strong);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+.cp-app[data-next="go"] .cp-body .cp-btn.primary:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+/* « Vérifier » never below the fold: the step's action row sticks to the bottom of the left panel */
+.cp-reader .cp-scroll .cp-quizwrap .cp-qact,
+.cp-reader .cp-scroll .cp-calc-actions {
+  position: sticky;
+  bottom: -16px;
+  z-index: 2;
+  margin: 0 -26px;
+  padding: 12px 26px 16px;
+  background: linear-gradient(to bottom, rgb(255 255 255 / 0), var(--surface) 14px);
+}
+/* centred in a card (no side panel): the row keeps the card's width and its white */
+.cp-body[data-layout="readerOnly"] .cp-reader .cp-scroll .cp-quizwrap .cp-qact,
+.cp-body[data-layout="readerOnly"] .cp-reader .cp-scroll .cp-calc-actions {
+  margin: 0;
+  padding: 12px 0 14px;
+}
+@media (max-width: 1300px) {
+  .cp-body:not([data-layout="readerOnly"]) .cp-reader .cp-scroll .cp-quizwrap .cp-qact,
+  .cp-body:not([data-layout="readerOnly"]) .cp-reader .cp-scroll .cp-calc-actions {
+    bottom: -12px;
+    margin: 0 -20px;
+    padding: 12px 20px 12px;
+  }
+}
+
+/* the end screen: the eyebrow says what is true, rows still to do say so */
+.cp-app .cp-summary .cp-sum-eyebrow {
+  margin: 0;
+  font: 700 13px/1.3 var(--font);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--warn);
+}
+.cp-app .cp-summary .cp-sum-eyebrow.ok {
+  color: var(--good);
+}
+.cp-app .cp-summary .cp-qact {
+  width: 100%;
+}
+.cp-app .cp-summary .cp-ol-row.is-todo .st {
+  color: var(--warn);
+  font-weight: 600;
+}
+.cp-app .cp-head .cp-kind,
+.cp-app .cp-fly-main .cp-kind,
+.cp-app .cp-ol-row .cp-kind {
+  letter-spacing: 0.02em;
+  text-transform: none;
+  font-size: 13px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 99px;
+}
+/* the slide's « Manipuler l’instrument » leads while it is the task; once tried, « Suivant » leads */
+.cp-app[data-next="go"] .sl-hud-btn.sl-yourturn {
+  background: #ffffff;
+  color: #14181f;
+  box-shadow: inset 0 0 0 1px #cbc7be;
+}
+.cp-app[data-next="go"] .sl-hud-btn.sl-yourturn .sl-hud-ic {
+  background: var(--good);
+}
+.cp-app .cp-summary .cp-sum-again {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ------------------------------------------------------------ UX logic step C: the presenter */
+.pr-app {
+  grid-template-rows: 64px minmax(0, 1fr);
+  background: #fbfaf7;
+  color: #14181f;
+}
+@media (max-width: 900px) {
+  /* a portrait tablet: the header wraps onto two rows (title, then the controls) */
+  .pr-app {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .pr-head {
+    padding: 8px 16px;
+  }
+}
+.pr-head {
+  gap: 12px;
+  border-bottom-color: #e4e1da;
+}
+@media (min-width: 901px) {
+  .pr-head {
+    padding: 0 24px;
+  }
+}
+.pr-head .cp-btn.primary {
+  background: #1d5fd1;
+  border-color: #1d5fd1;
+}
+.pr-col {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+}
+.pr-side {
+  background: #f3f1ec;
+  border-left-color: #e4e1da;
+}
+.pr-card {
+  border-color: #e4e1da;
+  border-radius: 12px;
+}
+.pr-card h2 {
+  font-size: 12.5px;
+  color: #5d6671;
+}
+.pr-next-t b {
+  font-size: 15px;
+}
+.pr-keys {
+  font-size: 13px;
+  color: #5d6671;
+}
+/* one primary: while the projector screen is closed, its button leads and « Suivant » is secondary */
+.pr-app:not(.proj-on) .cp-foot .cp-btn.primary {
+  background: #ffffff;
+  border-color: #cbc7be;
+  color: #14181f;
+  box-shadow: 0 1px 2px rgba(20, 24, 31, 0.06);
+}
+/* the step strip: every step, a click moves the projector there */
+.pr-stripwrap {
+  border-top: 1px solid #e4e1da;
+  background: #ffffff;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.pr-strip {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 24px 12px;
+  list-style: none;
+}
+.pr-st {
+  position: relative;
+  display: block;
+  width: 112px;
+  aspect-ratio: 16 / 9;
+  padding: 0;
+  border: 1px solid #e4e1da;
+  border-radius: 8px;
+  background: #f3f1ec;
+  overflow: hidden;
+  cursor: pointer;
+}
+.pr-st:hover {
+  border-color: #cbc7be;
+}
+.pr-st:focus-visible {
+  outline: 2px solid #1d5fd1;
+  outline-offset: 2px;
+}
+.pr-st.on {
+  border-color: #1d5fd1;
+  box-shadow: 0 0 0 2px #1d5fd1;
+}
+.pr-st-pic {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  pointer-events: none;
+}
+.pr-st-pic > .pr-st-t {
+  margin: 6px 8px 0 28px;
+  max-height: 43px;
+  font: 600 11.5px/1.25 "Inter", system-ui, sans-serif;
+  color: #353c47;
+  text-align: left;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.pr-st-n {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: rgba(20, 24, 31, 0.78);
+  color: #fff;
+  font: 700 12px/20px "Inter", system-ui, sans-serif;
+  text-align: center;
+}
+.pr-st.on .pr-st-n {
+  background: #1d5fd1;
+}
+@media (max-width: 1000px) {
+  .pr-strip {
+    padding: 8px 16px 10px;
+  }
+  .pr-st {
+    width: 96px;
+  }
+}
+/* student-only buttons never show on the presenter or on the projector */
+.pr-app .sl-hud-btn.sl-yourturn,
+.ga-projector .sl-hud-btn.sl-yourturn {
+  display: none;
 }

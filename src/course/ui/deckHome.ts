@@ -1,75 +1,32 @@
-// The slide decks on the Flight Center's first screen (SPEC slides v2 §12), kept simple: the hero shows one real
-// deck, its cover drawn live by the slide renderer, and the shelf under it shows four decks as slide cards (cover
-// thumbnail, steps, minutes, progress); the rest is one click away in the library. Loaded on demand by
-// ui/flightcenter.ts, so the slide engine stays out of the cockpit's first bundle. Same entries and order as the
-// library (library.ts): the deck the student should continue first, then assigned, recent and sample decks.
+// What the Accueil page (ui/home.ts) needs from the courses, loaded on demand so the slide engine stays out of the
+// cockpit's first bundle:
+//   - homeData(): the one « Reprendre » (the course the student left part-way, at the step they left), and an
+//     assigned course for « Aussi en cours »; computed like the library's Continue (continueTarget), one « start
+//     here » for the whole product;
+//   - drawCover(): a real slide drawn into a 16:9 picture (the doors' covers, the Reprendre cover).
+// The pure helpers featuredEntry() and shelfOrder() keep the library's order (tested in tests/slides-first).
 import "../../styles/course-canvas.css";
-import { h } from "../../ui/dom";
-import { allSamples, HOLDING_ID } from "../samples";
-import { renderThumb, type SlideView } from "../canvas/render";
+import { allSamples, HOLDING_ID, SAMPLES } from "../samples";
+import { renderThumb } from "../canvas/render";
 import { SceneSims } from "../canvas/instruments";
 import type { CourseIndexEntry, CourseStore } from "../store";
 import {
-  academyHref,
   continueTarget,
   importedIds,
   libraryEntries,
   type LibraryEntry,
 } from "./library";
-import { ct, ctSteps, loc } from "../i18n";
-import type { Course, CourseProgress, Lang, Step } from "../types";
-
-export interface DeckHomeOptions {
-  lang: Lang;
-  /** the large slide and its filmstrip (inside the hero band) */
-  visual: HTMLElement;
-  /** the row of deck cards */
-  shelf: HTMLElement;
-  /** academy.html (the Flight Center sits at the site root, so does academy.html) */
-  page?: string;
-  /** open a URL (the Flight Center closes first) */
-  navigate: (url: string) => void;
-  /** the most deck cards on the shelf (default 4: the rest is one click away, in the library) */
-  shelfMax?: number;
-  /** the store, when it opens (stored decks and progress join the samples) */
-  store?: Promise<CourseStore> | null;
-  profileId?: string;
-}
-
-export interface DeckHome {
-  destroy(): void;
-}
-
-const S = {
-  en: {
-    cont: "Continue",
-    start: "Start here",
-    open: "Open",
-    playDeck: "Open the course",
-    of: "{a} of {b}",
-    deckOf: "{n} slides",
-  },
-  fr: {
-    cont: "Reprendre",
-    start: "Pour commencer",
-    open: "Ouvrir",
-    playDeck: "Ouvrir le cours",
-    of: "{a} sur {b}",
-    deckOf: "{n} diapositives",
-  },
-} as const;
-type Key = keyof (typeof S)["en"];
-const tr = (l: Lang, k: Key, v: Record<string, string | number> = {}) =>
-  (S[l === "fr" ? "fr" : "en"][k] as string).replace(
-    /\{(\w+)\}/g,
-    (_, x: string) => String(v[x] ?? ""),
-  );
+import { loc } from "../i18n";
+import type { Course, CourseProgress, Lang, SlideCanvas, Step } from "../types";
+import { coursePlacement } from "../../library/sources";
+import { programDef, subjectDef } from "../../library/programs";
+import { courseCover } from "../../library/covers";
 
 const slidesOf = (c: Course | undefined): Step[] =>
   c ? c.steps.filter((s) => !!s.slide) : [];
 
-/** The deck the hero shows: the one to continue when the student has started or been assigned one, else the
- *  holding sample (the most telling cover: a hold drawn in slide units), else the first deck with slides. */
+/** The deck to feature: the one to continue when the student has started or been assigned one, else the holding
+ *  sample, else the first deck with slides. */
 export function featuredEntry(
   list: readonly LibraryEntry[],
   last: { id: string; stepId?: string } | null,
@@ -101,290 +58,196 @@ export function shelfOrder(
   return out;
 }
 
-export function mountDeckHome(o: DeckHomeOptions): DeckHome {
-  const l = o.lang;
-  const page = o.page ?? "academy.html";
-  let destroyed = false;
-  let store: CourseStore | null = null;
-  let entries: LibraryEntry[] = libraryEntries({
-    samples: allSamples(),
-    stored: [],
-  });
-  const views = new Set<SlideView>();
-  const sims = new Map<string, SceneSims>();
-  const io =
-    typeof IntersectionObserver !== "undefined"
-      ? new IntersectionObserver(
-          (list) => {
-            for (const x of list)
-              if (x.isIntersecting) {
-                io?.unobserve(x.target);
-                (x.target as HTMLElement & { _draw?: () => void })._draw?.();
-              }
-          },
-          { rootMargin: "120px" },
-        )
-      : null;
+// ------------------------------------------------------------------ Reprendre
+export interface HomeCourse {
+  id: string;
+  title: string;
+  /** « LAPL · PPL › Performances et préparation du vol » */
+  home: string;
+  /** the formation it is filed in (the player's way back) */
+  program: string;
+}
+export interface HomeResume extends HomeCourse {
+  /** the step the student left (0-based), its id and title */
+  index: number;
+  stepId: string;
+  stepTitle: string;
+  total: number;
+  firstStepId: string;
+  /** about how long is left, in minutes (rounded to 5) */
+  minutesLeft: number | null;
+}
+export interface HomeData {
+  resume: HomeResume | null;
+  /** an assigned course other than the resumed one (« À faire ») */
+  assigned: HomeCourse | null;
+}
 
-  const href = (_k: "play", e: LibraryEntry, stepId?: string) =>
-    academyHref({ k: "play", id: e.id, ...(stepId ? { s: stepId } : {}) }, page);
-
-  /** one SceneSims per course: every thumbnail of a deck shares its instruments */
-  const simsFor = (c: Course) => {
-    let s = sims.get(c.id);
-    if (!s) {
-      s = new SceneSims({ scenes: c.scenes, cockpit: c.cockpit });
-      sims.set(c.id, s);
-    }
-    return s;
-  };
-  const assetUrl = (id: string) =>
-    store
-      ? store.getAsset(id).then((b) => (b ? URL.createObjectURL(b) : null))
-      : null;
-  /** a static slide drawn into a 16:9 box (lazily, once it scrolls into view) */
-  const thumb = (host: HTMLElement, c: Course, s: Step, eager = false) => {
-    const draw = () => {
-      if (destroyed || !host.isConnected || host.dataset.drawn) return;
-      host.dataset.drawn = "1";
-      try {
-        const v = renderThumb(s.slide!, host, {
-          lang: l,
-          theme: c.theme,
-          brand: c.brand,
-          scenes: c.scenes,
-          cockpit: c.cockpit,
-          step: s,
-          sims: simsFor(c),
-          assetUrl,
-          label: loc(s.title, l),
-        });
-        views.add(v);
-        (host as HTMLElement & { _view?: SlideView })._view = v;
-      } catch {
-        host.classList.add("no-slide");
-      }
-    };
-    (host as HTMLElement & { _draw?: () => void })._draw = draw;
-    if (eager || !io) requestAnimationFrame(draw);
-    else io.observe(host);
-  };
-  const dropView = (host: HTMLElement) => {
-    const v = (host as HTMLElement & { _view?: SlideView })._view;
-    if (v) {
-      v.destroy();
-      views.delete(v);
-    }
-  };
-
-  // ---------------------------------------------------------------- the hero: one deck, its cover drawn large
-  // (one slide and one caption: the Flight Center stays simple; the filmstrip and every action live in the player)
-  const renderVisual = () => {
-    const last = store?.last() ?? null;
-    const e = featuredEntry(entries, last);
-    for (const el of o.visual.querySelectorAll<HTMLElement>(".dh-slide"))
-      dropView(el);
-    o.visual.replaceChildren();
-    const c = e?.course;
-    const slides = slidesOf(c);
-    if (!e || !c || !slides.length) return;
-    const big = h("div", {
-      class: "dh-slide",
-      role: "img",
-      "aria-label": loc(slides[0].title, l),
-    });
-    const open = h("button", {
-      class: "dh-slide-hit",
-      type: "button",
-      "aria-label": `${tr(l, "playDeck")} · ${loc(e.title, l)}`,
-      onclick: () => o.navigate(href("play", e, e.progress?.stepId)),
-    });
-    const cap = h(
-      "div",
-      { class: "dh-cap" },
-      h(
-        "span",
-        { class: "dh-cap-t" },
-        h("b", {}, loc(e.title, l)),
-        h(
-          "small",
-          {},
-          // one count everywhere: the course's steps (its cover and the library say "20 steps", not "11 slides")
-          [
-            ctSteps(c.steps.length, l),
-            e.minutes ? ct("minutes", l, { n: e.minutes }) : "",
-          ]
-            .filter(Boolean)
-            .join(" · "),
-        ),
-      ),
-      // the way in, said: the cover is clickable, but nothing on it looked like it
-      h(
-        "button",
-        {
-          class: "btn dh-cap-go",
-          type: "button",
-          onclick: () => o.navigate(href("play", e, e.progress?.stepId)),
-        },
-        tr(l, "playDeck"),
-      ),
+/** Where a course lives, as words: its formation › its subject. */
+function homeOf(e: LibraryEntry, l: Lang): { home: string; program: string } {
+  try {
+    const p = coursePlacement(
+      e,
+      (id) => SAMPLES.find((s) => s.id === id)?.program,
     );
-    o.visual.append(h("div", { class: "dh-stage" }, big, open), cap);
-    thumb(big, c, slides[0], true);
-  };
+    const d = subjectDef(p.home);
+    return {
+      home: `${loc(programDef(d.program).code, l)} › ${loc(d.title, l)}`,
+      program: d.program,
+    };
+  } catch {
+    return { home: "", program: "" };
+  }
+}
 
-  // ---------------------------------------------------------------- the shelf: every deck as a slide card
-  const renderShelf = () => {
-    const last = store?.last() ?? null;
-    for (const el of o.shelf.querySelectorAll<HTMLElement>(".dh-card-thumb"))
-      dropView(el);
-    o.shelf.replaceChildren();
-    const rows = shelfOrder(entries, last).slice(0, o.shelfMax ?? 4);
-    for (const { entry: e, cont, started } of rows) {
-      const c = e.course;
-      const slides = slidesOf(c);
-      const cover = slides[0];
-      const tag = cont
-        ? started
-          ? tr(l, "cont")
-          : tr(l, "start")
-        : e.briefing
-          ? ct("tagBriefing", l)
-          : e.shelf === "assigned"
-            ? ct("tagAssigned", l)
-            : e.shelf === "club"
-              ? ct("tagClub", l)
-              : e.shelf === "draft"
-                ? ct("tagDraft", l)
-                : ct("tagSample", l);
-      const th = h("div", {
-        class: `dh-card-thumb${cover ? "" : " no-slide"}`,
-        "aria-hidden": "true",
-      });
-      const idx = e.progress?.index ?? 0;
-      const pct =
-        e.progress && e.progress.total
-          ? Math.round((idx / e.progress.total) * 100)
-          : 0;
-      const meta = [
-        ctSteps(e.steps, l),
-        e.minutes ? ct("minutes", l, { n: e.minutes }) : "",
-      ]
-        .filter(Boolean)
-        .join(" · ");
-      const go = () =>
-        o.navigate(href("play", e, started ? e.progress?.stepId : undefined));
-      const card = h(
-        "article",
-        {
-          class: `dh-card${cont ? " is-cont" : ""}${e.shelf === "draft" ? " is-draft" : ""}`,
-          role: "listitem",
-        },
-        h("button", {
-          class: "dh-card-hit",
-          type: "button",
-          "aria-label": `${tr(l, "open")} · ${loc(e.title, l)}`,
-          onclick: go,
-        }),
-        h(
-          "div",
-          { class: "dh-card-media" },
-          th,
-        ),
-        h(
-          "div",
-          { class: "dh-card-b" },
-          h("h3", {}, loc(e.title, l)),
-          h(
-            "p",
-            { class: "dh-meta" },
-            h("span", { class: `dh-tag${cont ? " on" : ""}` }, tag),
-            h("span", {}, meta),
-          ),
-          started && e.progress
-            ? h(
-                "div",
-                { class: "dh-prog" },
-                h(
-                  "span",
-                  {
-                    class: "dh-bar",
-                    role: "progressbar",
-                    "aria-valuemin": "0",
-                    "aria-valuemax": String(e.progress.total),
-                    "aria-valuenow": String(idx),
-                  },
-                  h("i", { style: `width:${pct}%` }),
-                ),
-                h(
-                  "span",
-                  { class: "num" },
-                  tr(l, "of", { a: idx + 1, b: e.progress.total }),
-                ),
-              )
-            : null,
-        ),
-      );
-      o.shelf.append(card);
-      if (c && cover) thumb(th, c, cover);
+/** The pure part of homeData: the course to resume (left part-way, past its first step) and an assignment. */
+export function pickResume(
+  list: readonly LibraryEntry[],
+  last: { id: string; stepId?: string } | null,
+  l: Lang,
+): HomeData {
+  const c = continueTarget(list, last);
+  let resume: HomeResume | null = null;
+  const e = c?.entry;
+  const course = e?.course;
+  if (e && course && course.steps.length && c.started) {
+    const stepId =
+      e.progress?.stepId ?? (last?.id === e.id ? last.stepId : undefined);
+    const index = Math.max(
+      0,
+      course.steps.findIndex((s) => s.id === stepId),
+    );
+    const total = course.steps.length;
+    // left part-way: past the first step and not on the last one
+    if (stepId && index >= 1 && index < total - 1) {
+      const where = homeOf(e, l);
+      const mins = e.minutes ?? course.minutes;
+      resume = {
+        id: e.id,
+        title: loc(e.title, l),
+        ...where,
+        index,
+        stepId: course.steps[index].id,
+        stepTitle: loc(course.steps[index].title, l),
+        total,
+        firstStepId: course.steps[0].id,
+        minutesLeft: mins
+          ? Math.max(5, Math.round((mins * (1 - index / total)) / 5) * 5)
+          : null,
+      };
     }
-  };
-
-  renderVisual();
-  renderShelf();
-
-  // stored decks and progress join when the store opens
-  void (async () => {
-    if (!o.store) return;
-    try {
-      store = await o.store;
-    } catch {
-      store = null;
-    }
-    if (destroyed || !store) return;
-    const samples = allSamples();
-    const stored: { entry: CourseIndexEntry; course?: Course | null }[] = [];
-    for (const entry of store.list()) {
-      let course: Course | null = null;
-      try {
-        course = await store.get(entry.id);
-      } catch {
-        course = null;
-      }
-      stored.push({ entry, course });
-    }
-    const progress = new Map<string, CourseProgress>();
-    for (const id of [
-      ...stored.map((x) => x.entry.id),
-      ...samples.map((c) => c.id),
-    ]) {
-      try {
-        const p = await store.getProgress(id, o.profileId ?? "local");
-        if (p) progress.set(id, p);
-      } catch {
-        /* no progress */
-      }
-    }
-    if (destroyed) return;
-    entries = libraryEntries({
-      samples,
-      stored,
-      imported: importedIds(),
-      progress,
-    });
-    if (!stored.length && !progress.size && !store.last()) return; // nothing changed: keep the drawn slides
-    renderVisual();
-    renderShelf();
-  })();
-
+  }
+  const a = list.find(
+    (x) =>
+      x.assigned &&
+      x.id !== resume?.id &&
+      (!x.progress || x.progress.index < x.progress.total - 1),
+  );
   return {
-    destroy() {
-      destroyed = true;
-      io?.disconnect();
-      for (const v of views) v.destroy();
-      views.clear();
-      for (const s of sims.values()) s.destroy();
-      sims.clear();
-    },
+    resume,
+    assigned: a ? { id: a.id, title: loc(a.title, l), ...homeOf(a, l) } : null,
   };
+}
+
+/** Read the store (stored courses, progress, the last opened course) and pick what Accueil shows. */
+export async function homeData(o: {
+  lang: Lang;
+  store: Promise<CourseStore> | null;
+  profileId?: string;
+}): Promise<HomeData> {
+  let store: CourseStore | null = null;
+  try {
+    store = o.store ? await o.store : null;
+  } catch {
+    store = null;
+  }
+  const samples = allSamples();
+  if (!store)
+    return pickResume(libraryEntries({ samples, stored: [] }), null, o.lang);
+  const stored: { entry: CourseIndexEntry; course?: Course | null }[] = [];
+  for (const entry of store.list()) {
+    let course: Course | null = null;
+    try {
+      course = await store.get(entry.id);
+    } catch {
+      course = null;
+    }
+    stored.push({ entry, course });
+  }
+  const progress = new Map<string, CourseProgress>();
+  const last = store.last();
+  const ids = new Set([
+    ...stored.map((x) => x.entry.id),
+    ...(last ? [last.id] : []),
+  ]);
+  for (const s of stored) if (s.entry.assigned) ids.add(s.entry.id);
+  // the samples' progress only for the course last opened (reading every sample's record is slow on an iPad)
+  for (const id of ids) {
+    try {
+      const p = await store.getProgress(id, o.profileId ?? "local");
+      if (p) progress.set(id, p);
+    } catch {
+      /* no progress */
+    }
+  }
+  const list = libraryEntries({
+    samples,
+    stored,
+    imported: importedIds(),
+    progress,
+  });
+  return pickResume(list, last, o.lang);
+}
+
+// ------------------------------------------------------------------ covers
+/** A course's first slide (or a product slide) drawn into `host`, a 16:9 picture. */
+export async function drawCover(
+  host: HTMLElement,
+  what: { course: string } | { product: string },
+  lang: Lang,
+): Promise<{ destroy(): void } | null> {
+  let slide: SlideCanvas | null = null;
+  let course: Course | null = null;
+  let step: Step | undefined;
+  if ("product" in what) {
+    const p = await import("../samples/productDeck");
+    slide = p.productDeck().find((x) => x.id === what.product)?.slide ?? null;
+  } else {
+    course =
+      allSamples().find((c) => c.id === what.course) ??
+      (await (async () => {
+        try {
+          const st = await (await import("../store")).courseStore();
+          return await st.get(what.course);
+        } catch {
+          return null;
+        }
+      })());
+    const pick = course ? courseCover(course) : null;
+    slide = pick?.slide ?? null;
+    step = pick?.step;
+  }
+  if (!slide || !host.isConnected) return null;
+  const sims = course
+    ? new SceneSims({ scenes: course.scenes, cockpit: course.cockpit })
+    : null;
+  try {
+    const v = renderThumb(slide, host, {
+      lang,
+      theme: course?.theme ?? "classroom",
+      ...(course?.brand ? { brand: course.brand } : {}),
+      ...(course ? { scenes: course.scenes, cockpit: course.cockpit } : {}),
+      ...(step ? { step } : {}),
+      ...(sims ? { sims } : {}),
+    });
+    return {
+      destroy() {
+        v.destroy();
+        sims?.destroy();
+      },
+    };
+  } catch {
+    sims?.destroy();
+    return null;
+  }
 }

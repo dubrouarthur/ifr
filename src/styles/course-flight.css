@@ -577,3 +577,96 @@ body.touch .cf-brieflink .btn {
 body.cf-flying .tb-courses {
   display: none !important;
 }
+
+/* ------------------------------------------------------------------ the course strip of a course flight (UX logic §7)
+   A light band: « Cours · <course> · Étape 13 sur 14 » and « ← Retour au cours » as a secondary button (the one
+   primary before take-off is « Commencer le vol » on the brief card). Capture mode keeps its dark author strip. */
+.cf-strip:not(.capture) {
+  background: #fbfaf7;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-bottom: 1px solid #e4e1da;
+  color: #14181f;
+}
+.cf-strip:not(.capture) .cf-what > svg {
+  color: #1d5fd1;
+}
+.cf-strip:not(.capture) .cf-what small.cf-kind {
+  flex: none;
+  font: 700 11.5px/1 var(--font, system-ui, sans-serif);
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: #1d5fd1;
+}
+.cf-strip:not(.capture) .cf-what .cf-course-t {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font: 650 13.5px/1.2 var(--font, system-ui, sans-serif);
+  letter-spacing: 0;
+  color: #14181f;
+}
+.cf-strip:not(.capture) .cf-what .cf-stepn {
+  flex: none;
+  font: 550 13px/1 var(--font, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
+  color: #5d6671;
+}
+.cf-strip:not(.capture) .cf-what .cf-stepn::before {
+  content: "·";
+  margin-right: 8px;
+  color: #8a929b;
+}
+.cf-strip:not(.capture) .cf-b {
+  background: #fff;
+  border-color: #cbc7be;
+  color: #14181f;
+}
+.cf-strip:not(.capture) .cf-b:hover {
+  background: #f3f1ec;
+  border-color: #b9b4aa;
+}
+.cf-strip:not(.capture) .cf-b:focus-visible {
+  outline-color: #1d5fd1;
+}
+.cf-strip:not(.capture) .cf-b.danger {
+  background: #b3261e;
+  border-color: #b3261e;
+  color: #fff;
+}
+.cf-strip:not(.capture) .cf-confirm .cf-q {
+  color: #8a4b00;
+}
+.cf-strip .cf-b .cf-larr {
+  display: inline-flex;
+  order: -1;
+  transform: scaleX(-1);
+}
+/* the hand-over card: « Retour au cours… » and the course's title */
+.cf-veil .cf-veil-t {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cf-veil .cf-veil-t small[hidden] {
+  display: none;
+}
+.cf-veil .cf-veil-t small {
+  font-size: 13px;
+  opacity: 0.75;
+}
+/* a short outside view (portrait): the brief card is a sheet over the panel, under the bars (main.ts) */
+.cf-card-wrap.cf-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: var(--cf-sheet-top, 120px);
+  bottom: auto;
+  max-height: calc(100dvh - var(--cf-sheet-top, 120px) - 16px);
+  z-index: 44;
+  padding: 0 12px;
+}
+.cf-card-wrap.cf-sheet .cf-card {
+  max-height: calc(100dvh - var(--cf-sheet-top, 120px) - 16px);
+}

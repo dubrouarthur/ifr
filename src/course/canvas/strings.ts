@@ -3,7 +3,7 @@ import type { Lang } from "../types";
 
 const S = {
   // blocks
-  yourTurn: ["Your turn", "À vous"],
+  yourTurn: ["Use the instrument", "Manipuler l’instrument"],
   play: ["Play", "Lire"],
   replay: ["Replay", "Revoir"],
   openSim: ["Fly it in the simulator", "Le faire dans le simulateur"],
@@ -86,7 +86,7 @@ const S = {
   reveal: ["Reveal", "Apparition"],
   grid: ["Grid", "Grille"],
   snap: ["Snap", "Magnétisme"],
-  layers: ["Layers", "Calques"],
+  layers: ["Elements on the slide", "Éléments de la diapo"],
   layouts: ["Layouts", "Mises en page"],
   themes: ["Themes", "Thèmes"],
   interactive: ["Interactive", "Interactif"],

@@ -1,10 +1,10 @@
 // The unified library's model (pure, no DOM). One list of items, whatever they are (a course of slides, a sim
 // lesson, a failure drill, a graded route, a free practice, a checklist), each with exactly ONE home: a subject of a
 // programme (programs.ts). The views the page shows come from here:
-//   landing     Continue (started, assigned), "Where to start?" (newcomer or not) and the shelves as a table of
-//               contents, with counts per subject that add up to the library's total
-//   programme   its subjects in syllabus order, each with its items in the fixed kind order, the subjects with no
-//               content yet gathered on one line, and "Also useful here" pointers from other programmes
+//   landing     Reprendre (started, assigned) and the formations, each with the count its page shows
+//   programme   EVERY subject of its syllabus in order (an empty one is a « Bientôt » row), each with its items in
+//               the fixed kind order. An item another formation lends to a subject is drawn there as an ordinary
+//               card (« Vient de la formation IR ») and counted there: every number equals what the page draws
 //   search      every match, grouped by home in shelf and syllabus order ("where does this topic live?")
 // The one filter is the kind family (courses · in the simulator · procedures and checklists); levels inform only.
 import type { L10n, Lang } from "../course/types";
@@ -383,74 +383,38 @@ export function lessonRank(
 // ------------------------------------------------------------------ the landing
 export interface ShelfSubject {
   subject: SubjectDef;
-  /** items homed here */
+  /** everything drawn in this subject: its own items AND the ones another formation lends it (one number: what
+   *  the student sees when they open it) */
   n: number;
   done: number;
-  /** items of other programmes pointed here ("Also useful here"), never counted in n */
+  /** how many of n come from another formation (« Vient de la formation IR »), already counted in n */
   also: number;
-  /** planned courses not here yet ("Soon") */
+  /** planned courses not here yet (« Bientôt dans Wingdeck ») */
   soon: number;
+  /** a programme page under a kind filter: how many of n the filter keeps (n otherwise) */
+  shown?: number;
 }
-/** Something to show for a subject: its own items, pointers from other programmes, or a planned course. */
-export const hasAnything = (x: Pick<ShelfSubject, "n" | "also" | "soon">) =>
-  x.n > 0 || x.also > 0 || x.soon > 0;
-/** Pointers into each subject from other programmes, and planned courses per subject. */
-function subjectExtras(list: readonly LibItem[]): {
-  also: Record<string, number>;
-  soon: Record<string, number>;
-} {
-  const also: Record<string, number> = {};
-  const soon: Record<string, number> = {};
-  for (const i of list) {
-    const p = programOf(i);
-    for (const a of i.also)
-      if (subjectDef(a).program !== p) also[a] = (also[a] ?? 0) + 1;
-  }
-  for (const x of plannedItems(list)) soon[x.home] = (soon[x.home] ?? 0) + 1;
-  return { also, soon };
-}
+/** Something to open in a subject (its own items, or items lent by another formation). */
+export const hasAnything = (x: Pick<ShelfSubject, "n">) => x.n > 0;
 export interface Shelf {
   program: ProgramId;
+  /** what the formation page draws, card for card (= the sum of its subjects) */
   total: number;
   done: number;
-  /** items homed in other programmes that point here ("+ 6 useful, shelved in other programmes") */
-  alsoHere: number;
   groups: { group: SubjectGroup | null; subjects: ShelfSubject[] }[];
 }
-/** The shelves of the landing (and the Flight Center's tiles), each a table of contents. */
+/** The formations of the landing, each with the counts its page shows (programView, unfiltered). */
 export function shelves(list: readonly LibItem[]): Shelf[] {
-  const n = subjectCounts(list);
-  const done = Object.fromEntries(SUBJECTS.map((s) => [s.id, 0])) as Record<
-    SubjectId,
-    number
-  >;
-  for (const i of list) if (isDone(i)) done[i.home]++;
-  const ex = subjectExtras(list);
   return SHELF_IDS.map((p) => {
-    const subs = subjectsOf(p).map((s) => ({
-      subject: s,
-      n: n[s.id],
-      done: done[s.id],
-      also: ex.also[s.id] ?? 0,
-      soon: ex.soon[s.id] ?? 0,
-    }));
+    const v = programView(list, p);
     const groups: Shelf["groups"] = [];
-    for (const s of subs) {
+    for (const s of v.index) {
       const g = s.subject.group ?? null;
       let row = groups.find((x) => x.group === g);
       if (!row) groups.push((row = { group: g, subjects: [] }));
       row.subjects.push(s);
     }
-    return {
-      program: p,
-      total: subs.reduce((a, s) => a + s.n, 0),
-      done: subs.reduce((a, s) => a + s.done, 0),
-      alsoHere: list.filter(
-        (i) =>
-          programOf(i) !== p && i.also.some((a) => subjectDef(a).program === p),
-      ).length,
-      groups,
-    };
+    return { program: p, total: v.total, done: v.done, groups };
   });
 }
 
@@ -461,33 +425,37 @@ export interface KindGroup {
 }
 export interface SubjectSection {
   subject: SubjectDef;
-  /** every item homed here (whatever the filter) */
+  /** every item drawn here (whatever the filter): its own, then the ones lent by another formation */
   total: number;
   done: number;
-  /** what the filter keeps, in the fixed kind order */
+  /** what the filter keeps, in the fixed kind order (a lent item sits in its kind, after this formation's own) */
   items: LibItem[];
   groups: KindGroup[];
-  /** items of other programmes that are also useful here (filter applied), not counted */
-  also: LibItem[];
-  /** planned courses of this subject, not here yet (shown when courses are shown) */
+  /** how many of `total` come from another formation */
+  borrowed: number;
+  /** planned courses of this subject, not here yet */
   soon: PlannedItem[];
+  /** minutes of what the filter keeps (study and flights) */
+  minutes: number;
   /** minutes in the simulator (lessons, drills, routes) */
   simMinutes: number;
 }
 export interface ProgramView {
   program: ProgramId;
+  /** cards and rows of the page, unfiltered (the sum of the subjects' totals) */
   total: number;
   done: number;
+  /** the filter's counts, over the same cards */
   kinds: Record<LibKind | "all", number>;
   groups: {
     group: SubjectGroup | null;
     title: L10n | null;
-    /** subjects with something to show under the filter */
+    /** EVERY subject of the syllabus, at its official number (an empty one has total 0: a « Bientôt » row) */
     sections: SubjectSection[];
-    /** subjects of the syllabus with nothing at all yet: no item, no pointer, no planned course (muted, one line) */
+    /** the subjects with nothing to open yet (no item, nothing lent) */
     empty: SubjectDef[];
   }[];
-  /** every subject in order, with its count, for the left index */
+  /** every subject in order, with its count, for the Sommaire */
   index: ShelfSubject[];
 }
 function kindGroups(items: readonly LibItem[]): KindGroup[] {
@@ -500,28 +468,36 @@ function kindGroups(items: readonly LibItem[]): KindGroup[] {
   }
   return out;
 }
+/** An item another formation lends to subject `s` of programme `p` (filed elsewhere, useful here). */
+export const isLentTo = (i: LibItem, p: ProgramId, s: SubjectId): boolean =>
+  i.home !== s && programOf(i) !== p && i.also.includes(s);
 export function programView(
   list: readonly LibItem[],
   p: ProgramId,
   kind: LibKind | "all" = "all",
 ): ProgramView {
-  const mine = list.filter((i) => programOf(i) === p);
   const keep = (i: LibItem) => kind === "all" || i.kind === kind;
   const groups: ProgramView["groups"] = [];
   const index: ShelfSubject[] = [];
   const planned = plannedItems(list);
+  const kinds = { all: 0, course: 0, sim: 0, proc: 0 };
+  let total = 0;
+  let doneAll = 0;
   for (const s of subjectsOf(p)) {
-    const homed = mine.filter((i) => i.home === s.id).sort(compareInSubject);
-    const items = homed.filter(keep);
-    // pointers are built for EVERY subject: a subject with no home items can still hold material from elsewhere
-    const allAlso = list
-      .filter(
-        (i) => i.home !== s.id && programOf(i) !== p && i.also.includes(s.id),
-      )
-      .sort(compareInLibrary);
-    const also = allAlso.filter(keep);
-    const soonAll = planned.filter((x) => x.home === s.id);
-    const soon = kind === "all" || kind === "course" ? soonAll : [];
+    const own = list.filter((i) => i.home === s.id).sort(compareInSubject);
+    const lent = list.filter((i) => isLentTo(i, p, s.id)).sort(compareInLibrary);
+    // one list in the fixed kind order; inside a kind, this formation's own items first
+    const here = [...own, ...lent].sort(
+      (a, b) =>
+        SUB_ORDER.indexOf(groupOf(a.sub)) - SUB_ORDER.indexOf(groupOf(b.sub)) ||
+        Number(lent.includes(a)) - Number(lent.includes(b)),
+    );
+    const items = here.filter(keep);
+    const done = here.filter(isDone).length;
+    total += here.length;
+    doneAll += done;
+    for (const i of here) (kinds.all++, kinds[i.kind]++);
+    const soon = planned.filter((x) => x.home === s.id);
     const g = s.group ?? null;
     let row = groups.find((x) => x.group === g);
     if (!row)
@@ -533,40 +509,30 @@ export function programView(
           empty: [],
         }),
       );
-    const done = homed.filter(isDone).length;
     index.push({
       subject: s,
-      n: homed.length,
+      n: here.length,
       done,
-      also: allAlso.length,
-      soon: soonAll.length,
+      also: lent.length,
+      soon: soon.length,
+      shown: items.length,
     });
-    if (!homed.length && !allAlso.length && !soonAll.length) {
-      row.empty.push(s);
-      continue;
-    }
-    if (!items.length && !also.length && !soon.length) continue;
+    if (!here.length) row.empty.push(s);
     row.sections.push({
       subject: s,
-      total: homed.length,
+      total: here.length,
       done,
       items,
       groups: kindGroups(items),
-      also,
+      borrowed: lent.length,
       soon,
-      simMinutes: homed
+      minutes: items.reduce((a, i) => a + (i.minutes ?? 0), 0),
+      simMinutes: items
         .filter((i) => i.kind === "sim" && i.sub !== "scenario")
         .reduce((a, i) => a + (i.minutes ?? 0), 0),
     });
   }
-  return {
-    program: p,
-    total: mine.length,
-    done: mine.filter(isDone).length,
-    kinds: kindCounts(mine),
-    groups,
-    index,
-  };
+  return { program: p, total, done: doneAll, kinds, groups, index };
 }
 
 // ------------------------------------------------------------------ search
@@ -614,19 +580,19 @@ export function searchView(
     }));
   const inScope = (s: SubjectDef) =>
     program === "all" ? s.program !== "discover" : s.program === program;
-  const n = subjectCounts(list);
-  const ex = subjectExtras(list);
+  const counts = new Map<SubjectId, ShelfSubject>();
   const terms = queryTerms(q);
   const subjects = terms.length
     ? SUBJECTS.filter(
         (s) => inScope(s) && terms.every((t) => hasTerm(subjectHaystack(s), t)),
-      ).map((s) => ({
-        subject: s,
-        n: n[s.id],
-        done: 0,
-        also: ex.also[s.id] ?? 0,
-        soon: ex.soon[s.id] ?? 0,
-      }))
+      ).map((s) => {
+        let x = counts.get(s.id);
+        if (!x) {
+          for (const y of programView(list, s.program).index) counts.set(y.subject.id, y);
+          x = counts.get(s.id)!;
+        }
+        return { ...x, done: 0 };
+      })
     : [];
   const soon =
     kind === "all" || kind === "course"

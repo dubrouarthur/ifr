@@ -43,6 +43,7 @@ import {
   type LibItem,
 } from "../src/library/model";
 import {
+  KIND_ORDER,
   PROGRAMS,
   PROGRAM_IDS,
   SHELF_IDS,
@@ -51,6 +52,7 @@ import {
   isSubjectId,
   shelfOfCourseProgram,
   subjectDef,
+  type ProgramId,
 } from "../src/library/programs";
 import {
   coursePlacement,
@@ -256,8 +258,14 @@ describe("the classification: exactly one home per item", () => {
     expect(Object.values(n).reduce((a, b) => a + b, 0)).toBe(items.length);
     const s = subjectCounts(items);
     expect(Object.values(s).reduce((a, b) => a + b, 0)).toBe(items.length);
-    const sh = shelves(items);
-    expect(sh.reduce((a, x) => a + x.total, 0) + n.discover).toBe(items.length);
+    // a formation counts what its page draws: its own items plus the ones another formation lends it
+    for (const x of shelves(items)) {
+      const own = n[x.program];
+      const lent = x.groups
+        .flatMap((g) => g.subjects)
+        .reduce((a, y) => a + y.also, 0);
+      expect(x.total, x.program).toBe(own + lent);
+    }
   });
   it("holds every kind: courses, what opens the cockpit, every library checklist", () => {
     const k = kindCounts(items);
@@ -271,9 +279,10 @@ describe("the classification: exactly one home per item", () => {
     const n = programCounts(items);
     for (const p of ["ppl", "ir", "atpl", "club"] as const)
       expect(n[p], p).toBeGreaterThan(0);
-    // the night rating borrows: its failures and attitudes live in LAPL · PPL and IR, pointed from there
+    // the night rating borrows: its failures and attitudes live in LAPL · PPL and IR, drawn there as ordinary cards
+    const night = shelves(items).find((x) => x.program === "night")!;
     expect(
-      shelves(items).find((x) => x.program === "night")!.alsoHere,
+      night.groups.flatMap((g) => g.subjects).reduce((a, y) => a + y.also, 0),
     ).toBeGreaterThan(4);
   });
   it("lists a sample briefing as its lesson's cover, not as a course of its own", () => {
@@ -395,11 +404,14 @@ describe("the landing", () => {
     const ppl = sh.find((s) => s.program === "ppl")!;
     expect(ppl.groups.map((g) => g.group)).toEqual(["theory", "flight"]);
     expect(ppl.groups[0].subjects).toHaveLength(9);
-    expect(ppl.alsoHere).toBeGreaterThan(0);
     const emer = ppl.groups[1].subjects.find(
       (s) => s.subject.id === "ppl.emer",
     )!;
-    expect(emer.n).toBe(items.filter((i) => i.home === "ppl.emer").length);
+    // one number: its own items plus what another formation lends it
+    expect(emer.also).toBeGreaterThan(0);
+    expect(emer.n).toBe(
+      items.filter((i) => i.home === "ppl.emer").length + emer.also,
+    );
   });
   it("Continue lists what the instructor assigned first", () => {
     const mk = (id: string): Course => ({
@@ -433,7 +445,10 @@ describe("the landing", () => {
 
 describe("a programme page", () => {
   const items = all();
-  it("IR: its seven modules in order, lessons in curriculum order, nothing borrowed", () => {
+  /** the items of a section another formation lends it */
+  const lentIn = (s: { items: LibItem[]; subject: { program: string } }) =>
+    s.items.filter((i) => programOf(i) !== s.subject.program);
+  it("IR: its seven subjects in order, lessons in curriculum order, the PPL attitude lessons lent as cards", () => {
     const v = programView(items, "ir");
     const secs = v.groups.flatMap((g) => g.sections);
     expect(secs.map((s) => s.subject.id)).toEqual([
@@ -445,23 +460,88 @@ describe("a programme page", () => {
       "ir.proc",
       "ir.test",
     ]);
-    expect(
-      secs.every((s) => s.items.every((i) => i.home === s.subject.id)),
-    ).toBe(true);
+    // every card is the subject's own, or lent by another formation that points here
+    for (const s of secs)
+      for (const i of s.items)
+        expect(
+          i.home === s.subject.id ||
+            (programOf(i) !== "ir" && i.also.includes(s.subject.id)),
+          i.key,
+        ).toBe(true);
     const att = secs[0];
-    expect(att.groups.map((g) => g.id)).toEqual(["course", "lesson"]);
-    // the basic attitude lessons are PPL exercises: module 1 keeps partial panel, and points back to them
+    expect(att.groups.map((g) => g.id).slice(0, 2)).toEqual(["course", "lesson"]);
+    // module 1 keeps partial panel first (its own), then the basic attitude lessons lent by LAPL · PPL
+    const lessons = att.groups[1].items;
+    expect(lessons[0].key.startsWith("lesson:pp-")).toBe(true);
+    const firstLent = lessons.findIndex((i) => programOf(i) !== "ir");
+    expect(firstLent).toBeGreaterThan(0);
     expect(
-      att.groups[1].items.every((i) => i.key.startsWith("lesson:pp-")),
+      lessons.slice(0, firstLent).every((i) => i.key.startsWith("lesson:pp-")),
     ).toBe(true);
-    expect(att.also.map((i) => i.key)).toContain("lesson:bai-sl");
-    expect(lessonRank(items, att.groups[1].items[1])).toEqual({
+    expect(lentIn(att).map((i) => i.key)).toContain("lesson:bai-sl");
+    expect(att.borrowed).toBe(lentIn(att).length);
+    expect(lessonRank(items, lessons[1])).toEqual({
       n: 2,
-      of: att.groups[1].items.length,
+      of: lessons.filter((i) => i.home === "ir.att").length,
     });
     // the missed approach at DA sits with the approaches; the checkride comes last
     expect(items.find((i) => i.key === "lesson:ma-da")?.home).toBe("ir.app");
-    expect(v.total).toBe(items.filter((i) => programOf(i) === "ir").length);
+  });
+  it("counts what it draws: each subject's count is its cards, the formation's total is their sum", () => {
+    for (const p of SHELF_IDS) {
+      const v = programView(items, p);
+      const secs = v.groups.flatMap((g) => g.sections);
+      for (const s of secs) {
+        expect(s.total, s.subject.id).toBe(s.items.length);
+        const x = v.index.find((y) => y.subject.id === s.subject.id)!;
+        expect(x.n, s.subject.id).toBe(s.items.length);
+      }
+      expect(v.total, p).toBe(secs.reduce((a, s) => a + s.items.length, 0));
+      expect(v.kinds.all, p).toBe(v.total);
+      expect(v.kinds.course + v.kinds.sim + v.kinds.proc, p).toBe(v.total);
+      // the landing shows the same number
+      expect(shelves(items).find((x) => x.program === p)!.total, p).toBe(
+        v.total,
+      );
+      // under a filter, every section keeps only that family, and the counts follow
+      for (const k of KIND_ORDER) {
+        const f = programView(items, p, k);
+        const fs = f.groups.flatMap((g) => g.sections);
+        expect(fs.reduce((a, s) => a + s.items.length, 0), `${p} ${k}`).toBe(
+          v.kinds[k],
+        );
+        for (const s of fs) {
+          expect(s.items.every((i) => i.kind === k)).toBe(true);
+          expect(
+            f.index.find((y) => y.subject.id === s.subject.id)!.shown,
+          ).toBe(s.items.length);
+        }
+      }
+    }
+  });
+  it("draws every subject at its official number, with no gap: 01…15 for LAPL · PPL, 010…090 for ATPL", () => {
+    const nums = (p: ProgramId) =>
+      programView(items, p)
+        .groups.flatMap((g) => g.sections)
+        .map((s) => s.subject.n);
+    expect(nums("ppl")).toEqual(
+      Array.from({ length: 15 }, (_, k) => String(k + 1).padStart(2, "0")),
+    );
+    expect(nums("atpl")).toEqual([
+      "010",
+      "021",
+      "022",
+      "031",
+      "032",
+      "033",
+      "040",
+      "050",
+      "061",
+      "062",
+      "070",
+      "081",
+      "090",
+    ]);
   });
   it("orders a subject: courses, sim lessons, failure drills, graded routes, free practice, checklists", () => {
     const order = [
@@ -481,20 +561,19 @@ describe("a programme page", () => {
         ).toEqual(ranks);
       }
   });
-  it("LAPL · PPL: theory then flight, the empty subjects on one line, 'Also useful here' from other shelves", () => {
+  it("LAPL · PPL: theory then flight, empty subjects kept in place, items lent by other formations drawn as cards", () => {
     const v = programView(items, "ppl");
     expect(v.groups.map((g) => g.group)).toEqual(["theory", "flight"]);
     const theory = v.groups[0];
     expect(theory.empty.map((s) => s.id)).toContain("ppl.ops");
+    expect(theory.sections.map((s) => s.subject.id)).toContain("ppl.ops");
     expect(
-      theory.sections.every(
-        (s) => s.total > 0 || s.also.length > 0 || s.soon.length > 0,
-      ),
-    ).toBe(true);
+      theory.sections.filter((s) => !s.total).map((s) => s.subject.id),
+    ).toEqual(theory.empty.map((s) => s.id));
     const flight = v.groups[1].sections;
     const emer = flight.find((s) => s.subject.id === "ppl.emer")!;
-    expect(emer.also.length).toBeGreaterThan(0);
-    expect(emer.also.every((i) => programOf(i) !== "ppl")).toBe(true);
+    expect(lentIn(emer).length).toBeGreaterThan(0);
+    expect(emer.borrowed).toBe(lentIn(emer).length);
     // the alternator and the flap failure are core C172 emergencies
     expect(emer.items.map((i) => i.key)).toEqual(
       expect.arrayContaining(["drill:d-flaps"]),
@@ -509,22 +588,20 @@ describe("a programme page", () => {
     );
     const bif = flight.find((s) => s.subject.id === "ppl.bif")!;
     expect(bif.items.map((i) => i.key)).toContain("lesson:bai-unusual");
-    expect(bif.also.map((i) => i.key)).toContain("lesson:pp-unusual");
+    expect(lentIn(bif).map((i) => i.key)).toContain("lesson:pp-unusual");
   });
-  it("a subject with no item of its own still shows what other programmes hold for it, never a dash", () => {
+  it("a subject with no item of its own still draws what other formations lend it, never a dash", () => {
     const v = programView(items, "atpl");
     const radio = v.groups
       .flatMap((g) => g.sections)
       .find((s) => s.subject.id === "atpl.062")!;
-    expect(radio.total).toBe(0);
-    expect(radio.also.map((i) => i.key)).toEqual(
-      expect.arrayContaining([
-        "course:sample-vor",
-      ]),
+    expect(radio.items.map((i) => i.key)).toEqual(
+      expect.arrayContaining(["course:sample-vor"]),
     );
+    expect(radio.total).toBe(radio.borrowed);
     expect(v.index.find((x) => x.subject.id === "atpl.062")).toMatchObject({
-      n: 0,
-      also: radio.also.length,
+      n: radio.total,
+      also: radio.borrowed,
     });
     expect(v.groups.flatMap((g) => g.empty).map((s) => s.id)).not.toContain(
       "atpl.062",
@@ -532,12 +609,12 @@ describe("a programme page", () => {
     const xc = programView(items, "ppl")
       .groups.flatMap((g) => g.sections)
       .find((s) => s.subject.id === "ppl.xc")!;
-    expect(xc.also.map((i) => i.key)).toContain("course:sample-vor");
-    // the landing counts the same pointers
+    expect(xc.items.map((i) => i.key)).toContain("course:sample-vor");
+    // the landing counts the same cards
     const sh = shelves(items).find((x) => x.program === "atpl")!;
     expect(
-      sh.groups[0].subjects.find((x) => x.subject.id === "atpl.062")?.also,
-    ).toBe(radio.also.length);
+      sh.groups[0].subjects.find((x) => x.subject.id === "atpl.062")?.n,
+    ).toBe(radio.total);
   });
   it("shows the planned courses that are not written yet as 'Soon', in their subject", () => {
     const planned = plannedItems(items);
