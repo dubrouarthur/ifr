@@ -271,9 +271,10 @@ export class Presenter {
         ? st("projectorOn", lang)
         : st("projector", lang);
     this.projBtn.disabled = !this.link.ok;
+    // the same EN / FR segment as the player and the library (a white pill on grey)
     const langSeg = h(
       "div",
-      { class: "pr-lang", role: "group", "aria-label": "Language" },
+      { class: "cp-langseg pr-lang", role: "group", "aria-label": lang === "fr" ? "Langue" : "Language" },
       ...(["en", "fr"] as Lang[]).map((l) =>
         h(
           "button",
@@ -281,6 +282,7 @@ export class Presenter {
             type: "button",
             class: l === lang ? "on" : "",
             "aria-pressed": l === lang ? "true" : "false",
+            lang: l,
             onclick: () => this.setLang(l),
           },
           l.toUpperCase(),
@@ -292,7 +294,8 @@ export class Presenter {
       h(
         "div",
         { class: "pr-title" },
-        h("b", {}, L(this.o.course.title, lang)),
+        // the page's one h1: the course being presented
+        h("h1", { class: "pr-h1" }, L(this.o.course.title, lang)),
         h("span", { class: "pr-sub" }, this.stepEl, " · ", this.clock),
       ),
       h("span", { class: "pr-sp" }),

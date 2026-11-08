@@ -15,8 +15,15 @@ const kvOr = (kv?: Kv): Kv | null => {
     return null;
   }
 };
+/**
+ * The academy and the cockpit ship in the same build, and the cockpit installs its course bridge at boot, so a
+ * course page can always hand a step to index.html?fly=, even on a device that has never opened the simulator.
+ * The stored flag only matters when a caller asks about a specific store (an older build's cockpit, tests).
+ */
+export const COCKPIT_IN_BUILD = true;
 /** The cockpit of this build flies course steps (?fly=) and sends the result back. */
 export function cockpitBridgeReady(kv?: Kv): boolean {
+  if (!kv && COCKPIT_IN_BUILD) return true;
   try {
     return Number(kvOr(kv)?.getItem(BRIDGE_KEY) ?? 0) >= BRIDGE_VERSION;
   } catch {

@@ -45,7 +45,7 @@ const S = {
     cont: "Continue",
     start: "Start here",
     open: "Open",
-    playDeck: "Open the deck",
+    playDeck: "Open the course",
     of: "{a} of {b}",
     deckOf: "{n} slides",
   },
@@ -209,13 +209,24 @@ export function mountDeckHome(o: DeckHomeOptions): DeckHome {
         h(
           "small",
           {},
+          // one count everywhere: the course's steps (its cover and the library say "20 steps", not "11 slides")
           [
-            tr(l, "deckOf", { n: slides.length }),
+            ctSteps(c.steps.length, l),
             e.minutes ? ct("minutes", l, { n: e.minutes }) : "",
           ]
             .filter(Boolean)
             .join(" · "),
         ),
+      ),
+      // the way in, said: the cover is clickable, but nothing on it looked like it
+      h(
+        "button",
+        {
+          class: "btn dh-cap-go",
+          type: "button",
+          onclick: () => o.navigate(href("play", e, e.progress?.stepId)),
+        },
+        tr(l, "playDeck"),
       ),
     );
     o.visual.append(h("div", { class: "dh-stage" }, big, open), cap);

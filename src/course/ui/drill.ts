@@ -378,6 +378,7 @@ export class DrillView {
     const bar = h("div", {
       class: "cp-drill-bar",
       role: "progressbar",
+      "aria-label": ps("problemOf", lang, { i: r.index + 1, n: r.count }),
       "aria-valuemin": "0",
       "aria-valuemax": String(r.count),
       "aria-valuenow": String(r.index + (r.phase === "feedback" ? 1 : 0)),

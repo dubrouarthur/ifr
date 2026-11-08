@@ -722,6 +722,10 @@ export interface CalcProblem {
   tolerance: number;
   /** what the pilot writes down (e.g. 'about 1 400 ft/min'), when the bare number is not how it is said */
   answerText?: L10n;
+  /** the name of the primary answer's field ("Time en route"); default "Your answer" */
+  answerLabel?: L10n;
+  /** the parts are asked before the primary answer in the prompt ("ground speed, and the time"): show them first */
+  partsFirst?: boolean;
   parts?: CalcPart[];
   /** the worked solution, revealed one step at a time */
   solutionSteps: L10n[];

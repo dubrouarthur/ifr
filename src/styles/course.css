@@ -173,17 +173,19 @@
   width: 36px;
 }
 .cp-app .cp-btn .cp-more {
-  font-size: 11.5px;
-  font-weight: 600;
-  opacity: 0.8;
-  margin-left: -2px;
+  font-size: 12.5px;
+  font-weight: 650;
+  margin-left: 2px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
 }
 .cp-app .cp-btn .cp-dur {
   color: var(--muted);
   font-weight: 500;
 }
 .cp-app .cp-label {
-  font: 700 11px/1.2 var(--font);
+  font: 700 12px/1.25 var(--font);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
@@ -196,10 +198,10 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 22px;
+  height: 24px;
   padding: 0 8px;
   border-radius: 6px;
-  font: 700 10.5px/1 var(--font);
+  font: 700 12px/1 var(--font);
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--kc);
@@ -360,6 +362,12 @@
 .cp-ticks i.now {
   background: var(--accent);
   width: 30px;
+}
+.cp-ticks i.do,
+.cp-ticks i.fly {
+  /* an acting step (Your turn, Fly it) is a taller tick: its kind shows by shape, not only by colour */
+  height: 10px;
+  border-radius: 4px;
 }
 .cp-ticks i.do {
   box-shadow: inset 0 0 0 1.5px var(--k-try);
@@ -1120,10 +1128,15 @@
   color: var(--text-2);
 }
 .cp-unit.static {
-  min-width: 56px;
+  /* a fixed unit is a suffix, not a control: no border, no button look, never wrapped ("US gal") */
+  min-width: 0;
+  padding: 0 4px;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  border-color: transparent;
+  background: transparent;
+  white-space: nowrap;
 }
 .cp-err {
   color: var(--bad);
@@ -2095,7 +2108,7 @@
   }
 }
 @media (max-width: 1100px) {
-  .cp-top .cp-count,
+  /* the step counter stays at every width (the ticks may go, "4 / 14" never does) */
   .cp-top .cp-div {
     display: none;
   }
@@ -3761,7 +3774,11 @@ html.ga-doc body {
   flex-direction: column;
   min-width: 0;
 }
-.pr-title b {
+.pr-title b,
+.pr-title .pr-h1 {
+  margin: 0;
+  font-weight: 700;
+  line-height: 1.25;
   font-size: 15px;
   white-space: nowrap;
   overflow: hidden;
@@ -3824,24 +3841,44 @@ html.ga-doc body {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.pr-lang {
-  display: inline-flex;
-  border: 1px solid var(--gl-line-strong, #c8d0da);
-  border-radius: 8px;
-  overflow: hidden;
+/* the presenter's EN / FR: the player's .cp-langseg (white pill on grey), with the player's tokens here, outside
+   .cp-app */
+.pr-head {
+  --line: #e2e7ed;
+  --surface: #ffffff;
+  --muted: #5f6b77;
+  --text: #0f1722;
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 32, 0.06), 0 1px 1px rgba(15, 23, 32, 0.04);
 }
-.pr-lang button {
-  min-width: 44px;
-  min-height: 40px;
-  border: 0;
-  background: #fff;
-  font: 600 12.5px/1 var(--gl-font, sans-serif);
-  color: var(--gl-text-2, #344054);
-  cursor: pointer;
+@media (pointer: coarse) {
+  .pr-head .cp-langseg button {
+    min-height: 44px;
+  }
 }
-.pr-lang button.on {
-  background: var(--gl-text, #0f1722);
-  color: #fff;
+/* a portrait tablet: the header wraps onto two rows (title, then the controls) instead of clipping them */
+@media (max-width: 900px) {
+  .pr-app {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .pr-head {
+    flex-wrap: wrap;
+    row-gap: 8px;
+    padding: 8px 16px;
+  }
+  .pr-head .pr-title {
+    flex: 1 1 calc(100% - 140px);
+  }
+  .pr-head .pr-sp {
+    display: none;
+  }
+  .pr-head .cp-langseg {
+    margin-left: auto;
+  }
+}
+/* the presenter mirrors the projector: no narrow-screen text panel under its slide (the notes are beside it) */
+.pr-app .cp-slidetext {
+  display: none !important;
 }
 .pr-body {
   display: grid;
@@ -3877,7 +3914,7 @@ html.ga-doc body {
 }
 .pr-card h2 {
   margin: 0 0 8px;
-  font-size: 11.5px;
+  font-size: 12px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--gl-muted, #5f6b77);
@@ -4154,5 +4191,188 @@ html.ga-doc body {
   }
   .cp-app .cp-summary .cp-tile {
     padding-left: 0;
+  }
+}
+
+/* Your turn: the takeaway and the units note folded into one "Why?" card under the checklist */
+.cp-why {
+  border: 1px solid #dbe4f1;
+  border-radius: 10px;
+  background: #f3f6fb;
+}
+.cp-why > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 14px;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 650;
+  font-size: 15px;
+  color: var(--accent);
+  border-radius: 10px;
+}
+.cp-why > summary::-webkit-details-marker {
+  display: none;
+}
+.cp-why > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.cp-why > summary .cp-why-chev {
+  margin-left: auto;
+  transition: transform 0.15s ease;
+}
+.cp-why[open] > summary .cp-why-chev {
+  transform: rotate(180deg);
+}
+.cp-why-b {
+  display: grid;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+.cp-why-b .cp-take,
+.cp-why-b .cp-units {
+  background: #fff;
+}
+.cp-why-b .cp-units {
+  font-size: 14px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cp-why > summary .cp-why-chev {
+    transition: none;
+  }
+}
+
+/* ------------------------------------------------------------ narrow landscape (a small window, 200 % zoom): the
+   split stacks like a portrait tablet, but the page scrolls (stage first at its natural height, the reader under
+   it, the footer pinned), so nothing overlaps and the text keeps its size */
+@media (min-aspect-ratio: 1/1) and (min-width: 641px) and (max-width: 900px) {
+  .cp-body[data-layout="split"] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    overflow-y: auto;
+    align-content: start;
+  }
+  .cp-body[data-layout="split"] .cp-stagewrap {
+    grid-row: 1;
+    padding: 10px 10px 6px;
+    height: 560px;
+  }
+  .cp-body[data-layout="split"] .cp-reader {
+    grid-row: 2;
+    border-right: 0;
+    border-top: 1px solid var(--line);
+    min-height: auto;
+  }
+  .cp-body[data-layout="split"] .cp-scroll {
+    overflow: visible;
+    flex: none;
+  }
+  .cp-body[data-layout="split"] .cp-foot {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+  }
+  .cp-app .cstage .cs-bar {
+    flex-wrap: wrap;
+  }
+  /* the side column (callouts, plan) beside the instrument, as on a portrait tablet */
+  .cp-app .cstage .cs-view {
+    flex-direction: row;
+  }
+  .cp-app .cstage .cs-side {
+    flex: 0 0 200px;
+    flex-direction: column;
+  }
+  .cp-app .cstage .cs-notes {
+    flex: 0 1 auto;
+    max-height: none;
+  }
+  .cp-app .cstage .cs-planwrap {
+    width: auto;
+    margin-top: auto;
+  }
+}
+
+/* ------------------------------------------------------------ a designed slide on a narrow screen (portrait tablet,
+   small window, 200 % zoom): the slide fits the width at the top, its words follow at reading size, the column
+   scrolls; no letterbox of empty grey above and below */
+.cp-slidetext {
+  display: none;
+}
+@media (max-aspect-ratio: 1/1), (max-width: 900px) {
+  .cp-body[data-layout="canvas"] .cp-wide {
+    overflow-y: auto;
+  }
+  .cp-body[data-layout="canvas"] .cp-canvaswrap {
+    height: auto;
+    padding: 16px 16px 8px;
+  }
+  .cp-body[data-layout="canvas"] .cp-canvaswrap > .cp-slide {
+    height: auto;
+    aspect-ratio: 16 / 9;
+  }
+  .cp-body[data-layout="canvas"] .cp-slidetext:not([hidden]) {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 8px 16px 24px;
+    padding: 20px 22px;
+    max-width: 760px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    color: var(--text);
+  }
+  .cp-slidetext .cp-rich p,
+  .cp-slidetext .cp-rich li {
+    font-size: 16px;
+    line-height: 1.5;
+    margin: 0;
+  }
+  .cp-slidetext .cp-st-title p {
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.25;
+  }
+  .cp-slidetext .cp-st-heading p {
+    font-size: 18px;
+    font-weight: 650;
+  }
+  .cp-slidetext .cp-st-small p {
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .cp-slidetext .cp-st-eyebrow p {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .cp-slidetext .cp-st-callout {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+  }
+  .cp-slidetext .cp-st-n {
+    flex: none;
+    display: inline-grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .cp-slidetext .cp-st-list {
+    margin: 0;
+    padding-left: 20px;
+    display: grid;
+    gap: 6px;
   }
 }

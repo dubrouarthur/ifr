@@ -171,9 +171,10 @@ function topBar(): HTMLElement {
     h(
       "a",
       {
+        // home is the library (the simulator has its own link on the right); the name starts with the visible text
         class: "ga-brand",
-        href: "index.html",
-        "aria-label": ct("flightCenter", lang),
+        href: "#library",
+        "aria-label": `${BRAND.name} – ${ct("groundSchool", lang)}`,
       },
       h("span", { class: "ga-brand-mark", "aria-hidden": "true", html: brandMarkSvg(24) }),
       BRAND.name,
@@ -189,7 +190,8 @@ function topBar(): HTMLElement {
 function showLibrary() {
   const page = h("div", { class: "ga-page" });
   let bar = topBar();
-  const scroller = h("div", { class: "ga-scroll" });
+  // the library is the page's main content (one main landmark; the top bar is its banner)
+  const scroller = h("main", { class: "ga-scroll" });
   page.append(bar, scroller);
   root.append(page);
   const lib: CourseLibrary = mountLibrary(scroller, {

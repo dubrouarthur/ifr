@@ -76,12 +76,12 @@ const S = {
   programsSub: { en: "In training order", fr: "Dans l’ordre de la formation" },
   openShelf: { en: "Open", fr: "Ouvrir" },
   alsoHereN: {
-    en: "+ {n} useful, shelved in other programmes",
-    fr: "+ {n} utiles, rangés dans d’autres programmes",
+    en: "+ {n} from other programmes",
+    fr: "+ {n} d’autres programmes",
   },
   alsoHere1: {
-    en: "+ 1 useful, shelved in another programme",
-    fr: "+ 1 utile, rangé dans un autre programme",
+    en: "+ 1 from another programme",
+    fr: "+ 1 d’un autre programme",
   },
   toolsN: { en: "{n} tools", fr: "{n} outils" },
   // programme page
@@ -94,14 +94,14 @@ const S = {
     fr: "environ {n} min de vol",
   },
   soonLine: {
-    en: "Also in the syllabus, no content yet:",
-    fr: "Aussi au programme, sans contenu pour l’instant :",
+    en: "Coming soon:",
+    fr: "À venir :",
   },
   alsoIn: { en: "Also useful in {p}", fr: "Aussi utile en {p}" },
   alsoHere: { en: "Also useful here", fr: "Aussi utile ici" },
   alsoHereSub: {
-    en: "In another programme, not counted here:",
-    fr: "Dans un autre programme, pas compté ici :",
+    en: "from another programme",
+    fr: "d’un autre programme",
   },
   shelvedIn: { en: "shelved in {p}", fr: "rangé dans {p}" },
   see: { en: "See {p}", fr: "Voir {p}" },
@@ -129,6 +129,7 @@ const S = {
     fr: "Essayez un autre mot, une licence (PPL, IR), un avion ou une balise.",
   },
   clearSearch: { en: "Clear the search", fr: "Effacer la recherche" },
+  tryWords: { en: "Try:", fr: "Essayez :" },
   // cards
   steps: { en: "{n} steps", fr: "{n} étapes" },
   step1: { en: "1 step", fr: "1 étape" },
@@ -239,35 +240,35 @@ const S = {
   // pointers, planned courses, empty subjects
   lessonN: { en: "Lesson {n}:", fr: "Leçon {n} :" },
   orFree: { en: "Or a first free flight:", fr: "Ou un premier vol libre :" },
-  soon: { en: "Soon", fr: "Bientôt" },
+  soon: { en: "Coming soon", fr: "À venir" },
   create: { en: "Create", fr: "Créer" },
-  soonCourse: { en: "Course · coming soon", fr: "Cours · bientôt disponible" },
+  soonCourse: { en: "Course coming soon", fr: "Cours à venir" },
   soonHead: {
-    en: "Planned for this subject",
-    fr: "Prévu dans cette matière",
+    en: "Coming soon",
+    fr: "À venir",
   },
-  pointerHead: { en: "Work on it in {p}", fr: "À travailler dans {p}" },
+  pointerHead: { en: "From {p}", fr: "Du programme {p}" },
   pointerSub: {
-    en: "No item of its own here yet: these live in another programme.",
-    fr: "Pas encore d’élément propre ici : ceux-ci sont rangés dans un autre programme.",
+    en: "These come from another programme.",
+    fr: "Ils viennent d’un autre programme.",
   },
   pointersN: { en: "{n} elsewhere", fr: "{n} ailleurs" },
   usefulElsewhere: {
-    en: "→ {n} useful, shelved elsewhere",
-    fr: "→ {n} utiles, rangés ailleurs",
+    en: "{n} in other programmes",
+    fr: "{n} dans d’autres programmes",
   },
   pointerTip: {
     en: "{n} useful items, shelved in another programme",
     fr: "{n} éléments utiles, rangés dans un autre programme",
   },
-  notYet: { en: "Not written yet:", fr: "Pas encore rédigé :" },
+  notYet: { en: "Coming soon:", fr: "À venir :" },
   emptyRailN: {
-    en: "+ {n} subjects with no content yet",
-    fr: "+ {n} matières sans contenu pour l’instant",
+    en: "Coming soon: {n} subjects",
+    fr: "À venir : {n} matières",
   },
   emptyRail1: {
-    en: "+ 1 subject with no content yet",
-    fr: "+ 1 matière sans contenu pour l’instant",
+    en: "Coming soon: 1 subject",
+    fr: "À venir : 1 matière",
   },
   // search: subjects and planned courses
   hitSubjects: { en: "Subjects", fr: "Matières" },

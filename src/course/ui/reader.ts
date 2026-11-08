@@ -33,6 +33,8 @@ const S = {
   next: ["Next", "Suivant"],
   back: ["Back", "Précédent"],
   revealNext: ["Next point", "Point suivant"],
+  showMore: ["Show more", "Afficher la suite"],
+  moreLeft: ["{n} more on this step", "encore {n} sur cette étape"],
   hint: ["Hint", "Indice"],
   hideHint: ["Hide hint", "Masquer l’indice"],
   showMe: ["Show me", "Montre-moi"],
@@ -72,6 +74,7 @@ const S = {
   checkedBySim: ["Checked by the sim", "Vérifié par le simulateur"],
   keyToSuccess: ["Key to success", "La clé du succès"],
   takeaway: ["Takeaway", "À retenir"],
+  why: ["Why?", "Pourquoi\u00a0?"],
   procedure: ["Procedure", "Procédure"],
   memoryItems: ["Memory items", "Actions réflexes"],
   checklist: ["Checklist", "Liste de vérification"],
@@ -84,6 +87,9 @@ const S = {
   ruleOfThumb: ["Rule of thumb", "Règle pratique"],
   sources: ["Sources", "Sources"],
   done: ["done", "fait"],
+  rowNow: ["in progress", "en cours"],
+  rowTodo: ["to do", "à faire"],
+  ticksDone: ["{n} seen or done", "{n} vues ou faites"],
   rowDone: ["{row}: done", "{row} : fait"],
   goalMet: ["Goal met", "Objectif atteint"],
   imageMissing: [
@@ -223,20 +229,20 @@ const S = {
     "Le vol nécessite le stockage des cours de cet appareil, indisponible ici.",
   ],
   flyNoBridge: [
-    "Flying a course step in the simulator comes with the next cockpit update: this build’s cockpit cannot pose this scene or send the result back yet. Everything above is ready; meanwhile practise with the Try it steps.",
-    "Le vol d’une étape de cours dans le simulateur arrive avec la prochaine mise à jour du cockpit : celui de cette version ne sait pas encore poser cette scène ni renvoyer le résultat. Tout ce qui précède est prêt ; en attendant, entraînez-vous avec les étapes « À vous ».",
+    "This step cannot be flown on this device. Practise with the Your turn steps instead.",
+    "Cette étape ne peut pas être volée sur cet appareil. Entraînez-vous avec les étapes « À vous ».",
   ],
   flyPreview: [
     "Preview: in the published course, Fly it opens the cockpit here.",
     "Aperçu : dans le cours publié, En vol ouvre le cockpit ici.",
   ],
   flyLegacy: [
-    "This build’s cockpit opens the lesson but cannot send the result back to the course yet. Fly it, then come back here and grade yourself.",
-    "Le cockpit de cette version ouvre la leçon mais ne renvoie pas encore le résultat au cours. Volez-la, puis revenez ici et notez-vous.",
+    "The simulator opens the lesson. You will grade the result yourself when you come back.",
+    "Le simulateur ouvre la leçon. Le résultat sera à noter vous-même à votre retour.",
   ],
   drillNoBridge: [
-    "Drilling a procedure from a course comes with the next cockpit update: open it in the simulator from Procedures for now.",
-    "L’entraînement à une procédure depuis un cours arrive avec la prochaine mise à jour du cockpit : ouvrez-la pour l’instant depuis Procédures dans le simulateur.",
+    "Open this procedure from Procedures in the simulator.",
+    "Ouvrez cette procédure depuis Procédures dans le simulateur.",
   ],
   flyLegacyGo: ["Open the lesson in the simulator", "Ouvrir la leçon dans le simulateur"],
   addHandout: ["Add to my handout", "Ajouter à mon mémo"],
@@ -609,7 +615,8 @@ export class ReaderView {
       r.row.classList.toggle("done", ticked);
       r.row.classList.toggle("cur", !!st?.current && !ticked);
       r.check.className = `cp-check${ticked ? " ok" : st?.current ? " now" : ""}`;
-      r.check.setAttribute("aria-label", ticked ? ps("done", this.lang) : "");
+      // every state has a name (an empty one is an unnamed image to a screen reader)
+      r.check.setAttribute("aria-label", ps(ticked ? "done" : st?.current ? "rowNow" : "rowTodo", this.lang));
       const ro = st?.readout ?? "";
       r.readout.textContent = ro;
       r.readout.className = `cp-readout${ticked ? " ok" : st?.current ? " live" : ""}`;
@@ -633,7 +640,7 @@ export class ReaderView {
     if (!this.rows.length || this.rows.some((r) => r.index === -1)) return;
     const list = this.rows[0].row.parentElement;
     if (!list) return;
-    const check = h("span", { class: "cp-check", role: "img", "aria-label": "" });
+    const check = h("span", { class: "cp-check", role: "img", "aria-label": ps("rowTodo", this.lang) });
     const readout = h("span", { class: "cp-readout" });
     const row = h("div", { class: "cp-row", role: "listitem" }, check, h("span", { class: "t" }, text), readout);
     list.append(row);
@@ -766,7 +773,7 @@ export class ReaderView {
       const check = h("span", {
         class: "cp-check",
         role: "img",
-        "aria-label": "",
+        "aria-label": ps("rowTodo", lang),
       });
       const readout = h("span", { class: "cp-readout" });
       const t = h("span", { class: "t" });

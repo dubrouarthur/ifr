@@ -1960,8 +1960,8 @@ export class Inspector {
             )
           : note(
               this.t(
-                "Everything else shows “Locked by this step”.",
-                "Le reste affiche « Verrouillé pour cette étape ».",
+                "The student sees only these controls.",
+                "L’élève ne voit que ces commandes.",
               ),
               "muted",
             ),

@@ -182,7 +182,12 @@ export class StageFrame {
     const meter = mk("div", "cs-meter");
     this.goalMeter = mk("i", "");
     meter.append(this.goalMeter);
-    this.goalNote = mk("span", "note", t("nextOpen", this.lang));
+    // the reader's "Do this" checklist is the one statement of the goal: the strip shows its progress only (the
+    // goal's words stay the meter's accessible name; the projector, with no reader, still prints them)
+    meter.setAttribute("role", "progressbar");
+    meter.setAttribute("aria-valuemin", "0");
+    meter.setAttribute("aria-valuemax", "100");
+    this.goalNote = mk("span", "note");
     this.goal.append(this.goalAssist, this.goalText, gsp, meter, this.goalNote);
     // controls
     this.controls = new StageControls({
@@ -275,8 +280,8 @@ export class StageFrame {
     this.bReset.lastChild!.textContent = t("reset", l);
     this.bPlan.textContent = t("plan", l);
     this.clipTake.lastChild!.textContent = t("takeOver", l);
-    this.goalNote.textContent = this.goalState?.note ?? t("nextOpen", l);
     this.syncChrome();
+    this.syncGoal();
   }
   /** Keyboard shortcuts for the whole page (the player forwards keys when the stage is not focused). */
   handleKey(e: KeyboardEvent, down: boolean): boolean {
@@ -386,16 +391,22 @@ export class StageFrame {
     this.goalAssist.hidden = !a;
     const g = this.goalState;
     this.goalText.replaceChildren();
-    if (g) {
+    if (g && this.projector) {
       this.goalText.append(
         mk("b", "", t("goal", L)),
         document.createTextNode(` · ${g.text}`),
       );
     }
-    this.goalMeter.style.width = `${Math.round(Math.max(0, Math.min(1, g?.progress ?? 0)) * 100)}%`;
-    this.goalMeter.parentElement!.hidden = !g;
+    this.goalText.hidden = !this.goalText.firstChild;
+    const pct = Math.round(Math.max(0, Math.min(1, g?.progress ?? 0)) * 100);
+    this.goalMeter.style.width = `${pct}%`;
+    const meter = this.goalMeter.parentElement!;
+    meter.hidden = !g;
+    meter.setAttribute("aria-valuenow", String(pct));
+    meter.setAttribute("aria-label", g ? `${t("goal", L)} · ${g.text}` : t("goal", L));
     this.goal.classList.toggle("met", !!g?.met);
-    this.goalNote.textContent = g?.note ?? t("nextOpen", L);
+    this.goalNote.textContent = g?.note ?? "";
+    this.goalNote.hidden = !g?.note;
     this.goal.hidden = !a && !g;
   }
   private syncClip() {

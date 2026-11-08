@@ -534,3 +534,46 @@ body.touch .cf-brieflink .btn {
 .cf-surprise {
   margin: 10px 0 0;
 }
+
+/* a ?fly= link resolving: one calm card over the whole cockpit (the previous panel never shows first) */
+.cf-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: #eef1f5;
+}
+.cf-veil[hidden] {
+  display: none;
+}
+.cf-veil-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 26px;
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid #e2e7ed;
+  box-shadow: 0 10px 30px rgba(15, 23, 34, 0.08);
+  color: #0f1722;
+  font-size: 16px;
+}
+.cf-veil .cf-spin {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid #d6dde6;
+  border-top-color: #0b63ce;
+  animation: cf-spin 0.9s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cf-veil .cf-spin {
+    animation: none;
+  }
+}
+/* a course flight: the top bar's Courses button would leave it (the strip's "Back to the course" is the way back) */
+body.cf-flying .tb-courses {
+  display: none !important;
+}

@@ -18,6 +18,7 @@ import type {
   DesignedStep,
   FlyOption,
   GuidanceLevel,
+  L10n,
   Lang,
   Quiz,
   SimScene,
@@ -47,7 +48,8 @@ import { applyScene, sceneFromFields, sceneSummary } from "../scene";
 import { problemFor } from "../calc";
 import { windText } from "../calc/text";
 import { Sim } from "../../sim/sim";
-import { renderSlide } from "../canvas/render";
+import { clickSteps, isRevealed, renderSlide } from "../canvas/render";
+import { readingOrder } from "../canvas/geom";
 import { baseThemeId } from "../canvas/themes";
 import { StageFrame } from "../stage/frame";
 import type { StageEnv, StageEvent } from "../stage/host";
@@ -402,6 +404,8 @@ export class CoursePlayer {
     if (this.slide?.next?.()) {
       st.reveal++;
       this.persistSoon();
+      this.syncFoot();
+      this.syncSlideText();
       this.emitState();
       return;
     }
@@ -429,6 +433,8 @@ export class CoursePlayer {
     if (this.slide?.prev?.()) {
       const st = this.state(this.step);
       st.reveal = Math.max(0, st.reveal - 1);
+      this.syncFoot();
+      this.syncSlideText();
       this.emitState();
       return;
     }
@@ -448,6 +454,8 @@ export class CoursePlayer {
       let guard = 64;
       while (st.reveal < want && guard-- > 0 && this.slide.next?.()) st.reveal++;
       while (st.reveal > want && guard-- > 0 && this.slide.prev?.()) st.reveal--;
+      this.syncFoot();
+      this.syncSlideText();
     } else {
       st.reveal = Math.min(want, this.revealsOf(this.step));
       this.applyReveal();
@@ -648,6 +656,9 @@ export class CoursePlayer {
     this.trackerGoal = null;
     this.lastRows = "";
     this.hintEl = null;
+    this.slideText = null;
+    if (this.slideTextTimer !== null) window.clearInterval(this.slideTextTimer);
+    this.slideTextTimer = null;
   }
   /** Leaving a step: an acting step not done is marked skipped; a Try it in progress is recorded once. */
   private leaveStep() {
@@ -1090,6 +1101,8 @@ export class CoursePlayer {
       if (key) this.reader.el.insertBefore(el, key);
       else this.reader.el.append(el);
     }
+    // the checklist is the task: the takeaway and the units note fold into one "Why?" card under it
+    if (step.kind === "try") this.foldWhy();
     if (st.goalMet) {
       // already met on an earlier visit: show it ticked
       this.reader?.setRows(
@@ -1106,6 +1119,22 @@ export class CoursePlayer {
       this.reader?.setRows(this.tracker.state().rows);
       this.frame.setGoal({ text: goalSummary(goal, lang), progress: 0 });
     }
+  }
+  /** a Your turn step: its takeaway and notes in one collapsible "Why?" card (the checklist stays the one goal) */
+  private foldWhy() {
+    const r = this.reader?.el;
+    if (!r || r.querySelector(":scope > .cp-why")) return;
+    const parts = [...r.querySelectorAll<HTMLElement>(":scope > .cp-take, :scope > .cp-units")];
+    if (!parts.length) return;
+    const body = h("div", { class: "cp-why-b" });
+    const box = h(
+      "details",
+      { class: "cp-why" },
+      h("summary", {}, icon("bookmark"), h("span", {}, ps("why", this.lang)), icon("down", "i cp-why-chev")),
+      body,
+    );
+    parts[0].before(box);
+    body.append(...parts);
   }
   private view() {
     const host = this.frame.host;
@@ -1215,9 +1244,73 @@ export class CoursePlayer {
       calcProblem: (id) => this.calcProblemOf(id),
     });
     this.slide = host;
-    this.wideCol.append(h("div", { class: "cp-canvaswrap" }, host.el));
+    // a tablet in portrait, a narrow window, 200 % zoom: the 16:9 slide fits the width and its words follow at
+    // reading size under it (CSS shows the panel only there; screen readers already read the slide itself)
+    this.slideText = h("div", { class: "cp-slidetext", "aria-hidden": "true" });
+    this.wideCol.append(h("div", { class: "cp-canvaswrap" }, host.el), this.slideText);
+    this.syncSlideText();
     this.bottom.append(this.foot);
   }
+  private slideText: HTMLElement | null = null;
+  /** the words of the designed slide shown so far, in reading order (the narrow-screen panel under the slide) */
+  private syncSlideText() {
+    const box = this.slideText;
+    const step = this.step;
+    if (!box || !step?.slide) return;
+    const lang = this.lang;
+    const slide = step.slide;
+    const steps = clickSteps(slide);
+    const reveal = this.state(step).reveal;
+    const none = new Set<string>();
+    const host = this.slide?.el ?? box;
+    const txt = (t: L10n): L10n => {
+      const f = (x: string) => x.replace(/\{\{value\}\}/g, "…");
+      return { en: f(t.en), ...(t.fr !== undefined ? { fr: f(t.fr) } : {}) };
+    };
+    const out: HTMLElement[] = [];
+    for (const b of readingOrder(slide.blocks)) {
+      if (b.presenterOnly || !isRevealed(b, steps, reveal, none)) continue;
+      if (b.kind === "text" && b.bind) {
+        // a live value: the words as the slide draws them now (refreshed below while the panel shows)
+        const live = host.querySelector<HTMLElement>(`[data-id="${CSS.escape(b.id)}"]`)?.textContent?.trim();
+        if (live) {
+          out.push(h("div", { class: "cp-rich cp-st-body" }, h("p", {}, live)));
+          continue;
+        }
+      }
+      if (b.kind === "text") {
+        const big = b.style === "display" || b.style === "title";
+        const head = b.style === "heading";
+        const small = ["eyebrow", "label", "caption", "small", "foot"].includes(b.style);
+        out.push(
+          richEl(txt(b.text), lang, undefined, `cp-rich cp-st-${big ? "title" : head ? "heading" : small ? "small" : "body"}${b.style === "eyebrow" || b.style === "label" ? " cp-st-eyebrow" : ""}`),
+        );
+      } else if (b.kind === "callout") {
+        const el = richEl(txt(b.text), lang, undefined, "cp-rich cp-st-body cp-st-callout");
+        if (b.n !== undefined) el.prepend(h("span", { class: "cp-st-n num" }, String(b.n)));
+        out.push(el);
+      } else if (b.kind === "checklist") {
+        out.push(
+          h(
+            "ul",
+            { class: "cp-st-list" },
+            ...b.rows.map((r) => h("li", {}, richEl(txt(r.text), lang, undefined, "cp-rich cp-st-body"))),
+          ),
+        );
+      }
+    }
+    const sig = out.map((e) => e.className + e.textContent).join("|");
+    if (sig !== box.dataset.sig) {
+      box.dataset.sig = sig;
+      box.replaceChildren(...out);
+    }
+    box.hidden = !out.length;
+    if (this.slideTextTimer === null && slide.blocks.some((b) => b.kind === "text" && b.bind))
+      this.slideTextTimer = window.setInterval(() => {
+        if (this.slideText?.offsetParent) this.syncSlideText();
+      }, 1000);
+  }
+  private slideTextTimer: number | null = null;
   private blockAction(a: BlockAction) {
     if (a.k === "next") this.next();
     else if (a.k === "goto" && "ref" in a.step) this.goToId(a.step.ref);
@@ -1656,11 +1749,13 @@ export class CoursePlayer {
       f.append(sb);
     }
     f.append(h("div", { class: "sp" }));
-    const n = this.revealsOf(step);
+    // a designed slide counts its click reveals, a reader step its reveal blocks: while some remain, Next says it
+    // shows more of this step (the step counter does not move) and how far it is
+    const n = layout === "canvas" && step.slide ? clickSteps(step.slide).length : this.revealsOf(step);
     const st = this.state(step);
     const more = n - st.reveal;
     const nextB = btn(
-      ps("next", lang),
+      more > 0 ? ps("showMore", lang) : ps("next", lang),
       "primary",
       () => this.next(),
       "next",
@@ -1672,7 +1767,7 @@ export class CoursePlayer {
       nextB.append(
         h(
           "span",
-          { class: "cp-more num", "aria-label": `${more}` },
+          { class: "cp-more num", "aria-label": ps("moreLeft", lang, { n: more }) },
           `${st.reveal + 1}/${n + 1}`,
         ),
       );

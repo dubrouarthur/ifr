@@ -171,6 +171,17 @@ export class CourseFlightUi {
     hidden: true,
   });
   readonly card = h("div", { class: "cf-card-wrap", hidden: true });
+  /** the loading card over the whole cockpit while a course flight is being prepared (main.ts appends it to body) */
+  readonly veil = h(
+    "div",
+    { class: "cf-veil", hidden: true },
+    h(
+      "div",
+      { class: "cf-veil-card", role: "status" },
+      h("i", { class: "cf-spin", "aria-hidden": "true" }),
+      h("b", {}, tr("cf.preparing")),
+    ),
+  );
   private key = "";
   constructor(private act: CourseFlightActions) {}
 
@@ -297,8 +308,12 @@ export class CourseFlightUi {
                 tr("cf.backCourse"),
                 tr("cf.backCourseTip"),
                 () => {
-                  // with no result yet, leaving records nothing: ask first (in the strip, never a native dialog)
-                  if (f.hasResult) this.act.backToCourse();
+                  // with no result yet, leaving records nothing: ask first (in the strip, never a native dialog);
+                  // before Start (the brief card still up) there is nothing to lose, so no question
+                  if (f.hasResult || this.briefOpen) {
+                    this.closeBrief(false);
+                    this.act.backToCourse();
+                  }
                   else {
                     this.confirming = true;
                     this.render(this.last);
@@ -320,14 +335,16 @@ export class CourseFlightUi {
       );
     }
     this.strip.hidden = !s.capture && !s.flight && !s.loading;
+    // while a ?fly= link resolves, the whole cockpit waits under one card: the previous panel and outside view never
+    // show before the course step's own
+    this.veil.hidden = !s.loading;
     return wasHidden !== this.strip.hidden;
   }
 
   /** the brief card of a course flight (scene, calc, circuit, scenario or procedure target) */
   showBrief(b: CourseBrief) {
     const startBtn = h('button', { type: 'button', class: 'btn primary cf-start', onclick: () => this.closeBrief(true) }, svgIcon(I.play, 15), h('span', {}, tr('cf.start')));
-    // the way out before flying: back to the course, nothing recorded (the flight has not started)
-    const leaveBtn = h('button', { type: 'button', class: 'btn cf-notnow', onclick: () => { this.closeBrief(false); this.act.backToCourse(); } }, h('span', {}, tr('cf.notNow')));
+    // the way out before flying is the strip's one "Back to the course" (nothing recorded: the flight has not started)
     const sec = (head: string, body: Node) => h('div', { class: 'cf-card-sec' }, h('div', { class: 'cf-card-h' }, head), body);
     // two columns: what to fly (scrolls when the outside view is short) | the goals and Start (always in view)
     const card = h('section', { class: 'cf-card', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'cf-card-t' },
@@ -342,7 +359,7 @@ export class CourseFlightUi {
       ),
       h('div', { class: 'cf-card-side' },
         b.goals.length ? sec(tr('cf.goals'), h('ul', { class: 'cf-goals' }, ...b.goals.map((g) => h('li', {}, svgIcon(I.target, 14), h('span', {}, g))))) : null,
-        h('div', { class: 'cf-card-foot' }, h('span', { class: 'cf-card-w' }, tr('cf.waiting')), startBtn, leaveBtn),
+        h('div', { class: 'cf-card-foot' }, h('span', { class: 'cf-card-w' }, tr('cf.waiting')), startBtn),
       ),
     );
     this.card.replaceChildren(card);

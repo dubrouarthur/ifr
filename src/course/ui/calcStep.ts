@@ -293,15 +293,29 @@ export const calcRevealed = (st: CalcUiState | undefined): boolean => !!st && (s
 
 /** The givens table of a problem (null when it has none to show). */
 export function givensTable(p: CalcProblem, lang: Lang): HTMLElement | null {
-  const rows = p.givens
-    .map((g) => ({ g, v: givenText(g, lang) }))
-    .filter((x): x is { g: (typeof p.givens)[number]; v: string } => x.v !== null);
+  const rows: { label: string; v: string }[] = [];
+  // the wind is one given as a pilot writes it ("Wind 290°/21 kt"), not a direction row and a speed row
+  const dir = p.givens.find((g) => g.key === "windDir" && typeof g.value === "number");
+  const spd = p.givens.find((g) => g.key === "windKt" && typeof g.value === "number");
+  const merged = dir && spd;
+  for (const g of p.givens) {
+    if (merged && g === spd) continue;
+    if (merged && g === dir) {
+      const d = String(((Number(dir.value) % 360) + 360) % 360 || 360).padStart(3, "0");
+      rows.push({ label: lang === "fr" ? "Vent" : "Wind", v: `${d}°/${FMT[lang].u(Number(spd.value), "kt", 0)}` });
+      continue;
+    }
+    const v = givenText(g, lang);
+    if (v !== null) rows.push({ label: L(g.label, lang), v });
+  }
   if (!rows.length) return null;
   return h(
     "div",
     { class: "cp-givens", role: "table", "aria-label": ps("givens", lang) },
-    h("div", { class: "cp-label", role: "caption" }, ps("givens", lang)),
-    ...rows.map(({ g, v }) => h("div", { class: "g", role: "row" }, h("span", { role: "rowheader" }, L(g.label, lang)), h("b", { role: "cell", class: "num" }, v))),
+    // the table's name is its aria-label: the visible heading is decoration for screen readers (no caption role
+    // among the rows, which a table does not allow)
+    h("div", { class: "cp-label", "aria-hidden": "true" }, ps("givens", lang)),
+    ...rows.map(({ label, v }) => h("div", { class: "g", role: "row" }, h("span", { role: "rowheader" }, label), h("b", { role: "cell", class: "num" }, v))),
   );
 }
 
@@ -350,7 +364,8 @@ export function answerForm(
     });
     unitEl = sel;
   } else unitEl = h("span", { class: "cp-unit static" }, FMT[lang].unit(unit));
-  box.append(h("div", { class: "cp-answer" }, h("label", { for: id, class: "cp-label" }, ps("yourAnswer", lang)), h("div", { class: "cp-field" }, input, unitEl)));
+  const main = h("div", { class: "cp-answer" }, h("label", { for: id, class: "cp-label" }, p.answerLabel ? L(p.answerLabel, lang) : ps("yourAnswer", lang)), h("div", { class: "cp-field" }, input, unitEl));
+  box.append(main);
   for (const part of p.parts ?? []) {
     const label = h("span", { class: "cp-label" }, L(part.label, lang));
     if (part.choices?.length) {
@@ -381,10 +396,14 @@ export function answerForm(
     inp.addEventListener("keydown", enter);
     box.append(h("div", { class: "cp-answer part" }, label, h("div", { class: "cp-field" }, inp, part.unit ? h("span", { class: "cp-unit static" }, FMT[lang].unit(part.unit)) : null)));
   }
+  // the fields in the order the question asks them ("your ground speed, and the time for the leg")
+  if (p.partsFirst) box.append(main);
   const err = h("div", { class: "cp-err", id: `${id}-err`, role: "alert" });
   err.hidden = true;
   box.append(err);
-  return { el: box, input, err };
+  // `input` is the field focus goes to: the first one shown
+  const first = p.partsFirst ? (box.querySelector<HTMLInputElement>("input.cp-input") ?? input) : input;
+  return { el: box, input: first, err };
 }
 
 // ------------------------------------------------------------------ the widget

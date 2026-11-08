@@ -10,6 +10,28 @@
 // owns its geometry, its menus and its persistence. The geometry helpers are pure and unit-tested.
 import { h, fmtTime, store } from "./dom";
 import { svgIcon, I } from "./icons";
+import { registerStrings, t as tr } from "./i18n";
+
+registerStrings("en", {
+  "lw.stepOf": "Step {n} of {t}",
+  "lw.done": "Done",
+  "lw.complete": "Exercise complete",
+  "lw.exercise": "Exercise",
+  "lw.hideMore": "Hide the hint and steps",
+  "lw.more": "Hint and other steps",
+  "lw.showHint": "Show the hint",
+  "lw.setupDone": "{n} of {t} done",
+});
+registerStrings("fr", {
+  "lw.stepOf": "Étape {n} sur {t}",
+  "lw.done": "Terminé",
+  "lw.complete": "Exercice terminé",
+  "lw.exercise": "Exercice",
+  "lw.hideMore": "Masquer l’indice et les étapes",
+  "lw.more": "Indice et autres étapes",
+  "lw.showHint": "Afficher l’indice",
+  "lw.setupDone": "{n} sur {t} faits",
+});
 
 // ------------------------------------------------------------------ data interface
 
@@ -321,12 +343,12 @@ export function lessonStatus(v: LessonView): "bad" | "todo" | "done" | "ok" {
 
 /** the step label: "Step 2 of 5", "Exercise", "Exercise complete" */
 export function stepLabel(v: LessonView, short = false): string {
-  if (v.finished) return short ? "Done" : "Exercise complete";
+  if (v.finished) return tr(short ? "lw.done" : "lw.complete");
   if (v.steps > 1)
     return short
       ? `${v.step + 1}/${v.steps}`
-      : `Step ${v.step + 1} of ${v.steps}`;
-  return "Exercise";
+      : tr("lw.stepOf", { n: v.step + 1, t: v.steps });
+  return tr("lw.exercise");
 }
 
 // ------------------------------------------------------------------ icons (window-specific line icons)
@@ -1132,10 +1154,10 @@ export class LessonWindow {
               "aria-expanded": String(this.details),
             },
             this.details
-              ? "Hide the hint and steps"
+              ? tr("lw.hideMore")
               : others.length
-                ? "Hint and other steps"
-                : "Show the hint",
+                ? tr("lw.more")
+                : tr("lw.showHint"),
             svgIcon(this.details ? I.chevUp : I.chevDown, 14),
           )
         : null;
@@ -1172,7 +1194,7 @@ export class LessonWindow {
           )
         : h("b", {}, "Set up"),
       !all && checks.length
-        ? h("span", { class: "lw-setup-n" }, `${done} of ${checks.length} done`)
+        ? h("span", { class: "lw-setup-n" }, tr("lw.setupDone", { n: done, t: checks.length }))
         : null,
       h("span", { class: "lw-sp" }),
       todoActs >= 2
@@ -1372,7 +1394,7 @@ export class LessonWindow {
     this.menu.replaceChildren(
       hasMore
         ? item(
-            this.details ? "Hide the hint and steps" : "Hint and other steps",
+            tr(this.details ? "lw.hideMore" : "lw.more"),
             svgIcon(I.learn, 18),
             () => {
               this.closeMenu(true);

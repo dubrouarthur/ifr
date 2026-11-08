@@ -363,6 +363,8 @@ export const groundSpeedEte: GeneratorDef = defineGenerator({
       ],
       answer: roundStep(ete, 0.5),
       unit: "min",
+      answerLabel: L("Time en route", "Temps de vol"),
+      partsFirst: true,
       tolerance: Math.max(1, ete * 0.04),
       answerText: tr(
         (f) => f.dur(ete),

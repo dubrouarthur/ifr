@@ -65,6 +65,7 @@ import { history } from './ui/history';
 import type { CourseBridge, CockpitHost, FlyOutcome } from './course/cockpitBridge';
 import type { CalcProblem } from './course/types';
 import { markCockpitBridge } from './course/cockpitLink';
+import { BRAND, brandTagline } from './brand';
 
 // pedestal and procedures-mode words of the shell (FR/EN)
 registerStrings('en', {
@@ -90,6 +91,20 @@ registerStrings('en', {
   'ex.resumed': 'Exercise resumed: {title}',
   'ex.started': 'Exercise started: {title}',
   'ex.takeOverEnded': 'Exercise ended, not graded: you are flying from the replay as practice',
+  'tb.instructor': 'Instructor',
+  'tb.instructorTip': 'Instructor station (I)',
+  'tb.more': 'More',
+  'tb.moreTip': 'More: procedures, tools, learning, settings',
+  'tb.resume': 'Resume',
+  'tb.pause': 'Pause',
+  'tb.resumeTip': 'Resume (Esc)',
+  'tb.pauseTip': 'Pause (Esc)',
+  'ped.shortcuts': 'Shortcuts',
+  'ped.shortcutsTip': 'Keyboard shortcuts',
+  'look.hint': 'Drag to look around · double-click to recentre',
+  'look.hintTouch': 'Drag to look around · double-tap to recentre',
+  'pv.paused': 'Paused',
+  'pv.orEsc': 'or press Esc',
 });
 registerStrings('fr', {
   'ped.throttle': 'Gaz',
@@ -114,7 +129,29 @@ registerStrings('fr', {
   'ex.resumed': 'Exercice repris : {title}',
   'ex.started': 'Exercice commencé : {title}',
   'ex.takeOverEnded': 'Exercice arrêté, non évalué : vous volez depuis le replay, en entraînement',
+  'tb.instructor': 'Instructeur',
+  'tb.instructorTip': 'Poste instructeur (I)',
+  'tb.more': 'Plus',
+  'tb.moreTip': 'Plus : procédures, outils, apprentissage, réglages',
+  'tb.resume': 'Reprendre',
+  'tb.pause': 'Pause',
+  'tb.resumeTip': 'Reprendre (Échap)',
+  'tb.pauseTip': 'Pause (Échap)',
+  'ped.shortcuts': 'Raccourcis',
+  'ped.shortcutsTip': 'Raccourcis clavier',
+  'look.hint': 'Faites glisser pour regarder autour · double-clic pour recentrer',
+  'look.hintTouch': 'Faites glisser pour regarder autour · double-touchez pour recentrer',
+  'pv.paused': 'En pause',
+  'pv.orEsc': 'ou appuyez sur Échap',
 });
+/** the page's language and title follow the UI language (screen readers read French with a French voice) */
+function syncDocLang() {
+  const l = uiLang();
+  document.documentElement.lang = l;
+  document.title = `${BRAND.name} · ${brandTagline(l)}`;
+}
+syncDocLang();
+onLangChange(syncDocLang);
 
 // ------------------------------------------------------------------ state
 const sim = new Sim(SCENARIOS[1]);
@@ -759,7 +796,16 @@ flightMenu.append(
   flightItem(I.plan, 'Plan a new flight…', 'Shift N', () => setup.start()),
   flightItem(I.plane, 'Flight Center', 'F2', () => fc.open()),
 );
-const moreBtn = h('button', { class: 'btn tb-more', title: 'More: procedures, tools, learning, settings', 'aria-haspopup': 'menu', onclick: (e: Event) => { e.stopPropagation(); moreMenu.classList.toggle('open'); } }, icon(I.menu), h('span', { class: 'lbl' }, 'More'));
+const moreLbl = h('span', { class: 'lbl' }, tr('tb.more'));
+const moreBtn = h('button', { class: 'btn tb-more', title: tr('tb.moreTip'), 'aria-haspopup': 'menu', onclick: (e: Event) => { e.stopPropagation(); moreMenu.classList.toggle('open'); } }, icon(I.menu), moreLbl);
+const iosLbl = h('span', { class: 'lbl' }, tr('tb.instructor'));
+const iosBtn = h('button', { class: 'btn tb-ios', onclick: () => ios.toggle(), title: tr('tb.instructorTip') }, icon(I.instructor), iosLbl);
+onLangChange(() => {
+  moreLbl.textContent = tr('tb.more');
+  moreBtn.title = tr('tb.moreTip');
+  iosLbl.textContent = tr('tb.instructor');
+  iosBtn.title = tr('tb.instructorTip');
+});
 document.addEventListener('click', (e) => { if (!moreMenu.contains(e.target as Node)) moreMenu.classList.remove('open'); });
 /** the FMC CDU: a top-bar button in the airliner only (G1000 and steam: More → Tools) */
 const cduBtn = h('button', { class: 'btn tb-cdu', onclick: () => cduPanel.toggle(), title: 'FMC CDU — route, approach, legs, hold (F3)' }, icon(I.keypad), h('span', { class: 'lbl' }, 'CDU'));
@@ -775,7 +821,7 @@ const topbar = h('header', { class: 'topbar' },
     h('button', { class: 'btn tb-fc', onclick: () => fc.open(), title: 'Flight Center — plan a flight, lessons, paths and records (F2)' }, icon(I.plane), h('span', { class: 'lbl' }, 'Flight Center')),
     h('button', { class: 'btn tb-efb', onclick: () => charts.toggle(), title: 'EFB — charts, airport, navlog, weather, checklists (K)' }, icon(I.tablet), h('span', { class: 'lbl' }, 'EFB')),
     cduBtn,
-    h('button', { class: 'btn tb-ios', onclick: () => ios.toggle(), title: 'Instructor station (I)' }, icon(I.instructor), h('span', { class: 'lbl' }, 'Instructor')),
+    iosBtn,
     h('div', { class: 'tb-sim' }, pauseBtn, rateBtn),
     h('div', { class: 'menu-wrap' }, moreBtn, moreMenu),
   ),
@@ -791,7 +837,8 @@ const glare = h('div', { class: 'glare' });
 /** cabin smoke over the outside view (electrical fire, engine fire with the cabin heat open): with no FIRE / SMOKE
  *  light on a C172S, the haze is the cue — the instruments get their own veil (gauges.ts smokeHaze) */
 const smokeVeil = h('div', { class: 'cabin-smoke', 'aria-hidden': 'true' });
-const lookHint = h('div', { class: 'look-hint', 'aria-hidden': 'true' }, touchUi ? 'Drag to look around · double-tap to recentre' : 'Drag to look around · double-click to recentre');
+const lookHint = h('div', { class: 'look-hint', 'aria-hidden': 'true' }, tr(touchUi ? 'look.hintTouch' : 'look.hint'));
+onLangChange(() => (lookHint.textContent = tr(touchUi ? 'look.hintTouch' : 'look.hint')));
 /** the look hint appears once per session, under the situation bar, and fades after 6 s or on the first drag */
 function showLookHint() {
   let seen = false;
@@ -807,9 +854,12 @@ const sitbar = h('div', { class: 'sitbar' }, sbMenu, sitCells, sitDock);
 // a tap on the PAUSED pill resumes (handy on a tablet, where the top bar may be hidden)
 sitbar.addEventListener('click', (e) => { if (sim.paused && !sim.replaying && (e.target as HTMLElement).closest('.sb.paused')) togglePause(); });
 // the pause veil carries its own Resume button: on a tablet the top bar may be hidden and there is no Esc key
-const pauseKeyHint = h('span', { class: 'pv-key' }, 'or press Esc');
-const pauseVeil = h('div', { class: 'pause-veil' }, h('b', {}, 'Paused'),
-  h('div', { class: 'pv-acts' }, h('button', { class: 'btn primary pv-resume', type: 'button', onclick: () => { if (sim.paused) togglePause(); } }, icon(I.play), h('span', {}, 'Resume')), pauseKeyHint));
+const pauseKeyHint = h('span', { class: 'pv-key' }, tr('pv.orEsc'));
+const pvTitle = h('b', {}, tr('pv.paused'));
+const pvResume = h('span', {}, tr('tb.resume'));
+const pauseVeil = h('div', { class: 'pause-veil' }, pvTitle,
+  h('div', { class: 'pv-acts' }, h('button', { class: 'btn primary pv-resume', type: 'button', onclick: () => { if (sim.paused) togglePause(); } }, icon(I.play), pvResume), pauseKeyHint));
+onLangChange(() => { pauseKeyHint.textContent = tr('pv.orEsc'); pvTitle.textContent = tr('pv.paused'); pvResume.textContent = tr('tb.resume'); });
 const atc = new AtcRadio(sim, () => audio.squelch());
 /** the lesson window's place (docked zone decided by fitSides(): column | row | strip | card); the coach lives in it */
 const lessonSlot = h('div', { class: 'lesson-slot' }, coach);
@@ -938,8 +988,12 @@ function syncCourseStrip() {
   else if (b?.handoff && b.course && b.step) st.flight = { course: l10n(b.course.title), step: l10n(b.step.title), hasResult: !!courseOutcome || (b.plan?.kind === 'scenario' && !lesson && (debriefShown || !!sim.ac.s.crashed)) };
   else if (!b && pendingFlight) st.flight = { ...pendingFlight, hasResult: false };
   else if (courseLoading) st.loading = true;
-  // (the button's own display rule beats the hidden attribute: set it inline)
-  if (cached(pauseBtn, 'cfHide', String(courseLoading))) pauseBtn.style.display = courseLoading ? 'none' : '';
+  // (the button's own display rule beats the hidden attribute: set it inline). The brief card's Start is the one
+  // primary while it is up (Esc still starts), so Resume hides with it
+  const hidePause = courseLoading || courseUi.briefOpen;
+  if (cached(pauseBtn, 'cfHide', String(hidePause))) pauseBtn.style.display = hidePause ? 'none' : '';
+  // a course flight: the strip's "Back to the course" is the one way back (the top bar's Courses button hides)
+  document.body.classList.toggle('cf-flying', !!st.flight || !!st.loading);
   if (courseUi.render(st)) fitSoon();
   // the toasts held while the brief card was up
   if (!courseUi.briefOpen && heldToasts.length) for (const [m, k, ms] of heldToasts.splice(0)) toast(m, k, ms);
@@ -1575,7 +1629,9 @@ function setSystemsPanel(on: boolean, persist = true) {
   fitSoon();
 }
 const joyBtn = h('button', { class: 'pd-chip pd-joy', type: 'button', 'aria-label': 'Controller: keyboard. Connect a joystick, yoke or pedals', onclick: () => joyModal.open(), title: 'Flying with the keyboard — click to connect a joystick, yoke or pedals' }, svgIcon(I.joystick, 16), joyDot, joyLbl);
-const keysBtn = h('button', { class: 'pd-chip pd-keys', type: 'button', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-label': 'Keyboard shortcuts', title: 'Keyboard shortcuts' }, h('kbd', {}, '?'), h('span', { class: 'pd-chip-l' }, 'Shortcuts'));
+const keysLbl = h('span', { class: 'pd-chip-l' }, tr('ped.shortcuts'));
+const keysBtn = h('button', { class: 'pd-chip pd-keys', type: 'button', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-label': tr('ped.shortcutsTip'), title: tr('ped.shortcutsTip') }, h('kbd', {}, '?'), keysLbl);
+onLangChange(() => { keysLbl.textContent = tr('ped.shortcuts'); keysBtn.setAttribute('aria-label', tr('ped.shortcutsTip')); keysBtn.title = tr('ped.shortcutsTip'); });
 const footer = h('footer', { class: 'footer pedestal' },
   h('div', { class: 'pd-g pd-g-thr', role: 'group', 'aria-label': 'Throttle' }, cap('ped.throttle'), h('div', { class: 'pd-slot' }, thr, h('i', { class: 'pd-ticks', 'aria-hidden': 'true' })), h('div', { class: 'pd-read' }, thrPct, thrRpm)),
   h('div', { class: 'pd-g pd-g-flaps' }, cap('ped.flaps'), h('div', { class: 'pd-flaps', role: 'radiogroup', 'aria-label': 'Flaps' }, ...flapBtns, h('i', { class: 'pd-flap-rail', 'aria-hidden': 'true' }), flapNeedle)),
@@ -1629,7 +1685,7 @@ onLangChange(() => {
 });
 sysHost.hidden = !sysOn;
 sysPanel.setVisible(sysOn);
-document.body.append(charts.el, ios.el, pdPop, viewDock.pop);
+document.body.append(charts.el, ios.el, pdPop, viewDock.pop, courseUi.veil);
 
 // touch stick: relative drag (the yoke does not jump to where the finger lands), eased back to neutral on release
 {
@@ -1762,12 +1818,13 @@ function togglePause() {
   syncPauseBtn();
 }
 let pauseShown: boolean | null = null;
+onLangChange(() => { pauseShown = null; syncPauseBtn(); });
 /** the Pause button follows sim.paused whoever changed it (lessons, modals, crash, replay) */
 function syncPauseBtn() {
   if (pauseShown === sim.paused) return;
   pauseShown = sim.paused;
-  pauseBtn.replaceChildren(icon(sim.paused ? I.play : I.pause), h('span', { class: 'lbl' }, sim.paused ? 'Resume' : 'Pause'));
-  pauseBtn.title = sim.paused ? 'Resume (Esc)' : 'Pause (Esc)';
+  pauseBtn.replaceChildren(icon(sim.paused ? I.play : I.pause), h('span', { class: 'lbl' }, tr(sim.paused ? 'tb.resume' : 'tb.pause')));
+  pauseBtn.title = tr(sim.paused ? 'tb.resumeTip' : 'tb.pauseTip');
   pauseBtn.classList.toggle('on', sim.paused);
   viewDock.setPaused(sim.paused);
   // paused: the top bar shows (Pause reads Resume); running again: it gets out of the way

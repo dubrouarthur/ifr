@@ -1,7 +1,7 @@
 // Ground school player (package E) — progress marks, the top-bar progress ticks and the Outline sheet (every step
 // with its kind, minutes and status; tap to jump). Pure helpers are unit-tested.
 import type { L10n, Lang, Step } from "../types";
-import { h, icon, KINDS, kindChip, L, ps, textEl } from "./reader";
+import { h, icon, KINDS, kindChip, kindLabel, L, ps, textEl } from "./reader";
 
 // ------------------------------------------------------------------ marks (pure)
 /** What the student did on a step (kept by the player, summarised at the end and in the handout). */
@@ -86,17 +86,26 @@ export function ticksEl(
   current: number,
   lang: Lang,
 ): HTMLElement {
-  const el = h("div", {
-    class: "cp-ticks",
-    role: "img",
-    "aria-label": ps("stepOf", lang, { n: current + 1, total: steps.length }),
-  });
-  steps.forEach((s, i) =>
+  // the state never rests on colour alone: acting steps are taller ticks, the current one is longer, each tick
+  // names its step on hover, and the accessible name says how many are done
+  let done = 0;
+  const el = h("div", { class: "cp-ticks", role: "img" });
+  steps.forEach((s, i) => {
+    const st = stepStatus(s, marks[s.id], i === current);
+    if (st === "done" || st === "seen") done++;
+    const what = markText(s, marks[s.id], lang);
     el.append(
       h("i", {
-        class: tickClass(s, stepStatus(s, marks[s.id], i === current)),
+        class: tickClass(s, st),
+        title: `${ps("stepN", lang, { n: i + 1 })} · ${kindLabel(s.kind, lang)} · ${L(s.title, lang)}${
+          st === "current" ? ` · ${ps("current", lang)}` : what ? ` · ${what}` : ""
+        }`,
       }),
-    ),
+    );
+  });
+  el.setAttribute(
+    "aria-label",
+    `${ps("stepOf", lang, { n: current + 1, total: steps.length })} · ${ps("ticksDone", lang, { n: done })}`,
   );
   el.dataset.n = String(steps.length);
   return el;

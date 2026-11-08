@@ -238,18 +238,6 @@ export function lockedControls(
     .filter((c) => !has.has(c) && (cockpitHasGps || c !== "cdiSource"))
     .slice(0, max);
 }
-const LOCK_NAME: Partial<Record<StageControl, StageString>> = {
-  cdiSource: "cdi",
-  brg1: "brg1",
-  brg2: "brg2",
-  ap: "ap",
-  obs1: "obs",
-  obs2: "obs2",
-  hdgBug: "hdgBug",
-  crs: "crs",
-  baro: "baro",
-  altBug: "altBug",
-};
 
 /** Knob drag: detents for a pointer movement (1 per 6 px; right / up = increase). */
 export function dragDetents(dx: number, dy: number, pxPerDetent = 6): number {
@@ -317,26 +305,8 @@ export class StageControls {
       else if (s.kind === "key") this.el.append(this.key(s));
       else this.el.append(this.info(s));
     }
-    const locked = lockedControls(this.list, this.cx.gps !== false);
-    if (locked.length && this.specs.length) {
-      const box = mk("div", "cs-locked");
-      const row = mk("div", "row");
-      for (const c of locked) {
-        const b = mk(
-          "span",
-          "cs-btn lock",
-          t(LOCK_NAME[c] ?? "lockedOne", this.cx.lang),
-        );
-        b.setAttribute(
-          "aria-label",
-          `${b.textContent}: ${t("lockedOne", this.cx.lang)}`,
-        );
-        b.title = t("lockedOne", this.cx.lang);
-        row.append(b);
-      }
-      box.append(row, mk("span", "n", t("locked", this.cx.lang)));
-      this.el.append(box);
-    }
+    // only the controls the student may use: the ones the step keeps are simply not drawn (a row of greyed
+    // "Locked by this step" chips was noise beside the task)
     this.refresh();
   }
   /** Refresh the live values (cheap; call once per frame while live, or after a change). */

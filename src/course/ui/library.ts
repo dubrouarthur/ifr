@@ -52,6 +52,7 @@ import {
   isDone,
   isNewcomer,
   lessonRank,
+  matchScore,
   programOf,
   programView,
   searchView,
@@ -805,6 +806,15 @@ export class CourseLibrary {
     const progress = new Map<string, CourseProgress>();
     const pid = this.o.profileId ?? "local";
     if (store) {
+      // "New course" stores a draft at once (the builder needs an id); one left untouched (no step, the default
+      // title) is cleared here, so exploring the button never piles up "Untitled course" drafts
+      for (const entry of store.list())
+        if (isUntouchedDraft(entry))
+          try {
+            await store.delete(entry.id);
+          } catch {
+            /* kept: it shows as a draft */
+          }
       for (const entry of store.list()) {
         let course: Course | null = null;
         try {
@@ -1156,7 +1166,8 @@ export class CourseLibrary {
             : null,
         ),
       );
-      this.headX.replaceChildren(this.kindSeg(v.kinds));
+      // nothing at all: no row of "0" filters over the empty answer
+      this.headX.replaceChildren(v.kinds.all ? this.kindSeg(v.kinds) : "");
       return;
     }
     if (st.flights) {
@@ -1292,6 +1303,11 @@ export class CourseLibrary {
       ...KIND_ORDER.map((k) => seg(k, this.L(KIND_FILTER[k]))),
     );
   }
+  private searchFor(q: string) {
+    this.searchIn.value = q;
+    this.st = { ...this.st, q };
+    this.renderView(false);
+  }
   private clearSearch() {
     this.searchIn.value = "";
     this.st = { ...this.st, q: "", wide: false };
@@ -1416,7 +1432,7 @@ export class CourseLibrary {
     cols = this.cols,
   ): HTMLElement {
     // when one card of the grid has an "Also useful in" footer, every card keeps the row, so the rows line up
-    const foot = ctx === "subject" && items.some((i) => i.also.length);
+    const foot = false;
     return h(
       "div",
       { class: "lb-grid", role: "list", style: `--lb-cols:${cols}` },
@@ -1873,7 +1889,7 @@ export class CourseLibrary {
           class: `${cls} num is-ptr`,
           title: this.s("pointerTip", { n: x.also }),
         },
-        `→ ${x.also}`,
+        String(x.also),
       );
     if (x.soon) return h("span", { class: `${cls} is-soon` }, this.s("soon"));
     // the author's and the club's own subjects start empty: they offer to create, not a dash
@@ -1901,7 +1917,10 @@ export class CourseLibrary {
     if (p === "club") main.append(this.clubToolsBlock());
     let shown = 0;
     for (const g of v.groups) {
-      const secs = g.sections.map((s) => this.subjectSection(s));
+      // a subject with nothing to open (only planned courses) is not a full section: it joins the one closing
+      // "Coming soon: …" line of its group
+      const planned = g.sections.filter((s) => !s.total && !s.also.length && s.soon.length);
+      const secs = g.sections.filter((s) => !planned.includes(s)).map((s) => this.subjectSection(s));
       shown += secs.length;
       // Club courses starts empty: it shows how to make one instead of a dash
       if (
@@ -1912,14 +1931,17 @@ export class CourseLibrary {
       )
         secs.push(this.clubCoursesEmpty());
       // My courses and drafts is always there on the instructors' shelf (it starts empty)
-      const empty = g.empty.filter(
-        (x) =>
-          !(
-            (x.id === "instructors.mine" || x.id === "club.courses") &&
-            this.st.kind !== "proc" &&
-            this.st.kind !== "sim"
-          ),
-      );
+      const empty = [
+        ...planned.map((s) => s.subject),
+        ...g.empty.filter(
+          (x) =>
+            !(
+              (x.id === "instructors.mine" || x.id === "club.courses") &&
+              this.st.kind !== "proc" &&
+              this.st.kind !== "sim"
+            ),
+        ),
+      ].sort((a, b) => String(a.n).localeCompare(String(b.n), undefined, { numeric: true }));
       if (
         p === "instructors" &&
         g.empty.some((x) => x.id === "instructors.mine") &&
@@ -2053,7 +2075,7 @@ export class CourseLibrary {
             onclick: () => this.showProgram(x),
           },
           this.L(programDef(x).code),
-          h("span", { class: "lb-mute num" }, ptr ? `· → ${ptr}` : `· ${n}`),
+          h("span", { class: "lb-mute num" }, `· ${n || ptr}`),
         );
       }),
     );
@@ -2083,7 +2105,7 @@ export class CourseLibrary {
             "option",
             { value: x.subject.id, selected: x.subject.id === this.st.s },
             `${this.subjNum(x.subject)} · ${this.L(x.subject.title)} · ${
-              x.n ? x.n : x.also ? `→ ${x.also}` : x.soon ? this.s("soon") : 0
+              x.n ? x.n : x.also ? x.also : x.soon ? this.s("soon") : 0
             }`,
           ),
         ),
@@ -2230,7 +2252,6 @@ export class CourseLibrary {
               },
               this.s("pointerHead", { p: this.homeLabel(home) }),
             ),
-            h("span", { class: "num" }, ` · ${items.length}`),
           ),
           this.mixedRows(items),
         ),
@@ -2559,7 +2580,7 @@ export class CourseLibrary {
       return [
         h(
           "div",
-          { class: "gl-empty lb-empty" },
+          { class: "lb-empty lb-empty-q" },
           near.length
             ? h(
                 "div",
@@ -2572,19 +2593,44 @@ export class CourseLibrary {
                 ),
               )
             : null,
+          // one line of words that do find something, then the way out
           h(
-            "button",
-            {
-              class: "gl-btn",
-              type: "button",
-              onclick: () => this.clearSearch(),
-            },
-            this.s("clearSearch"),
+            "p",
+            { class: "lb-try" },
+            h("span", { class: "lb-mute" }, this.s("tryWords")),
+            ...(this.lang === "fr" ? ["VOR", "attente", "carburant"] : ["VOR", "holding", "fuel"]).map((w) =>
+              h(
+                "button",
+                { class: "lb-try-b", type: "button", onclick: () => this.searchFor(w) },
+                w,
+              ),
+            ),
+            h(
+              "button",
+              { class: "lb-link", type: "button", onclick: () => this.clearSearch() },
+              this.s("clearSearch"),
+            ),
           ),
         ),
       ];
     }
-    return [...top, ...this.resGroups(v.groups)];
+    // one flat grid, best matches first, each card naming where it lives ("IR › Radio navigation"): a heading per
+    // subject left one card per row and spread a handful of results over many screens
+    const tier = (i: LibItem) => (matchScore(i, q) > 1 ? 1 : 0);
+    const flat = v.groups
+      .flatMap((g) => g.items)
+      .map((i, k) => ({ i, k, t: tier(i) }))
+      .sort((a, b) => b.t - a.t || a.k - b.k)
+      .map((x) => x.i);
+    if (flat.length)
+      top.push(
+        h(
+          "section",
+          { class: "lb-res lb-res-flat" },
+          ...this.mixed(flat, "search"),
+        ),
+      );
+    return top;
   }
   /** Every flight of the simulator, grouped by home in shelf and syllabus order ("IR › Holding · 10"). */
   private flightsBody(): HTMLElement[] {
@@ -2768,14 +2814,6 @@ export class CourseLibrary {
     } else if (i.source === "club") parts.push(this.s("club"));
     return parts.join(" · ");
   }
-  private alsoLine(i: LibItem): string {
-    const progs = [...new Set(i.also.map((s) => subjectDef(s).program))];
-    return progs.length
-      ? this.s("alsoIn", {
-          p: progs.map((p) => this.L(programDef(p).code)).join(" · "),
-        })
-      : "";
-  }
   private progressEl(i: LibItem): HTMLElement | null {
     const p = i.progress;
     if (i.assigned && !isDone(i))
@@ -2864,7 +2902,9 @@ export class CourseLibrary {
       cover.append(h("span", { class: "lb-flag" }, this.s("briefingFlight")));
     else if (i.draft && !i.assigned)
       cover.append(h("span", { class: "lb-flag" }, this.s("draftTag")));
-    const also = ctx === "subject" ? this.alsoLine(i) : "";
+    // no "Also useful in IR · Night" footer on every card: where an item also serves shows on that programme's page
+    const also = "";
+    void ctx;
     const purpose = this.purpose(i);
     return h(
       "article",
@@ -2891,7 +2931,7 @@ export class CourseLibrary {
         ),
         h("h3", { class: "lb-card-t" }, this.L(i.title)),
         purpose ? h("p", { class: "lb-card-p" }, purpose) : null,
-        ctx === "continue"
+        ctx === "continue" || ctx === "search"
           ? h("p", { class: "lb-card-home" }, this.homeLabel(i.home))
           : null,
         h(
@@ -2917,9 +2957,10 @@ export class CourseLibrary {
       this.L(SUB_LABEL[i.sub]),
       ctx === "ref"
         ? this.s("shelvedIn", { p: this.homeLabel(i.home) })
-        : this.sizeLine(i),
+        : ctx === "search"
+          ? this.homeLabel(i.home)
+          : this.sizeLine(i),
       i.sub === "scenario" && i.eyebrow ? this.L(i.eyebrow) : "",
-      ctx === "subject" ? this.alsoLine(i) : "",
     ].filter(Boolean);
     const p = this.progressEl(i);
     return h(
@@ -3731,6 +3772,10 @@ export class CourseLibrary {
 /** Where a card is drawn: in its subject (it shows "Also useful in"), in Continue (it shows its home), in search
  *  results (grouped by home already), or as a reference row pointing to its home. */
 type CardCtx = "subject" | "continue" | "search" | "ref";
+/** A draft the instructor opened and left: no step, the default title, not a sample. */
+function isUntouchedDraft(e: CourseIndexEntry): boolean {
+  return !e.sample && !e.assigned && e.steps === 0 && e.title.en === "Untitled course" && (e.title.fr ?? "Cours sans titre") === "Cours sans titre";
+}
 const GROUPS = GROUP_TITLE;
 
 /** A level as three bars (1 getting started · 2 core · 3 advanced); the word beside it is its label. */
