@@ -338,7 +338,7 @@ export function triggerText(t: { trigger: FailureTrigger; at: number; fix?: stri
     case 'time':
       return t.at <= 0 ? (fr ? 'dès le départ' : 'at the start') : fr ? `${t.at} min après le départ` : `${t.at} min after the start`;
     case 'leg':
-      return fr ? `à l’étape ${t.at}` : `at leg ${t.at}`;
+      return fr ? `à la branche ${t.at}` : `at leg ${t.at}`;
     case 'fix':
       return fr ? `à ${t.fix || '…'}` : `at ${t.fix || '…'}`;
     case 'altAgl':
@@ -369,11 +369,11 @@ function procedureExists(id: string): boolean {
 export function validate(c: Circuit, lang: VLang = 'en'): string[] {
   const fr = lang === 'fr';
   const e: string[] = [];
-  const L = (n: number, en: string, frs: string) => e.push(fr ? `Étape ${n} : ${frs}` : `Leg ${n}: ${en}`);
+  const L = (n: number, en: string, frs: string) => e.push(fr ? `Branche ${n} : ${frs}` : `Leg ${n}: ${en}`);
   if (!c.name.trim()) e.push(fr ? 'Donnez un nom au vol.' : 'Give the circuit a name.');
   // a failure drill may be only the take-off (lined up / climb-out): no leg needed
   const takeoffOnly = !!c.drill && c.start.type === 'runway';
-  if (!c.legs.length && !takeoffOnly) e.push(fr ? 'Ajoutez au moins une étape.' : 'Add at least one leg.');
+  if (!c.legs.length && !takeoffOnly) e.push(fr ? 'Ajoutez au moins une branche.' : 'Add at least one leg.');
   if (c.start.type === 'runway') {
     try {
       runway(c.start.airport, c.start.runway);
@@ -395,7 +395,7 @@ export function validate(c: Circuit, lang: VLang = 'en'): string[] {
     if (l.type === 'approach') {
       if (!APPROACHES.some((a) => a.id === l.approachId)) L(n, 'unknown approach.', 'approche inconnue.');
       else if (l.transition && !getApproach(l.approachId).transitions.some((t) => t.name === l.transition)) L(n, `transition ${l.transition} does not exist on this approach.`, `la transition ${l.transition} n’existe pas sur cette approche.`);
-      if (l.outcome === 'land' && i !== c.legs.length - 1) L(n, 'a full-stop landing must be the last leg (use “missed approach” to continue).', 'un atterrissage complet doit être la dernière étape (choisissez « approche interrompue » pour continuer).');
+      if (l.outcome === 'land' && i !== c.legs.length - 1) L(n, 'a full-stop landing must be the last leg (use “missed approach” to continue).', 'un atterrissage complet doit être la dernière branche (choisissez « approche interrompue » pour continuer).');
     }
     if (l.type === 'sid') {
       if (c.start.type !== 'runway') L(n, 'a SID starts on a runway (start on a runway or remove it).', 'un SID part d’une piste (départ sur piste, ou supprimez-le).');
@@ -404,7 +404,7 @@ export function validate(c: Circuit, lang: VLang = 'en'): string[] {
         if (!p) L(n, `departure ${l.id} is not published at ${c.start.airport}.`, `le départ ${l.id} n’est pas publié à ${c.start.airport}.`);
         else if (!sidsFor(c.start.airport, c.start.runway).some((x) => x.id === l.id)) L(n, `${l.id} does not serve RWY ${c.start.runway}.`, `${l.id} ne dessert pas la piste ${c.start.runway}.`);
         else if (l.transition && !p.enr.some((t) => t.name === l.transition)) L(n, `${l.id} has no ${l.transition} transition.`, `${l.id} n’a pas de transition ${l.transition}.`);
-        if (i !== 0) L(n, 'the SID must be the first leg.', 'le SID doit être la première étape.');
+        if (i !== 0) L(n, 'the SID must be the first leg.', 'le SID doit être la première branche.');
       }
     }
     if (l.type === 'star') {
@@ -421,7 +421,7 @@ export function validate(c: Circuit, lang: VLang = 'en'): string[] {
       e.push(fr ? `Panne inconnue « ${String(f.key)} ».` : `Failure: unknown failure “${String(f.key)}”.`);
       continue;
     }
-    if (f.trigger === 'leg' && (f.at < 1 || f.at > c.legs.length)) F(`leg ${f.at} does not exist.`, `l’étape ${f.at} n’existe pas.`);
+    if (f.trigger === 'leg' && (f.at < 1 || f.at > c.legs.length)) F(`leg ${f.at} does not exist.`, `la branche ${f.at} n’existe pas.`);
     if (f.trigger === 'fix' && !findFix(f.fix ?? '')) F(`unknown fix “${f.fix ?? ''}”.`, `point inconnu « ${f.fix ?? ''} ».`);
     if (f.trigger === 'time' && !(f.at >= 0 && f.at <= 240)) F('the time must be 0 to 240 min.', 'le délai doit être compris entre 0 et 240 min.');
     if (f.trigger === 'altAgl' && !(f.at >= 50 && f.at <= 15000)) F('the height must be 50 to 15000 ft above the ground.', 'la hauteur doit être comprise entre 50 et 15000 ft sol.');
@@ -461,7 +461,7 @@ export function validate(c: Circuit, lang: VLang = 'en'): string[] {
       F('the expected procedure no longer exists: choose another one, or Automatic.', 'la procédure attendue n’existe plus : choisissez-en une autre, ou Automatique.');
   }
   for (const w of c.events ?? []) {
-    if (w.trigger === 'leg' && (w.at < 1 || w.at > c.legs.length)) e.push(fr ? `Météo : l’étape ${w.at} n’existe pas.` : `Weather change: leg ${w.at} does not exist.`);
+    if (w.trigger === 'leg' && (w.at < 1 || w.at > c.legs.length)) e.push(fr ? `Météo : la branche ${w.at} n’existe pas.` : `Weather change: leg ${w.at} does not exist.`);
     if (w.trigger === 'fix' && !findFix(w.fix ?? '')) e.push(fr ? `Météo : point inconnu « ${w.fix ?? ''} ».` : `Weather change: unknown fix “${w.fix ?? ''}”.`);
   }
   return e;
@@ -723,7 +723,7 @@ export function circuitToExercise(c: Circuit, opts: { seed?: number } = {}): Exe
       ...drillLines,
       ...briefStart(c, sid?.id, ul),
       ul === 'fr'
-        ? `${c.legs.length} étape${c.legs.length > 1 ? 's' : ''} · ~${st.distNm.toFixed(0)} NM · ~${st.minutes} min.`
+        ? `${c.legs.length} branche${c.legs.length > 1 ? 's' : ''} · ~${st.distNm.toFixed(0)} NM · ~${st.minutes} min.`
         : `${c.legs.length} leg${c.legs.length === 1 ? '' : 's'} · ~${st.distNm.toFixed(0)} NM · ~${st.minutes} min.`,
       ...(c.mode === 'checkride' ? [ul === 'fr' ? 'Contrôle en vol : aucune aide, noté selon l’ACS.' : 'Checkride: no coaching; graded against the ACS.'] : []),
       ...failureBrief(c, ul),

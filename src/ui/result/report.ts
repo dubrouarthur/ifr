@@ -25,6 +25,8 @@ import { bearingDeg, distanceNm } from "../../nav/geo";
 import { mmss, num, sgn, tx } from "./i18n";
 import { LESSON_META } from "../../library/meta";
 /** the exercise's title in the report's language (the curriculum writes English; library/meta.ts holds the French) */
+/** a step's words in the report's language (the engine's English text stays the one the report parses) */
+const stepWords = (L: Lang, s: { text: string; fr?: string }) => (L === "fr" && s.fr ? s.fr : s.text);
 const exTitleIn = (L: Lang, ex: { id: string; title: string }) => (L === "fr" ? (LESSON_META[ex.id]?.fr ?? ex.title) : ex.title);
 import type {
   DevKind,
@@ -177,6 +179,8 @@ export function taskKey(ex: ResultInput["ex"]): string | null {
   const id = ex.id;
   switch (ex.stage) {
     case "S1":
+      // the basic attitude lessons are also the first LAPL · PPL lessons: named for what they train, not for the IR
+      return /unusual/.test(id) ? "task.IV.B" : "task.IV.A.basic";
     case "S2":
       return /unusual/.test(id) ? "task.IV.B" : "task.IV.A";
     case "S3":
@@ -1724,7 +1728,7 @@ export function buildReport(inp: ResultInput): ResultReport {
       stdText: stepsStd.wording,
       whatHappened: tx(L, "what.steps", {
         k: k + 1,
-        text: inp.steps[k]?.text ?? "",
+        text: inp.steps[k] ? stepWords(L, inp.steps[k]) : "",
       }),
       why: tx(L, "why.steps"),
       next: tx(L, "next.steps"),
@@ -1805,7 +1809,7 @@ export function buildReport(inp: ResultInput): ResultReport {
       label: tx(L, "u.steps"),
       value: `${doneCount}`,
       unit: tx(L, "u.stepsOf", { n: inp.steps.length }),
-      sub: inp.steps.length === 1 ? inp.steps[0].text : tx(L, "k.steps"),
+      sub: inp.steps.length === 1 ? stepWords(L, inp.steps[0]) : tx(L, "k.steps"),
     });
     if (tiles.length < 4)
       tiles.push({
@@ -1833,7 +1837,7 @@ export function buildReport(inp: ResultInput): ResultReport {
           x.t <= (t1 ?? Infinity),
       );
     return {
-      text: s.text,
+      text: stepWords(L, s),
       state,
       t0: state === "not-reached" ? undefined : s.t0,
       t1: state === "not-reached" ? undefined : t1,
@@ -1994,7 +1998,7 @@ function phasesOf(inp: ResultInput, T: number, ungraded: boolean): Phase[] {
     if (reached) {
       const t0 = s.t0 ?? last;
       const t1 = s.done ? (s.t1 ?? t0) : flownEnd;
-      out.push({ t0, t1: Math.max(t0, t1), label: s.text });
+      out.push({ t0, t1: Math.max(t0, t1), label: stepWords(inp.lang, s) });
       last = Math.max(last, t1);
     }
   });
@@ -2008,12 +2012,12 @@ function phasesOf(inp: ResultInput, T: number, ungraded: boolean): Phase[] {
       out.push({
         t0: flownEnd + k * w,
         t1: flownEnd + (k + 1) * w,
-        label: s.text,
+        label: stepWords(inp.lang, s),
         ghost: true,
       }),
     );
   }
-  if (!out.length && n) out.push({ t0: 0, t1: T, label: inp.steps[0].text });
+  if (!out.length && n) out.push({ t0: 0, t1: T, label: stepWords(inp.lang, inp.steps[0]) });
   return out;
 }
 
@@ -2147,7 +2151,7 @@ function wouldGradeOf(inp: ResultInput): string[] {
       `${tx(L, "k.inbound")} ${tx(L, "w.inbound")}`,
       tx(L, "w.protect"),
     ];
-  return inp.exStandards ?? [];
+  return (L === "fr" && inp.exStandardsFr?.length ? inp.exStandardsFr : inp.exStandards) ?? [];
 }
 
 /** the standards a crash leaves breached before its final dive: a kind out of tolerance longer than the allowance,

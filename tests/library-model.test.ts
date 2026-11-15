@@ -216,10 +216,12 @@ describe("the classification: exactly one home per item", () => {
       ).toBeTruthy();
   });
   it("keeps a library course on its registry programme's shelf, but for the deliberate moves", () => {
-    // radio phraseology is Part-FCL subject Communications: its registry says Club, its home is LAPL · PPL
+    // radio phraseology is Part-FCL subject Communications: its registry says Club, its home is LAPL · PPL; night
+    // VFR is written for the LAPL/PPL shelf but its home is the night rating's rules
     const moved = new Set([
       "sample-lib-club-phraseology",
       "sample-lib-club-teaching",
+      "sample-lib-ppl-night-vfr",
     ]);
     for (const p of LIBRARY_PLAN) {
       if (moved.has(p.id)) continue;

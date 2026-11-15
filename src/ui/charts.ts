@@ -10,6 +10,38 @@ import type { Approach } from "../nav/types";
 import type { Sim } from "../sim/sim";
 import { DEG } from "../nav/geo";
 import { svgIcon } from "./icons";
+import { lang } from "./i18n";
+
+/** the EFB's own controls in the UI language (the charts themselves stay as published) */
+const EFB_FR: Record<string, string> = {
+  Close: "Fermer",
+  "Close (K)": "Fermer (K)",
+  Charts: "Cartes",
+  "EFB apps": "Applications de l’EFB",
+  "Chart categories": "Catégories de cartes",
+  "Filter charts": "Filtrer les cartes",
+  "Chart source": "Source des cartes",
+  Fit: "Ajuster",
+  "Fit again (double-click the chart)": "Ajuster de nouveau (double-clic sur la carte)",
+  "Fit the chart width (scroll to read down)": "Ajuster à la largeur (faites défiler pour lire la suite)",
+  "Show the whole page": "Afficher la page entière",
+  Width: "Largeur",
+  Page: "Page",
+  "Night mode": "Mode nuit",
+  "Day mode": "Mode jour",
+  Night: "Nuit",
+  Airport: "Aérodrome",
+  Zoom: "Zoom",
+  "Zoom out": "Zoom arrière",
+  "Zoom in": "Zoom avant",
+  "Zoom out (Ctrl + wheel)": "Zoom arrière (Ctrl + molette)",
+  "Zoom in (Ctrl + wheel)": "Zoom avant (Ctrl + molette)",
+  "Unpin this chart": "Retirer cette carte des favoris",
+  "Pin this chart": "Ajouter cette carte aux favoris",
+  Unpin: "Retirer des favoris",
+  Pin: "Ajouter aux favoris",
+};
+const ex = (en: string): string => (lang() === "fr" ? (EFB_FR[en] ?? en) : en);
 import {
   airportPage,
   navlogPage,
@@ -307,7 +339,7 @@ export class ChartsDrawer {
   private appBar = h("nav", {
     class: "efb-apps",
     role: "tablist",
-    "aria-label": "EFB apps",
+    "aria-label": ex("EFB apps"),
   });
   private page = h("div", { class: "efb-pagehost" });
   /** header: current chart (index · title · airport · procedure id), opens the chart list */
@@ -332,7 +364,7 @@ export class ChartsDrawer {
   private catSeg = h("div", {
     class: "seg chart-cats",
     role: "tablist",
-    "aria-label": "Chart categories",
+    "aria-label": ex("Chart categories"),
   });
   private listCat: Cat = "APP";
   private listOpen = false;
@@ -340,7 +372,7 @@ export class ChartsDrawer {
   private list = h("div", {
     class: "chart-list",
     role: "dialog",
-    "aria-label": "Charts",
+    "aria-label": ex("Charts"),
     hidden: true,
   });
   private scrim = h("div", { class: "chart-scrim", hidden: true });
@@ -349,36 +381,36 @@ export class ChartsDrawer {
     type: "search",
     spellcheck: "false",
     autocomplete: "off",
-    "aria-label": "Filter charts",
+    "aria-label": ex("Filter charts"),
   }) as HTMLInputElement;
   private listBody = h("div", { class: "cl-body" });
   private srcSeg = h("div", {
     class: "seg chart-src",
     role: "group",
-    "aria-label": "Chart source",
+    "aria-label": ex("Chart source"),
   });
   private pins: string[] = store.get<string[]>("ifr.charts.pins", []);
   private recent: string[] = store.get<string[]>("ifr.charts.recent", []);
   private zoomLbl = h(
     "button",
-    { class: "cz-pct", title: "Fit again (double-click the chart)" },
+    { class: "cz-pct", title: ex("Fit again (double-click the chart)") },
     "100%",
   );
   private fitSeg = h("div", {
     class: "seg cz-fit",
     role: "group",
-    "aria-label": "Fit",
+    "aria-label": ex("Fit"),
   });
   private nightBtn = h(
     "button",
-    { class: "cz-night", title: "Night mode", "aria-label": "Night mode" },
+    { class: "cz-night", title: ex("Night mode"), "aria-label": ex("Night mode") },
     svgIcon("moon", 16),
-    h("span", {}, "Night"),
+    h("span", {}, ex("Night")),
   );
   private aptSel = h("select", {
     class: "chart-apt",
-    "aria-label": "Airport",
-    title: "Airport",
+    "aria-label": ex("Airport"),
+    title: ex("Airport"),
   }) as HTMLSelectElement;
 
   private renderApps() {
@@ -515,7 +547,7 @@ export class ChartsDrawer {
     this.pinBtn.style.display = charts && key ? "" : "none";
     this.pinBtn.classList.toggle("on", on);
     this.pinBtn.setAttribute("aria-pressed", String(on));
-    this.pinBtn.title = on ? "Unpin this chart" : "Pin this chart";
+    this.pinBtn.title = ex(on ? "Unpin this chart" : "Pin this chart");
     this.pinBtn.setAttribute("aria-label", this.pinBtn.title);
   }
 
@@ -584,8 +616,8 @@ export class ChartsDrawer {
       "button",
       {
         class: `cl-pin${pinned ? " on" : ""}`,
-        title: pinned ? "Unpin" : "Pin",
-        "aria-label": `${pinned ? "Unpin" : "Pin"} ${it.title}`,
+        title: ex(pinned ? "Unpin" : "Pin"),
+        "aria-label": `${ex(pinned ? "Unpin" : "Pin")} ${it.title}`,
         "aria-pressed": String(pinned),
         tabindex: "-1",
         onclick: (e: Event) => {
@@ -858,8 +890,8 @@ export class ChartsDrawer {
       this.fitSeg.append(
         h(
           "button",
-          { "data-fit": m, title: tip, onclick: () => this.setFit(m) },
-          label,
+          { "data-fit": m, title: ex(tip), onclick: () => this.setFit(m) },
+          ex(label),
         ),
       );
     this.nightBtn.addEventListener("click", () => this.toggleNight());
@@ -899,13 +931,13 @@ export class ChartsDrawer {
         { class: "cz" },
         h(
           "div",
-          { class: "cz-zoom", role: "group", "aria-label": "Zoom" },
+          { class: "cz-zoom", role: "group", "aria-label": ex("Zoom") },
           h(
             "button",
             {
               onclick: () => this.setZoom(this.zoom / 1.25),
-              title: "Zoom out (Ctrl + wheel)",
-              "aria-label": "Zoom out",
+              title: ex("Zoom out (Ctrl + wheel)"),
+              "aria-label": ex("Zoom out"),
             },
             "−",
           ),
@@ -914,8 +946,8 @@ export class ChartsDrawer {
             "button",
             {
               onclick: () => this.setZoom(this.zoom * 1.25),
-              title: "Zoom in (Ctrl + wheel)",
-              "aria-label": "Zoom in",
+              title: ex("Zoom in (Ctrl + wheel)"),
+              "aria-label": ex("Zoom in"),
             },
             "+",
           ),
@@ -940,7 +972,7 @@ export class ChartsDrawer {
       "aside",
       {
         class: `drawer efb${this.night ? " night" : ""}`,
-        "aria-label": "Charts",
+        "aria-label": ex("Charts"),
       },
       h(
         "header",
@@ -953,8 +985,8 @@ export class ChartsDrawer {
           {
             class: "x",
             onclick: () => this.toggle(false),
-            title: "Close (K)",
-            "aria-label": "Close",
+            title: ex("Close (K)"),
+            "aria-label": ex("Close"),
           },
           "×",
         ),
@@ -966,6 +998,7 @@ export class ChartsDrawer {
       this.scrim,
       this.list,
     );
+    this.el.inert = true; // closed until toggle(true)
     this.renderApps();
     this.renderTabs();
     this.renderTools();
@@ -1061,6 +1094,8 @@ export class ChartsDrawer {
   toggle(open?: boolean) {
     const o = open ?? !this.isOpen;
     this.el.classList.toggle("open", o);
+    // closed, the drawer is off screen: inert, so Tab and screen readers never enter it
+    this.el.inert = !o;
     document.body.classList.toggle("efb-open", o);
     if (!o) {
       this.closeList();
@@ -1175,7 +1210,7 @@ export class ChartsDrawer {
     this.view.classList.toggle("night", this.night);
     this.nightBtn.classList.toggle("on", this.night);
     this.nightBtn.setAttribute("aria-pressed", String(this.night));
-    this.nightBtn.title = this.night ? "Day mode" : "Night mode";
+    this.nightBtn.title = ex(this.night ? "Day mode" : "Night mode");
     for (const b of this.fitSeg.querySelectorAll<HTMLButtonElement>("button")) {
       const on = b.dataset.fit === this.fitMode && !this.manual;
       b.classList.toggle("on", on);

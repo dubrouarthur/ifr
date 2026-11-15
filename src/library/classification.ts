@@ -148,6 +148,129 @@ export const CLASSIFICATION: Readonly<Record<string, Placement>> = {
   "sample-lib-atpl-033-flight-planning": { home: "atpl.033", level: 3 },
   "sample-lib-club-essentials": { home: "club.life", level: 1 },
   "sample-lib-club-teaching": { home: "instructors.teach", level: 1 },
+  // ---- the course library, wave 2 (planned in samples/library/catalogue.ts; one home each, set here so that the
+  // authors never edit this shared file)
+  "sample-lib-ppl-effects-of-controls": {
+    home: "ppl.hand",
+    level: 1,
+    words: "effets primaires secondaires gouvernes compensateur trim lacet inverse adverse yaw",
+  },
+  "sample-lib-ppl-flight-manoeuvres": {
+    home: "ppl.hand",
+    level: 1,
+    words: "palier montee descente virage straight level climb descent turn",
+  },
+  "sample-lib-ppl-slow-flight-stalls": {
+    home: "ppl.hand",
+    level: 1,
+    also: ["atpl.081"],
+    words: "vol lent decrochage vrille stall spin slow flight",
+  },
+  "sample-lib-ppl-crosswind": {
+    home: "ppl.circ",
+    level: 2,
+    words: "vent de travers crosswind crabe glissade derive",
+  },
+  "sample-lib-ppl-night-vfr": {
+    home: "night.rules",
+    level: 2,
+    also: ["ppl.law", "ppl.hp"],
+    words: "vfr de nuit night vision de nuit",
+  },
+  "sample-lib-ppl-precautionary-landing": {
+    home: "ppl.emer",
+    level: 2,
+    words: "atterrissage de precaution precautionary landing champ",
+  },
+  "sample-lib-ppl-aircraft-systems": {
+    home: "ppl.agk",
+    level: 1,
+    words: "moteur carburant electrique alternateur givrage carburateur mixture",
+  },
+  "sample-lib-ppl-operational-procedures": {
+    home: "ppl.ops",
+    level: 1,
+    also: ["atpl.070"],
+    words: "turbulence de sillage cisaillement wake windshear piste contaminee",
+  },
+  "sample-lib-ir-approach-charts": {
+    home: "ir.app",
+    level: 1,
+    words: "carte d approche iac plate chart lecture",
+  },
+  "sample-lib-ir-dme-arcs": {
+    home: "ir.nav",
+    level: 2,
+    also: ["atpl.062"],
+    words: "arc dme radial d anticipation",
+  },
+  "sample-lib-ir-holding": {
+    home: "ir.hold",
+    level: 3,
+    words: "attente hippodrome pans-ops vitesses d attente",
+  },
+  "sample-lib-ir-missed-circling": {
+    home: "ir.app",
+    level: 3,
+    words: "approche interrompue remise de gaz mvl manoeuvre a vue circling",
+  },
+  "sample-lib-ir-weather-icing": {
+    home: "ir.proc",
+    level: 2,
+    also: ["atpl.050", "ppl.met"],
+    words: "givrage icing isotherme meteo ifr",
+  },
+  "sample-lib-ir-skill-test": {
+    home: "ir.test",
+    level: 3,
+    words: "test pratique examen skill test checkride tolerances",
+  },
+  "sample-lib-atpl-010-air-law": {
+    home: "atpl.010",
+    level: 3,
+    also: ["ppl.law"],
+    words: "chicago libertes de l air calage altimetrique interception",
+  },
+  "sample-lib-atpl-021-systems": {
+    home: "atpl.021",
+    level: 3,
+    words: "turboreacteur pressurisation turbine engine",
+  },
+  "sample-lib-atpl-032-performance": {
+    home: "atpl.032",
+    level: 3,
+    words: "v1 vr v2 longueur de piste pente de montee",
+  },
+  "sample-lib-atpl-050-meteorology": {
+    home: "atpl.050",
+    level: 3,
+    also: ["ppl.met"],
+    words: "atmosphere type isa fronts courant-jet temsi sigwx",
+  },
+  "sample-lib-atpl-061-navigation": {
+    home: "atpl.061",
+    level: 3,
+    also: ["ppl.nav"],
+    words: "orthodromie loxodromie convergence estime great circle",
+  },
+  "sample-lib-atpl-062-radio-navigation": {
+    home: "atpl.062",
+    level: 3,
+    also: ["ir.nav"],
+    words: "portee vhf vor dme distance oblique slant range",
+  },
+  "sample-lib-atpl-070-operations": {
+    home: "atpl.070",
+    level: 3,
+    also: ["ir.app"],
+    words: "faible visibilite lvo lvp cat ii cat iii piste contaminee cisaillement",
+  },
+  "sample-lib-atpl-081-principles-of-flight": {
+    home: "atpl.081",
+    level: 3,
+    also: ["ppl.pof"],
+    words: "facteur de charge domaine de vol vitesse de manoeuvre load factor",
+  },
   // ---- sim lessons (train/curriculum.ts)
   "bai-sl": {
     home: "ppl.hand",

@@ -74,25 +74,25 @@ export interface BriefingRuntime {
 /** The stage names (train/curriculum.ts STAGES), here so the deck needs no sim code. */
 const STAGE_NAMES: Record<string, L10n> = {
   S1: {
-    en: "Stage 1 · Attitude instrument flying",
-    fr: "Étape 1 · Pilotage aux instruments",
+    en: "Stage 1 · Basic attitude flying",
+    fr: "Phase 1 · Pilotage de base",
   },
-  S2: { en: "Stage 2 · Partial panel", fr: "Étape 2 · Panne partielle" },
-  S3: { en: "Stage 3 · Radio navigation", fr: "Étape 3 · Radionavigation" },
-  S4: { en: "Stage 4 · Holding", fr: "Étape 4 · Attentes" },
+  S2: { en: "Stage 2 · Partial panel", fr: "Phase 2 · Panne partielle" },
+  S3: { en: "Stage 3 · Radio navigation", fr: "Phase 3 · Radionavigation" },
+  S4: { en: "Stage 4 · Holding", fr: "Phase 4 · Attentes" },
   S5: {
     en: "Stage 5 · Instrument approaches",
-    fr: "Étape 5 · Approches aux instruments",
+    fr: "Phase 5 · Approches aux instruments",
   },
   S6: {
     en: "Stage 6 · Missed approaches & abnormals",
-    fr: "Étape 6 · Remises de gaz et pannes",
+    fr: "Phase 6 · Remises de gaz et pannes",
   },
   S7: {
     en: "Stage 7 · Checkride preparation",
-    fr: "Étape 7 · Préparation au test",
+    fr: "Phase 7 · Préparation au test",
   },
-  S8: { en: "Stage 8 · IFR cross-country", fr: "Étape 8 · Navigations IFR" },
+  S8: { en: "Stage 8 · IFR cross-country", fr: "Phase 8 · Navigations IFR" },
 };
 
 // ------------------------------------------------------------------ small helpers
@@ -431,7 +431,7 @@ function concept(kind: Kind, ex: BriefingExercise): Concept | null {
             L("1° of pitch ≈ 100 ft/min", "1° d’assiette ≈ 100 ft/min"),
             L(
               "Small pitch changes, then trim the pressure away.",
-              "Petites corrections d’assiette, puis trimez.",
+              "Petites corrections d’assiette, puis compensez.",
             ),
           ],
           [
@@ -1270,7 +1270,7 @@ export function buildBriefingDeck(
         ? [
             {
               en: `${steps.length} ${steps.length === 1 ? "step" : "steps"}`,
-              fr: `${steps.length} ${steps.length < 2 ? "étape" : "étapes"}`,
+              fr: `${steps.length} ${steps.length < 2 ? "point" : "points"}`,
             },
           ]
         : []),
@@ -1464,9 +1464,9 @@ export function buildBriefingDeck(
           : pages > 1
             ? {
                 en: `The steps · ${p + 1} of ${pages}`,
-                fr: `Les étapes · ${p + 1} sur ${pages}`,
+                fr: `Les points du vol · ${p + 1} sur ${pages}`,
               }
-            : L("The steps", "Les étapes");
+            : L("The steps", "Les points du vol");
       const blocks: SlideBlock[] = [
         ...header(L("In the air", "En vol"), title),
       ];
@@ -1531,7 +1531,7 @@ export function buildBriefingDeck(
         title:
           steps.length === 1
             ? L("Your mission", "Votre mission")
-            : L("The steps", "Les étapes"),
+            : L("The steps", "Les points du vol"),
         slide: canvas(blocks, "stepByStep"),
         reader: part.map(E),
       });
@@ -1674,8 +1674,8 @@ export function buildBriefingDeck(
       T(
         "foot",
         L(
-          "This exercise's tolerances, modelled on the FAA instrument rating ACS.",
-          "Les tolérances de l’exercice, sur le modèle de l’ACS instrument de la FAA.",
+          "The tolerances to hold during this exercise.",
+          "Les tolérances à tenir pendant l’exercice.",
         ),
         G.left,
         1008,

@@ -11,6 +11,7 @@ import { setLang, onLangChange } from "../i18n";
 import { history } from "../history";
 import { progress, isGraded } from "../learn";
 import { EXERCISES, STAGES, exercise, type Path } from "../../train/curriculum";
+import { STAGE_LABEL } from "../../library/meta";
 import type { Exercise, LessonRun } from "../../train/engine";
 import { findApproach } from "../../nav/data";
 import { buildReport } from "./report";
@@ -288,13 +289,10 @@ export class ResultSheet extends Modal {
 
     // ---- header
     const crumb: string[] = [];
-    if (inp.stageTitle)
-      crumb.push(
-        inp.stageTitle.replace(
-          /^Stage (\d+) — /,
-          L === "fr" ? "Étape $1 · " : "Stage $1 · ",
-        ),
-      );
+    // the curriculum phase, in the UI language (« Phase 1 · Pilotage de base »: never « Étape », which names a course step)
+    const stageLabel = STAGE_LABEL[inp.ex.stage]?.[L];
+    if (stageLabel) crumb.push(stageLabel);
+    else if (inp.stageTitle) crumb.push(inp.stageTitle.replace(/^Stage (\d+) — /, "Stage $1 · "));
     if (inp.pathPos)
       crumb.push(rt("crumb.lesson", { n: inp.pathPos.n, of: inp.pathPos.of }));
     if (inp.course) crumb.push(rt("crumb.course", { c: inp.course }));
@@ -313,7 +311,7 @@ export class ResultSheet extends Modal {
     const langSeg = h(
       "div",
       { class: "rs-lang", role: "group", "aria-label": rt("sheet.lang") },
-      ...(["en", "fr"] as const).map((l) =>
+      ...(["fr", "en"] as const).map((l) =>
         h(
           "button",
           {

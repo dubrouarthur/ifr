@@ -1,5 +1,5 @@
-// Ground school — the course library's plan and registries (samples/library). The plan names 25 courses, five per
-// author; every registered course must be planned, sit in its planned author's registry and program, live in its
+// Ground school — the course library's plan and registries (samples/library). The plan names 47 courses for six
+// authors (A1 keeps its five written courses and writes seven more, A2–A6 seven each); every registered course must be planned, sit in its planned author's registry and program, live in its
 // planned file, and follow the library house rules that a test can check: light theme, 12–20 steps, a cover first,
 // bilingual, tagged with its program, a student action at least every 3 steps. Validation, French coverage, stable
 // ids, generator ids and the readability guard run for every sample (course-samples, slide-readability tests),
@@ -19,11 +19,13 @@ import {
   type LibraryAuthor,
 } from "../src/course/samples/library";
 
-const AUTHORS: LibraryAuthor[] = ["A1", "A2", "A3", "A4", "A5"];
+const AUTHORS: LibraryAuthor[] = ["A1", "A2", "A3", "A4", "A5", "A6"];
+/** the planned size of each author's lane */
+const LANE: Record<LibraryAuthor, number> = { A1: 12, A2: 7, A3: 7, A4: 7, A5: 7, A6: 7 };
 
 describe("library plan", () => {
-  it("plans 25 courses, five per author, with unique well-formed ids", () => {
-    expect(LIBRARY_PLAN.length).toBe(25);
+  it("plans 47 courses in six author lanes, with unique well-formed ids", () => {
+    expect(LIBRARY_PLAN.length).toBe(47);
     const ids = LIBRARY_PLAN.map((p) => p.id);
     expect(new Set(ids).size).toBe(ids.length);
     for (const p of LIBRARY_PLAN) {
@@ -32,7 +34,7 @@ describe("library plan", () => {
       expect(p.title.en.length && p.title.fr?.length, p.id).toBeTruthy();
     }
     for (const a of AUTHORS)
-      expect(LIBRARY_PLAN.filter((p) => p.author === a).length, a).toBe(5);
+      expect(LIBRARY_PLAN.filter((p) => p.author === a).length, a).toBe(LANE[a]);
   });
 
   it("uses every program, and only known programs", () => {

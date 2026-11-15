@@ -494,6 +494,7 @@ const EN: Dict = {
   "sk.exercise": "this exercise",
   // ---- tasks (eyebrow)
   "task.IV.A": "ACS IR.IV.A instrument flight",
+  "task.IV.A.basic": "ACS IR.IV.A basic attitude flying",
   "task.IV.B": "ACS IR.IV.B unusual attitudes",
   "task.V.A": "ACS IR.V.A tracking",
   "task.III.B": "ACS IR.III.B holding",
@@ -598,7 +599,7 @@ const FR: Dict = {
   "tl.target": "{v} ft",
   "tl.band": "±{v} ft",
   "tl.aria": "Altitude pendant le vol, {n} constats marqués",
-  "tl.step": "Étape {n}",
+  "tl.step": "Point {n}",
   "sec.fix": "À corriger",
   "sec.fixCount": "· {a} standard non atteint{b}",
   "sec.fixCountN": "· {a} standards non atteints{b}",
@@ -651,26 +652,26 @@ const FR: Dict = {
   "stop.broken": "Quelque chose n’a pas marché",
   "step.notReached": "non atteint",
   "step.doneHelp": "Fait avec « Régler » (aide)",
-  "step.atNote": "Arrêté pendant cette étape",
+  "step.atNote": "Arrêté pendant ce point",
   "u.result": "Résultat",
   "u.resultSub": "Pas de note quand on arrête avant la fin",
   "u.flown": "Volé",
   "u.flownOf": "sur ≈ {m} min",
   "u.flownSub": "Arrêté par vous",
-  "u.steps": "Étapes",
-  "u.stepsOf": "sur {n} faites",
-  "u.stepsSub": "Arrêté pendant l’étape {k}",
+  "u.steps": "Points",
+  "u.stepsOf": "sur {n} faits",
+  "u.stepsSub": "Arrêté pendant le point {k}",
   "u.graded": "Standards notés",
   "u.gradedOf": "sur {n}",
   "u.gradedSub": "Exercice non terminé",
   "u.gradedSubHold": "{fix} non atteint",
-  "h.stopped": "Arrêté après {t}, pendant l’étape {k} sur {n}",
+  "h.stopped": "Arrêté après {t}, pendant le point {k} sur {n}",
   "h.stoppedHold": "Arrêté après {t}, à {d} NM de {fix}",
   "h.metHold": "Entrée {entry}, {alt} ft tenus à {dev} ft près",
   "h.metAlt": "{title}, altitude tenue à {dev} ft près",
   "h.met": "{title} : tous les standards atteints",
   "s.ungraded":
-    "Un exercice est noté une fois toutes les étapes volées : rien n’a été noté. **Pas de note**, et cet essai reste hors de vos moyennes et tendances.",
+    "Un exercice est noté une fois tous les points volés : rien n’a été noté. **Pas de note**, et cet essai reste hors de vos moyennes et tendances.",
   "s.ungradedHold":
     "Une attente est notée à partir du passage du repère : rien n’a été noté. **Pas de note**, et cet essai reste hors de vos moyennes et tendances.",
   "s.notMet1": "tout le reste était dans les standards",
@@ -689,8 +690,8 @@ const FR: Dict = {
   "k.track": "Tenue de route",
   "k.constraint": "Contraintes d’altitude",
   "k.control": "Contrôle de l’avion",
-  "k.other": "Tolérance de l’étape",
-  "k.steps": "Étapes volées",
+  "k.other": "Tolérance du point",
+  "k.steps": "Points volés",
   "k.entry": "Entrée",
   "k.holdAlt": "Altitude",
   "k.inbound": "Branche rapprochement",
@@ -731,10 +732,10 @@ const FR: Dict = {
   "w.track": "CDI ≤ ¾ d’échelle ({lim} points)",
   "w.constraint": "Contraintes publiées",
   "w.control": "Ni alarme de décrochage, ni survitesse, ni sol proche",
-  "w.other": "Dans la tolérance de l’étape",
+  "w.other": "Dans la tolérance du point",
   "w.grace": "{s} s hors tolérance, dans la marge de {g} s",
   "w.exceeded": "hors limite {s} s sur les {g} s tolérées",
-  "w.steps": "Toutes les étapes volées · {k} sur {n}",
+  "w.steps": "Tous les points volés · {k} sur {n}",
   "w.entry": "Correcte pour une arrivée au {crs}°",
   "w.entryWrong": "{entry} attendue pour une arrivée au {crs}°",
   "w.entryNone": "Entrée non volée",
@@ -756,18 +757,18 @@ const FR: Dict = {
   "w.crash": "Terminer le vol sans accident",
   "t.altHi": "Monté à {alt} ft, {d} ft au-dessus de {target}",
   "t.altLo": "Descendu à {alt} ft, {d} ft sous {target}",
-  "t.altAny": "Altitude à {d} ft de la cible, étape {k}",
+  "t.altAny": "Altitude à {d} ft de la cible, point {k}",
   "t.hdg": "Cap à {d}° du {target}",
-  "t.hdgAny": "Cap à {d}° de la cible, étape {k}",
+  "t.hdgAny": "Cap à {d}° de la cible, point {k}",
   "t.overshot": "Dépassement du {target} de {d}°",
   "t.ias": "Vitesse à {d} kt de {target} KIAS",
-  "t.iasAny": "Vitesse à {d} kt de la cible, étape {k}",
+  "t.iasAny": "Vitesse à {d} kt de la cible, point {k}",
   "t.bank": "{text} en virage",
   "t.vs": "Vitesse verticale {text}",
-  "t.track": "{text}, étape {k}",
+  "t.track": "{text}, point {k}",
   "t.constraint": "{text}",
-  "t.control": "{text}, étape {k}",
-  "t.other": "{text}, étape {k}",
+  "t.control": "{text}, point {k}",
+  "t.other": "{text}, point {k}",
   "t.watch": "{what} : atteint, {p} % de la limite",
   "t.watchGrace": "{what} : {s} s hors tolérance, dans la marge",
   "t.entry": "Entrée {flown} volée, {correct} attendue",
@@ -791,9 +792,9 @@ const FR: Dict = {
   "t.landing": "Toucher : {what}",
   "t.hand": "Pilote automatique utilisé sur un exercice en manuel",
   "t.crash": "{what} à {t}",
-  "t.steps": "{k} étapes terminées sur {n}",
+  "t.steps": "{k} points terminés sur {n}",
   "t.exercise": "{reason}",
-  "where.step": "étape {k}",
+  "where.step": "point {k}",
   "where.out": "{s} s hors tolérance",
   "where.from": "{d} NM au {dir} de {fix}",
   "where.final": "finale",
@@ -810,7 +811,7 @@ const FR: Dict = {
   "what.vsUp": ", en montée à {v} ft/min au départ",
   "what.back": "Revenu dans la tolérance à {t}.",
   "what.intoDive": "Toujours hors tolérance au début de la descente finale, à {t}.",
-  "what.notBack": "Toujours hors tolérance à la fin de l’étape.",
+  "what.notBack": "Toujours hors tolérance à la fin du point.",
   "what.hdg": "Le cap était à {d}° du {target} pendant {s} s. {back}",
   "what.overshot":
     "La sortie de virage a dépassé le {target} de {d}°, {s} s pour revenir.",
@@ -850,7 +851,7 @@ const FR: Dict = {
   "crash.wing": "Aile touchée à l’atterrissage",
   "crash.nose": "Roulette de nez touchée (posé nez bas)",
   "crash.off": "Posé hors aérodrome",
-  "what.steps": "L’exercice s’est terminé pendant l’étape {k} : « {text} ».",
+  "what.steps": "L’exercice s’est terminé pendant le point {k} : « {text} ».",
   "what.exercise": "{reason}.",
   "why.alt":
     "Le contrôle sépare les vols IFR de 1 000 ft verticalement ; ±100 ft est le standard de la qualification. Au-delà, le contrôleur voit un écart d’altitude.",
@@ -869,7 +870,7 @@ const FR: Dict = {
   "why.control":
     "Une alarme de décrochage, une survitesse ou une descente vers le relief en nuage, c’est ainsi que commence une perte de contrôle.",
   "why.other":
-    "La tolérance de l’étape est le standard que cet exercice entraîne.",
+    "La tolérance du point est le standard que cet exercice entraîne.",
   "why.entry":
     "L’entrée vous garde dans l’espace protégé, côté attente. La mauvaise vous fait passer du côté non protégé.",
   "why.inbound":
@@ -894,10 +895,10 @@ const FR: Dict = {
     "Cet exercice entraîne le circuit visuel sur données brutes ; le pilote automatique cache justement ce qui est noté.",
   "why.crash":
     "Un accident met fin au vol : en test, il arrête l’épreuve, quoi qu’il ait été bien volé avant.",
-  "why.steps": "Une tâche est terminée quand toutes ses étapes sont volées.",
+  "why.steps": "Une tâche est terminée quand tous ses points sont volés.",
   "why.exercise": "Les standards de l’exercice n’ont pas tous été atteints.",
   "next.alt":
-    "Trimez pour supprimer l’effort, puis corrigez avec une vitesse verticale d’environ deux fois l’écart : {vs} ft/min pour {d} ft. Contrôlez l’altimètre à chaque tour de circuit visuel.",
+    "Compensez pour supprimer l’effort, puis corrigez avec une vitesse verticale d’environ deux fois l’écart : {vs} ft/min pour {d} ft. Contrôlez l’altimètre à chaque tour de circuit visuel.",
   "next.altWatch":
     "Corrigez plus tôt : une tendance de 50 ft sur l’altimètre est le signal, avant que l’écart atteigne {d} ft.",
   "next.hdg":
@@ -905,7 +906,7 @@ const FR: Dict = {
   "next.overshot":
     "Anticipez la sortie de virage de la moitié de l’inclinaison : environ {lead}° avant le cap avec {bank}° d’inclinaison.",
   "next.ias":
-    "En palier, la puissance pour la vitesse : environ 100 tr/min pour 5 kt, puis trimez. L’assiette tient l’altitude.",
+    "En palier, la puissance pour la vitesse : environ 100 tr/min pour 5 kt, puis compensez. L’assiette tient l’altitude.",
   "next.bank":
     "Inclinaison du taux standard : Vp/10 + 7, environ {b}° à {v} kt. Tenez-la sur l’horizon artificiel et vérifiez le taux de virage.",
   "next.vs":
@@ -917,7 +918,7 @@ const FR: Dict = {
   "next.control":
     "L’assiette d’abord, puis la puissance : ailes à plat, nez sur l’horizon, puis la puissance pour la vitesse.",
   "next.other":
-    "Relisez l’étape dans la fenêtre de l’exercice : elle dit ce qui la termine et ce qui est vérifié.",
+    "Relisez le point dans la fenêtre de l’exercice : il dit ce qui le termine et ce qui est vérifié.",
   "next.entry":
     "Avant le repère, tracez la ligne des 70° sur le conservateur de cap : secteurs directe 180°, larme 70°, parallèle 110°. Entraînez-vous avec l’exercice d’entrées.",
   "next.inbound":
@@ -931,7 +932,7 @@ const FR: Dict = {
   "next.gs":
     "L’assiette pour la trajectoire, la puissance pour la vitesse : environ {vs} ft/min à {gs} kt sol sur un glide de 3° (5 × vitesse sol).",
   "next.iasFinal":
-    "Volez la finale à puissance fixe et trimez ; seulement de petites retouches de tr/min.",
+    "Volez la finale à puissance fixe et compensez ; seulement de petites retouches de tr/min.",
   "next.pubAlt":
     "Affichez l’altitude minimale du segment suivant avant le repère, commencez la mise en palier à 10 % du vario et annoncez-la à voix haute.",
   "next.da":
@@ -947,7 +948,7 @@ const FR: Dict = {
   "next.crash":
     "Pilotez d’abord : assiette, puissance, puis la procédure. En descente, surveillez l’altitude et le relief.",
   "next.steps":
-    "Revolez-le et terminez chaque étape ; la fenêtre de l’exercice montre l’étape en cours et ce qui la termine.",
+    "Revolez-le et terminez chaque point ; la fenêtre de l’exercice montre le point en cours et ce qui le termine.",
   "next.exercise": "Relisez le briefing, puis revolez-le.",
   "pn.retry": "Revoler",
   "pn.retrySub": "Même exercice · nouveaux tirages · ~{m} min",
@@ -1001,7 +1002,7 @@ const FR: Dict = {
   "pn.why.entryText":
     "Recommencez, et entraînez la décision d’entrée avec l’exercice dédié.",
   "pn.why.restart": "On recommence.",
-  "pn.why.restartText": "L’exercice repart de l’étape 1, même clairance.",
+  "pn.why.restartText": "L’exercice repart du point 1, même clairance.",
   "pn.why.broken": "Désolé.",
   "pn.why.brokenText":
     "Recommencez, et dites à votre instructeur ce qui n’a pas marché.",
@@ -1013,7 +1014,7 @@ const FR: Dict = {
   "sk.track": "la tenue de route",
   "sk.constraint": "les contraintes d’altitude",
   "sk.control": "le contrôle de l’avion",
-  "sk.other": "la tolérance de l’étape",
+  "sk.other": "la tolérance du point",
   "sk.entry": "l’entrée en attente",
   "sk.timing": "le chronométrage",
   "sk.protect": "l’espace protégé de l’attente",
@@ -1025,9 +1026,10 @@ const FR: Dict = {
   "sk.stable": "l’approche stabilisée",
   "sk.landing": "l’atterrissage",
   "sk.hand": "le pilotage manuel",
-  "sk.steps": "terminer chaque étape",
+  "sk.steps": "terminer chaque point",
   "sk.exercise": "cet exercice",
   "task.IV.A": "ACS IR.IV.A vol aux instruments",
+  "task.IV.A.basic": "ACS IR.IV.A pilotage de base",
   "task.IV.B": "ACS IR.IV.B positions inhabituelles",
   "task.V.A": "ACS IR.V.A interception et tenue",
   "task.III.B": "ACS IR.III.B attente",

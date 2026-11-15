@@ -74,7 +74,7 @@ export type CockpitType = "g1000" | "steam" | "airliner";
 
 export interface FcHooks {
   flyScenario: (sc: Scenario, wx: WxPreset, a: AssessSettings) => void;
-  briefExercise: (ex: Exercise, path: Path | null) => void;
+  briefExercise: (ex: Exercise, path: Path | null, quick?: boolean) => void;
   openPaths: () => void;
   openDrill: () => void;
   openRecords: () => void;
@@ -1009,7 +1009,7 @@ export class FlightCenter extends Modal {
       const r: string = v.intent === "new"
         ? "#new"
         : v.intent === "present"
-          ? "#library&p=instructors"
+          ? "#library&p=instructors&do=present"
           : v.flights
             ? "#library&v=sim"
             : `#library${v.program ? `&p=${v.program}` : ""}${v.program && v.subject ? `&s=${v.subject}` : ""}`;
@@ -1762,7 +1762,7 @@ export class FlightCenter extends Modal {
           view: this.view,
           focus: this.view.type === "sim" ? ".wd-quick-go" : ".wd-door.sim .wd-door-alt",
         };
-        this.fly(it);
+        this.fly(it, null, true);
         return true;
       },
       quickCount: (kind, apt) => pool(kind, apt).length,
@@ -3677,13 +3677,14 @@ export class FlightCenter extends Modal {
     this.plateView = null;
   }
 
-  private fly(i: Item, path: Path | null = null) {
+  private fly(i: Item, path: Path | null = null, quick = false) {
     this.close();
     if (i.circuit) this.hooks.flyCircuit(i.circuit);
     else if (i.ex)
       this.hooks.briefExercise(
         i.ex,
         path ?? (this.view.type === "path" ? this.view.path : null),
+        quick,
       );
     else if (i.sc) this.hooks.flyScenario(i.sc, this.wx, { ...this.assess });
   }

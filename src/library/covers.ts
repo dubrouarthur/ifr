@@ -39,6 +39,28 @@ const G = {
   prop(): string {
     return `<circle r="6" fill="${PAPER}"/><path d="M0-6C8-20 6-38 0-42C-6-38-8-20 0-6Z" fill="${PAPER}"/><path d="M0 6C-8 20-6 38 0 42C6 38 8 20 0 6Z" fill="${PAPER}"/><circle r="40" fill="none" stroke="${RED}" stroke-width="3" stroke-dasharray="4 5"/>`;
   },
+  /** the stopped propeller, small, at (x, y): the mark of an engine failure inside a larger picture */
+  propAt(x: number, y: number, k = 0.42): string {
+    return `<g transform="translate(${x} ${y}) scale(${k})">${G.prop()}</g>`;
+  },
+  /** engine failure after take-off: the runway, the climb-out, the engine stops */
+  efato(): string {
+    return `<rect x="-48" y="26" width="58" height="9" fill="${PAPER}"/><path d="M-40 30.5h8M-26 30.5h8M-12 30.5h8" stroke="#0b0d10" stroke-width="1.6"/><path d="M-2 22L22 -4" fill="none" stroke="${ACCENT}" stroke-width="3" stroke-dasharray="6 4"/>${G.propAt(30, -16)}`;
+  },
+  /** engine failure, then a field landing: the glide down to a field */
+  field(): string {
+    return `${G.propAt(-28, -22)}<path d="M-12 -12L22 18" fill="none" stroke="${ACCENT}" stroke-width="3" stroke-dasharray="6 4"/><path d="M-6 36L6 22H46L40 36Z" fill="#245c3a" stroke="#2f9e5a" stroke-width="2"/><path d="M12 24L8 34M24 24L21 34M36 24L33 34" stroke="#2f9e5a" stroke-width="1.5"/>`;
+  },
+  /** a rough-running engine: the propeller and an uneven RPM trace */
+  rough(): string {
+    return `${G.propAt(0, -14, 0.5)}<path d="M-44 28h12l5-10 7 18 6-14 6 9 5-6 6 3h21" fill="none" stroke="${AMBER}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>`;
+  },
+  /** the club check: two failures drawn at random */
+  dice(): string {
+    const q = (x: number, r: number) =>
+      `<g transform="translate(${x} 0) rotate(${r})"><rect x="-21" y="-21" width="42" height="42" rx="8" fill="#2c333d" stroke="${PAPER}" stroke-width="2"/><text x="0" y="10" font-size="30" font-weight="700" text-anchor="middle" fill="${AMBER}" font-family="Inter, system-ui, sans-serif">?</text></g>`;
+    return `${q(-25, -8)}${q(25, 8)}`;
+  },
   circuit(): string {
     return `<rect x="-42" y="-24" width="84" height="48" rx="12" fill="none" stroke="${ACCENT}" stroke-width="3"/><rect x="-26" y="18" width="52" height="10" fill="${PAPER}"/><path d="M28 24l10-6v12z" fill="${ACCENT}"/>`;
   },
@@ -74,7 +96,11 @@ const G = {
   },
 };
 type Glyph = keyof typeof G;
-const DRILL_G: Record<string, Glyph> = {
+const DRILL_G: Record<string, Exclude<Glyph, "att" | "propAt">> = {
+  "d-efato": "efato",
+  "d-forced-landing": "field",
+  "d-rough": "rough",
+  "d-club-test": "dice",
   "d-engine-fire": "flame",
   "d-elec-fire": "bolt",
   "d-alternator-imc": "bolt",

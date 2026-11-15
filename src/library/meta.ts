@@ -317,25 +317,25 @@ export const LESSON_SIM: Readonly<
 /** The stages of the IR syllabus (train/curriculum.ts STAGES), short, FR / EN. */
 export const STAGE_LABEL: Readonly<Record<string, L10n>> = {
   S1: {
-    en: "Stage 1 · Attitude instrument flying",
-    fr: "Étape 1 · Pilotage aux instruments",
+    en: "Stage 1 · Basic attitude flying",
+    fr: "Phase 1 · Pilotage de base",
   },
-  S2: { en: "Stage 2 · Partial panel", fr: "Étape 2 · Panne partielle" },
-  S3: { en: "Stage 3 · Radio navigation", fr: "Étape 3 · Radionavigation" },
-  S4: { en: "Stage 4 · Holding", fr: "Étape 4 · Attentes" },
+  S2: { en: "Stage 2 · Partial panel", fr: "Phase 2 · Panne partielle" },
+  S3: { en: "Stage 3 · Radio navigation", fr: "Phase 3 · Radionavigation" },
+  S4: { en: "Stage 4 · Holding", fr: "Phase 4 · Attentes" },
   S5: {
     en: "Stage 5 · Instrument approaches",
-    fr: "Étape 5 · Approches aux instruments",
+    fr: "Phase 5 · Approches aux instruments",
   },
   S6: {
     en: "Stage 6 · Missed approaches and abnormals",
-    fr: "Étape 6 · Remises de gaz et anomalies",
+    fr: "Phase 6 · Remises de gaz et anomalies",
   },
   S7: {
     en: "Stage 7 · Checkride preparation",
-    fr: "Étape 7 · Préparation au test",
+    fr: "Phase 7 · Préparation au test",
   },
-  S8: { en: "Stage 8 · IFR cross-country", fr: "Étape 8 · Navigations IFR" },
+  S8: { en: "Stage 8 · IFR cross-country", fr: "Phase 8 · Navigations IFR" },
 };
 
 // ------------------------------------------------------------------ the failure drills (train/drills.ts DRILL_TEMPLATES)

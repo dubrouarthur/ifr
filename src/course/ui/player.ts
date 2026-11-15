@@ -1864,8 +1864,9 @@ export class CoursePlayer {
   private doneText(): string | null {
     const g = this.tracker?.state();
     if (!g) return null;
-    const rows = g.rows.filter((r) => r.check >= 0);
-    if (!rows.length) return null;
+    // every row the list shows is counted, « Tenez-le 2 s » included: the number under the list is the list's own
+    const rows = g.rows;
+    if (!rows.some((r) => r.check >= 0)) return null;
     const st = this.state(this.step);
     const n = st.goalMet ? rows.length : rows.filter((r) => r.ticked).length;
     return ps("doneOf", this.lang, { n, total: rows.length });

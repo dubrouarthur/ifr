@@ -263,7 +263,7 @@ header.wd-appbar.wd-appbar {
     height: 44px;
   }
   .wd-search {
-    height: 44px;
+    height: 46px; /* the field inside its 1 px border is 44 px tall */
   }
 }
 /* the page's global field styles (border, focus ring) stay off the bar's field: the box around it carries them */

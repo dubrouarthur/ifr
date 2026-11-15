@@ -117,8 +117,8 @@ export const HOME_COPY = {
   },
   quick: { fr: "Vol rapide", en: "Quick flight" },
   quickLine: {
-    fr: "Wingdeck choisit pour vous une approche ou une attente dans la région d’entraînement, avec la météo actuelle. Le briefing s’affiche avant le départ.",
-    en: "Wingdeck picks an approach or a hold in the training region for you, with the current weather. The briefing shows before you start.",
+    fr: "Wingdeck choisit pour vous une approche ou une attente aux instruments (IFR) à Port Ardent, une région fictive conçue pour l’entraînement, avec toutes ses cartes et ses balises. Vous commencez en vol, à quelques minutes de la procédure.",
+    en: "Wingdeck picks an instrument (IFR) approach or hold at Port Ardent, a fictional region made for training, with all its charts and navaids. You start in the air, a few minutes from the procedure.",
   },
   quickWhat: { fr: "Quoi ?", en: "What?" },
   kApproach: { fr: "Une approche", en: "An approach" },
@@ -210,6 +210,8 @@ export const HOME_LINKS = {
   ppl: "academy.html#library&p=ppl",
   newCourse: "academy.html#new",
   instructors: "academy.html#library&p=instructors",
+  /** « Présenter un cours existant »: the Instructeurs page with the course picker already open */
+  present: "academy.html#library&p=instructors&do=present",
   simLessons: "academy.html#library&v=sim",
 } as const;
 
@@ -356,7 +358,7 @@ export function homeView(o: HomeHooks): HomeView {
           "div",
           { class: "wd-teachvis" },
           h("div", { class: "wd-scr" }, teachCover),
-          h("span", { class: "wd-pres" }, icon(I.play, 14), T("present")),
+          h("span", { class: "wd-pres", "aria-hidden": "true" }, icon(I.play, 14), T("present")),
         ),
         I.users,
         "wd-d-teach",
@@ -372,7 +374,7 @@ export function homeView(o: HomeHooks): HomeView {
         ),
         navLink(
           "wd-link wd-door-alt",
-          HOME_LINKS.instructors,
+          HOME_LINKS.present,
           o.nav,
           T("teachPresent"),
         ),

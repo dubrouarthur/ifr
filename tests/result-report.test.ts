@@ -967,8 +967,21 @@ describe("French", () => {
     const r = buildReport(
       base({ lang: "fr", endedBy: "user", passed: false, durationSec: 77 }),
     );
-    expect(r.headline).toBe("Arrêté après 1:17, pendant l’étape 1 sur 1");
+    expect(r.headline).toBe("Arrêté après 1:17, pendant le point 1 sur 1");
     expect(r.tiles[0].label).toBe("Résultat");
+  });
+  it("a stopped flight lists what would be graded in the report's language", () => {
+    const o = {
+      endedBy: "user" as const,
+      passed: false,
+      durationSec: 77,
+      exStandards: ["Altitude ±100 ft", "Heading ±10°"],
+      exStandardsFr: ["Altitude ±100 ft", "Cap ±10°"],
+    };
+    expect(buildReport(base({ ...o, lang: "fr" })).wouldGrade).toEqual(["Altitude ±100 ft", "Cap ±10°"]);
+    expect(buildReport(base({ ...o, lang: "en" })).wouldGrade).toEqual(["Altitude ±100 ft", "Heading ±10°"]);
+    // « points », masculine: « 0 sur 1 faits »
+    expect(tx("fr", "u.stepsOf", { n: 1 })).toBe("sur 1 faits");
   });
 });
 

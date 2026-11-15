@@ -78,6 +78,7 @@ describe("Accueil", () => {
       ppl: "academy.html#library&p=ppl",
       newCourse: "academy.html#new",
       instructors: "academy.html#library&p=instructors",
+      present: "academy.html#library&p=instructors&do=present",
       simLessons: "academy.html#library&v=sim",
     });
   });

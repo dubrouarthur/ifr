@@ -221,7 +221,9 @@ const FRX: Record<string, string> = {
   "Popular IFR airports": "Terrains IFR fréquents",
   "Where do you depart?": "D’où partez-vous ?",
   "Where to?": "Où allez-vous ?",
-  "About 6,900 airports with real runways, navaids and terrain: official FAA procedures (SIDs, STARs, approaches) in the US, generated RNAV (GPS) approaches elsewhere.": "Environ 6 900 aérodromes avec leurs vraies pistes, balises et relief : procédures FAA officielles (SID, STAR, approches) aux États-Unis, approches RNAV (GPS) générées ailleurs.",
+  "About 6,900 airports with real runways, navaids and terrain: official FAA procedures (SIDs, STARs, approaches) in the US, generated RNAV (GPS) approaches elsewhere.": "Environ 6 900 aérodromes dans le monde, avec leurs vraies pistes, balises et relief. En France et en Europe, les approches RNAV (GPS) sont générées. Aux États-Unis, ce sont les procédures officielles.",
+  "Training region: Port Ardent, a fictional region made for training, with all its charts and navaids.": "Région d’entraînement : Port Ardent, une région fictive conçue pour l’entraînement, avec toutes ses cartes et ses balises.",
+  "Local flight: back to": "Vol local : retour à",
   "The destination: same airport for local training, or another one up to 400 NM away.": "L’arrivée : le même terrain pour un entraînement local, ou un autre jusqu’à 400 NM.",
   "Loading the real-world region…": "Chargement de la région réelle…",
   "The map of your flight appears here": "La carte de votre vol apparaît ici",
@@ -233,6 +235,19 @@ const FRX: Record<string, string> = {
   "Download this flight as JSON": "Télécharger ce vol en JSON"
 };
 const tx = (en: string): string => (lang() === "fr" ? (FRX[en] ?? en) : en);
+/** the name a flight carries until its route names it, in the UI language */
+const newFlightName = () => (lang() === "fr" ? "Nouveau vol" : "New flight");
+const NEW_NAME_RE = /^(New (flight|IFR circuit)|Nouveau vol)$/;
+/** In French the suggestions start at home: French fields a club flies from, before the alphabetical US list. */
+const FR_SUGGESTED = ["LFPN", "LFPT", "LFPG", "LFPO", "LFLL", "LFBO", "LFML", "LFRS"];
+async function suggestedAirports(limit = 8): Promise<IndexRow[]> {
+  if (lang() === "fr") {
+    const rows = (await Promise.all(FR_SUGGESTED.map((i) => airportRow(i)))).filter((r): r is IndexRow => !!r);
+    if (rows.length >= 3) return rows.slice(0, limit);
+  }
+  return searchAirports("", limit);
+}
+const suggestedTitle = () => (lang() === "fr" ? "Aérodromes fréquents en France" : "Popular IFR airports");
 /** the school's circuits and the templates, in French (their data stays in English) */
 const PRESET_FR: Record<string, [string, string]> = {
   "p-classic": ["Circuit IR classique — Port Ardent", "Départ 27, attente à ARD, ILS 27 avec remise de gaz, puis NDB 27 par le virage conventionnel jusqu’à l’arrêt complet. L’exercice type de l’école."],
@@ -410,7 +425,7 @@ registerStrings("fr", {
   "fbd.t.time": "Après un délai",
   "fbd.t.altAgl": "À une hauteur",
   "fbd.t.fix": "À un point",
-  "fbd.t.leg": "À une étape",
+  "fbd.t.leg": "À une branche",
   "fbd.t.random": "À un moment aléatoire",
   "fbd.t.instructor": "Par l’instructeur",
   "fbd.min": "Minutes",
@@ -420,7 +435,7 @@ registerStrings("fr", {
   "fbd.from": "De (min)",
   "fbd.to": "À (min)",
   "fbd.fix": "Point",
-  "fbd.leg": "Étape",
+  "fbd.leg": "Branche",
   "fbd.nowHint": "La panne survient dès le début du vol.",
   "fbd.instrHint": "Déclenchée depuis le tiroir instructeur ou le téléphone, quand vous le décidez.",
   "fbd.training": "Entraînement",
@@ -466,8 +481,8 @@ registerStrings("fr", {
   "fb.exportAll": "Exporter",
   "fb.templates": "Modèles",
   "fb.mine": "Mes vols",
-  "fb.tabFlight": "Vol · {n} étape",
-  "fb.tabFlights": "Vol · {n} étapes",
+  "fb.tabFlight": "Route · {n} branche",
+  "fb.tabFlights": "Route · {n} branches",
   "fb.tabOptions": "Météo et options",
   "fb.share": "Partager",
   "fb.export": "Exporter",
@@ -844,7 +859,7 @@ export class CircuitBuilder extends Modal {
     }
     const c: Circuit = {
       ...newCircuit(),
-      name: "New flight",
+      name: newFlightName(),
       world: "real",
       dep: dep || undefined,
       dest: undefined,
@@ -1020,7 +1035,7 @@ export class CircuitBuilder extends Modal {
           outcome: "land",
         });
     }
-    if (/^New (flight|IFR circuit)$/.test(c.name) || c.name === this.lastAuto)
+    if (NEW_NAME_RE.test(c.name) || c.name === this.lastAuto)
       c.name = this.lastAuto = this.autoName();
     this.dirty = true;
   }
@@ -1033,13 +1048,13 @@ export class CircuitBuilder extends Modal {
       | undefined;
     const a = ap ? safeApproach(ap.approachId) : null;
     if (ic.length > 1) return `${ic[0]} → ${ic[1]}${a ? ` · ${a.name}` : ""}`;
-    return ic[0] ? `${ic[0]}${a ? ` ${a.name}` : " flight"}` : "New flight";
+    return ic[0] ? (a ? `${ic[0]} ${a.name}` : lang() === "fr" ? `Vol ${ic[0]}` : `${ic[0]} flight`) : newFlightName();
   }
 
   /** a new flight in the region that is loaded (training region or real world) */
   private freshCircuit(): Circuit {
     const c = newCircuit();
-    c.name = "New flight";
+    c.name = newFlightName();
     c.world = currentRegion() ? "real" : "training";
     const planned = this.c?.dep ?? homeAirport();
     const a =
@@ -1290,7 +1305,7 @@ export class CircuitBuilder extends Modal {
               void this.ensureRegion();
           }),
       },
-      h("b", {}, kind === "preset" ? presetName(c.id, c.name) : c.name),
+      h("b", {}, kind === "preset" ? presetName(c.id, c.name) : NEW_NAME_RE.test(c.name) ? newFlightName() : c.name),
       h(
         "small",
         {},
@@ -1316,16 +1331,20 @@ export class CircuitBuilder extends Modal {
     const match = (s: string) => !this.q || s.toLowerCase().includes(this.q);
     const sec = (t: string, n: number) =>
       h("div", { class: "cbx-sec" }, t, h("span", {}, String(n)));
-    // failure drills first (flying clubs): the club's saved drills, then the templates, built at the flight's airport
+    // failure drills (flying clubs): the club's saved drills, then the drill templates. They lead the list while a
+    // drill is being edited; while a flight is being prepared they come last, after the pilot's own flights and the
+    // flight templates (someone who came to plan a flight does not read 14 failures first)
+    const drillFirst = !!this.c.drill || this.tab === "drill";
+    const drillNodes: HTMLElement[] = [];
     const L = lang();
     const all0 = circuitStore.list();
     const clubDrills = all0.filter((c) => c.drill);
     const dtpls = DRILL_TEMPLATES.filter((d) => match(`${d.name.fr} ${d.name.en} ${d.desc[L]}`));
     const myDrills = clubDrills.filter((c) => match(`${c.name} ${c.description} ${c.assignee ?? ""}`));
-    this.libList.append(sec(t("fbd.lib"), clubDrills.length + DRILL_TEMPLATES.length));
-    myDrills.forEach((c) => this.libList.append(this.libItem(c, "mine")));
+    drillNodes.push(sec(t("fbd.lib"), clubDrills.length + DRILL_TEMPLATES.length));
+    myDrills.forEach((c) => drillNodes.push(this.libItem(c, "mine")));
     for (const d of dtpls)
-      this.libList.append(
+      drillNodes.push(
         h(
           "button",
           {
@@ -1341,6 +1360,7 @@ export class CircuitBuilder extends Modal {
           ),
         ),
       );
+    if (drillFirst) this.libList.append(...drillNodes);
     // templates: built for the flight's airport (real world or training region)
     const tpls = TEMPLATES.filter((t) => match(`${t.name} ${t.desc}`));
     this.libList.append(sec(t("fb.templates"), TEMPLATES.length));
@@ -1417,6 +1437,7 @@ export class CircuitBuilder extends Modal {
       sec(tx("School presets"), PRESET_CIRCUITS.length),
     );
     presets.forEach((c) => this.libList.append(this.libItem(c, "preset")));
+    if (!drillFirst) this.libList.append(...drillNodes);
   }
 
   // ---------------------------------------------------------------- field helpers
@@ -1789,7 +1810,7 @@ export class CircuitBuilder extends Modal {
     const c = this.c;
     const name = h("input", {
       type: "text",
-      value: c.name,
+      value: NEW_NAME_RE.test(c.name) ? newFlightName() : c.name,
       class: "cbx-name",
       placeholder: t("fb.namePh"),
       "aria-label": t("fb.nameAria"),
@@ -2222,11 +2243,13 @@ export class CircuitBuilder extends Modal {
       async () => {
         if (which === "arr" && from)
           return nearbyAirports(from[4], from[5], 8, from[0]);
-        return searchAirports("", 8);
+        return suggestedAirports(8);
       },
       which === "arr" && from
-        ? `Airports near ${from[0]}`
-        : tx("Popular IFR airports"),
+        ? lang() === "fr"
+          ? `Aérodromes proches de ${from[0]}`
+          : `Airports near ${from[0]}`
+        : suggestedTitle(),
       from,
     );
     return h(
@@ -2241,6 +2264,9 @@ export class CircuitBuilder extends Modal {
           : tx("The destination: same airport for local training, or another one up to 400 NM away."),
       ),
       pick,
+      which === "dep"
+        ? h("small", { class: "fb-apt-note" }, tx("Training region: Port Ardent, a fictional region made for training, with all its charts and navaids."))
+        : null,
       which === "arr" && c.dep
         ? h(
             "button",
@@ -2256,7 +2282,7 @@ export class CircuitBuilder extends Modal {
                 });
               },
             },
-            `Local flight: back to ${c.dep}`,
+            `${tx("Local flight: back to")} ${c.dep}`,
           )
         : null,
     );
@@ -3099,8 +3125,8 @@ export class CircuitBuilder extends Modal {
             this.render();
             if (!this.regionOk()) void this.ensureRegion();
           },
-          async () => searchAirports("", 8),
-          L === "fr" ? "Terrains IFR fréquents" : tx("Popular IFR airports"),
+          async () => suggestedAirports(8),
+          suggestedTitle(),
         ),
       );
     } else {
@@ -4880,7 +4906,7 @@ export class CircuitBuilder extends Modal {
               },
             },
             svgIcon(I.warning, 15),
-            `${t(pr.all.length === 1 ? "fb.issue" : "fb.issues", { n: pr.all.length })} · ${pr.general[0] ?? pr.start[0] ?? (firstLeg !== undefined ? `${lang() === "fr" && this.c.drill ? "Étape" : "Leg"} ${firstLeg + 1}${lang() === "fr" && this.c.drill ? " :" : ":"} ${pr.legs.get(firstLeg)![0]}` : (pr.events[0] ?? pr.all[0]))}`,
+            `${t(pr.all.length === 1 ? "fb.issue" : "fb.issues", { n: pr.all.length })} · ${pr.general[0] ?? pr.start[0] ?? (firstLeg !== undefined ? `${lang() === "fr" && this.c.drill ? "Branche" : "Leg"} ${firstLeg + 1}${lang() === "fr" && this.c.drill ? " :" : ":"} ${pr.legs.get(firstLeg)![0]}` : (pr.events[0] ?? pr.all[0]))}`,
           );
     const saved = this.isSaved();
     this.foot.classList.add("cbx-foot");

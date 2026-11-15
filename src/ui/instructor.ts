@@ -256,6 +256,8 @@ export class InstructorDrawer {
       h('header', {}, title, x),
       h('div', { class: 'ios-scroll' }, this.pairRow, this.procEl, this.live, this.body),
     );
+    // closed, the drawer is off screen: inert, so its title is no heading before the page's h1 and Tab never enters it
+    this.el.inert = true;
     this.render();
     this.renderPair();
     // a language change redraws the drawer in the new language
@@ -306,6 +308,7 @@ export class InstructorDrawer {
   toggle(o?: boolean) {
     const open = o ?? !this.isOpen;
     this.el.classList.toggle('open', open);
+    this.el.inert = !open;
     if (open) this.render();
     // the student's emergency card moves out from under the drawer while it is open (procedure-panel.css)
     const right = this.el.offsetLeft + this.el.offsetWidth / 2 > window.innerWidth / 2;

@@ -1,12 +1,12 @@
 // Ground school — the course library (wave "library"): the shared shapes every author registry uses. Types and
 // constants only, no course content: authors write their courses in `<slug>.ts` and list them in their own
-// registry (reg-a1.ts … reg-a5.ts), so no two authors ever edit the same file.
+// registry (reg-a1.ts … reg-a6.ts), so no two authors ever edit the same file.
 import type { Course, L10n } from "../../types";
 
 /** The four programs the unified library is organised in. */
 export type LibraryProgram = "lapl-ppl" | "ir" | "atpl" | "club";
 /** The author lane a course belongs to (one registry file per author). */
-export type LibraryAuthor = "A1" | "A2" | "A3" | "A4" | "A5";
+export type LibraryAuthor = "A1" | "A2" | "A3" | "A4" | "A5" | "A6";
 
 /** One library course, as an author registers it (the samples index turns it into a SampleDef). */
 export interface LibraryDef {

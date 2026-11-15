@@ -1324,9 +1324,10 @@ body > .toasts.toasts-top .toast {
 
 /* one Resume at a time: the veil carries it; the top bar's Pause stays « Pause » (pressed) while the veil shows */
 
-/* the flight title never runs under the layout button: the button fills its slot and ellipsizes its two lines */
+/* the flight title never runs under the layout button: the button is as wide as its title (its ▾ sits right after
+   the words, never alone at the far end of the slot), at most its slot, and ellipsizes its two lines */
 html body .topbar .scn-wrap > .scn {
-  width: 100%;
+  width: fit-content;
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;

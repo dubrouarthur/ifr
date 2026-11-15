@@ -57,7 +57,7 @@ const EN = {
     "A PDF of your deck: each page becomes a step. Add live steps in between.",
   importCourse: "Import a course or club pack",
   importCourseDesc:
-    ".ifrcourse files and club packs, with their procedures and flights.",
+    "Wingdeck course files and club packs, with their procedures and flights.",
   present: "Present to a class",
   presentDesc:
     "Projector window and presenter notes on one laptop. A USB or Bluetooth clicker works.",
@@ -211,7 +211,7 @@ const FR: Record<CourseStringKey, string> = {
     "Le PDF de votre présentation : chaque page devient une étape. Ajoutez des étapes interactives entre elles.",
   importCourse: "Importer un cours ou un pack club",
   importCourseDesc:
-    "Fichiers .ifrcourse et packs club, avec leurs procédures et leurs vols.",
+    "Fichiers de cours Wingdeck et packs club, avec leurs procédures et leurs vols.",
   present: "Présenter à une classe",
   presentDesc:
     "Fenêtre projecteur et notes du présentateur sur un seul ordinateur. Une télécommande USB ou Bluetooth fonctionne.",

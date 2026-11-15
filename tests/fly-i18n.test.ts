@@ -2,6 +2,7 @@
 // set-up checklist, the exercise's briefing words and its knowledge check. The English text stays the canonical
 // one (the ATC voice and the result report read it). Fails when a French deck shows English curriculum words.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { installFakeSvgDom } from "./fakeSvgDom";
 import { Sim } from "../src/sim/sim";
 import { EXERCISES } from "../src/train/curriculum";
@@ -104,3 +105,74 @@ describe("the cockpit briefing deck, in French", () => {
     expect(all).toContain("Hold EAST of ARD");
   });
 });
+
+describe("every simulator exercise speaks French", () => {
+  it("each exercise has a French summary, objectives, standards and briefing", () => {
+    for (const e of EXERCISES) {
+      expect(e.fr?.summary, e.id).toBeTruthy();
+      expect(e.fr?.objectives?.length, e.id).toBe(e.objectives.length);
+      expect(e.fr?.standards?.length, e.id).toBe(e.standards.length);
+      expect(e.fr?.briefing?.length, e.id).toBe(e.briefing.length);
+    }
+  });
+  it("lesson 1 of LAPL · PPL (bai-sl) reads French, steps included", () => {
+    const e = ex("bai-sl");
+    const run = new LessonRun(e, new Sim());
+    const w = exerciseWords(e, run.rt, "fr");
+    const all = [w.summary, ...w.objectives, ...w.standards, ...w.briefing, ...w.steps].join("\n");
+    expect(all).not.toMatch(/Hold altitude|Establish a radial scan|Heading ±|Airspeed ±|Maintain 4000/);
+    expect(w.standards).toEqual(["Altitude ±100 ft", "Cap ±10°", "Vitesse ±10 KIAS"]);
+  });
+  it("every step of every exercise has French words", () => {
+    for (const e of EXERCISES) {
+      if (e.id === "hold-random") continue;
+      const run = new LessonRun(e, new Sim());
+      for (const s of run.rt.steps) expect(s.fr, `${e.id}: ${s.text}`).toBeTruthy();
+    }
+  });
+});
+
+describe("the cockpit chrome, in French (journey review)", () => {
+  const read = (f: string) => readFileSync(f, "utf8");
+  it("the top bar stays docked by default: « ← Accueil », Pause and Plus are always in sight", () => {
+    const src = read("src/main.ts");
+    expect(src).toMatch(/store\.get\('ifr\.autohide', false\)/);
+    // hidden on purpose (the opt-in in Plus), the way back is still named: icon + « Menu »
+    expect(src).toMatch(/class: 'sb-menu'[^\n]*h\('span', \{\}, 'Menu'\)/);
+  });
+  it("the Plus menu is short: flight, help, settings, and no duplicate of the library or the debrief", () => {
+    const src = read("src/main.ts");
+    const menu = src.slice(src.indexOf("moreMenu.append("), src.indexOf("// ------", src.indexOf("moreMenu.append(")));
+    expect(menu.match(/menuHead\('/g)).toHaveLength(3);
+    expect(menu).not.toMatch(/'Learning paths'|'Training records'|'Library'|'Debrief'|'Direct-To'|'Procedures'/);
+    expect(src).toMatch(/Help: 'Aide'/);
+  });
+  it("no English name is left on the pedestal, the softkeys or the EFB's own controls", () => {
+    const src = read("src/main.ts");
+    for (const raw of [
+      "'aria-label': 'Chrono: start'",
+      "'aria-label': 'Chrono reset'",
+      "(not modelled)`",
+      "'aria-label': 'Wheel brakes'",
+      "'aria-label': 'Trim nose down'",
+      "title: 'Tap for the step buttons'",
+    ])
+      expect(src, raw).not.toContain(raw);
+    for (const k of ["'Chrono: start'", "'not modelled'", "'Heading mode (H)'", "'Tap for the step buttons'", "'Set altimeter to QNH (B)'"])
+      expect(src, k).toContain(`${k}: `);
+    const efb = read("src/ui/charts.ts");
+    expect(efb).not.toMatch(/"aria-label": "(Close|Zoom out|Zoom in|Night mode)"/);
+    // closed, the EFB drawer is inert: its controls are not announced from the cockpit
+    expect(efb).toMatch(/this\.el\.inert = !o;/);
+  });
+  it("Accueil and Simulateur hold the cockpit: nothing is simulated or drawn behind an opaque page", () => {
+    expect(read("src/main.ts")).toMatch(/if \(fc\.isOpen \|\| \(fc\.returnTo && builder\.isOpen\)\) \{/);
+  });
+  it("the briefing and the flight planner never call a flight's part « étape » (a course's word)", () => {
+    expect(read("src/lesson/briefingDeck.ts")).not.toMatch(/fr: [`"][^`"]*[ée]tapes?\b/i);
+    const fb = read("src/ui/circuitBuilder.ts");
+    expect(fb).toMatch(/"fb\.tabFlights": "Route · \{n\} branches"/);
+    expect(fb).not.toMatch(/name: "New flight"/);
+  });
+});
+

@@ -410,8 +410,8 @@ export const PROGRAMS: readonly ProgramDef[] = [
       fr: "Créer · présenter · suivre",
     },
     blurb: {
-      en: "Your courses and drafts, the templates, importing your slides",
-      fr: "Vos cours et brouillons, les modèles, l’import de diapositives",
+      en: "Your courses and drafts, the templates, presenting to a class",
+      fr: "Vos cours et brouillons, les modèles, la présentation en salle",
     },
     level: 1,
     fallback: "instructors.mine",

@@ -228,6 +228,9 @@ export interface BriefingOptions {
   current?: LessonRun | null;
   /** the briefing closed without Start: Cancel, ×, Esc, a backdrop tap or another window opening */
   onCancel?: () => void;
+  /** Vol rapide (one click): the briefing opens on its last screen, the summary with « Commencer le vol »; the
+   *  slides stay one click away (« Voir le briefing ») and no question has to be answered first */
+  quick?: boolean;
 }
 
 /** the first step's set-up items as the briefing deck shows them (the exercise window's "Set it" list) */
@@ -326,7 +329,7 @@ export class BriefingModal extends Modal {
     } else if (e.key === 'Enter' && !(t && t.tagName === 'BUTTON')) {
       e.preventDefault();
       e.stopImmediatePropagation();
-      if (d.atEnd && d.gatesDone) this.start();
+      if (d.atEnd && (d.gatesDone || this.opts.quick)) this.start();
       else this.next();
     }
   }
@@ -345,7 +348,7 @@ export class BriefingModal extends Modal {
       return;
     }
     if (d.next()) return this.renderBar();
-    if (d.gatesDone) return this.start();
+    if (d.gatesDone || this.opts.quick) return this.start();
     const g2 = d.pendingGate;
     if (g2 >= 0) {
       d.go(g2);
@@ -483,6 +486,8 @@ export class BriefingModal extends Modal {
         this.deck = d;
         this.stageHost.classList.remove('loading');
         d.mount(this.stageHost);
+        // a quick flight: straight to the summary, one click from flying
+        if (this.opts.quick && d.count > 1) d.go(d.count - 1);
         this.renderBar();
       })
       .catch(() => {
@@ -500,7 +505,8 @@ export class BriefingModal extends Modal {
     clear(this.foot);
     const segs = d ? d.segments((i) => { d.go(i, i < d.index ? Infinity : 0); this.renderBar(); }) : h('div', { class: 'ds-segs' });
     const last = !!d && d.atEnd;
-    const needQuiz = !!d && !d.gatesDone;
+    const quick = !!this.opts.quick;
+    const needQuiz = !!d && !d.gatesDone && !quick;
     const ex = this.run?.ex;
     // the reveals of this slide, as a dot row beside the counter (Next shows the next one before the next slide)
     const rv = d && d.revealCount > 0
@@ -514,6 +520,10 @@ export class BriefingModal extends Modal {
     const toQuestion = () => { if (d) { d.go(pending); this.hint = ''; this.renderBar(); this.stageHost.querySelector<HTMLElement>('.sl-q-opt')?.focus({ preventScroll: true }); } };
     const items: (HTMLElement | null)[] = [
       h('div', { class: 'bd-prog' }, segs, counter, rv),
+      // a quick flight opened on the summary: the whole briefing is one labelled click away
+      quick && d && last && d.count > 1
+        ? h('button', { class: 'btn link bd-skip bd-see', type: 'button', onclick: () => { d.go(0); this.renderBar(); } }, fr ? 'Voir le briefing' : 'See the briefing')
+        : null,
       d && !last && !(pending >= 0 && pending <= d.index)
         ? pending > d.index
           ? h('button', { class: 'btn link bd-skip', type: 'button', title: fr ? 'Aller à la question à répondre avant de démarrer' : 'Go to the question to answer before you start', onclick: toQuestion }, fr ? 'Aller à la question ›' : 'Go to the question ›')

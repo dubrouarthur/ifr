@@ -505,7 +505,7 @@ describe("validation", () => {
     expect(fr).toContain(
       "Panne Panne moteur : la hauteur doit être comprise entre 50 et 15000 ft sol.",
     );
-    expect(fr.some((e) => /l’étape 4 n’existe pas/.test(e))).toBe(true);
+    expect(fr.some((e) => /la branche 4 n’existe pas/.test(e))).toBe(true);
     expect(fr.length).toBe(en.length);
   });
 
@@ -664,7 +664,7 @@ describe("review fixes", () => {
       const ex = circuitToExercise(c);
       const b = ex.briefing.join(" ");
       expect(b).toMatch(/En montée après le décollage de PARD piste 27, 500 ft sol/);
-      expect(b).toMatch(/étape/);
+      expect(b).toMatch(/branche/);
       expect(b).not.toMatch(/Airborne|legs/);
     } finally {
       setLang("en");

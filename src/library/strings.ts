@@ -11,8 +11,8 @@ const S = {
     fr: "Chaque formation est rangée par matière, dans l’ordre du programme officiel.",
   },
   eyebrowN: {
-    en: "{n} courses, lessons and checklists",
-    fr: "{n} cours, leçons et check-lists",
+    en: "{n} different items",
+    fr: "{n} éléments différents",
   },
   search: {
     en: "Search a course, a lesson, a checklist",
@@ -99,8 +99,8 @@ const S = {
     fr: "Importer un cours ou un pack club",
   },
   toolPackSub: {
-    en: ".ifrcourse files and club packs",
-    fr: "Fichiers .ifrcourse et packs club",
+    en: "Wingdeck course files and club packs",
+    fr: "Fichiers de cours Wingdeck et packs club",
   },
   toolPresent: { en: "Present to a class", fr: "Présenter à une classe" },
   toolPresentSub: {
@@ -162,6 +162,10 @@ const S = {
   suggest: { en: "Closest subjects:", fr: "Matières les plus proches :" },
   // club tools
   clubTools: { en: "Club tools", fr: "Outils du club" },
+  clubHow: {
+    en: "How it works for a club: results stay on the device the flight was flown on (the club’s simulator, for example), sorted by student. The club pack carries your checklists, drills and courses to every member; it carries no results.",
+    fr: "Comment ça marche pour un club : les résultats restent sur l’appareil où le vol a eu lieu (le simulateur du club, par exemple), classés par élève. Le pack du club transmet vos check-lists, exercices et cours à chaque membre ; il ne transmet pas les résultats.",
+  },
   clubNew: { en: "Create a club course", fr: "Créer un cours du club" },
   clubPack: { en: "Import the club pack", fr: "Importer le pack du club" },
   clubPackSub: {
@@ -188,8 +192,8 @@ const S = {
     fr: "Les cours propres à votre club apparaîtront ici.",
   },
   clubCoursesEmptyBody: {
-    en: "Write one, or import a course a member shared (.ifrcourse).",
-    fr: "Rédigez-en un, ou importez un cours partagé par un membre (.ifrcourse).",
+    en: "Write one, or import a course file a member shared.",
+    fr: "Rédigez-en un, ou importez le fichier d’un cours partagé par un membre.",
   },
   clubImport: { en: "Import a course", fr: "Importer un cours" },
   // every flight of the simulator
@@ -226,6 +230,7 @@ const S = {
   doneOf: { en: "{d} of {n} done", fr: "{d} sur {n} terminés" },
   start: { en: "Start", fr: "Commencer" },
   startLesson: { en: "Start: lesson {n}", fr: "Commencer : leçon {n}" },
+  startCourse: { en: "Start: first course", fr: "Commencer : premier cours" },
   goOn: { en: "Continue", fr: "Continuer" },
   goOnLesson: { en: "Continue: lesson {n}", fr: "Continuer : leçon {n}" },
   inSim: { en: "in the simulator", fr: "au simulateur" },

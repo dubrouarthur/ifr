@@ -81,12 +81,13 @@ import { procedureSheet } from "../../library/procedureSheet";
 import { programArt } from "../../library/programArt";
 import { BRAND } from "../../brand";
 import { lt, ltN, type LibStringKey } from "../../library/strings";
+import { isTeaching, markTeaching } from "../../library/role";
 import "../../styles/library.css";
 // ------------------------------------------------------------------ routes (academy.html hash)
 export type AcademyRoute =
   /** the library, on a programme page (p) at a subject (s) when given; q: a search typed in another page's app
    *  bar (read once, never written back) */
-  | { k: "library"; p?: string; s?: string; v?: "sim"; q?: string }
+  | { k: "library"; p?: string; s?: string; v?: "sim"; q?: string; do?: "present" }
   /** from: where the course was opened (home, lib, a programme id): the player's labelled way back */
   | { k: "play"; id: string; s?: string; a?: string; b?: string; from?: string }
   | { k: "edit"; id: string; s?: string }
@@ -169,13 +170,17 @@ export function academyRoute(hash: string): AcademyRoute {
       p: shelf,
       ...(sub && /^[a-z]{2,12}\.[a-z0-9]{2,8}$/.test(sub) ? { s: sub } : {}),
       ...withQ,
+      // « Présenter un cours existant » (Accueil): the picker opens at once (read once, never written back)
+      ...(kv.get("do") === "present" ? { do: "present" as const } : {}),
     };
   }
   return { k: "library", ...withQ };
 }
 /** The hash for a route (inverse of academyRoute). */
-/** Where a course is filed, as the course player's context line says it: « IR › Radionavigation ». */
-export function courseHomeLine(course: Course, lang: Lang): string {
+/** Where a course is filed, as the course player's context line says it: « IR › Radionavigation ». Opened from a
+ *  formation that borrows it (`from`), the line names that formation's subject, so it agrees with the way back:
+ *  « LAPL · PPL › Navigation ». */
+export function courseHomeLine(course: Course, lang: Lang, from?: string): string {
   const sample = isSampleId(course.id);
   const place = coursePlacement(
     {
@@ -188,7 +193,11 @@ export function courseHomeLine(course: Course, lang: Lang): string {
     },
     (id) => SAMPLES.find((x) => x.id === id)?.program,
   );
-  const d = subjectDef(place.home);
+  const lent =
+    from && isProgramId(from) && subjectDef(place.home).program !== from
+      ? place.also.find((s) => subjectDef(s).program === from)
+      : undefined;
+  const d = subjectDef(lent ?? place.home);
   return `${loc(programDef(d.program).code, lang)} › ${loc(d.title, lang)}`;
 }
 export function academyHash(r: AcademyRoute): string {
@@ -1414,7 +1423,7 @@ export class CourseLibrary {
     const rank = lessonRank(this.items, i);
     const label = rank
       ? this.s(nx.going ? "goOnLesson" : "startLesson", { n: rank.n })
-      : this.s(nx.going ? "goOn" : "start");
+      : this.s(nx.going ? "goOn" : i.kind === "course" ? "startCourse" : "start");
     const what = [
       this.L(i.title),
       i.minutes
@@ -1446,14 +1455,10 @@ export class CourseLibrary {
       g.sections.flatMap((s) => s.items),
     );
   }
-  /** Where a formation starts: LAPL · PPL with its first flight lesson (straight and level), the others with their
-   *  first item in syllabus order. */
+  /** Where a formation starts: its first item in syllabus order, the one the page draws first (the theory course
+   *  before the flight lesson: a beginner reads, practises, then flies). */
   private startOf(p: ProgramId): LibItem | undefined {
     const all = this.drawnIn(p);
-    if (p === "ppl") {
-      const l = all.find((i) => i.sub === "lesson" && programOf(i) === "ppl");
-      if (l) return l;
-    }
     // its own first course or flight, else what another formation lends it
     return (
       all.find((i) => i.kind !== "proc" && programOf(i) === p) ??
@@ -1958,9 +1963,14 @@ export class CourseLibrary {
         : null,
     );
   }
+  /** true for someone who teaches here: they opened a teaching place, or they have a course of their own */
+  private get teaching(): boolean {
+    return isTeaching() || this.entries.some((e) => !e.sample);
+  }
   private programBody(p: ProgramId): HTMLElement {
     const v = programView(this.items, p, this.st.kind);
     const main = h("div", { class: "lb-main" });
+    if (p === "instructors") markTeaching();
     if (p === "instructors") main.append(this.toolsBlock());
     if (p === "club") main.append(this.clubToolsBlock());
     const kinded = this.st.kind !== "all";
@@ -1999,8 +2009,11 @@ export class CourseLibrary {
       );
     }
     // the subject in view: the asked one, else the first one with something to open under the filter
+    // (nothing at all, as on an instructor's first visit: the subject that says how to start, never « bientôt »)
+    const home = programDef(p).fallback;
     const first =
       v.index.find((x) => (x.shown ?? x.n) > 0)?.subject.id ??
+      v.index.find((x) => x.subject.id === home)?.subject.id ??
       v.index[0]?.subject.id ??
       null;
     if (!this.st.s || subjectDef(this.st.s).program !== p)
@@ -2198,7 +2211,8 @@ export class CourseLibrary {
   private soonRowEl(s: SubjectSection): HTMLElement {
     const d = s.subject;
     const own = d.program === "club";
-    const create = !own && d.program !== "instructors";
+    // an authoring action: students never see nine « Créer un cours ici » on their formation page
+    const create = !own && d.program !== "instructors" && this.teaching;
     return h(
       "section",
       {
@@ -2290,7 +2304,10 @@ export class CourseLibrary {
       h(
         "div",
         { class: "lb-tools-l" },
-        tool("pdf", "toolPdf", "toolPdfSub", () => this.pickPdf()),
+        // the slide import is offered only when the build ships it: a tool that opens « absent de cette version » is a dead end
+        ...(this.o.importPdf
+          ? [tool("pdf", "toolPdf", "toolPdfSub", () => this.pickPdf())]
+          : []),
         tool("upload", "toolPack", "toolPackSub", () => this.fileIn.click()),
         tool("screen", "toolPresent", "toolPresentSub", () =>
           this.pickPresent(),
@@ -2337,6 +2354,8 @@ export class CourseLibrary {
           this.openClubTool("pack"),
         ),
       ),
+      // a club president's first question: where do my students' results go?
+      h("p", { class: "lb-tools-how" }, this.s("clubHow")),
     );
   }
   /** Club courses before the first one: how to make one, not a dash. */
@@ -2799,6 +2818,9 @@ export class CourseLibrary {
   }
   private moreBtn(i: LibItem): HTMLElement | null {
     if (i.kind !== "course") return null;
+    // « Plus d’actions » only on what the user can act on: for a student the whole card opens the course, and the
+    // authoring actions (duplicate, present, export, share) belong to who teaches
+    if (!this.teaching) return null;
     const b = h(
       "button",
       {

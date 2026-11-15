@@ -262,6 +262,13 @@ export class PlanInset {
     this.svg.addEventListener("pointerup", (e) => this.up(e));
     this.svg.addEventListener("pointercancel", (e) => this.up(e));
     this.svg.addEventListener("keydown", (e) => this.key(e));
+    // the drawing scales with its column (narrower on a tablet): its labels keep 12 px on screen whatever the
+    // width, through --plan-k (drawing units per screen pixel) read by the label styles
+    if (typeof ResizeObserver !== "undefined")
+      new ResizeObserver(() => {
+        const w = this.svg.getBoundingClientRect().width;
+        if (w > 0) this.el.style.setProperty("--plan-k", (this.W / w).toFixed(3));
+      }).observe(this.svg);
   }
   setLang(l: Lang) {
     this.lang = l;

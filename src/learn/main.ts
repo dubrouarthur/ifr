@@ -23,6 +23,7 @@ import type {
 import type { CourseStore } from "../course/store";
 import { courseStore, storageNotice } from "../course/store";
 import { h } from "../ui/dom";
+import { markTeaching } from "../library/role";
 import {
   ct,
   courseLang,
@@ -123,7 +124,9 @@ async function route() {
   const key = routeKeyOf(r);
   // the same route while it is still loading (go() routes, then the hashchange routes again): one page, not two
   if (key === routeKey && !view && loadingKey === key) return;
-  if (key === routeKey && view) {
+  // « Présenter un cours existant » asked from the library itself: the page is drawn again with the picker open
+  const ask = r.k === "library" && r.do === "present";
+  if (key === routeKey && view && !ask) {
     // a link to another step of the course already open
     if ((r.k === "play" || r.k === "present" || r.k === "edit") && r.s)
       view.goTo?.(r.s);
@@ -135,9 +138,15 @@ async function route() {
   view = null;
   root.replaceChildren();
   document.title = brandTitle(ct("groundSchool", lang));
+  // a teaching place: from now on the library shows this browser the authoring actions (library/role.ts)
+  if (r.k === "edit" || r.k === "present" || r.k === "new") markTeaching();
   switch (r.k) {
-    case "library":
-      return showLibrary();
+    case "library": {
+      // « Présenter un cours existant »: the course picker opens at once, and the address forgets the request
+      const present = r.do === "present";
+      if (present) history.replaceState(null, "", location.href.replace(/&do=present/, ""));
+      return showLibrary(present ? "present" : undefined);
+    }
     case "play":
       return showPlayer(r.id, { stepId: r.s, token: r.a, from: r.from });
     case "edit":
@@ -468,7 +477,7 @@ async function showPlayer(
     backLabel: back.label,
     context: (l) => {
       try {
-        return courseHomeLine(course, l);
+        return courseHomeLine(course, l, courseFrom(course.id, o.from));
       } catch {
         return "";
       }

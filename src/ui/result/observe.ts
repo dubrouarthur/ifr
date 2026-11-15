@@ -244,6 +244,7 @@ export function inputFromRun(
     allowanceSec: run.rt.allowanceSec ?? 15,
     steps: r.steps.map((s, i) => ({
       text: s.text,
+      fr: run.rt.steps[i]?.fr,
       done: s.done,
       violationSec: s.violationSec,
       worst: s.worst,
@@ -296,5 +297,6 @@ export function inputFromRun(
     help: o ? [...o.help] : [],
     wx: { ceilingFt: w.ceilingFt, windDir: w.windDir, windKt: w.windKt },
     exStandards: run.ex.standards,
+    exStandardsFr: run.ex.fr?.standards,
   };
 }

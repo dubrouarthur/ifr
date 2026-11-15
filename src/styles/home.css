@@ -125,6 +125,11 @@
   outline: 2px solid var(--wd-accent);
   outline-offset: 2px;
 }
+/* the page title takes the focus when the page opens (screen readers start there): it is not a control, so no ring */
+.wd-page :is(h1, h2)[tabindex="-1"]:focus,
+.wd-page :is(h1, h2)[tabindex="-1"]:focus-visible {
+  outline: none;
+}
 .wd-card {
   background: var(--wd-card);
   border: 1px solid var(--wd-rule);
@@ -294,14 +299,17 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 8px;
-  background: var(--wd-accent);
-  color: #fff;
-  font-size: 0.78125rem;
-  font-weight: 650;
-  box-shadow: 0 6px 14px rgba(29, 95, 209, 0.3);
+  /* a caption on the picture, not a control: no filled button shape, so nothing here looks clickable but the
+     door's own button */
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--wd-rule);
+  color: var(--wd-ink-2, #353c47);
+  font-size: 0.75rem;
+  font-weight: 600;
+  pointer-events: none;
 }
 /* Voler: the photo */
 .wd-simvis {

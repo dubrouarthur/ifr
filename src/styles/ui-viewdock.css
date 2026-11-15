@@ -462,10 +462,11 @@ body.touch .view-pop .vp-cam {
   display: none;
   align-items: center;
   justify-content: center;
-  width: 48px;
+  gap: 7px;
   margin: 0;
-  padding: 0;
+  padding: 0 14px;
   border: 0;
+  font: 600 0.8125rem/1 var(--ui-font, inherit);
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.04);
   color: #dfe6ec;
@@ -482,7 +483,6 @@ body.chrome-auto.chrome-hidden:not(.intro-open) .sb-menu {
   display: flex;
 }
 body.touch .sb-menu {
-  width: 52px;
   min-height: 44px;
 }
 

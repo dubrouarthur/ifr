@@ -259,6 +259,19 @@ export class StageFrame {
     this.controls.set(this.projector ? [] : (cue?.controls ?? []));
     this.goalState = null;
     this.syncChrome();
+    this.relayout();
+  }
+  /** The bars around the panes changed height (the controls of the new step, the goal strip): the panes are placed
+   *  again now. The host's own ResizeObserver misses a height that changes and comes back within one frame, which
+   *  left an instrument drawn over the strip below it. */
+  private relayout() {
+    const place = () => {
+      this.host.layout();
+      this.host.invalidate();
+    };
+    place();
+    // and once the step has finished drawing its bars (the same frame, before it is painted)
+    if (typeof requestAnimationFrame !== "undefined") requestAnimationFrame(place);
   }
   /** The goal strip (the player's GoalTracker state); null hides the goal text. */
   setGoal(g: GoalStrip | null) {
@@ -407,7 +420,11 @@ export class StageFrame {
     this.goal.classList.toggle("met", !!g?.met);
     this.goalNote.textContent = g?.note ?? "";
     this.goalNote.hidden = !g?.note;
-    this.goal.hidden = !a && !g;
+    const hide = !a && !g;
+    if (this.goal.hidden !== hide) {
+      this.goal.hidden = hide;
+      this.relayout();
+    }
   }
   private syncClip() {
     const c = this.host.clipPlayer;

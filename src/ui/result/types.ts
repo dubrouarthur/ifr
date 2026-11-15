@@ -116,7 +116,10 @@ export interface ResultInput {
   durationSec: number;
   allowanceSec: number;
   steps: {
+    /** the engine's English text (the report parses it) */
     text: string;
+    /** the French words of the same step, when authored (shown in a French report) */
+    fr?: string;
     done: boolean;
     violationSec: number;
     worst: string | null;
@@ -147,6 +150,8 @@ export interface ResultInput {
   wx?: { ceilingFt: number; windDir: number; windKt: number };
   /** the exercise's own standards, as written in the curriculum (ungraded: what would have been graded) */
   exStandards?: string[];
+  /** the same standards in French, when the exercise authors them (a French report shows these) */
+  exStandardsFr?: string[];
 }
 
 // ---------------------------------------------------------------- report

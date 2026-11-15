@@ -4,6 +4,7 @@ import { findFix, navaid, runway, airport, approach as getApproach } from '../na
 import { destination } from '../nav/geo';
 import { clearanceText, holdEntry, type HoldDef, type Turn } from '../nav/holding';
 import { holdDiagramSvg } from './diagram';
+import { EXERCISE_FR } from './curriculumFr';
 import type { Sim } from '../sim/sim';
 
 const F = (id: string) => findFix(id)!;
@@ -205,7 +206,7 @@ function ifrFlight(id: string, title: string, o: { dep: [string, string]; route:
       const steps: Step[] = [
         S.takeoff(3000, rw.heading),
         { text: `ATC: "Climb and maintain ${o.cruise}, proceed on course." — set ALT SEL, fly the GPS route (NAV)`, fr: `ATC : « Climb and maintain ${o.cruise}, proceed on course. » Affichez l’ALT SEL, suivez la route GPS (NAV)`, done: (c) => Math.abs(c.sim.indicatedAlt() - o.cruise) < 100 && Math.abs(c.d.vsFpm) < 300, check: (c) => (c.d.iasKt < 62 ? 'Too slow in the climb' : c.d.stallWarn ? 'Stall warning' : null), graceSec: 10 },
-        { text: `En route ${o.route.join(' → ')} at ${o.cruise}. Brief the ${ap.name} plate.`, done: (c) => c.sim.fp.out.valid && (c.sim.fp.out.toIdent === lastRoute ? c.sim.fp.out.distNm < 6 : c.sim.fp.wpts.findIndex((w) => w.ident === c.sim.fp.out.toIdent) > o.route.length), check: (c) => devCheck(c, { alt: o.cruise }), readout: (c) => (c.sim.fp.out.valid ? `${c.sim.fp.out.toIdent} ${c.sim.fp.out.distNm.toFixed(1)} NM` : ''), graceSec: 15 },
+        { text: `En route ${o.route.join(' → ')} at ${o.cruise}. Brief the ${ap.name} plate.`, fr: `En route ${o.route.join(' → ')} à ${o.cruise} ft. Briefez la carte ${ap.name}.`, done: (c) => c.sim.fp.out.valid && (c.sim.fp.out.toIdent === lastRoute ? c.sim.fp.out.distNm < 6 : c.sim.fp.wpts.findIndex((w) => w.ident === c.sim.fp.out.toIdent) > o.route.length), check: (c) => devCheck(c, { alt: o.cruise }), readout: (c) => (c.sim.fp.out.valid ? `${c.sim.fp.out.toIdent} ${c.sim.fp.out.distNm.toFixed(1)} NM` : ''), graceSec: 15 },
         { ...S.approach(false), text: `ATC: "Descend and maintain ${iafAlt}, cleared ${ap.name} approach." — fly it and land at ${ap.airport}`, fr: `ATC : « Descend and maintain ${iafAlt}, cleared ${ap.name} approach. » Volez-la et atterrissez à ${ap.airport}`, onStart: (c) => c.sim.fp.armApproach() },
       ];
       return { steps, acs: true, allowanceSec: 60, clearance };
@@ -436,7 +437,7 @@ export const EXERCISES: Exercise[] = [
       return {
         steps: [
           S.direct('TOBEY', 4000, () => undefined, 2),
-          { text: 'Load ILS 27 via TOBEY, activate, fly to KEDDY at 3000', done: (c) => c.sim.fp.approachId === 'PARD-I27' && c.sim.fp.out.toIdent === 'MARLO', check: (c) => (c.sim.fp.out.valid && Math.abs(c.sim.fp.out.dev) > 0.75 ? 'CDI > ¾ scale' : null), graceSec: 40 },
+          { text: 'Load ILS 27 via TOBEY, activate, fly to KEDDY at 3000', fr: 'Chargez l’ILS 27 par TOBEY, activez-le, rejoignez KEDDY à 3000 ft', done: (c) => c.sim.fp.approachId === 'PARD-I27' && c.sim.fp.out.toIdent === 'MARLO', check: (c) => (c.sim.fp.out.valid && Math.abs(c.sim.fp.out.dev) > 0.75 ? 'CDI > ¾ scale' : null), graceSec: 40 },
         ],
         allowanceSec: 30,
       };
@@ -533,6 +534,9 @@ EXERCISES.push(
   ifrFlight('ifr-msvl-pard-ndb', 'IFR flight MSVL → PARD (NDB 27, procedure turn)', { dep: ['MSVL', '03'], route: ['ARD', 'PA'], cruise: 4000, approachId: 'PARD-N27', transition: 'PA (PROC TURN)', weather: { ceilingFt: 1300, visibilitySm: 2, windDir: 200, windKt: 15 }, summary: 'The old-school arrival: overfly the NDB, fly the barbed procedure turn and the NDB approach.', minutes: 35 }),
   ifrFlight('ifr-local-lda', 'IFR local flight (LDA/DME 36)', { dep: ['PARD', '27'], route: ['HERON', 'GULLS'], cruise: 3000, approachId: 'PARD-L36', transition: 'GULLS', weather: { ceilingFt: 1100, visibilitySm: 2, windDir: 340, windKt: 10 }, summary: 'Short local IFR flight back into Port Ardent via the offset LDA to runway 36.', minutes: 25 }),
 );
+
+// the French words, written by hand in curriculumFr.ts (the holding exercises author their own)
+for (const e of EXERCISES) if (!e.fr && EXERCISE_FR[e.id]) e.fr = EXERCISE_FR[e.id];
 
 export interface Path {
   id: string;

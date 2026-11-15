@@ -1,13 +1,14 @@
 // Ground school — the course library: every author's registry, in one list, in program order. The samples index
 // (../index.ts) appends it to SAMPLES, so a registered course is listed, playable (#play=<id>), validated and run
 // through the readability guard like every other sample. Authors never edit this file: they edit their own
-// registry (reg-a1.ts … reg-a5.ts) and their own course files.
+// registry (reg-a1.ts … reg-a6.ts) and their own course files.
 import type { L10n } from "../../types";
 import { REG_A1 } from "./reg-a1";
 import { REG_A2 } from "./reg-a2";
 import { REG_A3 } from "./reg-a3";
 import { REG_A4 } from "./reg-a4";
 import { REG_A5 } from "./reg-a5";
+import { REG_A6 } from "./reg-a6";
 import {
   LIBRARY_PROGRAMS,
   type LibraryAuthor,
@@ -26,6 +27,7 @@ export const LIBRARY_REGISTRIES: Readonly<Record<LibraryAuthor, readonly Library
   A3: REG_A3,
   A4: REG_A4,
   A5: REG_A5,
+  A6: REG_A6,
 };
 
 const programRank = (p: LibraryProgram): number =>

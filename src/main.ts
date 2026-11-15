@@ -212,6 +212,8 @@ registerStrings('fr', {
   Shortcuts: 'Raccourcis',
   App: 'Application',
   Settings: 'Réglages',
+  Help: 'Aide',
+  'Shift N': 'Maj N',
   Controllers: 'Manettes',
   'Keyboard sensitivity': 'Sensibilité du clavier',
   'How fast and how far the arrow keys move the yoke (click to change)': 'Vitesse et amplitude du manche aux flèches du clavier (cliquez pour changer)',
@@ -228,6 +230,68 @@ registerStrings('fr', {
   'Outside view': 'Vue extérieure',
   'Outside view (3D)': 'Vue extérieure (3D)',
   'Flight situation': 'Situation du vol',
+  'not modelled': 'non simulé',
+  'Softkey {n} (blank)': 'Touche {n} (vide)',
+  'Chrono: start': 'Chrono : démarrer',
+  'Chrono: stop': 'Chrono : arrêter',
+  'Chrono reset': 'Chrono : remise à zéro',
+  'Chrono start / stop (T cycles start → stop → reset)': 'Chrono : démarrer / arrêter (T : démarrer → arrêter → remettre à zéro)',
+  'Controller: {c}. Connect a joystick, yoke or pedals': 'Commandes : {c}. Brancher un joystick, un volant ou un palonnier',
+  keyboard: 'clavier',
+  'Flying with the keyboard — click to connect a joystick, yoke or pedals': 'Vous pilotez au clavier : cliquez pour brancher un joystick, un volant ou un palonnier',
+});
+// the panel's keys, knobs and pedestal: tooltips and screen-reader names (keyed by their English text)
+registerStrings('fr', {
+  'Close': 'Fermer',
+  'Tap = 1 step · hold = repeat': 'Appui = 1 pas · maintenir = répéter',
+  'Tap for the step buttons': 'Appuyez pour les boutons − / +',
+  'Yoke and rudder position. Drag to fly.': 'Position du manche et du palonnier. Glissez pour piloter.',
+  'Yoke position — drag here to fly with the mouse or a touch screen': 'Position du manche : glissez ici pour piloter à la souris ou au doigt',
+  'Rudder ( , and . )': 'Palonnier ( , et . )',
+  'Wheel brakes': 'Freins',
+  'Wheel brakes (hold Space)': 'Freins (maintenir Espace)',
+  'Elevator trim': 'Compensateur de profondeur',
+  'Elevator trim — Home (nose down) / End (nose up), or scroll here': 'Compensateur de profondeur : Début (à piquer) / Fin (à cabrer), ou molette ici',
+  'Trim nose down': 'Compenser à piquer',
+  'Nose down (Home)': 'À piquer (Début)',
+  'Trim nose up': 'Compenser à cabrer',
+  'Nose up (End)': 'À cabrer (Fin)',
+  'Autopilot and selectors': 'Pilote automatique et sélecteurs',
+  'Chronometer': 'Chronomètre',
+  'Flaps': 'Volets',
+  'Throttle': 'Manette des gaz',
+  'Autopilot (A)': 'Pilote automatique (A)',
+  'Flight director (Shift+A)': 'Directeur de vol (Maj+A)',
+  'Heading mode (H)': 'Mode cap (H)',
+  'Altitude hold (L)': 'Tenue d’altitude (L)',
+  'Nav mode (N)': 'Mode navigation (N)',
+  'Approach mode (R)': 'Mode approche (R)',
+  'Back course (auto via APR)': 'Back course (automatique avec APR)',
+  'Vertical speed (Y)': 'Vitesse verticale (Y)',
+  'Flight level change (K)': 'Changement de niveau (K)',
+  'Flight level change (Shift+K)': 'Changement de niveau (Maj+K)',
+  'Go-around (G)': 'Remise de gaz (G)',
+  'Cycle CDI (C)': 'Changer la source du CDI (C)',
+  'Direct-To (D)': 'Direct vers (D)',
+  'Flight plan': 'Plan de vol',
+  'Clear / cancel': 'Effacer / annuler',
+  'Enter / confirm': 'Entrer / confirmer',
+  'Procedures (X)': 'Procédures (X)',
+  'Procedures (X): select, activate, vectors to final, missed': 'Procédures (X) : choisir, activer, guidage vers la finale, approche interrompue',
+  'Page menu (FPL: activate leg, hold, delete…)': 'Menu de la page (FPL : activer une branche, attente, supprimer…)',
+  'Set altimeter to QNH (B)': 'Caler l’altimètre au QNH (B)',
+  'Swap NAV1 active/standby': 'Échanger NAV1 active / en attente',
+  'Swap COM1': 'Échanger COM1 active / en attente',
+  'Swap NAV2': 'Échanger NAV2 active / en attente',
+  'Nose down: VS −100, FLC speed +1, pitch −0.5°': 'À piquer : VS −100, vitesse FLC +1, assiette −0,5°',
+  'Nose up: VS +100, FLC speed −1, pitch +0.5°': 'À cabrer : VS +100, vitesse FLC −1, assiette +0,5°',
+  'Heading bug to the current heading': 'Index de cap sur le cap actuel',
+  'Selected altitude to the current altitude': 'Altitude sélectionnée sur l’altitude actuelle',
+  'Course to centre the CDI on the station': 'Course qui centre le CDI vers la station',
+  'Altimeter to the reported QNH (B)': 'Altimètre au QNH transmis (B)',
+  'Minimums off': 'Minima désactivés',
+  'CRS/BARO — inner knob: course (push = centre CDI) · outer ring: altimeter setting': 'CRS/BARO : bouton intérieur = course (appui = centrer le CDI) · bague extérieure = calage altimétrique',
+  'FMS — push to show the cursor, inner knob moves it, outer knob scrolls; ENT confirms, CLR cancels (the active leg changes only on MENU → Activate Leg or ACT LEG)': 'FMS : appui pour afficher le curseur, le bouton intérieur le déplace, la bague extérieure fait défiler ; ENT confirme, CLR annule (la branche active ne change qu’avec MENU → Activate Leg ou ACT LEG)',
 });
 // the situation bar and the exercise window's shell words (keyed by their English text, like the table above)
 registerStrings('fr', {
@@ -421,7 +485,7 @@ function backToTraining() {
 }
 const fc = new FlightCenter({
   flyScenario: (sc, wx, a) => { backToTraining(); startScenario(sc, wx, a); },
-  briefExercise: (ex, path) => { backToTraining(); pickExercise(ex, path); },
+  briefExercise: (ex, path, quick) => { backToTraining(); pickExercise(ex, path, !!quick); },
   openPaths: () => learn.open(),
   openDrill: () => drill.open(),
   openRecords: () => historyModal.open(),
@@ -529,18 +593,18 @@ function startExerciseNow(ex: Exercise, path: Path | null = null) {
   hideCrash();
   startLesson(new LessonRun(ex, sim));
 }
-function pickExercise(ex: Exercise, path: Path | null) {
+function pickExercise(ex: Exercise, path: Path | null, quick = false) {
   hideCrash();
   const current = lesson;
   if (!current) {
     lessonPath = path;
     sim.assess = { mode: 'training', student: launcher.assess.student, handFlown: false, randomFailure: false };
-    briefing.show(ex);
+    briefing.show(ex, quick ? { quick: true } : {});
     briefingForCourse(ex.id);
     return;
   }
   // a restart is briefed over the running lesson: Cancel keeps it flying (X15)
-  briefing.show(ex, { current, onCancel: () => { coachKey = ''; updateHeader(); updateCoach(); } });
+  briefing.show(ex, { current, ...(quick ? { quick: true } : {}), onCancel: () => { coachKey = ''; updateHeader(); updateCoach(); } });
   briefingForCourse(ex.id);
   lessonPath = path;
 }
@@ -767,8 +831,10 @@ const settings = new SettingsModal(
 const moreMenu = h('div', { class: 'menu more-menu', role: 'menu' });
 /** flight menu (click the flight name): restart / end & debrief / plan a new flight / Flight Center */
 const flightMenu = h('div', { class: 'menu flight-menu', role: 'menu' });
+/** a menu row's shortcut, in the UI language (« Maj N » for Shift N) */
+const kbdHint = (k: string) => (/^Shift /.test(k) ? lx(h('kbd', {}), k) : h('kbd', {}, k));
 const flightItem = (ic: string, label: string, hint: string, fn: () => void, danger = false) =>
-  h('button', { class: `menu-item${danger ? ' danger' : ''}`, role: 'menuitem', onclick: () => { flightMenu.classList.remove('open'); fn(); } }, icon(ic), lx(h('span', {}), label), hint ? h('kbd', {}, hint) : null);
+  h('button', { class: `menu-item${danger ? ' danger' : ''}`, role: 'menuitem', onclick: () => { flightMenu.classList.remove('open'); fn(); } }, icon(ic), lx(h('span', {}), label), hint ? kbdHint(hint) : null);
 function restartFlight() {
   if (lesson || lastLessonEx) startExerciseNow((lesson?.ex ?? lastLessonEx)!, lessonPath);
   else startScenario(lastScenario, lastWx, sim.assess);
@@ -787,7 +853,7 @@ function endFlight() {
 }
 document.addEventListener('click', (e) => { if (!flightMenu.contains(e.target as Node)) flightMenu.classList.remove('open'); });
 const moreItem = (ic: string, label: string, kbd: string, fn: () => void) =>
-  h('button', { class: 'menu-item', role: 'menuitem', onclick: () => { moreMenu.classList.remove('open'); fn(); } }, icon(ic), lx(h('span', {}), label), kbd ? h('kbd', {}, kbd) : null);
+  h('button', { class: 'menu-item', role: 'menuitem', onclick: () => { moreMenu.classList.remove('open'); fn(); } }, icon(ic), lx(h('span', {}), label), kbd ? kbdHint(kbd) : null);
 const menuHead = (t: string) => lx(h('div', { class: 'menu-h', role: 'presentation' }), t);
 const cduMoreItem = moreItem(I.keypad, 'CDU (flight computer)', 'F3', () => cduPanel.toggle());
 const autoHideSw = h('i', { class: 'sw', 'aria-hidden': 'true' });
@@ -804,30 +870,20 @@ const sensItem = lx(h('button', { class: 'menu-item', role: 'menuitem', onclick:
   sensVal.textContent = sensLabel();
   toast(`Keyboard sensitivity: ${sensLabel()}`);
 } }, icon(I.keyboard), lx(h('span', {}), 'Keyboard sensitivity'), sensVal), 'How fast and how far the arrow keys move the yoke (click to change)', 'title');
+// Plus holds the flight's speed and end, help and the switches (UX logic §7). The panel's own keys keep Procedures
+// (PROC, X) and Direct-To (D→, D); the CDU is F3 (a top-bar button in the airliner); the flight menu holds the
+// weather and the connections; the library, the paths and the records are reached from Accueil.
 moreMenu.append(
   menuHead('Flight'),
   rateBtn,
   moreItem(I.restart, 'Restart the flight', '', () => restartFlight()),
   moreItem(I.flag, 'End and debrief', '', () => endFlight()),
-  moreItem(I.approach, 'Procedures', 'X', () => procModal.open()),
-  moreItem(I.direct, 'Direct-To', 'D', () => directModal.open()),
-  moreItem(I.chart, 'Debrief', 'Shift D', () => openDebrief()),
-  menuHead('Tools'),
-  moreItem(I.cloud, 'Weather station', '', () => weatherModal.open()),
-  moreItem(I.pattern, 'Plan a flight', 'U', () => builder.edit()),
-  cduMoreItem,
-  moreItem(I.link, 'Connections', '', () => connect.open()),
-  moreItem(I.instructor, 'Pair instructor (phone/tablet)…', '', () => void pairInstructor()),
-  menuHead('Learn'),
-  moreItem(I.slides, 'Library', '', () => fc.openCourses()),
-  moreItem(I.learn, 'Learning paths', 'J', () => learn.open()),
-  moreItem(I.records, 'Training records', '', () => historyModal.open()),
-  moreItem(I.compass, 'Guided tour', '', () => startTour()),
-  moreItem(I.help, 'Explain instruments', 'F1', () => toggleExplain()),
+  menuHead('Help'),
   moreItem(I.keyboard, 'Keyboard shortcuts', '?', () => help.open()),
-  menuHead('App'),
+  moreItem(I.help, 'Explain instruments', 'F1', () => toggleExplain()),
+  moreItem(I.compass, 'Guided tour', '', () => startTour()),
+  menuHead('Settings'),
   moreItem(I.gear, 'Settings', '', () => settings.open()),
-  moreItem(I.screen, 'Instrument panel…', '', () => openPanelPicker()),
   moreItem(I.joystick, 'Controllers', '', () => joyModal.open()),
   sensItem,
   soundItem,
@@ -838,7 +894,8 @@ moreMenu.append(
 // moves anything under it. It comes back on purpose: the Menu button at the left of the situation bar, the pointer
 // dwelling at the very top edge, F10 or a tap on Alt. It never hides while paused, while a menu, the View panel, a
 // window or the tour is open, or in the Instruments layout (docked there).
-let autoHide = store.get('ifr.autohide', true);
+// docked by default: a newcomer always sees « ← Accueil », Pause and Plus (UX logic §7); auto-hide is an opt-in in Plus
+let autoHide = store.get('ifr.autohide', false);
 let revealTimer = 0;
 let hideTimer = 0;
 let revealedAt = 0;
@@ -906,7 +963,8 @@ window.addEventListener('keyup', (e) => {
 }, true);
 window.addEventListener('pointerdown', () => (altTap = false), true);
 /** the Menu button at the left end of the situation bar: shows the top bar (only while the bar is hidden) */
-const sbMenu = lx(lx(h('button', { class: 'sb-menu', type: 'button', onclick: (e: Event) => { e.stopPropagation(); revealChrome(); } }, svgIcon(I.menu, 20)), 'Menu: show the top bar (F10)', 'title'), 'Show the top bar', 'aria-label');
+// icon + word (« Menu »): with the bar hidden on purpose, the way back to Accueil, Pause and Plus is still named
+const sbMenu = lx(lx(h('button', { class: 'sb-menu', type: 'button', onclick: (e: Event) => { e.stopPropagation(); revealChrome(); } }, svgIcon(I.menu, 18), h('span', {}, 'Menu')), 'Menu: show the top bar (F10)', 'title'), 'Show the top bar', 'aria-label');
 function setAutoHide(on: boolean) {
   autoHide = on;
   store.set('ifr.autohide', on);
@@ -922,10 +980,12 @@ function syncAutoHide() {
 }
 flightMenu.append(
   flightItem(I.restart, 'Restart the flight', '', () => restartFlight()),
-  flightItem(I.flag, 'End and debrief', 'Shift D', () => endFlight()),
+  flightItem(I.flag, 'End and debrief', '', () => endFlight()),
   h('div', { class: 'menu-sep' }),
   flightItem(I.screen, 'Instrument panel…', '', () => openPanelPicker()),
   flightItem(I.instructor, 'Pair instructor (phone/tablet)…', '', () => void pairInstructor()),
+  flightItem(I.link, 'Connections', '', () => connect.open()),
+  flightItem(I.cloud, 'Weather station', '', () => weatherModal.open()),
   h('div', { class: 'menu-sep' }),
   flightItem(I.plan, 'Plan a new flight…', 'Shift N', () => setup.start()),
   flightItem(I.home, 'Home', 'F2', () => fc.showPlace('home')),
@@ -1510,7 +1570,7 @@ const pad3 = (n: number) => String(Math.round(((n % 360) + 360) % 360) || 360).p
 /** softkeys this trainer does not model: drawn blank or inert, never a fake toast */
 const DEAD_SOFTKEYS = new Set(['', 'ENGINE', 'ALERTS']);
 const softRow = (labels: readonly string[], fn: (i: number) => void) => h('div', { class: 'softrow' }, ...labels.map((l, i) => DEAD_SOFTKEYS.has(l)
-  ? h('button', { class: 'dead', 'aria-disabled': 'true', tabindex: -1, 'aria-label': l ? `${l} (not modelled)` : `Softkey ${i + 1} (blank)` })
+  ? h('button', { class: 'dead', 'aria-disabled': 'true', tabindex: -1, 'aria-label': l ? `${l} (${tr('not modelled')})` : tr('Softkey {n} (blank)', { n: i + 1 }) })
   : h('button', { 'aria-label': `Softkey ${l}`, title: l, onclick: () => fn(i) })));
 /** tag a bezel control so each cockpit theme can show only the controls it really has */
 const tag = <T extends HTMLElement>(el: T, k: string): T => { el.dataset.k = k; return el; };
@@ -1635,7 +1695,7 @@ const afcsInc = (sign: '−' | '+', aria: string, fn: () => void) => autoRepeat(
 const afcsVal = (row: () => StepRow, k: string, short?: () => string, rows?: () => StepRow[]) => {
   const lab = h('small', {}, '');
   const val = h('b', {}, '');
-  const el = h('button', { type: 'button', class: 'afcs-val', 'data-k': k, title: 'Tap for the step buttons', onclick: () => openSteps(el, rows ? rows() : [row()]) }, lab, val);
+  const el = h('button', { type: 'button', class: 'afcs-val', 'data-k': k, title: tr('Tap for the step buttons'), onclick: () => openSteps(el, rows ? rows() : [row()]) }, lab, val);
   afcsVals.push(() => { const r = row(); setText(lab, r.label); setText(val, short ? short() : r.value()); });
   return el;
 };
@@ -1646,7 +1706,7 @@ const afcsSel = (row: () => StepRow, k: string, short?: () => string, rows?: () 
     afcsVal(row, k, short, rows),
     afcsInc('+', `${row().label} up`, () => row().onStep(1, false)));
 const afcsGrp = (cls: string, ...kids: HTMLElement[]) => h('div', { class: `afcs-g ${cls}` }, ...kids);
-const afcs = h('section', { class: 'afcs', 'aria-label': 'Autopilot and selectors' },
+const afcs = h('section', { class: 'afcs', 'aria-label': tr('Autopilot and selectors') },
   afcsGrp('g-ap', afcsAp('AP', () => doAction('apToggle'), 'Autopilot (A)'), afcsAp('FD', () => sim.ap.toggleFd(sim.ac.data), 'Flight director (Shift+A)')),
   afcsGrp('g-hdg', afcsAp('HDG', () => sim.ap.pressHdg(sim.ac.data), 'Heading mode (H)'), afcsSel(ROW.hdg, 'hdg', () => `${pad3(sim.ap.hdgBug)}°`)),
   afcsGrp('g-nav', afcsAp('NAV', () => sim.ap.pressNav(sim.ac.data, sim.navInputs()), 'Nav mode (N)'), afcsAp('APR', () => sim.ap.pressApr(sim.ac.data, sim.navInputs()), 'Approach mode (R)'), afcsAp('BC', () => sim.ap.pressApr(sim.ac.data, sim.navInputs()), 'Back course (auto via APR)')),
@@ -1724,7 +1784,7 @@ function setCockpit(t: CockpitType, announce = true, persist = true) {
 }
 
 // control pedestal (footer): one row — throttle | flaps | trim | yoke | chrono | … | Switches · Controller · Shortcuts
-const thr = h('input', { type: 'range', min: 0, max: 100, value: 60, class: 'pd-lever', 'aria-label': 'Throttle' }) as HTMLInputElement;
+const thr = h('input', { type: 'range', min: 0, max: 100, value: 60, class: 'pd-lever', 'aria-label': tr('Throttle') }) as HTMLInputElement;
 let thrDragging = false;
 thr.addEventListener('pointerdown', () => (thrDragging = true));
 window.addEventListener('pointerup', () => (thrDragging = false));
@@ -1740,17 +1800,20 @@ const FLAP_ARIA = ['Flaps up', 'Flaps 10°', 'Flaps 20°', 'Flaps full, 30°'];
 const flapBtns = ['UP', '10', '20', 'FULL'].map((l, i) => h('button', { class: 'pd-det', type: 'button', role: 'radio', 'aria-checked': 'false', 'aria-label': FLAP_ARIA[i], onclick: () => (sim.controls.flaps = i), title: `Flaps ${i * 10}° (F / Shift+F)` }, l));
 const trimMark = h('i', { class: 'pd-trim-mark' });
 const stickDot = h('i', {});
-const stick = h('div', { class: 'pd-yoke', role: 'img', 'aria-label': 'Yoke and rudder position. Drag to fly.', title: 'Yoke position — drag here to fly with the mouse or a touch screen' }, h('span', { class: 'pd-cross' }), stickDot);
-const rudderBar = h('div', { class: 'pd-rudder', title: 'Rudder ( , and . )' }, h('i', {}));
+const stick = h('div', { class: 'pd-yoke', role: 'img', 'aria-label': tr('Yoke and rudder position. Drag to fly.'), title: tr('Yoke position — drag here to fly with the mouse or a touch screen') }, h('span', { class: 'pd-cross' }), stickDot);
+const rudderBar = h('div', { class: 'pd-rudder', title: tr('Rudder ( , and . )') }, h('i', {}));
 stick.append(rudderBar); // the rudder is drawn along the pad's lower edge (pointer-events: none)
-const brakeLight = h('span', { class: 'pd-brk', role: 'status', 'aria-label': 'Wheel brakes', title: 'Wheel brakes (hold Space)' }, h('i', {}), 'BRK');
+const brakeLight = h('span', { class: 'pd-brk', role: 'status', 'aria-label': tr('Wheel brakes'), title: tr('Wheel brakes (hold Space)') }, h('i', {}), 'BRK');
 const joyDot = h('span', { class: 'pd-joy-dot' });
 const joyLbl = h('span', { class: 'pd-chip-l' }, tr('ped.controller'));
 // chronometer (pedestal): the readout is the start / stop key, RST beside it, a chime every minute
 const ico = (n: string, sz: number, c: string) => { const e = svgIcon(n, sz); e.classList.add(c); return e; };
 const chronoRead = h('b', { class: 'pd-chr-lcd' }, '00:00');
-const chronoSS = h('button', { class: 'pd-chr', type: 'button', 'aria-label': 'Chrono: start', onclick: () => sim.chronoStartStop(), title: 'Chrono start / stop (T cycles start → stop → reset)' }, ico(I.play, 10, 'pd-chr-play'), ico(I.pause, 10, 'pd-chr-pause'), chronoRead);
-const chronoRst = h('button', { class: 'pd-key pd-rst', type: 'button', 'aria-label': 'Chrono reset', onclick: () => sim.chronoReset(), title: 'Chrono reset' }, 'RST');
+const chronoSS = lx(h('button', { class: 'pd-chr', type: 'button', 'aria-label': tr('Chrono: start'), onclick: () => sim.chronoStartStop() }), 'Chrono start / stop (T cycles start → stop → reset)', 'title');
+chronoSS.append(ico(I.play, 10, 'pd-chr-play'), ico(I.pause, 10, 'pd-chr-pause'), chronoRead);
+const chronoRst = h('button', { class: 'pd-key pd-rst', type: 'button', onclick: () => sim.chronoReset() }, 'RST');
+lx(chronoRst, 'Chrono reset', 'aria-label');
+lx(chronoRst, 'Chrono reset', 'title');
 let chronoMin = -1;
 function updateChrono() {
   const t = sim.chrono();
@@ -1759,7 +1822,7 @@ function updateChrono() {
   setClass(chronoRead, 'idle', t === null);
   const run = sim.av.timerStart !== null;
   setClass(chronoSS, 'run', run); // ▶ ↔ ❚❚ glyph
-  setAttr(chronoSS, 'aria-label', run ? 'Chrono: stop' : 'Chrono: start');
+  setAttr(chronoSS, 'aria-label', tr(run ? 'Chrono: stop' : 'Chrono: start'));
   const m = t === null || sim.av.timerStart === null ? -1 : Math.floor(t / 60);
   if (m > 0 && m !== chronoMin) audio.chime();
   chronoMin = m;
@@ -1767,11 +1830,11 @@ function updateChrono() {
 /** a pedestal caption: one style for every flight-control group, shown together at 1500 px and wider (i18n key) */
 const cap = (key: string) => h('span', { class: 'pd-cap', 'aria-hidden': 'true', 'data-i18n': key }, tr(key));
 const trimBy = (d: number) => (sim.controls.trim = Math.max(-1, Math.min(1, sim.controls.trim + d)));
-const gTrim = h('div', { class: 'pd-g pd-g-trim', role: 'group', 'aria-label': 'Elevator trim', title: 'Elevator trim — Home (nose down) / End (nose up), or scroll here' },
+const gTrim = h('div', { class: 'pd-g pd-g-trim', role: 'group', 'aria-label': tr('Elevator trim'), title: tr('Elevator trim — Home (nose down) / End (nose up), or scroll here') },
   cap('ped.trim'),
-  h('button', { class: 'pd-key', type: 'button', 'aria-label': 'Trim nose down', title: 'Nose down (Home)', onclick: () => trimBy(-0.05) }, svgIcon(I.chevDown, 16)),
+  h('button', { class: 'pd-key', type: 'button', 'aria-label': tr('Trim nose down'), title: tr('Nose down (Home)'), onclick: () => trimBy(-0.05) }, svgIcon(I.chevDown, 16)),
   h('div', { class: 'pd-trim-scale', 'aria-hidden': 'true' }, h('span', {}, 'DN'), h('b', {}, 'T/O'), h('span', {}, 'UP'), h('i', { class: 'pd-trim-band' }), trimMark),
-  h('button', { class: 'pd-key', type: 'button', 'aria-label': 'Trim nose up', title: 'Nose up (End)', onclick: () => trimBy(0.05) }, svgIcon(I.chevUp, 16)),
+  h('button', { class: 'pd-key', type: 'button', 'aria-label': tr('Trim nose up'), title: tr('Nose up (End)'), onclick: () => trimBy(0.05) }, svgIcon(I.chevUp, 16)),
 );
 gTrim.addEventListener('wheel', (e) => { e.preventDefault(); trimBy(e.deltaY < 0 ? -0.02 : 0.02); }, { passive: false });
 // ------------------------------------------------------------------ aircraft systems panel (masters, magnetos, mixture, fuel…)
@@ -1792,16 +1855,16 @@ function setSystemsPanel(on: boolean, persist = true) {
   document.body.classList.toggle('sysp-open', on);
   fitSoon();
 }
-const joyBtn = h('button', { class: 'pd-chip pd-joy', type: 'button', 'aria-label': 'Controller: keyboard. Connect a joystick, yoke or pedals', onclick: () => joyModal.open(), title: 'Flying with the keyboard — click to connect a joystick, yoke or pedals' }, svgIcon(I.joystick, 16), joyDot, joyLbl);
+const joyBtn = lx(h('button', { class: 'pd-chip pd-joy', type: 'button', 'aria-label': tr('Controller: {c}. Connect a joystick, yoke or pedals', { c: tr('keyboard') }), onclick: () => joyModal.open() }, svgIcon(I.joystick, 16), joyDot, joyLbl), 'Flying with the keyboard — click to connect a joystick, yoke or pedals', 'title');
 const keysLbl = h('span', { class: 'pd-chip-l' }, tr('ped.shortcuts'));
 const keysBtn = h('button', { class: 'pd-chip pd-keys', type: 'button', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-label': tr('ped.shortcutsTip'), title: tr('ped.shortcutsTip') }, h('kbd', {}, '?'), keysLbl);
 onLangChange(() => { keysLbl.textContent = tr('ped.shortcuts'); keysBtn.setAttribute('aria-label', tr('ped.shortcutsTip')); keysBtn.title = tr('ped.shortcutsTip'); });
 const footer = h('footer', { class: 'footer pedestal' },
-  h('div', { class: 'pd-g pd-g-thr', role: 'group', 'aria-label': 'Throttle' }, cap('ped.throttle'), h('div', { class: 'pd-slot' }, thr, h('i', { class: 'pd-ticks', 'aria-hidden': 'true' })), h('div', { class: 'pd-read' }, thrPct, thrRpm)),
-  h('div', { class: 'pd-g pd-g-flaps' }, cap('ped.flaps'), h('div', { class: 'pd-flaps', role: 'radiogroup', 'aria-label': 'Flaps' }, ...flapBtns, h('i', { class: 'pd-flap-rail', 'aria-hidden': 'true' }), flapNeedle)),
+  h('div', { class: 'pd-g pd-g-thr', role: 'group', 'aria-label': tr('Throttle') }, cap('ped.throttle'), h('div', { class: 'pd-slot' }, thr, h('i', { class: 'pd-ticks', 'aria-hidden': 'true' })), h('div', { class: 'pd-read' }, thrPct, thrRpm)),
+  h('div', { class: 'pd-g pd-g-flaps' }, cap('ped.flaps'), h('div', { class: 'pd-flaps', role: 'radiogroup', 'aria-label': tr('Flaps') }, ...flapBtns, h('i', { class: 'pd-flap-rail', 'aria-hidden': 'true' }), flapNeedle)),
   gTrim,
   h('div', { class: 'pd-g pd-g-yoke' }, cap('ped.yokeCap'), stick, brakeLight),
-  h('div', { class: 'pd-g pd-g-chr', role: 'group', 'aria-label': 'Chronometer' }, cap('ped.chrono'), chronoSS, chronoRst),
+  h('div', { class: 'pd-g pd-g-chr', role: 'group', 'aria-label': tr('Chronometer') }, cap('ped.chrono'), chronoSS, chronoRst),
   h('div', { class: 'pd-fill' }),
   h('div', { class: 'pd-util' }, sysBtn, joyBtn, keysBtn),
 );
@@ -2273,7 +2336,7 @@ function updateHeader() {
   const sub = parts.join(' · ');
   setText(scnName, name);
   setText(scnSub, sub);
-  const full = `${name} — ${ex ? ex.summary : sim.scenario ? scenarioDesc(sim.scenario) || sub : sub}`;
+  const full = `${name} — ${ex ? (uiLang() === 'fr' && ex.fr?.summary) || ex.summary : sim.scenario ? scenarioDesc(sim.scenario) || sub : sub}`;
   if (cached(scnBtn, 'title', full)) scnBtn.title = `${full}\n${tr('Flight: restart, end, plan a new one')}`;
 }
 let coachKey = '';
@@ -2568,6 +2631,15 @@ function frameBody(now: number) {
   const dt = Math.max(0, Math.min(0.1, (now - last) / 1000));
   last = now;
   if (intro.isOpen) return; // the start page covers everything: no sim, no drawing
+  // Accueil and Simulateur are opaque pages over the cockpit: nothing behind them can be seen. The flight holds
+  // (paused, as under the pause veil) and nothing is drawn — no 3D, no instruments — so the page stays fluid and a
+  // club iPad stays cool. The cockpit draws again as soon as the page closes.
+  // (« Préparer un vol » opened from one of these pages stands in for it: the page comes back when it closes)
+  if (fc.isOpen || (fc.returnTo && builder.isOpen)) {
+    if (!sim.paused) { sim.paused = true; syncPauseBtn(); }
+    audio.update(sim, dt); // the engine sound fades with the pause
+    return;
+  }
   if (sim.ac.s.crashed && !crashShown && !sim.replaying) showCrash(sim.ac.s.crashed);
   if (!sim.ac.s.crashed && crashShown) hideCrash();
   // touchdown feedback (rate, g, speed, position on the runway)
@@ -2723,7 +2795,7 @@ function frameBody(now: number) {
   setClass(joyDot, 'on', !!joy);
   setClass(joyBtn, 'live', !!joy); // touch shows the chip only while a controller is connected
   setText(joyLbl, joy ? joy.id.split('(')[0].trim().slice(0, 22) || 'Joystick' : tr('ped.controller'));
-  setAttr(joyBtn, 'aria-label', `Controller: ${joy ? joyLbl.textContent : 'keyboard'}. Connect a joystick, yoke or pedals`);
+  setAttr(joyBtn, 'aria-label', tr('Controller: {c}. Connect a joystick, yoke or pedals', { c: joy ? (joyLbl.textContent ?? '') : tr('keyboard') }));
   setAttr(thr, 'aria-valuetext', `${thrV} percent, ${Math.round(sim.ac.data.rpm / 10) * 10} RPM`);
   if (!apKeyCache.length || !apKeyCache[0].isConnected) apKeyCache = [...cockpit.querySelectorAll<HTMLElement>('[data-ap]')];
   const ap = sim.ap;

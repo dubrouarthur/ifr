@@ -450,7 +450,7 @@ const FR: IntroText = frTypo({
       t: [
         "Les check-lists de vos avions, adaptées par le club",
         "Les cours et exercices du club, rangés à part",
-        "Le logo du club sur vos diapositives",
+        "Les résultats de chaque élève, gardés sur le simulateur du club",
       ],
       a: "Voir l’espace Club",
     },
@@ -492,7 +492,7 @@ const FR: IntroText = frTypo({
   club: ["Club", "Les check-lists et les exercices adaptés par votre club"],
   inst: [
     "Instructeurs",
-    "Vos cours et brouillons, les modèles, l’import de diapositives",
+    "Vos cours et brouillons, les modèles, la présentation en salle",
   ],
   splitH: "Chaque formation, matière par matière",
   splitP:
@@ -689,7 +689,7 @@ const EN: IntroText = {
       t: [
         "Your aircraft’s checklists, adapted by the club",
         "Your club’s own courses and drills, filed apart",
-        "The club logo on your slides",
+        "Each student’s results, kept on the club’s simulator",
       ],
       a: "See the Club space",
     },
@@ -731,7 +731,7 @@ const EN: IntroText = {
   club: ["Club", "The checklists and drills your club has adapted"],
   inst: [
     "Instructors",
-    "Your courses and drafts, the templates, importing your slides",
+    "Your courses and drafts, the templates, presenting to a class",
   ],
   splitH: "Each programme, subject by subject",
   splitP:

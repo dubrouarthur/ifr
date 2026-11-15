@@ -1,4 +1,12 @@
 import { h } from './dom';
+import { t, lang } from './i18n';
+
+/** a knob's default tooltip: how to turn it, in the UI language */
+function knobTip(o: { label: string; dual?: boolean; onPush?: unknown }): string {
+  return lang() === 'fr'
+    ? `${o.label} : glisser ou molette${o.dual ? ' (bague extérieure = grands pas, bouton intérieur = petits pas)' : ''}${o.onPush ? ', clic pour appuyer' : ''} · clic droit ou appui pour les boutons − / +`
+    : `${o.label} — drag or scroll${o.dual ? ' (outer ring = coarse, inner knob = fine)' : ''}${o.onPush ? ', click to push' : ''} · right-click or tap for step buttons`;
+}
 
 export interface KnobOpts {
   label: string;
@@ -92,7 +100,7 @@ export function knob(o: KnobOpts): HTMLElement {
   const ring = h('div', { class: 'ring' }, ringMark);
   const cap = h('div', { class: 'cap' }, capMark, o.onPush ? h('b', { class: 'push' }) : null);
   const bubble = h('div', { class: 'bubble' });
-  const el = h('div', { class: `pknob ${o.dual ? 'dual' : 'single'} ${o.size ?? 'md'}`, tabindex: 0, role: 'spinbutton', 'aria-label': o.label, title: o.title ?? `${o.label} — drag or scroll${o.dual ? ' (outer ring = coarse, inner knob = fine)' : ''}${o.onPush ? ', click to push' : ''} · right-click or tap for step buttons` }, ring, cap, bubble);
+  const el = h('div', { class: `pknob ${o.dual ? 'dual' : 'single'} ${o.size ?? 'md'}`, tabindex: 0, role: 'spinbutton', 'aria-label': o.label, title: o.title ? t(o.title) : knobTip(o) }, ring, cap, bubble);
   let ringA = 0;
   let capA = 0;
   let hideT = 0;
@@ -215,7 +223,7 @@ export function knob(o: KnobOpts): HTMLElement {
 }
 
 export function bkey(label: string, onClick: () => void, title?: string): HTMLButtonElement {
-  return h('button', { class: 'bkey', onclick: (e: Event) => { onClick(); (e.currentTarget as HTMLElement).blur(); }, title: title ?? label }, h('span', {}, label));
+  return h('button', { class: 'bkey', onclick: (e: Event) => { onClick(); (e.currentTarget as HTMLElement).blur(); }, title: title ? t(title) : label }, h('span', {}, label));
 }
 
 // ------------------------------------------------------------------ auto-repeat (tap = one step, hold = repeat)
@@ -328,12 +336,12 @@ export function openSteps(anchor: HTMLElement, rows: StepRow[], title?: string):
         btn(r.plus ?? `+${r.fine}`, `${r.label} ${r.plus ?? `plus ${r.fine}`}`, () => r.onStep(1, false)),
         r.coarse ? btn(`+${r.coarse}`, `${r.label} plus ${r.coarse}`, () => r.onStep(1, true), 'big') : null,
       ),
-      r.push ? h('button', { type: 'button', class: 'sp-push', title: r.push.title ?? r.push.label, onclick: () => { r.push!.fn(); refresh(); } }, r.push.label) : null,
-      ...(r.actions ?? []).map((a) => h('button', { type: 'button', class: 'sp-push', title: a.title ?? a.label, onclick: () => { a.fn(); refresh(); } }, a.label)),
+      r.push ? h('button', { type: 'button', class: 'sp-push', title: r.push.title ? t(r.push.title) : r.push.label, onclick: () => { r.push!.fn(); refresh(); } }, r.push.label) : null,
+      ...(r.actions ?? []).map((a) => h('button', { type: 'button', class: 'sp-push', title: a.title ? t(a.title) : a.label, onclick: () => { a.fn(); refresh(); } }, a.label)),
     );
   });
   pad = h('div', { class: 'steppad', role: 'dialog', 'aria-label': title ?? rows.map((r) => r.label).join(' / ') },
-    h('div', { class: 'sp-h' }, h('b', {}, title ?? rows.map((r) => r.label).join(' · ')), h('span', { class: 'sp-hint' }, 'Tap = 1 step · hold = repeat'), h('button', { type: 'button', class: 'sp-x', 'aria-label': 'Close', onclick: () => padClose() }, '×')),
+    h('div', { class: 'sp-h' }, h('b', {}, title ?? rows.map((r) => r.label).join(' · ')), h('span', { class: 'sp-hint' }, t('Tap = 1 step · hold = repeat')), h('button', { type: 'button', class: 'sp-x', 'aria-label': t('Close'), onclick: () => padClose() }, '×')),
     ...body,
   );
   document.body.append(pad);
