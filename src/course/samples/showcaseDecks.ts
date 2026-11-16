@@ -150,10 +150,10 @@ export function showcaseScenes(): Record<string, SimScene> {
     sit(
       "sp.night.g1000",
       SIT("night"),
-      "Night · 3,000 ft over PARD · G1000",
+      "Night · 3,000 ft over PARD · glass panel",
       "g1000",
     ),
-    sit("sp.ils", SIT("ils27"), "ILS 27 PARD · 5 NM · G1000", "g1000"),
+    sit("sp.ils", SIT("ils27"), "ILS 27 PARD · 5 NM · glass panel", "g1000"),
     fieldsScene(
       "sp.airliner",
       {
@@ -1046,8 +1046,8 @@ export const NIGHT_FLIGHT = deck({
           ),
           view: { kind: "pfd" },
           alt: L(
-            "The G1000 flight display at night, live",
-            "L’écran de vol G1000 de nuit, en direct",
+            "The flight display at night, live",
+            "L’écran de vol de nuit, en direct",
           ),
           scene: "sp.night.g1000",
           motion: { preset: "turn-std" },
@@ -1209,8 +1209,8 @@ export const IR_ILS = deck({
   id: "ir-ils",
   title: L("IR lesson: the ILS", "Leçon IR : l’ILS"),
   pitch: L(
-    "The G1000 on the glide path, the localizer capture, the students set the OBS, the instructor flies the map, the ILS in the simulator",
-    "Le G1000 sur le plan, la capture de l’axe, les élèves règlent l’OBS, l’instructeur pilote sur la carte, l’ILS dans le simulateur",
+    "The flight display on the glide path, the localizer capture, the students set the OBS, the instructor flies the map, the ILS in the simulator",
+    "L’écran de vol sur le plan, la capture de l’axe, les élèves règlent l’OBS, l’instructeur pilote sur la carte, l’ILS dans le simulateur",
   ),
   level: L("IR", "IR"),
   formations: ["ir"],
@@ -1231,8 +1231,8 @@ export const IR_ILS = deck({
               INST(
                 { kind: "pfd" },
                 L(
-                  "G1000 flight display on the ILS 27 glide path",
-                  "Écran de vol G1000 sur le plan de l’ILS 27",
+                  "Flight display on the ILS 27 glide path",
+                  "Écran de vol sur le plan de l’ILS 27",
                 ),
                 936,
                 136,
@@ -1281,8 +1281,8 @@ export const IR_ILS = deck({
           ),
           view: { kind: "mfd" },
           alt: L(
-            "The G1000 map display on the ILS 27, live",
-            "L’écran carte G1000 sur l’ILS 27, en direct",
+            "The map display on the ILS 27, live",
+            "L’écran carte sur l’ILS 27, en direct",
           ),
           scene: "sp.ils",
         }),
@@ -1709,7 +1709,7 @@ export function startSlides(): GallerySlide[] {
       id: "sx-demo",
       group: "start",
       title: L("A demonstration you fly", "Une démonstration que vous pilotez"),
-      what: L("In class, you fly the G1000, the screen follows", "En classe, vous pilotez le G1000, l’écran suit"),
+      what: L("In class, you fly the flight display, the screen follows", "En classe, vous pilotez l’écran de vol, la projection suit"),
       slide: demoSlide({
         id: "sx-demo",
         title: L("On the ILS: watch the instructor fly", "Sur l’ILS : regardez l’instructeur piloter"),
@@ -1720,7 +1720,7 @@ export function startSlides(): GallerySlide[] {
         ],
         source: L("FAA IFH ch. 9 · ILS", "FAA IFH ch. 9 · ILS"),
         view: { kind: "pfd" },
-        alt: L("The G1000 flight display on the ILS 27, live", "L’écran de vol G1000 sur l’ILS 27, en direct"),
+        alt: L("The flight display on the ILS 27, live", "L’écran de vol sur l’ILS 27, en direct"),
         scene: "sp.ils",
       }),
     },

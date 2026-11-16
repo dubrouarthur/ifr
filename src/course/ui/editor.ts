@@ -122,6 +122,8 @@ import {
   RAIL_TABS,
   SLIDE_ONLY,
   StudioPanel,
+  EMPTY_STARTS,
+  EMPTY_STARTS_VFR,
   emptySlideCard,
   railIcon,
   railLabel,
@@ -132,6 +134,7 @@ import {
   addStarterDeck,
   BLANK_STARTER,
   deckTitle,
+  titleOnCover,
   type DeckStarter,
 } from "./deckStarters";
 import { exampleScenes } from "../canvas/examples";
@@ -176,6 +179,37 @@ const isIpad = () =>
   (/iPad/.test(navigator.userAgent) ||
     (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1));
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
+/** What the presenter does on a ready slide, in the console's own words (« Notes » of the presenter view). */
+function defaultNotes(s: SlideCanvas): { en: string; fr: string } {
+  const bs = s.blocks;
+  const yt = bs.some((b) => !!(b as { yourTurn?: unknown }).yourTurn);
+  const moving = bs.some((b) => b.kind === "instrument" && !!b.motion);
+  const live = bs.some((b) => b.kind === "instrument" || b.kind === "simViewport");
+  const quiz = bs.some((b) => b.kind === "quiz");
+  const en: string[] = [];
+  const fr: string[] = [];
+  if (quiz) {
+    en.push("Let the class answer first, then show the answer and say why.");
+    fr.push("Laissez la classe répondre d’abord, puis montrez la réponse et dites pourquoi.");
+  }
+  if (moving) {
+    en.push("The animation plays by itself; “Replay the animation” in the demonstration deck shows it again.");
+    fr.push("L’animation se joue seule ; « Rejouer l’animation » dans la démonstration la remontre.");
+  }
+  if (live) {
+    en.push("“Fly the demonstration”: heading, altitude and power by hand, the projection follows (try a standard-rate turn).");
+    fr.push("« Piloter la démonstration » : cap, altitude et puissance à la main, la projection suit (essayez un virage standard).");
+  }
+  if (yt) {
+    en.push("“Give the controls to a student”: the goal on the slide says when it is done.");
+    fr.push("« Donner les commandes à un élève » : l’objectif de la diapo dit quand c’est réussi.");
+  }
+  if (!en.length) {
+    en.push("Say it in your words; the slide keeps the numbers.");
+    fr.push("Dites-le avec vos mots ; la diapo garde les chiffres.");
+  }
+  return { en: en.join(" "), fr: fr.join(" ") };
+}
 
 /** Re-encode an imported image: WebP (JPEG where the browser cannot write WebP), longest side ≤ 1600 px. */
 export async function encodeImage(
@@ -782,20 +816,27 @@ export class CourseEditor implements InspectorHost {
         return;
       }
     }
-    // the placement found no free space (placement.ts): two ways out, in one line
+    // the placement found no free space (placement.ts): never leave an overlap the students would see. The
+    // element goes on a new slide right after this one; « Annuler » takes that slide away again
     if (this.canvasEd?.core.full) {
+      const at = this.i;
+      this.canvasEd.run({ k: "undo" });
+      this.addTemplate("slide", { layout: "blank" });
+      this.canvasEd?.add(d);
+      const made = this.i;
       this.toastActions(
-        t2(this.lang, "No room left on this slide.", "Plus de place sur cette diapo."),
+        t2(this.lang, "No room on that slide: added on a new slide.", "Plus de place sur cette diapo : ajouté sur une nouvelle diapo."),
         [
           {
-            label: t2(this.lang, "New slide with this element", "Nouvelle diapo avec cet élément"),
+            label: t2(this.lang, "Undo", "Annuler"),
             run: () => {
-              this.canvasEd?.run({ k: "undo" });
-              this.addTemplate("slide", { layout: "blank" });
-              this.canvasEd?.add(d);
+              if (made < this.course.steps.length && made !== at) {
+                this.apply(removeStep(this.course, made), undefined, { centre: false });
+                this.select(Math.min(at, this.course.steps.length - 1));
+                this.renderCentre();
+              }
             },
           },
-          { label: t2(this.lang, "Tidy the slide", "Réorganiser la diapo"), run: () => this.tidySlide() },
         ],
       );
       return;
@@ -1126,7 +1167,7 @@ export class CourseEditor implements InspectorHost {
   }
   /** Below 1280 px the panel floats over the slide: it closes after an add so the new block shows. */
   private afterPanelAdd() {
-    if (window.innerWidth < 1280 && this.studio.open) this.closePanel();
+    if (window.innerWidth < 1366 && this.studio.open) this.closePanel();
   }
   private renderRail() {
     const fr = this.lang === "fr";
@@ -1247,14 +1288,22 @@ export class CourseEditor implements InspectorHost {
       : this.course;
     const s2 = clone(slide);
     delete s2.theme;
+    // the step is named after what the slide says (its title), not after the gallery card that offered it
+    const head = s2.blocks.find(
+      (b) => b.kind === "text" && (b.style === "display" || b.style === "title") && tr(b.text, "en").trim(),
+    );
+    if (head && head.kind === "text") title = { en: head.text.en, fr: head.text.fr ?? head.text.en };
+    const notes = defaultNotes(s2);
     // an empty slide takes the ready slide in place (« + Diapo », then a pick of « Que voulez-vous montrer ? »)
     const cur = this.step;
     if (cur?.slide && !cur.slide.blocks.length && !cur.slide.background?.image) {
       const before = this.course;
       const t = { en: title.en, fr: title.fr ?? title.en };
-      this.apply(replaceStep(base, { ...cur, title: t, slide: s2, reader: linearText(s2) }), undefined, {
+      this.apply(replaceStep(base, { ...cur, title: t, slide: s2, reader: linearText(s2), ...(cur.notes ? {} : { notes }) }), undefined, {
         inspector: true,
       });
+      // the canvas was built with the course's older situations: hand it the new ones before it draws the slide
+      this.syncCanvasScenes();
       this.canvasEd?.load(s2);
       this.syncEmpty(s2);
       this.toast(t2(this.lang, "Slide added", "Diapo ajoutée"), () => {
@@ -1270,7 +1319,7 @@ export class CourseEditor implements InspectorHost {
     });
     this.insert({
       course: made.course,
-      step: { ...made.step, slide: s2, reader: linearText(s2) },
+      step: { ...made.step, slide: s2, reader: linearText(s2), notes },
     });
   }
   /** A whole starter deck after the current step (or as the course when it is empty). */
@@ -1346,6 +1395,8 @@ export class CourseEditor implements InspectorHost {
   private undo() {
     const c = this.history.undo();
     if (c) this.restore(c);
+    // a toast offering « Annuler » is out of date once the change is undone
+    if (c && this.toastEl.querySelector("button")) this.toastEl.hidden = true;
   }
   private redo() {
     const c = this.history.redo();
@@ -1502,7 +1553,11 @@ export class CourseEditor implements InspectorHost {
     badge.className = `ce-count${errs ? " err" : warns ? " warn" : " ok"}`;
     badge.title = this.reviewSub();
     badge.hidden = !this.checks.length;
+    badge.setAttribute("aria-hidden", "true");
     if (!badge.parentElement) this.checksBtn.append(badge);
+    // its accessible name is the word, then the review in words (never « Plus0 »)
+    const more = this.lang === "fr" ? "Plus" : "More";
+    this.checksBtn.setAttribute("aria-label", this.checks.length ? `${more} · ${this.reviewSub()}` : more);
   }
   private kindChip(s: Step): HTMLElement {
     const k = KINDS[s.kind] ?? KINDS.page;
@@ -2183,7 +2238,17 @@ export class CourseEditor implements InspectorHost {
         example: (id) => {
           // the first slides of « Que voulez-vous montrer ? » (samples/showcaseDecks.ts), then the gallery's
           const ex = startSlide(id);
-          if (ex) this.addComposedSlide(ex.slide, ex.title, showcaseScenes());
+          if (!ex) return;
+          // a cover says the course's own title (« Le virage en palier »), not the example's
+          let slide = ex.slide;
+          const ct = this.course.title;
+          const named =
+            !!tr(ct, "en").trim() && !/^(untitled course|cours sans titre)$/i.test(tr(ct, "en").trim());
+          if (named && /cover$/.test(id)) {
+            const st = titleOnCover({ id: "x", kind: "slide", title: ex.title, slide } as Step, ct);
+            if (st.slide) slide = st.slide;
+          }
+          this.addComposedSlide(slide, ex.title, showcaseScenes());
         },
         blank: () => {
           this.emptyBlank.add(this.step?.id ?? "");
@@ -2196,11 +2261,18 @@ export class CourseEditor implements InspectorHost {
         brand: this.course.brand,
         scenes: this.course.scenes,
         cockpit: this.course.cockpit,
+        starts: this.ifrCourse() ? EMPTY_STARTS : EMPTY_STARTS_VFR,
       },
     );
     this.emptyKill = card.destroy;
     this.emptyEl = h("div", { class: "ce-empty-wrap" }, card.el);
     wrap.append(this.emptyEl);
+  }
+  /** An instrument-rating or airline course (its first slides may show an ILS); else a VFR course. */
+  private ifrCourse(): boolean {
+    const p = this.course.program;
+    const ps = Array.isArray(p) ? p : p ? [p] : [];
+    return ps.some((x) => x === "ir" || x === "atpl");
   }
   /** Right click / long press on the empty slide: slide-level actions. */
   private slideMenuItems() {
@@ -2395,21 +2467,22 @@ export class CourseEditor implements InspectorHost {
         title: fr ? "Dupliquer (D)" : "Duplicate (D)",
       }),
       (() => {
-        const b = btn(fr ? "Avant" : "Earlier", () => this.move(-1), {
+        // « Déplacer » with arrows that move, not navigation chevrons: this moves the slide, it does not turn the page
+        const b = btn(fr ? "Déplacer avant" : "Move earlier", () => this.move(-1), {
           cls: "sm ghost",
           title: fr ? "Déplacer avant (Alt+←)" : "Move earlier (Alt+←)",
           disabled: this.i === 0,
         });
-        b.prepend(railIcon("l", "M15 6l-6 6 6 6"));
+        b.prepend(railIcon("l", "M19 12H5M11 6l-6 6 6 6"));
         return b;
       })(),
       (() => {
-        const b = btn(fr ? "Après" : "Later", () => this.move(1), {
+        const b = btn(fr ? "Déplacer après" : "Move later", () => this.move(1), {
           cls: "sm ghost",
           title: fr ? "Déplacer après (Alt+→)" : "Move later (Alt+→)",
           disabled: this.i >= this.course.steps.length - 1,
         });
-        b.append(railIcon("r", "M9 6l6 6-6 6"));
+        b.append(railIcon("r", "M5 12h14M13 6l6 6-6 6"));
         return b;
       })(),
       more,
@@ -2644,7 +2717,7 @@ export class CourseEditor implements InspectorHost {
     this.select(Math.max(0, this.i));
     this.renderCentre();
     this.toast(
-      `${t2(this.lang, "Deleted", "Supprimé")}: ${tr(s.title, this.lang)}`,
+      `${t2(this.lang, "Deleted:", "Supprimé :")} ${tr(s.title, this.lang)}`,
       () => {
         this.apply(before, undefined, { centre: false });
         this.select(at);
@@ -2802,10 +2875,15 @@ export class CourseEditor implements InspectorHost {
           ? "Capturer depuis le simulateur"
           : "Capture from the simulator",
         sub: fr
-          ? "Réglez une scène au cockpit, elle revient ici (⇧C)"
-          : "Set a scene in the cockpit, it comes back here (⇧C)",
+          ? "Le cockpit s’ouvre sur la situation de la diapo ; capturez un moment, il revient ici"
+          : "The cockpit opens on the slide’s situation; capture a moment, it comes back here",
         icon: "pulse",
-        onClick: () => this.flyToCapture(),
+        // the selected instrument's situation, else the slide's: the cockpit opens there, not on a default flight
+        onClick: () => {
+          const slide = this.step?.slide;
+          const id = slide ? blockSceneId(slide, this.sel[0]?.id).id : this.step?.stage?.scene;
+          void this.flyFrom(id ? this.course.scenes[id] : undefined);
+        },
       });
     items.push({
       label: fr ? "Exporter" : "Export",
@@ -2948,13 +3026,14 @@ export class CourseEditor implements InspectorHost {
           notify: (t) => this.toast(t),
         }),
         onExit: close,
+        backLabel: (l) => t2(l, "Back to the editor", "Retour à l’éditeur"),
         onLang: (l) => this.setLang(l),
         navigate: () =>
           this.toast(
             t2(
               this.lang,
-              "Fly it opens the cockpit from the published course.",
-              "En vol ouvre le cockpit depuis le cours publié.",
+              "The flight in the simulator opens from the library, where students follow the course.",
+              "Le vol au simulateur s’ouvre depuis la bibliothèque, là où les élèves suivent le cours.",
             ),
           ),
       });

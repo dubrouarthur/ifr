@@ -711,7 +711,10 @@ export class StudioPanel {
     const host = this.host;
     const lang = host.lang;
     const kinds = h("div", { class: "ce-kinds" });
-    for (const t of TEMPLATES.filter((x) => x.id !== "slide")) {
+    // the reading page and the « touch the picture » step last: rarely what a first course needs
+    const rare = (id: string) => id === "page" || id === "tap";
+    const list = TEMPLATES.filter((x) => x.id !== "slide");
+    for (const t of [...list.filter((x) => !rare(x.id)), ...list.filter((x) => rare(x.id))]) {
       const k = KINDS[t.kind] ?? KINDS.page;
       const b = h(
         "button",
@@ -722,18 +725,23 @@ export class StudioPanel {
       b.addEventListener("click", () => host.addTemplate(t.id));
       kinds.append(b);
     }
+    // one fold: the elements above are what most slides need; these are whole steps, for later
     return [
-      h("h3", { class: "ce-panel-h" }, t2(lang, "A whole step for the student", "Une étape entière pour l’élève")),
       h(
-        "p",
-        { class: "ce-panel-note" },
-        t2(
-          lang,
-          "Added after this slide, full screen in the student’s player.",
-          "Ajoutée après cette diapo, en plein écran chez l’élève.",
+        "details",
+        { class: "ce-adv ce-kinds-fold" },
+        h("summary", { class: "ce-adv-b" }, t2(lang, "More step types", "Plus de types d’étape")),
+        h(
+          "p",
+          { class: "ce-panel-note" },
+          t2(
+            lang,
+            "A whole step after this slide, full screen for the student: a question then the instruments answer, a timed series, a flight…",
+            "Une étape entière après cette diapo, en plein écran chez l’élève : une question puis les instruments répondent, une série chronométrée, un vol…",
+          ),
         ),
+        kinds,
       ),
-      kinds,
     ];
   }
 
@@ -1200,6 +1208,16 @@ export const EMPTY_STARTS: readonly string[] = [
   "gx-flight",
   "sx-wind",
 ];
+/** The same card in a VFR course (LAPL, PPL, night, club, or no programme yet): a cover where the aircraft flies, a
+ *  moving instrument, the student at the controls, a question, a flight, what to remember. No IFR on a first lesson. */
+export const EMPTY_STARTS_VFR: readonly string[] = [
+  "sx-cover",
+  "gx-turn-std",
+  "gx-hold-heading",
+  "gx-quiz",
+  "gx-flight",
+  "gx-recap",
+];
 /** the keyboard hints are shown once on this device */
 const KEYS_SEEN = "ifr.studio.keys.v1";
 const STARTS: { id: SlideLayoutId | "flight"; t: [string, string]; s: [string, string] }[] = [
@@ -1229,7 +1247,14 @@ const STARTS: { id: SlideLayoutId | "flight"; t: [string, string]; s: [string, s
 export function emptySlideCard(
   lang: Lang,
   on: EmptyStarts,
-  thumbs?: { theme?: ThemeId; brand?: SchoolBrand; scenes?: Course["scenes"]; cockpit?: Course["cockpit"] },
+  thumbs?: {
+    theme?: ThemeId;
+    brand?: SchoolBrand;
+    scenes?: Course["scenes"];
+    cockpit?: Course["cockpit"];
+    /** the ready slides offered (default EMPTY_STARTS) */
+    starts?: readonly string[];
+  },
 ): { el: HTMLElement; destroy(): void } {
   const fr = lang === "fr";
   const views: SlideView[] = [];
@@ -1238,7 +1263,7 @@ export function emptySlideCard(
     const pick = on.example;
     const all = startSlides();
     const sc = { ...showcaseScenes(), ...(thumbs?.scenes ?? {}) };
-    for (const id of EMPTY_STARTS) {
+    for (const id of thumbs?.starts ?? EMPTY_STARTS) {
       const ex = all.find((g) => g.id === id);
       if (!ex) continue;
       const th = h("span", { class: "ce-fr-th", "aria-hidden": "true" });
@@ -1318,14 +1343,20 @@ export function emptySlideCard(
     seen = true;
   }
   const mod = PASTE_KEY.startsWith("⌘") ? "⌘" : "Ctrl+";
+  // keys only where there is a keyboard and a mouse; a touch screen gets its own gestures
+  const fine = typeof matchMedia === "function" && matchMedia("(hover: hover) and (pointer: fine)").matches;
   const keys = seen
     ? null
     : h(
         "p",
         { class: "ce-fr-keys" },
-        fr
-          ? `Double-clic : écrire · Glisser : déplacer · Suppr : effacer · ${mod}Z : annuler`
-          : `Double-click: type · Drag: move · Delete: remove · ${mod}Z: undo`,
+        fine
+          ? fr
+            ? `Double-clic : écrire · Glisser : déplacer · Suppr : effacer · ${mod}Z : annuler`
+            : `Double-click: type · Drag: move · Delete: remove · ${mod}Z: undo`
+          : fr
+            ? "Touchez deux fois pour écrire · Glissez pour déplacer"
+            : "Tap twice to type · Drag to move",
       );
   const el = h(
     "div",

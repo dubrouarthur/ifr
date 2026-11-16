@@ -59,7 +59,7 @@ const FR: Record<string, Pair> = {
     name: "Vol libre — VFR au-dessus des nuages",
     desc: "Ciel clair à 5500 ft au-dessus des îles Ardent. Explorez, chargez une approche, entraînez-vous à tout.",
   },
-  lesson: { name: "Leçon", desc: "" },
+  lesson: { name: "Situation de vol", desc: "" },
 };
 const KIND_FR: Record<Scenario["kind"], string> = {
   Departure: "Départ",
@@ -98,5 +98,5 @@ export function aircraftLabel(panel: "g1000" | "steam" | "airliner"): string {
     return fr ? "C172 · instruments classiques" : "C172 · classic gauges";
   if (panel === "airliner")
     return fr ? "C172 · écrans de ligne" : "C172 · airliner displays";
-  return fr ? "C172 · G1000" : "C172 · G1000";
+  return fr ? "C172 · écrans de vol" : "C172 · glass panel";
 }

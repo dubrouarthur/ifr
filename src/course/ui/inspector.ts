@@ -947,14 +947,15 @@ function cropOptions(
       },
     ];
   if (p.kind === "six") {
+    // plain names, as in the Instruments panel (never « AI » next to the « IA » assistant)
     const names = [
       t2(lang, "Full", "Complet"),
-      "ASI",
-      "AI",
-      "ALT",
-      "TC",
-      "HSI",
-      "VSI",
+      t2(lang, "Airspeed", "Anémomètre"),
+      t2(lang, "Attitude", "Horizon"),
+      t2(lang, "Altimeter", "Altimètre"),
+      t2(lang, "Turn coordinator", "Indicateur de virage"),
+      t2(lang, "Heading", "Conservateur de cap"),
+      t2(lang, "Vertical speed", "Variomètre"),
     ];
     return names.map((label, i) => ({
       label,

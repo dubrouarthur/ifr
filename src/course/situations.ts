@@ -1733,7 +1733,8 @@ const isSimBlock = (b: SlideBlock): b is SimBlock => b.kind === "instrument" || 
 /** The scene id a block of a slide shows: its own, or the slide's (undefined: the sample situation). */
 export function blockSceneId(slide: SlideCanvas, blockId?: string): { id: string | undefined; own: boolean } {
   const b = blockId ? slide.blocks.find((x) => x.id === blockId) : undefined;
-  if (b && isSimBlock(b) && b.scene) return { id: b.scene, own: true };
+  // a block that names the slide's own situation shows the slide's aircraft: it is not « its own situation »
+  if (b && isSimBlock(b) && b.scene) return { id: b.scene, own: b.scene !== slide.scene };
   return { id: slide.scene, own: false };
 }
 /** How many other instruments and simulator views of the slide show the same situation as this block. */

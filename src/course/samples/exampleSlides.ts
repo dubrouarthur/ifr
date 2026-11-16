@@ -610,8 +610,8 @@ function pplSlides(): GallerySlide[] {
       lines: [
         {
           text: L(
-            "Lead by **10 % of the climb rate**: 50 ft for 500 ft/min",
-            "Anticipez de **10 % du vario** : 50 ft pour 500 ft/min",
+            "Lead by **10 % of the climb rate**: 65 ft for 650 ft/min",
+            "Anticipez de **10 % du vario** : 65 ft pour 650 ft/min",
           ),
           dot: { g: "alt", moment: "lead" },
         },

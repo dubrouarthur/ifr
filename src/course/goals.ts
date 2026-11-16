@@ -1459,7 +1459,9 @@ function delegated(id: CheckId): GoalDef {
           : `Hold ${l.toLowerCase()}`;
       if (id === "altBand")
         return fr(lang)
-          ? `Tenez ${l.toLowerCase()}`
+          ? /^altitude/i.test(l)
+            ? `Tenez l’${l.toLowerCase()}`
+            : `Tenez ${l.toLowerCase()}`
           : `Hold ${l.toLowerCase()}`;
       if (id === "ias")
         return fr(lang)

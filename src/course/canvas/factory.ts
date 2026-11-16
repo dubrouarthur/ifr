@@ -179,8 +179,8 @@ const GAUGE_TITLES: Record<InstrumentGauge, L10n> = {
   "mfd.map": L("MFD map", "Carte MFD"),
 };
 const DISPLAY_TITLES: Record<string, L10n> = {
-  pfd: L("G1000 PFD", "PFD G1000"),
-  mfd: L("G1000 MFD", "MFD G1000"),
+  pfd: L("Flight display (PFD)", "Écran de vol (PFD)"),
+  mfd: L("Map display (MFD)", "Écran carte (MFD)"),
   six: L("Six-pack", "Six instruments de base"),
   stack: L("Radio stack and RMI", "Radios et RMI"),
   airlinerPfd: L("Airliner PFD", "PFD de ligne"),

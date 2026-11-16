@@ -162,8 +162,8 @@ const diffLabel = (d: number) => (uiLang() === "fr" ? DIFF_FR : DIFF)[d] ?? "";
 const COCKPITS: { id: CockpitType; title: string; desc: string }[] = [
   {
     id: "g1000",
-    title: "G1000",
-    desc: "G1000 glass: PFD + MFD, GFC 700 autopilot",
+    title: "Glass panel",
+    desc: "Glass panel: flight display + map display, autopilot",
   },
   {
     id: "steam",

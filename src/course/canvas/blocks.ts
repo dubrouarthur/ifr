@@ -1123,7 +1123,11 @@ function quizBlock(b: Of<"quiz">, env: BlockEnv): BlockView {
   if (!slot) {
     el.append(inner);
     const q = b.quiz;
-    inner.append(mk("div", "sl-q-eyebrow", tx("quizSlot", env.lang)));
+    // the slide's own eyebrow already says « Question »: never say it twice
+    const said = env.step?.slide?.blocks.some(
+      (x) => x.kind === "text" && (x.style === "eyebrow" || x.style === "label") && /question|quiz/i.test(x.text.en),
+    );
+    if (!said) inner.append(mk("div", "sl-q-eyebrow", tx("quizSlot", env.lang)));
     const prompt = mk("div", "sl-q-prompt");
     const pr = "prompt" in q && q.prompt ? loc(q.prompt, env.lang) : tx("calcSlot", env.lang);
     prompt.append(richFragment(pr, { lang: env.lang }));

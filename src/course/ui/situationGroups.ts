@@ -105,11 +105,11 @@ export function showsGroup(
         "p",
         { class: "ce-note sit-share" },
         T(
-          "This element has its own situation. ",
-          "Cet élément a sa propre situation. ",
+          "This instrument shows another aircraft than the slide. ",
+          "Cet instrument montre un autre avion que la diapo. ",
         ),
         linkBtn(
-          T("Show the slide’s again", "Reprendre celle de la diapo"),
+          T("Show the same aircraft", "Montrer le même avion"),
           () => S.join(o.blockId!),
         ),
       );
@@ -121,7 +121,7 @@ export function showsGroup(
           `The ${read.shared + 1} instruments of this slide show the same situation: they move together. `,
           `Les ${read.shared + 1} instruments de cette diapo montrent la même situation : ils bougent ensemble. `,
         ),
-        linkBtn(T("Give this one its own", "Donner la sienne à celui-ci"), () =>
+        linkBtn(T("Give it its own situation", "Lui donner sa propre situation"), () =>
           S.split(o.blockId!),
         ),
       );

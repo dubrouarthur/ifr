@@ -1968,7 +1968,7 @@ function setCockpit(t: CockpitType, announce = true, persist = true) {
   cduMoreItem.hidden = t === 'airliner';
   fitSoon();
   if (explain?.on) explain.set(true, t);
-  if (announce) toast(t === 'g1000' ? 'Instrument panel: G1000 glass' : t === 'steam' ? 'Instrument panel: classic six-pack' : 'Instrument panel: airliner PFD / ND (same C172 flight model)', 'info');
+  if (announce) toast(t === 'g1000' ? 'Instrument panel: glass flight displays' : t === 'steam' ? 'Instrument panel: classic six-pack' : 'Instrument panel: airliner PFD / ND (same C172 flight model)', 'info');
 }
 
 // control pedestal (footer): one row — throttle | flaps | trim | yoke | chrono | … | Switches · Controller · Shortcuts
@@ -2514,7 +2514,11 @@ function updateHeader() {
   // the lesson flying, else the one being briefed (its window is up, the flight waits at its start position)
   const ex = lesson?.ex ?? (briefing.isOpen ? briefing.run?.ex : null) ?? lastLessonEx;
   // a course flight loading: not the title of the previous flight
-  const name = courseLoading ? tr('cf.course') : ex ? exTitle(ex) : sim.scenario ? scenarioName(sim.scenario) : tr('course.freeFlight');
+  // capturing for a slide: the header says so (never « Leçon », which no slide is called)
+  const capName = courseBridge?.capturing && !ex
+    ? `${uiLang() === 'fr' ? 'Capture pour la diapo' : 'Capture for the slide'}${captureTitle ? ` : ${captureTitle}` : ''}`
+    : null;
+  const name = courseLoading ? tr('cf.course') : capName ?? (ex ? exTitle(ex) : sim.scenario ? scenarioName(sim.scenario) : tr('course.freeFlight'));
   const ap = sim.fp.approach;
   const hold = lesson?.rt.hold;
   const parts: string[] = [];

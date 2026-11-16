@@ -260,9 +260,9 @@ function momentRows(
 function annName(lang: Lang, a: Annotation, i: number): string {
   const txt =
     (a.type === "callout" || a.type === "tag") && a.text
-      ? loc(lang, a.text)
+      ? loc(lang, a.text).replace(/\*\*|__|\*/g, "").replace(/\s+/g, " ").trim()
       : "";
-  if (txt) return txt.length > 28 ? `${txt.slice(0, 27)}…` : txt;
+  if (txt) return txt.length > 64 ? `${txt.slice(0, 63)}…` : txt;
   const kind =
     a.type === "ring"
       ? t(lang, "Circle", "Cercle")

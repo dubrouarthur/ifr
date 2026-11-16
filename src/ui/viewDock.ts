@@ -21,7 +21,7 @@ export const LAYOUTS: readonly (readonly [DockLayout, string, string])[] = [
 
 /** the instrument panels: honest names (the aircraft and its flight model stay the C172 in all three) */
 export const PANELS: readonly (readonly [DockPanel, string, string])[] = [
-  ["g1000", "G1000 glass", "Garmin PFD and MFD"],
+  ["g1000", "Glass panel", "Flight display and map display"],
   ["steam", "Six-pack", "Classic gauges and radio stack"],
   ["airliner", "Airliner PFD / ND", "Display style with a mode control panel"],
 ];
@@ -77,10 +77,10 @@ registerStrings("fr", {
   "Bigger view, PFD + MFD": "Vue agrandie, PFD et MFD",
   "Full view, floating PFD": "Plein écran, PFD flottant",
   "Panel only, pure IFR": "Le tableau de bord seul, IFR pur",
-  "G1000 glass": "G1000 (écrans)",
+  "Glass panel": "Écrans de vol",
   "Six-pack": "Instruments classiques",
   "Airliner PFD / ND": "PFD / ND de ligne",
-  "Garmin PFD and MFD": "PFD et MFD Garmin",
+  "Flight display and map display": "Écran de vol et écran carte",
   "Classic gauges and radio stack": "Six instruments à aiguille et radios",
   "Display style with a mode control panel": "Présentation de ligne avec panneau de pilote automatique",
   "vd.view": "Vue",
@@ -90,7 +90,7 @@ registerStrings("fr", {
   "vd.camera": "Caméra",
   "vd.layout": "Disposition de l’écran",
   "vd.panel": "Tableau de bord",
-  "vd.note": "Chaque tableau de bord pilote le même modèle de vol du Cessna 172. D’autres avions arrivent.",
+  "vd.note": "Chaque tableau de bord pilote le même modèle de vol de l’avion-école quadriplace. D’autres avions arrivent.",
   "vd.autoHide": "Masquer la barre du haut en vol",
   "vd.keysCam": "V · Maj V",
   "vd.keysLay": "Tab · Maj Tab",
@@ -103,7 +103,7 @@ registerStrings("en", {
   "vd.camera": "Camera",
   "vd.layout": "Screen layout",
   "vd.panel": "Instrument panel",
-  "vd.note": "Every panel flies the same Cessna 172 flight model. More aircraft are coming.",
+  "vd.note": "Every panel flies the same four-seat trainer flight model. More aircraft are coming.",
   "vd.autoHide": "Auto-hide the top bar in flight",
   "vd.keysCam": "V · Shift V",
   "vd.keysLay": "Tab · Shift Tab",

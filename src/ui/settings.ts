@@ -28,8 +28,8 @@ export class SettingsModal extends Modal {
     const row = (title: string, desc: string, ctl: HTMLElement) => h('div', { class: 'set-row' }, h('div', {}, h('b', {}, title), h('span', {}, desc)), ctl);
     this.body.append(
       h('div', { class: 'set-sec' }, 'Instrument panel'),
-      row('Instrument panel', 'G1000 glass, a classic six-pack with a radio stack, or an airliner-style PFD / ND with a mode control panel. Every panel flies the same Cessna 172 flight model.', seg('cockpit', [['g1000', 'G1000'], ['steam', 'Six-pack'], ['airliner', 'Airliner PFD / ND']])),
-      row('Synthetic vision', 'Terrain and runway overlay on the G1000 PFD.', seg('svt', [[true, 'On'], [false, 'Off']])),
+      row('Instrument panel', 'Glass flight displays, a classic six-pack with a radio stack, or an airliner-style PFD / ND with a mode control panel. Every panel flies the same four-seat trainer flight model.', seg('cockpit', [['g1000', 'Glass panel'], ['steam', 'Six-pack'], ['airliner', 'Airliner PFD / ND']])),
+      row('Synthetic vision', 'Terrain and runway overlay on the flight display.', seg('svt', [[true, 'On'], [false, 'Off']])),
       h('div', { class: 'set-sec' }, 'Outside view'),
       row('Time of day', 'Night makes the approach lights, PAPI and runway lighting the only visual cues.', seg('tod', [['day', 'Day'], ['dusk', 'Dusk'], ['night', 'Night']])),
       row('Graphics quality', 'High: dense terrain, trees and anti-aliasing. Performance: lighter scene for laptops.', seg('gfx', [['high', 'High'], ['low', 'Performance']])),

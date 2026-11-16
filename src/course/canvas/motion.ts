@@ -259,13 +259,14 @@ export const MOTION_PRESETS: MotionPreset[] = [
   },
   {
     // IFH 4 / PHAK 8: a standard-rate turn is 3°/s (360° in 2 minutes); the bank that gives it is about TAS/10 + 7
-    // (≈ 16° at 100 KIAS, 3 000 ft). The bank is computed from the speed here: tan φ = ω·V / g.
+    // (≈ 17°); tan φ = ω·V / g gives 15.4° at 100 kt TAS and 16° at 105 kt: the slides say « about 15° » everywhere
+    // (gallery recap, quiz, this preset). The bank is computed from the speed here.
     id: "turn-std",
     level: "ppl",
     name: L("Standard-rate turn", "Virage standard"),
     what: L(
-      "The aircraft banks about 16°, the turn coordinator sits on the mark, the heading turns 3° a second.",
-      "L’avion s’incline d’environ 16°, l’indicateur de virage est sur le repère, le cap tourne de 3° par seconde.",
+      "The aircraft banks about 15°, the turn coordinator sits on the mark, the heading turns 3° a second.",
+      "L’avion s’incline d’environ 15°, l’indicateur de virage est sur le repère, le cap tourne de 3° par seconde.",
     ),
     view: six,
     duration: 36,
@@ -645,13 +646,14 @@ export const MOTION_PRESETS: MotionPreset[] = [
   },
   {
     // IFH 5 (timed turns, partial panel): at standard rate (3°/s) a 45° heading change takes 15 s; the clock and the
-    // turn coordinator are enough. Ramps of 1.5 s (2.25° each) and 13.5 s at 3°/s.
+    // turn coordinator are enough. Ramps of 1.5 s (2.25° each) and 13.5 s at 3°/s: the clock starts as the roll-in
+    // begins (t = 0) and the roll-out begins at 15 s, so the two marks are exactly 15 s apart and the turn is 45°.
     id: "timed-turn",
     level: "ifr",
     name: L("Timed turn", "Virage chronométré"),
     what: L(
-      "Start the clock as the turn coordinator reaches the mark: 15 s for 45°.",
-      "Top chrono quand l’indicateur de virage atteint le repère : 15 s pour 45°.",
+      "Start the clock as you roll in: 15 s at standard rate for 45°, then roll out.",
+      "Top chrono à la mise en virage : 15 s au taux standard pour 45°, puis on remet à plat.",
     ),
     view: six,
     duration: 22,
@@ -669,7 +671,7 @@ export const MOTION_PRESETS: MotionPreset[] = [
     marks: [
       {
         id: "start",
-        t: 1.5,
+        t: 0,
         label: L("Clock: 3° a second", "Top chrono : 3° par seconde"),
       },
       {

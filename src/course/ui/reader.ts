@@ -32,7 +32,7 @@ const S = {
   outline: ["Contents", "Sommaire"],
   outlineTitle: ["Contents", "Sommaire"],
   courseCtx: ["Course", "Cours"],
-  doneOf: ["{n} of {total} done", "{n} sur {total} fait"],
+  doneOf: ["Goal {n} of {total} reached", "Objectif {n} sur {total} atteint"],
   remaining: ["Do the remaining exercises", "Faire les exercices restants"],
   courseWalked: ["Course gone through", "Cours parcouru"],
   exercisesLeft: ["{n} exercises to do", "{n} exercices à faire"],
@@ -379,7 +379,16 @@ export const kindLabel = (k: StepKind, lang: Lang): string =>
 
 /** A step with a task the student does (a question, an exercise on the instrument, a calculation, a flight):
  *  the end screen counts these, never the reading steps. A free manipulation without a goal is not a task. */
+/** What a designed slide asks of the student: an « À vous » on an instrument or a simulator view ("goal"), a
+ *  question or a calculation block ("answer"), else null. The new decks carry their tasks on the slide. */
+export function slideTask(step: Step): "goal" | "answer" | null {
+  const bs = step.slide?.blocks ?? [];
+  if (bs.some((b) => !!(b as { yourTurn?: unknown }).yourTurn)) return "goal";
+  if (bs.some((b) => b.kind === "quiz" || b.kind === "calc")) return "answer";
+  return null;
+}
 export function isTask(step: Step): boolean {
+  if (slideTask(step)) return true;
   const k = KINDS[step.kind];
   if (!k?.acts) return false;
   if (step.kind === "try") return !!step.goal;

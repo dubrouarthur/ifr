@@ -222,7 +222,12 @@ export class SceneSims implements LoopClient {
   replace(scene: SimScene) {
     this.env.scenes = { ...this.env.scenes, [scene.id]: scene };
     for (const [k, e] of this.map) {
-      if (!e || !(k === `id:${scene.id}` || k.startsWith(`id:${scene.id}|`))) continue;
+      if (!(k === `id:${scene.id}` || k.startsWith(`id:${scene.id}|`))) continue;
+      // a lookup made before the situation existed: forget it so the next draw builds the aircraft
+      if (!e) {
+        this.map.delete(k);
+        continue;
+      }
       try {
         e.scene = scene;
         e.diffs = applyScene(e.sim, scene);
