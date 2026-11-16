@@ -76,7 +76,7 @@ describe("the course player says what is true", () => {
     expect(ps("back", "fr")).toBe("Précédent");
     expect(ps("hint", "fr")).toBe("Un indice");
     expect(ps("remaining", "fr")).toBe("Faire les exercices restants");
-    expect(ps("doneOf", "fr", { n: 1, total: 4 })).toBe("1 sur 4 fait");
+    expect(ps("doneOf", "fr", { n: 1, total: 4 })).toBe("Objectif 1 sur 4 atteint");
     const src = [
       "src/course/ui/reader.ts",
       "src/course/ui/player.ts",

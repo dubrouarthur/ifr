@@ -34,6 +34,8 @@ import {
 import { courseFromPlan } from "./build";
 import { GAUGE_IDS } from "./catalog";
 import { MOTION_PRESETS } from "../canvas/motion";
+import { viewTitle } from "../canvas/factory";
+import type { InstrumentView } from "../types";
 import { AI_SPARK as SPARK } from "./entry";
 import "../../styles/course-ai.css";
 
@@ -122,7 +124,12 @@ function viewName(v: string, lang: Lang): string {
   if (v === "six") return T(lang, "Six instruments", "Six instruments");
   if (v === "sim") return T(lang, "Simulator", "Simulateur");
   if (CALC_NAMES[v]) return loc(CALC_NAMES[v], lang);
-  return v.toUpperCase();
+  // the same names as the Instruments panel (« Anémomètre », « Horizon artificiel »…), never a code
+  if (v === "hsi") return T(lang, "Heading indicator (HSI)", "Conservateur de cap (HSI)");
+  const t = (GAUGE_IDS as readonly string[]).includes(v)
+    ? viewTitle({ kind: "gauge", gauge: v } as InstrumentView)
+    : undefined;
+  return t ? loc(t, lang) : v.toUpperCase();
 }
 const animationName = (id: string, lang: Lang): string => {
   const p = MOTION_PRESETS.find((x) => x.id === id);

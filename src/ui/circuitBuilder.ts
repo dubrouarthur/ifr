@@ -4487,7 +4487,7 @@ export class CircuitBuilder extends Modal {
               c.cockpit ?? "",
               [
                 ["", "Any"],
-                ["g1000", "G1000 glass"],
+                ["g1000", "Glass panel"],
                 ["steam", "Steam gauges"],
                 ["airliner", "Airliner"],
               ],

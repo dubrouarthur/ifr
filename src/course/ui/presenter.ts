@@ -313,6 +313,22 @@ export class Presenter {
     }, 1000);
   }
   private onDemoKey = (e: KeyboardEvent) => {
+    // Space turns the page, as the deck says, even when one of its buttons or sliders has the focus
+    const t = e.target as Node | null;
+    if (
+      e.key === " " &&
+      this.demo.open &&
+      t &&
+      this.demo.el.contains(t) &&
+      !e.metaKey &&
+      !e.ctrlKey &&
+      !e.altKey
+    ) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      this.player.next();
+      return;
+    }
     if (!this.demo.key(e)) return;
     e.preventDefault();
     e.stopImmediatePropagation();

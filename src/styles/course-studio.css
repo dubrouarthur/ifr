@@ -806,8 +806,9 @@
 .is-studio .ce-st-n {
   position: absolute;
   z-index: 2;
+  /* bottom-left of the 79 px picture: the slide's title (top-left) stays readable */
   left: 6px;
-  top: 6px;
+  top: 53px;
   min-width: 20px;
   height: 20px;
   padding: 0 5px;
@@ -1342,8 +1343,8 @@
     --panel-w: 320px;
   }
 }
-/* iPad landscape and smaller laptops: the panel floats over the canvas (the slide keeps its size) */
-@media (max-width: 1279px) {
+/* iPad landscape and laptops up to 1365 px (1280 × 800 included): the panel floats over the canvas, the slide keeps its size */
+@media (max-width: 1365px) {
   .ce-app.is-studio {
     --rail-w: 80px;
     --insp-w: 288px;
@@ -1520,7 +1521,7 @@
 .ce-body.studio.is-empty .ce-center {
   grid-template-rows: minmax(0, 1fr);
 }
-@media (max-width: 1279px) {
+@media (max-width: 1365px) {
   .ce-body.studio.is-empty.panel-open {
     grid-template-columns: var(--rail-w) 0 minmax(0, 1fr) 0;
   }
@@ -1653,7 +1654,7 @@
 .ce-app.is-studio > .ce-toast {
   bottom: 176px;
 }
-@media (max-width: 1279px) {
+@media (max-width: 1365px) {
   .ce-app.is-studio > .ce-toast {
     bottom: 150px;
   }
@@ -1752,7 +1753,7 @@
 .sle-bar .sle-tb {
   white-space: nowrap;
 }
-@media (max-width: 1279px) {
+@media (max-width: 1365px) {
   .ce-body.studio.panel-open .sle-bar {
     visibility: hidden;
   }
@@ -2878,4 +2879,42 @@
 }
 .ce-capt-acts .ce-btn.ghost {
   align-self: flex-start;
+}
+
+/* ------------------------------------------------------------ fix wave: captures fit their panel, one gallery at a time */
+.ce-capt {
+  grid-template-columns: 96px minmax(0, 1fr);
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.ce-capt-list {
+  min-width: 0;
+  padding-left: 0;
+}
+.ce-capt-pic img {
+  max-width: 100%;
+}
+.ce-capt-acts .ce-btn {
+  white-space: normal;
+  text-align: left;
+  min-width: 0;
+  max-width: 100%;
+}
+.ce-capt-new,
+.ce-capt-used {
+  margin-left: 4px;
+}
+/* a rail panel open: the « Que voulez-vous montrer ? » card steps aside (never two galleries, never one under the
+   other on an iPad) */
+.ce-body.studio.panel-open .ce-empty-wrap {
+  display: none;
+}
+/* gallery card titles: two lines before an ellipsis (« L’anémomètre et ses arcs » reads whole) */
+.ce-tpl-l b {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }

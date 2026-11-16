@@ -66,8 +66,8 @@ export const HOME_COPY = {
     en: "Or a quick flight, in one click",
   },
   flyPhoto: {
-    fr: "Cessna 172 · tableau classique ou G1000",
-    en: "Cessna 172 · classic panel or G1000",
+    fr: "Avion-école quadriplace · tableau classique ou écrans de vol",
+    en: "Four-seat trainer · classic panel or glass panel",
   },
   newHere: { fr: "Nouveau sur Wingdeck ?", en: "New to Wingdeck?" },
   newHereLine: {

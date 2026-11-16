@@ -114,6 +114,8 @@ export const DEMO_RANGE: Record<
   pitch: { min: -15, max: 20, step: 1, big: 5 },
 };
 export const norm360 = (d: number): number => ((d % 360) + 360) % 360;
+/** −180…180 */
+const norm180 = (d: number): number => norm360(d + 180) - 180;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 /** A target value kept in its range (the heading wraps). */
 export function clampAxis(axis: DemoAxis, v: number): number {
@@ -189,12 +191,16 @@ export function demoKey(
 /** « Monter à … »: 1 000 ft up, on a 500 ft step (what an instructor would ask). */
 export const climbTarget = (altFt: number): number =>
   clampAxis("alt", Math.round((altFt + 1000) / 500) * 500);
-/** « Descendre à … »: 1 000 ft down on a 500 ft step, never below 1 000 ft above the ground. */
+/** « Descendre à … »: 1 000 ft down on a 500 ft step, never below 1 000 ft above the ground. A target that is not at
+ *  least 150 ft below the aircraft is no descent: the deck disables the action (canDescend). */
 export const descendTarget = (altFt: number, groundFt = 0): number =>
   Math.max(
     Math.ceil((groundFt + 1000) / 100) * 100,
     clampAxis("alt", Math.round((altFt - 1000) / 500) * 500),
   );
+export const canDescend = (altFt: number, groundFt = 0): boolean =>
+  descendTarget(altFt, groundFt) <= altFt - 150;
+export const canClimb = (altFt: number): boolean => climbTarget(altFt) >= altFt + 150;
 /** A standard-rate turn of 90° (3 °/s: 30 s; FAA Instrument Flying Handbook ch. 7). */
 export const turnTarget = (hdg: number, dir: -1 | 1): number =>
   Math.round(norm360(hdg + dir * 90));
@@ -333,11 +339,13 @@ export class DemoPilot {
   cruise: number;
   constructor(sim: Sim) {
     this.t = targetsOf(sim);
-    this.cruise = this.t.power;
+    this.cruise = levelPowerOf(sim, this.t.power);
   }
-  /** Take the aircraft as it is now. */
+  /** Take the aircraft as it is now: a descent on final keeps descending (its pitch is held), level flight keeps
+   *  its altitude. Holding the altitude of a final on approach power would pitch up into the stall. */
   engage(sim: Sim) {
     this.t = targetsOf(sim);
+    if (Math.abs(sim.ac.data.vsFpm) > 200) this.t.vertical = "pitch";
     this.assist.configure(sim, { holdAlt: true }, true);
     this.lastPitch = null;
     this.levelPower = null;
@@ -423,6 +431,15 @@ export class DemoPilot {
       // the climb waits for the speed
       const climbing = t.alt > sim.ac.s.altFt + 30;
       a.targetAlt = climbing && d.iasKt < 63 ? sim.ac.s.altFt : t.alt;
+      // speed floor (Vs1 48 KIAS + 15 kt): level flight on too little power: power up, and below 58 kt the nose
+      // goes down a little before the altitude is held again (FAA AFH ch. 4, slow flight and stall recovery)
+      if (!sim.ac.s.onGround && d.iasKt < 63) {
+        if (this.t.power < this.cruise) this.t.power = this.cruise;
+        if (d.iasKt < 58) {
+          this.t.power = 100;
+          a.targetAlt = Math.min(a.targetAlt, sim.ac.s.altFt - 100);
+        }
+      }
       if (this.levelPower !== null && Math.abs(sim.ac.s.altFt - t.alt) < 60) {
         this.t.power = this.levelPower;
         this.levelPower = null;
@@ -442,6 +459,13 @@ export class DemoPilot {
       c.trim = clamp(c.trim + e * 0.012 * dt, -1, 1);
     } else this.lastPitch = null;
   }
+}
+/**
+ * The throttle that holds level flight: the situation's own when it starts level, else the C172S cruise setting
+ * (about 2 300 RPM, ≈ 60–65 % power: POH section 5, cruise performance), never an approach power.
+ */
+export function levelPowerOf(sim: Sim, power: number): number {
+  return Math.abs(sim.ac.data.vsFpm) <= 200 && power >= 45 ? power : Math.max(power, 65);
 }
 function groundOf(sim: Sim): number {
   const agl = (sim.ac.data as { aglFt?: number }).aglFt;
@@ -770,13 +794,14 @@ export class DemoDeck {
   private chip(
     label: string,
     f: () => void,
-    o: { on?: boolean; ico?: Parameters<typeof icon>[0] } = {},
+    o: { on?: boolean; ico?: Parameters<typeof icon>[0]; off?: string } = {},
   ) {
     return h(
       "button",
       {
         type: "button",
         class: `dm-chip${o.on ? " on" : ""}`,
+        ...(o.off ? { disabled: "", title: o.off } : {}),
         ...(o.on !== undefined
           ? { "aria-pressed": o.on ? "true" : "false" }
           : {}),
@@ -800,6 +825,8 @@ export class DemoDeck {
     const sig = [
       climbTarget(alt),
       descendTarget(alt, groundOf(e.sim)),
+      canClimb(alt),
+      canDescend(alt, groundOf(e.sim)),
       this.failOpen,
       this.frozen,
       e.motion?.state ?? "",
@@ -822,14 +849,19 @@ export class DemoDeck {
     wrap.append(
       this.chip(dw("turnL", lang), () => this.act((p, s) => p.turn(-1, s))),
       this.chip(dw("turnR", lang), () => this.act((p, s) => p.turn(1, s))),
-      this.chip(dw("climb", lang, { a: ftText(climbTarget(alt), lang) }), () =>
-        this.act((p, s) => p.climb(s)),
+      this.chip(
+        dw("climb", lang, { a: ftText(climbTarget(alt), lang) }),
+        () => this.act((p, s) => p.climb(s)),
+        canClimb(alt) ? {} : { off: lang === "fr" ? "Déjà au plafond de la démonstration" : "Already at the demonstration’s ceiling" },
       ),
       this.chip(
         dw("descend", lang, {
           a: ftText(descendTarget(alt, groundOf(sim)), lang),
         }),
         () => this.act((p, s) => p.descend(s)),
+        canDescend(alt, groundOf(sim))
+          ? {}
+          : { off: lang === "fr" ? "Déjà à 1 000 ft du sol" : "Already 1,000 ft above the ground" },
       ),
       this.chip(dw("level", lang), () => this.act((p, s) => p.level(s))),
       this.chip(
@@ -948,7 +980,7 @@ export class DemoDeck {
           value = fly ? t.hdg : norm360(d.hdgTrue);
           target = hdgText(value);
           now = dw("now", lang, { v: hdgText(d.hdgTrue) });
-          held = fly && t.lateral === "hdg";
+          held = fly && t.lateral === "hdg" && Math.abs(norm180(d.hdgTrue - t.hdg)) <= 10;
           break;
         case "alt":
           value = fly ? t.alt : sim.ac.s.altFt;
@@ -956,7 +988,7 @@ export class DemoDeck {
           now = dw("now", lang, {
             v: `${ftText(Math.round(sim.ac.s.altFt / 10) * 10, lang)} · ${vsText(d.vsFpm, lang)}`,
           });
-          held = fly && t.vertical === "alt";
+          held = fly && t.vertical === "alt" && Math.abs(sim.ac.s.altFt - t.alt) <= 100;
           break;
         case "power":
           value = fly ? t.power : Math.round(sim.controls.throttle * 100);
@@ -967,13 +999,13 @@ export class DemoDeck {
           value = fly && t.lateral === "bank" ? t.bank : d.rollDeg;
           target = bankText(value, lang);
           now = dw("now", lang, { v: bankText(d.rollDeg, lang) });
-          held = fly && t.lateral === "bank";
+          held = fly && t.lateral === "bank" && Math.abs(d.rollDeg - t.bank) <= 5;
           break;
         case "pitch":
           value = fly && t.vertical === "pitch" ? t.pitch : d.pitchDeg;
           target = pitchText(value);
           now = dw("now", lang, { v: pitchText(d.pitchDeg) });
-          held = fly && t.vertical === "pitch";
+          held = fly && t.vertical === "pitch" && Math.abs(d.pitchDeg - t.pitch) <= 3;
           break;
       }
       r.val.textContent = target;
@@ -1221,7 +1253,12 @@ export class DemoPanel {
     this.el.closest(".pr-app")?.classList.add("dm-on");
     this.render();
     this.o.changed?.();
-    this.deck.el.querySelector<HTMLElement>(who === "student" ? ".dm-btn" : ".dm-range")?.focus({ preventScroll: true });
+    // the focus goes to the deck itself (not a slider that would swallow Space): its keys work at once
+    if (who === "student") this.deck.el.querySelector<HTMLElement>(".dm-btn")?.focus({ preventScroll: true });
+    else {
+      if (!this.deck.el.hasAttribute("tabindex")) this.deck.el.tabIndex = -1;
+      this.deck.el.focus({ preventScroll: true });
+    }
     this.postSims(true);
   }
   close() {
@@ -1246,7 +1283,12 @@ export class DemoPanel {
   key(e: KeyboardEvent): boolean {
     if (!this.deck) return false;
     const t = e.target as HTMLElement | null;
-    if (t?.closest?.("input, textarea, select, [contenteditable='true'], .sl-strip")) return false;
+    // the deck's own sliders fly too (arrows, Page, [ ]): only other fields keep their keys
+    if (
+      !t?.classList?.contains("dm-range") &&
+      t?.closest?.("input, textarea, select, [contenteditable='true'], .sl-strip")
+    )
+      return false;
     if (e.metaKey || e.ctrlKey || e.altKey) return false;
     if (!this.deck.key(e)) return false;
     this.postSims(true);

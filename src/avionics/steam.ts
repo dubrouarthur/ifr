@@ -26,8 +26,38 @@ export interface SteamState {
   rmiHdg: number;
   /** when each annunciator lit (s, wall clock): a new light flashes for 10 s, then stays steady (C172S) */
   litSince: Map<Annunciator, number>;
+  /** wet compass: the last airspeed seen (kt) and the smoothed acceleration (kt/s) that tilts its card */
+  compassIas?: number;
+  compassAcc?: number;
 }
 export const newSteamState = (): SteamState => ({ frozenHdg: 0, frozenPitch: 0, frozenRoll: 0, compass: 0, tcRate: 0, tcSpin: 1, rmiHdg: NaN, litSince: new Map() });
+
+/** Magnetic dip used for the wet compass: about 62–64° over France and the Benelux (NOAA/BGS WMM2025 inclination
+ *  map), the area the training world flies in. */
+export const COMPASS_DIP_DEG = 63;
+/**
+ * What a wet (pendulous) compass card reads once it has settled, from the flight state.
+ * The card hangs along the apparent vertical: banked with the aircraft in a coordinated turn, tilted front-down when
+ * the aircraft accelerates. The Earth's field has a large vertical part (the dip), so a tilted card turns towards
+ * that part: the northerly turning error (turning from north the card first goes the other way, it lags; through
+ * south it leads: « UNOS / ANDS ») and the acceleration error on east and west headings (accelerate: it shows a turn
+ * to the north; slow down: to the south). FAA IFH ch. 5 (Magnetic compass errors); EASA ATPL 022 (compass errors).
+ * Field in north-east-down: (cos I, 0, sin I); the card plane's yaw, pitch and roll are the heading, −atan(a/g) and
+ * the bank; the reading is the angle of the projected field from the nose.
+ */
+export function compassReading(hdgDeg: number, bankDeg: number, accelKtS = 0, dipDeg = COMPASS_DIP_DEG): number {
+  const psi = hdgDeg * D;
+  const phi = Math.max(-40, Math.min(40, bankDeg)) * D; // the card hits its stops at about 18° of tilt; keep it sane
+  const th = -Math.atan((accelKtS * 0.5144) / 9.81);
+  const tanI = Math.tan(dipDeg * D);
+  const x1 = Math.cos(psi);
+  const y1 = -Math.sin(psi);
+  const z1 = tanI;
+  const x2 = x1 * Math.cos(th) - z1 * Math.sin(th);
+  const z2 = x1 * Math.sin(th) + z1 * Math.cos(th);
+  const yb = y1 * Math.cos(phi) + z2 * Math.sin(phi);
+  return ((Math.atan2(-yb, x2) / D) % 360 + 360) % 360;
+}
 /** the cockpit's panel (callers that pass no state) */
 const defaultSteam = newSteamState();
 const nowS = () => (typeof performance !== 'undefined' ? performance.now() : 0) / 1000;
@@ -129,13 +159,19 @@ function topStrip(ctx: CanvasRenderingContext2D, sim: Sim, dt: number, st: Steam
   gtext(ctx, 'STALL', 211, 29, 14, stall ? '#000' : '#6b6e70', 'center', 800);
   // C172S annunciator panel: red warnings, amber cautions, lit from the systems model (dark without power)
   steamAnnunciators(ctx, sim, 606, 10, 410, 36, st.litSince);
-  // wet compass
-  let diff = d.hdgTrue - st.compass;
+  // wet compass: the card settles on what its tilt makes it read (turning and acceleration errors), with the lag of
+  // its liquid; paused, it shows the settled reading
+  if (dt > 0 && Number.isFinite(st.compassIas)) {
+    const a = (d.iasKt - (st.compassIas as number)) / dt;
+    st.compassAcc = (st.compassAcc ?? 0) + (Math.max(-6, Math.min(6, a)) - (st.compassAcc ?? 0)) * Math.min(1, dt * 2);
+  }
+  st.compassIas = d.iasKt;
+  const settled = compassReading(d.hdgTrue, d.rollDeg, dt > 0 ? (st.compassAcc ?? 0) : 0);
+  let diff = settled - st.compass;
   if (diff > 180) diff -= 360;
   if (diff < -180) diff += 360;
-  // the card swings towards the heading (lag, faster near north/south); paused, it shows the settled reading
-  if (dt === 0) st.compass = (d.hdgTrue + 360) % 360;
-  else st.compass = (st.compass + diff * Math.min(1, dt * (1.2 + Math.abs(Math.cos(d.hdgTrue * D)) * 1.5)) + Math.sin(performance.now() / 700) * 0.05 + 360) % 360;
+  if (dt === 0) st.compass = settled;
+  else st.compass = (st.compass + diff * Math.min(1, dt * 1.6) + Math.sin(performance.now() / 700) * 0.05 + 360) % 360;
   const cx = 460;
   ctx.save();
   ctx.fillStyle = '#e8e2cf';

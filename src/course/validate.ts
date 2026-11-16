@@ -1125,7 +1125,13 @@ function step(cx: Ctx, s: Step, path: string) {
       ids,
     );
 
-  const goalLen = s.goal?.all?.length ?? 0;
+  // a designed slide's « À faire » rows point at the goal of its « À vous » instrument when the step has none
+  let goalLen = s.goal?.all?.length ?? 0;
+  if (!s.goal)
+    for (const b of s.slide?.blocks ?? []) {
+      const yt = (b as { yourTurn?: { goal?: { all?: unknown[] } } }).yourTurn;
+      goalLen = Math.max(goalLen, yt?.goal?.all?.length ?? 0);
+    }
   (s.reader ?? []).forEach((b, i) =>
     readerBlock(cx, s, b, `${path}.reader[${i}]`, goalLen),
   );
@@ -1234,8 +1240,8 @@ function readerBlock(
               "ref.goal",
               `${path}.rows[${i}].check`,
               L(
-                `Row ${i + 1} points at goal check ${r.check}, the goal has ${goalLen}`,
-                `La ligne ${i + 1} vise la vérification ${r.check}, l’objectif en a ${goalLen}`,
+                `“Do this” row ${i + 1} is linked to no simulator goal: pick its goal or remove it`,
+                `La ligne ${i + 1} de « À faire » n’est reliée à aucun objectif du simulateur : choisissez son objectif ou supprimez-la`,
               ),
               ids,
             );

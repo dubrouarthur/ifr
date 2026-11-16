@@ -4,6 +4,8 @@ import { applyScene } from "../src/course/scene";
 import { sceneOfSituation, defaultSituation } from "../src/course/situations";
 import {
   applyMirror,
+  canClimb,
+  canDescend,
   clampAxis,
   climbTarget,
   demoFailures,
@@ -170,6 +172,45 @@ describe("the demo flies the simulator's flight model", () => {
     fly(sim, p, 10);
     expect(sim.ac.data.rollDeg).toBeLessThan(-15);
     expect(sim.controls.throttle).toBeCloseTo(0.4, 5);
+  });
+});
+
+describe("the demo on a final approach (descending on approach power)", () => {
+  const final = () => simAt({ hdg: 270, altFt: 1420, iasKt: 65, vsFpm: -450, power: 24 });
+  it("taking the controls keeps the descent and never slows to the stall", () => {
+    const sim = final();
+    const p = new DemoPilot(sim);
+    p.engage(sim);
+    expect(p.t.vertical).toBe("pitch");
+    let minIas = 999;
+    for (let i = 0; i < 10; i++) {
+      fly(sim, p, 1);
+      minIas = Math.min(minIas, sim.ac.data.iasKt);
+    }
+    expect(minIas).toBeGreaterThan(55);
+    expect(sim.ac.data.stallWarn).toBe(false);
+  });
+  it("« Mettre en palier » adds level-flight power, not the approach power, and keeps flying", () => {
+    const sim = final();
+    const p = new DemoPilot(sim);
+    p.engage(sim);
+    expect(p.cruise).toBeGreaterThanOrEqual(60);
+    p.level(sim);
+    let minIas = 999;
+    for (let i = 0; i < 40; i++) {
+      fly(sim, p, 1);
+      minIas = Math.min(minIas, sim.ac.data.iasKt);
+    }
+    expect(minIas).toBeGreaterThan(55);
+    p.turn(1, sim);
+    fly(sim, p, 30);
+    expect(sim.ac.data.iasKt).toBeGreaterThan(55);
+    expect(sim.ac.data.stallWarn).toBe(false);
+  });
+  it("« Descendre » is not offered when it would climb (1 420 ft, ground 520 ft)", () => {
+    expect(canDescend(1420, 520)).toBe(false);
+    expect(canDescend(3000, 0)).toBe(true);
+    expect(canClimb(3000)).toBe(true);
   });
 });
 

@@ -63,6 +63,7 @@ import {
   hasPresenterReveal,
   icon,
   isTask,
+  slideTask,
   L,
   ps,
   ReaderView,
@@ -2115,10 +2116,16 @@ export class CoursePlayer {
     };
     const tasks = steps.filter(isTask);
     const left = tasks.filter((s) => !attempted(s));
-    const acting = steps.filter((s) => s.goal && s.kind === "try");
+    const acting = steps.filter(
+      (s) => (s.goal && s.kind === "try") || slideTask(s) === "goal",
+    );
     const met = acting.filter((s) => marks[s.id]?.goalMet).length;
     const asked = steps.filter(
-      (s) => stepQuiz(s) || s.kind === "calc" || s.kind === "quiz",
+      (s) =>
+        stepQuiz(s) ||
+        s.kind === "calc" ||
+        s.kind === "quiz" ||
+        slideTask(s) === "answer",
     );
     const right = asked.filter(
       (s) => marks[s.id]?.correct || marks[s.id]?.calcOk,

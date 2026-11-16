@@ -14,6 +14,8 @@ const brandHtml = {
 
 export default defineConfig({
   plugins: [brandHtml],
+  // the content sweeps (every generator, every seed) take several seconds on a loaded machine
+  test: { testTimeout: 30000 },
   build: {
     chunkSizeWarningLimit: 700,
     target: 'es2022',

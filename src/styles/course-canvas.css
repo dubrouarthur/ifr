@@ -1184,6 +1184,26 @@ button.sl-q-opt.is-right:hover {
 .sl-motion-btn.is-gone {
   display: none;
 }
+/* while the animation plays, « Pause » stays off the instrument face (projector, student screen): it shows when the
+   pointer is on the slide or the key focus reaches it; paused or ended (« Reprendre », « Rejouer ») it always shows */
+.sl-view .sl-motion-btn[data-state="pause"] {
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.sl-view:hover .sl-motion-btn[data-state="pause"],
+.sl-view .sl-motion-btn[data-state="pause"]:focus-visible {
+  opacity: 1;
+}
+@media (hover: none) {
+  .sl-view .sl-motion-btn[data-state="pause"] {
+    opacity: 0.85;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sl-view .sl-motion-btn[data-state="pause"] {
+    transition: none;
+  }
+}
 .sl-motion-btn .sl-hud-ic {
   position: relative;
   width: 12px;
@@ -2273,9 +2293,8 @@ button.sl-q-opt.is-right:hover {
   font-size: 13px;
 }
 .ce-motion-moment > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
 }
 .ce-motion-sel {
   min-height: 44px;
