@@ -348,12 +348,66 @@ export type PresenterAction =
   | { k: "wind"; dKt: number }
   | { k: "reset" }
   | { k: "showPlate" };
+// ---------------------------------------------------------------- instrument animation (canvas/motion.ts)
+/** What an animation moves: the flight state of the situation, drawn by the simulator's own renderers. */
+export type MotionChannel =
+  | "ias" // indicated airspeed, kt
+  | "alt" // altitude, ft, from the situation's start (+ up)
+  | "vs" // vertical speed, ft/min
+  | "hdg" // heading, °, from the start (or the course / absolute: MotionScript.hdgRef)
+  | "pitch" // pitch attitude, ° (absent: the path plus the angle of attack the wing needs)
+  | "bank" // bank, ° (+ right)
+  | "turn" // rate of turn, °/s (+ right): the bank follows from the speed
+  | "rpm" // engine RPM
+  | "cdi" // lateral deviation, fraction of full scale (+ = the course is to the right)
+  | "gs" // glide-path deviation, fraction of full scale (+ = the path is above)
+  | "vacuum"; // vacuum failure, 0 (working) → 1 (gyros run down)
+/** A short scripted flight: keyframes per channel, interpolated smoothly (monotone cubic). */
+export interface MotionScript {
+  /** seconds */
+  duration: number;
+  /** [t s, value] keys, sorted by t */
+  tracks: Partial<Record<MotionChannel, [number, number][]>>;
+  /** what the heading keys are measured from (default "start") */
+  hdgRef?: "start" | "course" | "abs";
+  /** start on the same radial at this DME distance (NM) */
+  startDme?: number;
+  /** the moment the picture says the most (thumbnails, reduced motion), s */
+  telling?: number;
+  /** named moments: a callout tied to one appears then */
+  marks?: MotionMark[];
+}
+export interface MotionMark {
+  id: string;
+  label: L10n;
+  /** at this time (s), or when `channel` first reaches `value` */
+  t?: number;
+  channel?: MotionChannel;
+  value?: number;
+}
+/** The animation of an instrument on a slide. */
+export interface InstrumentMotion {
+  /** a named animation (canvas/motion.ts MOTION_PRESETS) */
+  preset?: string;
+  /** an animation of its own (used when there is no preset) */
+  script?: MotionScript;
+  /** 0.5, 1 (default) or 2 */
+  speed?: number;
+  /** start again at the end (default: once, then the last picture stays) */
+  loop?: boolean;
+}
+
 export type Annotation = {
   id: string;
   pane: 0 | 1;
   when?: "always" | { step: number } | `afterCheck:${number}` | "onReveal";
   /** explain region id, survives layout changes */
   anchor?: string;
+  /**
+   * appears when the instrument's animation reaches this moment (a mark of the animation, canvas/motion.ts:
+   * the needle reaches the value the callout names); before it the callout is hidden on the slide
+   */
+  moment?: string;
 } & (
   | { type: "callout"; n: number; at: Pt; text?: L10n; box?: Rect }
   | { type: "ring"; rect: Rect; rot?: number }
@@ -1211,6 +1265,9 @@ export interface BlockBase {
   hiddenInEditor?: boolean;
   /** shown only to the presenter (console), never on the projector or to the student */
   presenterOnly?: boolean;
+  /** a note to the course's author (« Remplacez ce texte par… »): shown only while editing, never to a student,
+   *  on the projector, in a thumbnail or in the reader text */
+  editorOnly?: boolean;
 }
 
 /** Type styles (the only text sizes a theme defines). */
@@ -1383,6 +1440,11 @@ export type SlideBlock = BlockBase &
         bezel?: boolean;
         /** hand control to the student on the slide's instruments */
         yourTurn?: YourTurn;
+        /**
+         * a short flight the instrument plays by itself (canvas/motion.ts): every instrument of the slide that shows
+         * the same situation moves with it, as one aircraft. Absent: the instrument is as before (still or live).
+         */
+        motion?: InstrumentMotion;
       }
     | {
         kind: "simViewport";

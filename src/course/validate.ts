@@ -46,6 +46,7 @@ import type {
 } from "./types";
 import { goalParamIssues } from "./goals";
 import { stripCramped } from "./canvas/controlStrip";
+import { motionIssues, motionMarks } from "./canvas/motion";
 import { sha256Hex } from "../lib/idb";
 
 export type IssueLevel = "error" | "warn";
@@ -3050,6 +3051,29 @@ function slide(cx: Ctx, s: Step, c: SlideCanvas, path: string) {
             ),
             ids,
           );
+        // the animation (canvas/motion.ts): optional; a callout tied to one of its moments must name one
+        if (b.motion !== undefined)
+          for (const m of motionIssues(b.motion))
+            push(cx, "error", "slide", `${p}.motion`, m, ids);
+        {
+          const marks = new Set(motionMarks(b.motion).map((m) => m.id));
+          (b.annotations ?? []).forEach(
+            (a, j) =>
+              a.moment !== undefined &&
+              !marks.has(a.moment) &&
+              push(
+                cx,
+                "warn",
+                "slide",
+                `${p}.annotations[${j}].moment`,
+                L(
+                  "This callout waits for a moment the animation does not have: it is always shown",
+                  "Cette bulle attend un moment que l’animation n’a pas : elle est toujours affichée",
+                ),
+                ids,
+              ),
+          );
+        }
         if (b.yourTurn)
           yourTurn(
             cx,

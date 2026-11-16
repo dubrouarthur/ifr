@@ -19,11 +19,23 @@ import {
 import { Overlay } from "../stage/overlay";
 import { stageLoop, type LoopClient, type StageLoop } from "../stage/host";
 import { StripPilot, type Box } from "./controlStrip";
+import {
+  applyFrame,
+  bakeMotion,
+  motionFits,
+  motionKey,
+  motionPreset,
+  motionScript,
+  MotionRun,
+  prefersReducedMotion,
+} from "./motion";
+import { readySituation, sceneOfSituation } from "../situations";
 import type {
   Annotation,
   Cockpit,
   InstrumentView,
   Lang,
+  InstrumentMotion,
   ReadoutId,
   SimScene,
   StageControl,
@@ -45,6 +57,10 @@ export interface SimEntry {
   failures?: Partial<Failures>;
   /** the hands on the flying controls, when a control strip shows this situation (canvas/controlStrip.ts) */
   pilot?: StripPilot;
+  /** the animation the slide plays on this situation (canvas/motion.ts): it writes the frames, never steps */
+  motion?: MotionRun;
+  /** what the animation was built from (« Réinitialiser » and a situation edit build it again) */
+  motionSpec?: InstrumentMotion;
 }
 
 // A situation added to the course while a slide is open (« Garder comme départ » in the editor): the open view
@@ -65,7 +81,12 @@ export class SceneSims implements LoopClient {
   private loop: StageLoop | null = null;
   private frameNo = 0;
   constructor(public env: SceneEnv) {}
-  private key(scene: SimScene | string, failures?: Partial<Failures>): string {
+  private key(
+    scene: SimScene | string,
+    failures?: Partial<Failures>,
+    motion?: InstrumentMotion,
+  ): string {
+    const m = motionScript(motion) ? `|m:${motionKey(motion)}` : "";
     const base =
       typeof scene === "string"
         ? `id:${scene}`
@@ -75,15 +96,18 @@ export class SceneSims implements LoopClient {
       Object.keys(failures).some((k) => failures[k as keyof Failures])
         ? `|f:${JSON.stringify(failures)}`
         : "";
-    return base + f;
+    return base + f + m;
   }
   /** The Sim for a scene id (or a scene object: a calc stage hint, a YourTurn result pose). */
   get(
     scene: SimScene | string | undefined,
     failures?: Partial<Failures>,
+    motion?: InstrumentMotion,
+    /** where an animation rests before it plays: its start (a slide that plays it) or its telling frame */
+    rest: "start" | "telling" = "start",
   ): SimEntry | null {
     if (!scene) return null;
-    const k = this.key(scene, failures);
+    const k = this.key(scene, failures, motion);
     if (this.map.has(k)) return this.map.get(k)!;
     const sc =
       typeof scene === "string"
@@ -105,6 +129,7 @@ export class SceneSims implements LoopClient {
           stepped: -1,
           ...(failures ? { failures: { ...failures } } : {}),
         };
+        if (motionScript(motion)) this.prepareMotion(entry, motion!, rest);
       } catch {
         entry = null;
       }
@@ -113,6 +138,50 @@ export class SceneSims implements LoopClient {
     // arrive later) is looked up again next time: never cache a miss
     if (entry) this.map.set(k, entry);
     return entry;
+  }
+  /**
+   * Build the animation of a situation: from the situation itself, or from the animation's own ready situation when
+   * the slide's has not the signal it needs (an ILS for the glide path…), then put the Sim on its resting frame.
+   */
+  private prepareMotion(
+    e: SimEntry,
+    motion: InstrumentMotion,
+    rest: "start" | "telling" = e.motion?.rest ?? "start",
+  ) {
+    const script = motionScript(motion);
+    if (!script) return;
+    const p = motionPreset(motion.preset);
+    if (p && !motionFits(p, e.sim, this.env.cockpit)) {
+      const ready = p.situation ? readySituation(p.situation) : undefined;
+      if (ready) {
+        const sc = sceneOfSituation(ready.sit, { id: `ready:${ready.id}` });
+        const sim = new Sim();
+        e.diffs = applyScene(sim, sc);
+        for (const [f, on] of Object.entries(e.failures ?? {}))
+          if (on) sim.setFailure(f as keyof Failures, true);
+        sim.updateAvionics(0);
+        e.sim = sim;
+        e.scene = sc;
+      }
+    }
+    const tl = bakeMotion(script, e.sim);
+    e.motionSpec = motion;
+    if (e.motion) e.motion.reset(tl);
+    else
+      e.motion = new MotionRun(tl, {
+        speed: motion.speed,
+        loop: motion.loop,
+        rest,
+        reduced: rest === "start" && prefersReducedMotion(),
+      });
+    applyFrame(e.sim, tl, e.motion.frame);
+  }
+  /** The situation's animation was handed to the student (« Prendre les commandes »): it flies from this frame. */
+  handOver(e: SimEntry) {
+    if (!e.motion || e.motion.state === "handed") return;
+    e.motion.handOver();
+    for (const w of this.widgets) if (w.entry === e) w.setMode("live");
+    this.ensureLoop();
   }
   /** Re-apply a scene (Reset). */
   reset(scene: string) {
@@ -135,11 +204,16 @@ export class SceneSims implements LoopClient {
       sim.updateAvionics(0);
       e.sim = sim;
       e.diffs = diffs;
+      if (e.motionSpec) this.prepareMotion(e, e.motionSpec);
     } catch {
       return;
     }
     e.pilot?.capture(e.sim);
-    for (const w of this.widgets) if (w.entry === e) w.invalidate();
+    for (const w of this.widgets)
+      if (w.entry === e) {
+        if (e.motion) w.setMode(w.baseMode);
+        w.invalidate();
+      }
   }
   /**
    * A situation was edited in the studio (« Situation de vol »): every instrument showing the scene of that id
@@ -155,6 +229,7 @@ export class SceneSims implements LoopClient {
         for (const [f, on] of Object.entries(e.failures ?? {}))
           if (on) e.sim.setFailure(f as keyof Failures, true);
         e.sim.updateAvionics(0);
+        if (e.motionSpec) this.prepareMotion(e, e.motionSpec);
       } catch {
         continue;
       }
@@ -189,15 +264,41 @@ export class SceneSims implements LoopClient {
     this.loop.request();
   }
   wantsFrame(): boolean {
-    for (const w of this.widgets) if (w.wantsFrame()) return true;
+    for (const w of this.widgets) if (w.wantsFrame() || w.motionWaits()) return true;
     return false;
+  }
+  /** Advance every animation once per frame, on screen only; hand it over when the student takes the controls. */
+  private stepMotions(dt: number) {
+    const seen = new Set<SimEntry>();
+    for (const w of this.widgets) {
+      const e = w.entry;
+      const r = e?.motion;
+      if (!e || !r || seen.has(e) || r.state === "handed") continue;
+      if (!w.visible || !w.shown) continue;
+      seen.add(e);
+      if (e.pilot?.engaged) {
+        this.handOver(e);
+        continue;
+      }
+      if (r.state === "armed") r.start();
+      if (r.tick(dt)) {
+        applyFrame(e.sim, r.tl, r.frame);
+        for (const x of this.widgets) if (x.entry === e) x.invalidate();
+        // an animation of a live instrument ends in flight: the situation flies on from its last frame
+        if (r.state === "ended" && [...this.widgets].some((x) => x.entry === e && x.baseMode === "live"))
+          this.handOver(e);
+      }
+    }
   }
   frame(dt: number) {
     this.frameNo++;
+    this.stepMotions(dt);
     // step each live Sim once per frame, whatever the number of widgets showing it
     for (const w of this.widgets) {
       if (w.mode !== "live" || !w.visible) continue;
       const e = w.entry;
+      // an animation writes the frames until it is handed over: the flight model waits (a pause stays a pause)
+      if (e?.motion && e.motion.state !== "handed") continue;
       if (e && e.stepped !== this.frameNo) {
         e.stepped = this.frameNo;
         e.sim.paused = false;
@@ -206,7 +307,8 @@ export class SceneSims implements LoopClient {
       }
     }
     for (const w of this.widgets)
-      if (w.wantsFrame()) w.draw(w.mode === "live" ? dt : 0);
+      if (w.wantsFrame())
+        w.draw(w.mode === "live" || w.entry?.motion?.state === "playing" ? dt : 0);
   }
   destroy() {
     this.loop?.remove(this);
@@ -237,6 +339,10 @@ export interface InstrumentOptions {
   box?: Box;
   /** called after each draw (the control strip shows its values) */
   onDraw?: () => void;
+  /** the slide's animation of this situation (canvas/motion.ts) */
+  motion?: InstrumentMotion;
+  /** where the animation rests before it plays (default: its start; the editor: its telling frame) */
+  motionRest?: "start" | "telling";
 }
 
 /** One instrument on a slide. */
@@ -247,8 +353,14 @@ export class SlideInstrument {
   readonly overlay: Overlay | null = null;
   entry: SimEntry | null;
   mode: "frozen" | "live" | "clip";
+  /** the mode the slide asked for (an animation handed over makes it live until « Réinitialiser ») */
+  readonly baseMode: "frozen" | "live" | "clip";
   visible = true;
+  /** the block is shown (its reveal step has come): an animation starts only then */
+  shown = true;
   private canvas: HTMLCanvasElement | null = null;
+  private revealN = 0;
+  private momentSig = "";
   private screen: HTMLDivElement;
   private dirty = true;
   private io: IntersectionObserver | null = null;
@@ -261,9 +373,12 @@ export class SlideInstrument {
     this.frame = instrumentFrame(o.view, sims.env.cockpit ?? "g1000");
     this.states = newInstrumentStates();
     this.mode = o.mode ?? "frozen";
+    this.baseMode = this.mode;
     // a thumbnail never shows the "capture it" error: it falls back to the sample scene (a static instrument)
+    const rest = o.still ? "telling" : (o.motionRest ?? "start");
     this.entry =
-      sims.get(o.scene, o.failures) ?? (o.still ? sims.get(DEMO_SCENE_ID, o.failures) : null);
+      sims.get(o.scene, o.failures, o.motion, rest) ??
+      (o.still ? sims.get(DEMO_SCENE_ID, o.failures, o.motion, rest) : null);
     const gauge = this.frame.kind === "gauge";
     this.el = document.createElement("div");
     this.el.className = `sl-inst cs-scope${gauge ? " is-gauge" : " is-display"}${o.bezel === false ? " no-bezel" : ""}`;
@@ -291,7 +406,7 @@ export class SlideInstrument {
     if (o.annotations?.length && !o.still) {
       const ov = new Overlay(0, { lang: o.lang });
       ov.setRect(this.frame.rect);
-      ov.set(o.annotations, { reveal: 0 });
+      ov.set(this.momentAnnotations(), { reveal: 0 });
       this.screen.append(ov.el);
       (this as { overlay: Overlay | null }).overlay = ov;
     }
@@ -346,6 +461,32 @@ export class SlideInstrument {
       !!this.canvas && this.visible && (this.dirty || this.mode === "live")
     );
   }
+  /** an animation on screen is waiting to start or playing */
+  motionWaits(): boolean {
+    const s = this.entry?.motion?.state;
+    return !!this.canvas && this.visible && this.shown && (s === "armed" || s === "playing");
+  }
+  /** the block's reveal step has come (or gone): an armed animation starts once it is shown */
+  setShown(on: boolean) {
+    if (this.shown === on) return;
+    this.shown = on;
+    if (on) this.sims.ensureLoop();
+  }
+  /** the callouts shown now: one tied to a moment of the animation waits for it (canvas/motion.ts marks) */
+  private momentAnnotations(): Annotation[] {
+    const all = this.o.annotations ?? [];
+    const r = this.entry?.motion;
+    if (!r || this.o.motionRest === "telling") return all;
+    return all.filter((a) => !a.moment || r.markShown(a.moment));
+  }
+  private syncMoments() {
+    if (!this.overlay || !this.entry?.motion) return;
+    const list = this.momentAnnotations();
+    const sig = list.map((a) => a.id).join(",");
+    if (sig === this.momentSig) return;
+    this.momentSig = sig;
+    this.overlay.set(list, { reveal: this.revealN });
+  }
   invalidate() {
     this.dirty = true;
     this.sims.ensureLoop();
@@ -356,6 +497,7 @@ export class SlideInstrument {
     this.invalidate();
   }
   setReveal(reveal: number) {
+    this.revealN = reveal;
     this.overlay?.setReveal({ reveal });
   }
   highlight(id: string | null) {
@@ -394,6 +536,7 @@ export class SlideInstrument {
       /* a renderer that throws on an odd state must not take the slide down */
     }
     this.dirty = false;
+    this.syncMoments();
     this.ariaT += dt;
     if (!this.o.alt && (this.mode !== "live" || this.ariaT > 1)) {
       this.ariaT = 0;

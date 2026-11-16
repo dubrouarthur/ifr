@@ -8,6 +8,7 @@ import type {
   BlockAction,
   CalcProblem,
   Cockpit,
+  InstrumentMotion,
   Lang,
   Pt,
   SchoolBrand,
@@ -230,7 +231,20 @@ export class SlideView {
       fire: (w) => this.fire(w),
       onAction: this.o.onAction,
       onYourTurn: this.o.onYourTurn,
+      motionOf: (id) => this.motionOf(id),
     };
+  }
+  /** The animation of a situation on this slide: the first instrument showing it with one (canvas/motion.ts). */
+  private motionOf(sceneId: string): InstrumentMotion | undefined {
+    for (const b of this.slide.blocks)
+      if (
+        b.kind === "instrument" &&
+        b.motion &&
+        !b.fromCalc &&
+        (b.scene ?? this.slide.scene ?? DEMO_SCENE_ID) === sceneId
+      )
+        return b.motion;
+    return undefined;
   }
   private applyTheme() {
     for (const [k, v] of Object.entries(themeVars(this.theme)))
@@ -387,7 +401,9 @@ export class SlideView {
     v.el.classList.toggle("sl-presenter-only", !!b.presenterOnly);
     v.el.hidden =
       (this.mode === "edit" && !!b.hiddenInEditor) ||
-      (this.mode !== "edit" && !!b.presenterOnly && !this.o.presenter);
+      (this.mode !== "edit" && !!b.presenterOnly && !this.o.presenter) ||
+      (this.mode !== "edit" && !!b.editorOnly);
+    v.el.classList.toggle("sl-editor-note", !!b.editorOnly);
     if (this.mode === "edit") {
       if (b.reveal?.order) v.el.dataset.reveal = String(b.reveal.order);
       else delete v.el.dataset.reveal;
@@ -486,6 +502,7 @@ export class SlideView {
     const all = this.mode !== "play";
     for (const v of this.views.values()) {
       const shown = isRevealed(v.block, this.steps, this.revealN, this.events);
+      v.revealed?.(all || shown);
       if (all) {
         // the editor dims what a reveal preview has not shown yet (it never hides it)
         v.el.classList.toggle(

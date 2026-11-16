@@ -6,6 +6,7 @@
 import type {
   BlockAction,
   CalcProblem,
+  InstrumentMotion,
   Lang,
   Pt,
   SlideBinding,
@@ -45,6 +46,7 @@ import {
   type StripPlan,
 } from "./controlStrip";
 import { DEMO_SCENE_ID } from "./factory";
+import { registerReplay, type MotionRun } from "./motion";
 import { tx, blockKindLabel } from "./strings";
 import {
   createCalcDiagram,
@@ -120,6 +122,8 @@ export interface BlockEnv {
   fire(when: string): void;
   onAction?: (a: BlockAction, b: SlideBlock) => void;
   onYourTurn?: (b: SlideBlock, yt: YourTurn) => void;
+  /** the slide's animation of a situation (the first instrument of the slide showing it with one, canvas/motion.ts) */
+  motionOf?: (sceneId: string) => InstrumentMotion | undefined;
 }
 
 export interface BlockView {
@@ -134,6 +138,8 @@ export interface BlockView {
   layout?(): void;
   /** periodic refresh of live values (readouts) */
   tick?(): void;
+  /** the block is shown or hidden by its reveal step (an animation starts when it is shown) */
+  revealed?(on: boolean): void;
   destroy(): void;
 }
 export interface HudItem {
@@ -755,6 +761,9 @@ function instrumentBlock(b: Of<"instrument">, env: BlockEnv): BlockView {
   }
   const isDemo = !scene || scene === DEMO_SCENE_ID;
   if (!scene) scene = DEMO_SCENE_ID;
+  // the animation: the block's own, else the slide's on the same situation (one aircraft on the slide)
+  const motion =
+    b.motion ?? (typeof scene === "string" ? env.motionOf?.(scene) : undefined);
   const mode =
     env.mode === "play"
       ? b.mode === "clip"
@@ -787,8 +796,13 @@ function instrumentBlock(b: Of<"instrument">, env: BlockEnv): BlockView {
     alt: b.alt ? loc(b.alt, env.lang) : undefined,
     ...(plan ? { box: plan.inst } : {}),
     onDraw: () => strip?.refresh(),
+    ...(motion
+      ? { motion, motionRest: env.mode === "play" ? ("start" as const) : ("telling" as const) }
+      : {}),
   });
   el.append(inst.el);
+  const run = inst.entry?.motion;
+  if (run) el.dataset.motion = run.state;
   if (isDemo && env.mode === "edit")
     el.dataset.demo = tx("sampleScene", env.lang);
   let chip: HTMLElement | null = null;
@@ -857,8 +871,34 @@ function instrumentBlock(b: Of<"instrument">, env: BlockEnv): BlockView {
   if (strip && env.mode === "play" && typeof requestAnimationFrame === "function")
     requestAnimationFrame(onProjector);
   const hud: HudItem[] = [];
+  // « Rejouer » / « Pause » on the instrument that carries the animation (the slide plays it by itself)
+  let unMotion: (() => void) | null = null;
+  if (run && env.mode === "play" && b.motion) {
+    const item = motionButton(env, run, () => inst.invalidate());
+    item.at = plan
+      ? [(plan.inst.x + 8) / b.frame.w, (plan.inst.y + plan.inst.h - 8) / b.frame.h]
+      : [0, 1];
+    item.origin = [0, 1];
+    hud.push(item);
+    unMotion = item.off;
+  }
+  if (run && env.mode === "edit")
+    unMotion = registerReplay(b.id, () => {
+      run.replay();
+      inst.invalidate();
+    });
+  if (run) {
+    const off = run.on((r) => (el.dataset.motion = r.state));
+    const prev = unMotion;
+    unMotion = () => {
+      off();
+      prev?.();
+    };
+  }
   if (env.mode === "play" && b.yourTurn) {
     const btn = yourTurnButton(env, b, b.yourTurn, b.yourTurn.where === "sim");
+    // the student takes the controls: the animation never moves under them
+    if (run) btn.el.addEventListener("click", () => run.pause(), { capture: true });
     // « À vous » stays on the instrument: it never covers a control of the strip
     if (plan)
       btn.at = [
@@ -883,13 +923,53 @@ function instrumentBlock(b: Of<"instrument">, env: BlockEnv): BlockView {
       }
       inst.resized();
     },
+    revealed: (on) => inst.setShown(on),
     destroy: () => {
+      unMotion?.();
       if (strip && env.mode === "edit") setStripTrial(b.id, null);
       strip?.destroy();
       inst.destroy();
       el.remove();
     },
   };
+}
+
+// ------------------------------------------------------------------ animation button (canvas/motion.ts)
+const MOTION_WORDS = {
+  pause: ["Pause", "Pause"],
+  resume: ["Resume", "Reprendre"],
+  replay: ["Replay", "Rejouer"],
+} as const;
+/** « Pause » while it plays, « Reprendre » when paused, « Rejouer » at the end; gone once the student flies. */
+function motionButton(
+  env: BlockEnv,
+  run: MotionRun,
+  redraw: () => void,
+): HudItem & { off: () => void } {
+  const btn = mk("button", "sl-hud-btn sl-motion-btn");
+  btn.type = "button";
+  const ic = mk("span", "sl-hud-ic");
+  ic.setAttribute("aria-hidden", "true");
+  const word = mk("span", "");
+  btn.append(ic, word);
+  const sync = () => {
+    const s = run.state;
+    const k = s === "playing" ? "pause" : s === "paused" ? "resume" : "replay";
+    btn.dataset.state = k;
+    word.textContent = MOTION_WORDS[k][env.lang === "fr" ? 1 : 0];
+    btn.classList.toggle("is-gone", s === "handed");
+    btn.disabled = s === "handed";
+  };
+  sync();
+  const off = run.on(sync);
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (run.state === "playing") run.pause();
+    else if (run.state === "paused") run.resume();
+    else run.replay();
+    redraw();
+  });
+  return { el: btn, at: [0, 1], origin: [0, 1], off };
 }
 
 // ------------------------------------------------------------------ sim viewport
@@ -934,6 +1014,12 @@ function simViewportBlock(b: Of<"simViewport">, env: BlockEnv): BlockView {
         h: b.frame.h,
         scale: env.scale,
         still: env.mode === "thumb",
+        ...(env.motionOf?.(b.scene ?? env.slideScene ?? DEMO_SCENE_ID)
+          ? {
+              motion: env.motionOf(b.scene ?? env.slideScene ?? DEMO_SCENE_ID),
+              motionRest: env.mode === "play" ? ("start" as const) : ("telling" as const),
+            }
+          : {}),
       });
       box.append(inst.el);
     } else {
