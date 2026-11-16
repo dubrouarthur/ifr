@@ -262,7 +262,21 @@ export function nearestStation(
   p: LatLon,
 ): { station: string; radial: number; distNm: number } | null {
   let best: { station: string; radial: number; distNm: number } | null = null;
-  for (const s of stations()) {
+  // a VOR first (« ARD · radial 090 »): an NDB only when no VOR is within 40 NM
+  const all = stations();
+  const vors = all.filter((s) => s.kind === "VOR");
+  const near = (list: StationOpt[]) => {
+    let b: { station: string; radial: number; distNm: number } | null = null;
+    for (const s of list) {
+      const n = station(s.ident)!;
+      const d = distanceNm(n, p);
+      if (!b || d < b.distNm) b = { station: s.ident, radial: Math.round(norm360(bearingDeg(n, p))), distNm: Math.round(d * 10) / 10 };
+    }
+    return b;
+  };
+  const v = near(vors);
+  if (v && v.distNm <= 40) return v;
+  for (const s of all) {
     const n = station(s.ident)!;
     const d = distanceNm(n, p);
     if (!best || d < best.distNm)

@@ -12,6 +12,7 @@
 // 'memory', storageNotice() gives the "not saved on this device" banner text. persist() is asked on the first save.
 // A save that hits the quota resolves { ok: false, error: 'quota' } with an in-app message (never alert()).
 // Other windows (the cockpit in a second window capturing into the tray) are told over BroadcastChannel 'ifr-course'.
+import type { MomentFacts } from "./captureMoment";
 import type {
   AssetId,
   AssetRef,
@@ -100,6 +101,10 @@ export interface TrayItem {
   still?: AssetId;
   /** "ARD R-276 · 6 NM · 4,000 ft" */
   label?: string;
+  /** the slide it was captured for (« Capturer un moment pour la diapo ») */
+  stepId?: string;
+  /** what the moment shows, in numbers (the cockpit and the studio word it: captureMoment.momentLine) */
+  moment?: MomentFacts;
 }
 
 export type SaveResult =

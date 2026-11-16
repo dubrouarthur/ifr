@@ -711,3 +711,363 @@ body.cf-flying .tb-courses {
     display: none;
   }
 }
+
+/* ------------------------------------------------------------------ « Capturer un moment pour la diapo »
+   The capture strip (44 px targets), the arrival card and the crash card (dark: the cockpit stays dark), and the
+   strip of captures at the top right of the outside view (each capture at once, with its picture and its numbers). */
+.cf-strip.capture {
+  min-height: 52px;
+}
+.cf-strip.capture .cf-b {
+  height: 44px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+.cf-strip.capture .cf-b.cf-help {
+  width: 44px;
+  padding: 0;
+  justify-content: center;
+}
+.cf-b:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.cf-b.ghost {
+  background: transparent;
+}
+.cf-two .cf-short {
+  display: none;
+}
+@media (max-width: 1320px) {
+  .cf-two .cf-long {
+    display: none;
+  }
+  .cf-two .cf-short {
+    display: inline;
+  }
+}
+.cf-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  margin-left: 8px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: #ff4d4d;
+  color: #fff;
+  font: 700 11.5px "Roboto Mono", ui-monospace, monospace;
+  font-style: normal;
+}
+.cf-strip .cf-back-slide {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* the arrival card and the crash card: dark, over the outside view */
+.cf-card.cf-capcard {
+  --text: #eef3f7;
+  --text-2: #cfd8e1;
+  --muted: #9fb0c0;
+  --accent: #5fb3ff;
+  --line: rgba(255, 255, 255, 0.12);
+  --surface: #111a24;
+  --surface-2: #0b131b;
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 100%);
+  background: #111a24;
+  color: #eef3f7;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: 3px solid #ff4d4d;
+}
+.cf-capcard .cf-capcard-main {
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 18px 10px;
+}
+.cf-capcard .cf-card-k > span:first-child {
+  color: #ff8a80;
+}
+.cf-capcard h2 {
+  font-size: 19px;
+}
+.cf-capcard .cf-card-p {
+  color: #cfd8e1;
+  margin: 2px 0 10px;
+  line-height: 1.45;
+}
+.cf-capsteps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.cf-capsteps li {
+  display: grid;
+  grid-template-columns: minmax(220px, 290px) 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.cf-capsteps .cf-ci-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cf-capsteps .cf-ci-name svg {
+  width: 16px;
+  height: 16px;
+  margin: 0 4px;
+}
+.cf-capsteps .cf-ci-line {
+  color: #b8c6d3;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.cf-capwarn {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 77, 77, 0.14);
+  border: 1px solid rgba(255, 77, 77, 0.5);
+  color: #ffd2cf;
+  font-size: 13px;
+}
+.cf-capcard-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 18px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.cf-capcard-foot .cf-card-w {
+  color: #9fb0c0;
+  font-size: 12.5px;
+}
+.cf-capcard-acts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.cf-capcard .cf-b {
+  height: 44px;
+  padding: 0 16px;
+  font-size: 13.5px;
+}
+.cf-crashcard {
+  border-top-color: #ffb020;
+}
+.cf-crashcard .cf-card-k > span:first-child {
+  color: #ffcf70;
+}
+@media (max-width: 900px), (max-height: 700px) {
+  .cf-capsteps li {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+
+/* the strip of captures: top right of the outside view, under the course strip */
+.cf-shelf {
+  position: absolute;
+  right: 8px;
+  top: var(--cf-shelf-top, 104px);
+  z-index: 6;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  max-width: calc(100% - 16px);
+  padding: 6px;
+  box-sizing: border-box;
+  border-radius: 12px;
+  background: rgba(5, 8, 12, 0.84);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #eef3f7;
+  font-size: 12.5px;
+}
+.cf-shelf[hidden] {
+  display: none;
+}
+.cockpit.no-otw .cf-shelf {
+  position: relative;
+  top: auto;
+  right: auto;
+  flex: 0 0 100%;
+  max-width: none;
+}
+.cf-shelf-hd {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 150px;
+}
+.cf-shelf-fold {
+  appearance: none;
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 2px 0;
+  min-height: 44px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.cf-shelf-fold b {
+  font-size: 13px;
+}
+.cf-shelf-fold svg {
+  justify-self: end;
+  width: 14px;
+  height: 14px;
+}
+.cf-shelf-fold .cf-shelf-sub {
+  grid-column: 1 / -1;
+  color: #9fb0c0;
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+.cf-shelf-fold:focus-visible,
+.cf-shelf .cf-b:focus-visible {
+  outline: 2px solid var(--ck-accent, #00e4ff);
+  outline-offset: 1px;
+}
+.cf-shelf.folded .cf-shelf-sub {
+  display: none;
+}
+.cf-shelf-note {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.cf-shelf-note.bad {
+  background: rgba(255, 77, 77, 0.16);
+  border: 1px solid rgba(255, 77, 77, 0.55);
+  color: #ffd9d6;
+}
+.cf-shelf-note.good {
+  background: rgba(46, 204, 113, 0.14);
+  border: 1px solid rgba(46, 204, 113, 0.5);
+  color: #d4f7e2;
+}
+.cf-shelf.has-note .cf-shelf-hd {
+  width: 260px;
+}
+.cf-shelf-row {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  min-width: 0;
+  scrollbar-width: thin;
+}
+.cf-capc {
+  flex: none;
+  width: 300px;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  gap: 4px 8px;
+  padding: 6px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  animation: cf-cap-in 0.35s ease-out;
+}
+@keyframes cf-cap-in {
+  from {
+    transform: translateY(-6px);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cf-capc {
+    animation: none;
+  }
+}
+.cf-capc-pic {
+  width: 64px;
+  height: 48px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #000;
+  display: grid;
+  place-items: center;
+  color: #6b7c8c;
+}
+.cf-capc-pic img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.cf-capc-t {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.cf-capc-t small {
+  color: #9fb0c0;
+  font-size: 10.5px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.cf-capc-line {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font: 600 12.5px "Roboto Condensed", var(--font, system-ui, sans-serif);
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.cf-capc-acts {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 6px;
+}
+.cf-capc-acts .cf-b {
+  height: 44px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+.cf-capc-acts .cf-b.primary {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+.cf-capc.removed {
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto;
+  align-items: center;
+  color: #9fb0c0;
+  width: 220px;
+}
+.cf-capc.removed .cf-b {
+  height: 44px;
+}
+
+/* capture mode: no free-flight tips over the capture cards (the arrival card says what to do) */
+body.cf-capturing .coach {
+  display: none !important;
+}

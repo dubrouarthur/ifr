@@ -60,10 +60,12 @@ import { flightProcedures, procedureSection } from './ui/modals';
 import { openProcedureEditor } from './ui/procedureEditor';
 import { lang as uiLang, onLangChange, registerStrings, t as tr } from './ui/i18n';
 import { nudgeHdgBug, nudgeAltSel, syncHdgBug, syncAltSel, nudgeBaro, setBaroToQnh, nudgeCrs, centerCdi as centerCdiOn, cycleBrg, cycleCdi } from './sim/avionicsControls';
-import { CourseFlightUi, briefingLink, lessonForCourse, l10n, type CourseBrief, type CourseStripState } from './ui/courseFlight';
+import { CourseFlightUi, briefingLink, lessonForCourse, l10n, type CourseBrief, type CourseStripState, type ShelfItem } from './ui/courseFlight';
 import { history } from './ui/history';
 // type only: the bridge (course store, scenes, rewind ring) is a lazy chunk loaded at boot
 import type { CourseBridge, CockpitHost, FlyOutcome } from './course/cockpitBridge';
+import type { TrayItem } from './course/store';
+import { momentLine } from './course/captureMoment';
 import type { CalcProblem } from './course/types';
 import { markCockpitBridge } from './course/cockpitLink';
 import { BRAND, brandMarkSvg, brandTagline } from './brand';
@@ -1111,19 +1113,35 @@ const courseUi = new CourseFlightUi({
   back10: () => courseBack10(),
   flyFromHere: () => courseFlyFromHere(),
   backToNow: () => { courseBridge?.ring.endPreview(sim); previewT = null; syncPauseBtn(); syncCourseStrip(); },
-  toEditor: () => { const u = courseBridge?.captureReturn; if (u) location.href = u; },
+  toEditor: () => captureLeave(courseBridge?.captureReturn ?? null),
   backToCourse: () => void stripBackToCourse(),
   start: () => { sim.paused = false; syncPauseBtn(); chromeAfterStart(); fitSoon(); },
+  // capture mode: « Capturer un moment pour la diapo »
+  intro: () => showCaptureIntro(),
+  rewind: () => captureRewind(),
+  restart: () => captureRestart(),
+  useCapture: (id) => captureUse(id),
+  removeCapture: (id) => void captureRemove(id),
+  undoRemove: (id) => void captureUndoRemove(id),
+  foldShelf: (f) => { capFolded = f; syncShelf(); },
 });
 briefCardUp = () => courseUi.briefOpen;
-const otw = h('section', { class: 'otw' }, otwCanvas, glCanvas, smokeVeil, glare, lookHint, sitbar, courseUi.strip, pauseVeil, lessonSlot, courseUi.card, toasts, atc.el);
+const otw = h('section', { class: 'otw' }, otwCanvas, glCanvas, smokeVeil, glare, lookHint, sitbar, courseUi.strip, courseUi.shelf, pauseVeil, lessonSlot, courseUi.card, toasts, atc.el);
 // ------------------------------------------------------------------ courses (the Ground school's cockpit bridge)
 /** the bridge (src/course/cockpitBridge.ts), installed once at boot: ?fly= / ?scene= / ?capture= / ?proc= */
 let courseBridge: CourseBridge | null = null;
 /** the 10 s look-back of capture mode: the ring frame shown (null: live) */
 let previewT: number | null = null;
-/** capture mode: the title of the course being edited */
+/** capture mode: the title of the course being edited, and of the slide the moment is for */
 let captureTitle: string | null = null;
+let captureSlide: string | null = null;
+/** capture mode: the captures that go back to the studio (newest first), their pictures, the ones just removed */
+let capItems: TrayItem[] = [];
+const capThumbs = new Map<string, string>();
+const capRemoved = new Map<string, TrayItem>();
+let capFolded = false;
+let capNotice: { kind: 'bad' | 'good'; text: string } | null = null;
+let capNoticeTimer = 0;
 /** the exercises a course flight started (their result window offers "Back to the course") */
 const courseExIds = new Set<string>();
 /** the course flight being started while the bridge installs (the strip names it at once) */
@@ -1145,7 +1163,6 @@ function setBriefingAsides(exId: string, link: HTMLElement | null) {
 }
 /** the outcome of the course flight once its exercise ended (the strip's "Back to the course" sends it) */
 let courseOutcome: FlyOutcome | null = null;
-const courseLabel = () => (courseBridge?.capturing ? `${lesson?.ex.title ?? sim.scenario?.name ?? tr('course.freeFlight')} · ${Math.round(sim.indicatedAlt() / 10) * 10} ft` : undefined);
 /** the look-back's "Fly from here" (and Resume / Esc while it shows: flying on from the frame shown, never from the
  *  live state hidden behind it) */
 function courseFlyFromHere(run = false) {
@@ -1158,15 +1175,162 @@ function courseFlyFromHere(run = false) {
   syncCourseStrip();
 }
 async function courseCapture() {
-  if (!courseBridge?.capturing) return;
-  await courseBridge.capture(courseLabel());
+  const b = courseBridge;
+  if (!b?.capturing) return;
+  // C on the arrival card: the slide's situation itself, captured at once
+  if (courseUi.cardKind === 'capture') courseUi.closeBrief(false);
+  try {
+    await b.capture();
+  } catch (e) {
+    console.warn('capture', e);
+    captureNotice('bad', uiLang() === 'fr' ? 'La capture n’a pas pu être enregistrée. Réessayez.' : 'The capture could not be saved. Try again.');
+  }
+  syncCourseStrip();
 }
 async function courseClip() {
   const b = courseBridge;
   if (!b?.capturing) return;
+  if (courseUi.cardKind === 'capture') courseUi.closeBrief(false);
   // the clip ends now: a look-back first returns to the live flight
   if (previewT !== null) { b.ring.endPreview(sim); previewT = null; }
-  await b.captureClip(60, courseLabel());
+  try {
+    await b.captureClip(60);
+  } catch (e) {
+    console.warn('clip', e);
+    captureNotice('bad', uiLang() === 'fr' ? 'L’enregistrement n’a pas pu être gardé. Réessayez.' : 'The recording could not be kept. Try again.');
+  }
+  syncCourseStrip();
+}
+/** a line at the head of the strip of captures (a refusal stays 9 s, a confirmation 4 s) */
+function captureNotice(kind: 'bad' | 'good', text: string) {
+  capNotice = { kind, text };
+  clearTimeout(capNoticeTimer);
+  capNoticeTimer = window.setTimeout(() => { capNotice = null; syncShelf(); }, kind === 'bad' ? 9000 : 4000);
+  syncShelf();
+}
+const hhmm = (iso: string) => { const t = new Date(iso); return Number.isNaN(t.getTime()) ? '' : `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`; };
+/** the captures for this course from the store (and their pictures), then the strip of captures */
+async function refreshCaptures() {
+  const b = courseBridge;
+  if (!b?.capturing) return;
+  capItems = await b.captures();
+  for (const it of capItems) {
+    if (!it.thumb || capThumbs.has(it.id)) continue;
+    const blob = await b.assetBlob(it.thumb);
+    if (blob) capThumbs.set(it.id, URL.createObjectURL(blob));
+  }
+  syncShelf();
+  syncCourseStrip();
+}
+function syncShelf() {
+  const b = courseBridge;
+  if (!b?.capturing) return;
+  // a capture removed a moment ago keeps its place, with « Annuler »
+  const all = [
+    ...capItems.map((it) => ({ it, removed: false })),
+    ...[...capRemoved.values()].filter((r) => !capItems.some((x) => x.id === r.id)).map((it) => ({ it, removed: true })),
+  ].sort((a, c) => (a.it.at < c.it.at ? 1 : a.it.at > c.it.at ? -1 : 0));
+  const live: ShelfItem[] = all.map(({ it, removed }) => ({
+    id: it.id,
+    line: it.moment ? momentLine(it.moment, uiLang()) : (it.label ?? ''),
+    time: hhmm(it.at),
+    ...(removed ? { removed: true } : {}),
+    ...(it.clip ? { clipS: Math.round(it.clip.durS) } : {}),
+    ...(capThumbs.has(it.id) ? { thumbUrl: capThumbs.get(it.id)! } : {}),
+  }));
+  courseUi.renderShelf({ items: live, folded: capFolded, notice: capNotice, hasEditor: !!b.captureReturn, blocked: b.storageBlocked });
+  placeShelf();
+}
+/** the strip of captures starts under the situation bar and the course strip */
+function placeShelf() {
+  if (courseUi.shelf.hidden) return;
+  const o = otw.getBoundingClientRect();
+  courseUi.shelf.style.setProperty('--cf-shelf-top', `${Math.max(8, Math.round(sitRect().bottom - o.top + 8))}px`);
+}
+function captureUse(id: string) {
+  const b = courseBridge;
+  const it = capItems.find((x) => x.id === id);
+  if (!b || !it) return;
+  captureLeave(b.chooseForSlide(it));
+}
+async function captureRemove(id: string) {
+  const b = courseBridge;
+  const it = capItems.find((x) => x.id === id);
+  if (!b || !it) return;
+  capRemoved.set(id, it);
+  capItems = capItems.filter((x) => x.id !== id);
+  syncShelf();
+  syncCourseStrip();
+  await b.removeCapture(id);
+  // « Annuler » stays a few seconds, then the card goes
+  window.setTimeout(() => { if (capRemoved.delete(id)) syncShelf(); }, 7000);
+}
+async function captureUndoRemove(id: string) {
+  const b = courseBridge;
+  const it = capRemoved.get(id);
+  if (!b || !it) return;
+  capRemoved.delete(id);
+  await b.restoreCapture(it);
+  await refreshCaptures();
+}
+/** back to the studio (the slide), with « Retour à la diapo… » over the cockpit while it loads */
+function captureLeave(url: string | null) {
+  if (!url) return;
+  courseUi.leaving(captureSlide ?? captureTitle ?? '');
+  location.href = url;
+}
+/** the arrival card (and the strip's « ? »): what a capture is for, what it keeps, how */
+function showCaptureIntro() {
+  const b = courseBridge;
+  if (!b?.capturing || courseUi.cardKind === 'crash') return;
+  placeBriefCard();
+  courseUi.showCaptureIntro({
+    slide: captureSlide,
+    course: captureTitle,
+    blocked: b.storageBlocked,
+    blockedText: b.refusal()?.code === 'invalid' && b.storageBlocked ? b.refusal()!.text : undefined,
+    hasEditor: !!b.captureReturn,
+  });
+  syncPauseBtn();
+  syncCourseStrip();
+  fitSoon();
+}
+/** after a crash in capture mode: the calm card in place of the flight's crash card */
+function showCaptureCrash(reason: string) {
+  const b = courseBridge;
+  if (!b) return;
+  placeBriefCard();
+  courseUi.showCaptureCrash({
+    reason: crashText(reason),
+    kept: capItems.length,
+    canRewind: b.ring.frames.some((f) => f.scene.pose.kind === 'exact' && !f.scene.pose.ac.crashed),
+    canRestart: true,
+    hasEditor: !!b.captureReturn,
+  });
+  syncPauseBtn();
+  syncCourseStrip();
+}
+function captureRewind() {
+  const b = courseBridge;
+  if (!b) return;
+  previewT = null;
+  const f = b.rewindBefore(10);
+  if (!f) { captureNotice('bad', uiLang() === 'fr' ? 'Rien à quoi revenir : repartez de la situation de la diapo.' : 'Nothing to go back to: start again from the slide’s situation.'); return; }
+  if (courseUi.cardKind === 'crash') courseUi.closeBrief(false);
+  crashShown = '';
+  syncPauseBtn();
+  syncCourseStrip();
+  toast(uiLang() === 'fr' ? 'Revenu avant l’impact. L’avion attend en pause : reprenez quand vous êtes prêt (Échap).' : 'Back before the impact. The aircraft waits, paused: resume when ready (Esc).', 'good', 6000);
+}
+function captureRestart() {
+  const b = courseBridge;
+  if (!b) return;
+  previewT = null;
+  if (courseUi.cardKind === 'crash') courseUi.closeBrief(false);
+  crashShown = '';
+  if (!b.restartFromSlide()) restartFlight();
+  sim.paused = true;
+  syncPauseBtn();
   syncCourseStrip();
 }
 /** Back 10 s is offered once the ring holds 10 s (before that, at() would show the oldest frame as "10 s ago") */
@@ -1187,7 +1351,7 @@ function syncCourseStrip() {
   if (previewT !== null && !b?.ring.previewing) previewT = null;
   const st: CourseStripState = {};
   const newest = b?.ring.newest;
-  if (b?.capturing) st.capture = { title: captureTitle, previewAgo: previewT !== null && newest ? Math.round(newest.t - previewT) : null, canBack: canBack10(b), hasEditor: !!b.captureReturn };
+  if (b?.capturing) st.capture = { title: captureTitle, slide: captureSlide, count: capItems.length, crashed: !!sim.ac.s.crashed, previewAgo: previewT !== null && newest ? Math.round(newest.t - previewT) : null, canBack: canBack10(b), hasEditor: !!b.captureReturn };
   else if (b?.handoff && b.course && b.step) {
     const n = b.course.steps.findIndex((x) => x.id === b.step!.id) + 1;
     st.flight = { course: l10n(b.course.title), step: l10n(b.step.title), hasResult: !!courseOutcome || (b.plan?.kind === 'scenario' && !lesson && (debriefShown || !!sim.ac.s.crashed)), ...(n > 0 ? { n, of: b.course.steps.length } : {}), ...(courseGoalLine ? { goal: courseGoalLine } : {}) /* hand-over */ };
@@ -1200,6 +1364,8 @@ function syncCourseStrip() {
   if (cached(pauseBtn, 'cfHide', String(hidePause))) pauseBtn.style.display = hidePause ? 'none' : '';
   // a course flight: the strip's "Back to the course" is the one way back (the top bar's Courses button hides)
   document.body.classList.toggle('cf-flying', !!st.flight || !!st.loading);
+  // capture mode: the free-flight tips (« Appuyez sur D pour un Direct-To ») would sit over the capture cards
+  document.body.classList.toggle('cf-capturing', !!st.capture);
   if (courseUi.render(st)) fitSoon();
   // the toasts held while the brief card was up
   if (!courseUi.briefOpen && heldToasts.length) for (const [m, k, ms] of heldToasts.splice(0)) toast(m, k, ms);
@@ -1324,6 +1490,13 @@ const courseHost: CockpitHost = {
   startProcedure: (procId) => courseLaunch(() => startDrill(procId)),
   panelThumb,
   outsideStill,
+  refused: (r) => captureNotice('bad', r.text),
+  captured: (it) => {
+    const fr = uiLang() === 'fr';
+    const n = it.clip ? Math.round(it.clip.durS) : 0;
+    captureNotice('good', n ? (fr ? `Les ${n} dernières secondes sont enregistrées.` : `The last ${n} seconds are recorded.`) : fr ? 'Moment capturé.' : 'Moment captured.');
+    void refreshCaptures();
+  },
   showBrief: (hd, step, course, more) => {
     // the panel the course step is written for (the scene's own, else the course's): for this flight only, the
     // student's own choice (ifr.cockpit) is kept for every other flight
@@ -1423,8 +1596,17 @@ async function installCourses() {
     courseLoading = false;
     if (b.capturing) {
       const id = b.params.capture;
-      if (id) void import('./course/store').then((s) => s.courseStore()).then((st) => st.get(id)).then((c) => { if (c) { captureTitle = l10n(c.title); syncCourseStrip(); } }).catch(() => undefined);
-      toast(tr('course.captureHint'), 'info', 8000);
+      const stepId = b.params.step;
+      // the course and the slide the moment is for: the arrival card and the strip name them
+      if (id)
+        await import('./course/store').then((s) => s.courseStore()).then((st) => st.get(id)).then((c) => {
+          if (!c) return;
+          captureTitle = l10n(c.title);
+          const step = stepId ? c.steps.find((x) => x.id === stepId) : undefined;
+          if (step) captureSlide = l10n(step.title);
+        }).catch(() => undefined);
+      showCaptureIntro();
+      void refreshCaptures();
     } else if (b.params.fly && !b.handoff) fc.open(); // an expired flight link: the bridge said why (shown next, over the Flight Center)
     syncCourseStrip();
   } catch (e) {
@@ -2043,6 +2225,8 @@ mfdCanvas.addEventListener('wheel', (e) => {
 function togglePause() {
   // a course flight loading: nothing to resume yet
   if (courseLoading) return;
+  // the crash card of capture mode waits for one of its three ways on
+  if (courseUi.cardKind === 'crash') return;
   // the brief card is up: Resume (Esc) is its Start
   if (courseUi.briefOpen) { courseUi.closeBrief(true); return; }
   // the 10 s look-back: Resume flies on from the frame shown (as Fly from here), never from the hidden live state
@@ -2214,7 +2398,7 @@ function doAction(a: ButtonAction) {
 
 // ------------------------------------------------------------------ keyboard
 /** the chrome where Tab / Space / Enter keep their browser meaning (focus, press) */
-const UI_ZONES = '.topbar, .menu, .coach, .lesson-slot, .lw, .atc-radio, .view-dock, .view-pop, .modal, .drawer, .pd-pop, .steppad, .sysp-host';
+const UI_ZONES = '.cf-card-wrap, .cf-strip, .cf-shelf, .topbar, .menu, .coach, .lesson-slot, .lw, .atc-radio, .view-dock, .view-pop, .modal, .drawer, .pd-pop, .steppad, .sysp-host';
 /** close the open menus and the View panel; true when something was open */
 function closeMenus(): boolean {
   let was = false;
@@ -2550,6 +2734,8 @@ function crashText(r: string): string {
 }
 function showCrash(reason: string) {
   crashShown = reason;
+  // capture mode: the calm card of « Capturer un moment pour la diapo » (its ways on keep the capture going)
+  if (courseBridge?.capturing) { showCaptureCrash(reason); return; }
   if (!crashVeil.isConnected) document.body.append(crashVeil);
   crashVeil.innerHTML = '';
   // the emergency card's ways out, in one card and in the UI language (UX logic §7)
@@ -2571,6 +2757,7 @@ function showCrash(reason: string) {
 }
 function hideCrash() {
   crashShown = '';
+  if (courseUi.cardKind === 'crash') courseUi.closeBrief(false);
   crashVeil.classList.remove('open');
 }
 let lastAtcStep = -1;
@@ -2702,7 +2889,7 @@ function frameBody(now: number) {
   }
 
   // auto debrief at the end of a flight
-  if (!debriefShown && !sim.ac.s.crashed && sim.rec.touchdown && sim.ac.s.onGround && sim.ac.data.gsKt < 2) {
+  if (!debriefShown && !sim.ac.s.crashed && !courseBridge?.capturing && sim.rec.touchdown && sim.ac.s.onGround && sim.ac.data.gsKt < 2) {
     endTimer += dt;
     if (endTimer > 1.5) openDebrief();
   }
