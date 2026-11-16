@@ -356,3 +356,218 @@ body {
   display: inline-block;
   margin: 0 10px;
 }
+
+/* ---------------------------------------------------------------- v2: the hook */
+.hook {
+  font-size: 94px;
+  font-weight: 650;
+  line-height: 1.06;
+  letter-spacing: -0.035em;
+  color: var(--text);
+  white-space: nowrap;
+}
+.hook .w {
+  display: inline-block;
+}
+.hook .acc {
+  color: var(--accent);
+}
+.hook-sub {
+  font-size: 36px;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.sheet {
+  position: absolute;
+  background: #ffffff;
+  border-radius: 6px;
+  box-shadow: 0 30px 70px rgba(15, 23, 32, 0.16), 0 4px 12px rgba(15, 23, 32, 0.08);
+}
+.sheet .bar {
+  position: absolute;
+  border-radius: 6px;
+  background: #e3e7ec;
+}
+.sheet .bar-h {
+  background: #c9d0d8;
+}
+.fig-cap {
+  text-align: center;
+  font-size: 20px;
+  font-style: italic;
+  color: #7b8590;
+}
+.who {
+  font-size: 34px;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- v2: the studio window */
+.win {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1920px;
+  height: 1120px;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 40px 100px rgba(15, 23, 32, 0.25), 0 0 0 1px rgba(15, 23, 32, 0.08);
+}
+.win-chrome {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1920px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 18px;
+  box-sizing: border-box;
+  background: #f3f5f8;
+  border-bottom: 1px solid var(--line);
+}
+.win-chrome span {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #cfd6de;
+}
+.win-url {
+  margin-left: 24px;
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--muted);
+}
+iframe.studio {
+  position: absolute;
+  border: 0;
+  background: #fff;
+}
+.cursor {
+  position: absolute;
+  z-index: 20;
+  width: 44px;
+  height: 44px;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.3));
+}
+.cursor-ring {
+  position: absolute;
+  z-index: 19;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 4px solid rgba(11, 99, 206, 0.75);
+}
+
+/* ---------------------------------------------------------------- v2: the numbered captions */
+.cap {
+  position: absolute;
+  z-index: 30;
+  left: 50%;
+  top: 34px;
+  margin-left: 0;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 30px 12px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 12px 32px rgba(15, 23, 32, 0.16), 0 0 0 1px rgba(15, 23, 32, 0.06);
+  white-space: nowrap;
+  translate: -50% 0;
+}
+.cap-n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 26px;
+  font-weight: 700;
+}
+.cap-t {
+  font-size: 36px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------------- v2: the classroom, the tablet */
+.room {
+  background: linear-gradient(180deg, #dfe3e8 0%, #cfd5dc 70%, #b9c0c8 100%);
+}
+.screen-case {
+  position: absolute;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #4a5059, #2c3137);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.25);
+}
+.screen {
+  position: absolute;
+  background: #f4f3ef;
+  box-shadow: 0 30px 80px rgba(15, 23, 32, 0.28);
+}
+.card.flat {
+  border-radius: 0;
+  box-shadow: none;
+}
+.tablet {
+  position: absolute;
+  border-radius: 54px;
+  background: linear-gradient(180deg, #23272d, #15181c);
+  box-shadow: 0 50px 110px rgba(15, 23, 32, 0.35), inset 0 0 0 2px #3a4047;
+}
+.tablet-cam {
+  position: absolute;
+  left: 50%;
+  top: 16px;
+  width: 9px;
+  height: 9px;
+  margin-left: -4px;
+  border-radius: 50%;
+  background: #3b434c;
+}
+.tablet-screen {
+  position: absolute;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--sl-paper);
+}
+.tablet-screen .card {
+  transform-origin: 0 0;
+}
+.room .card {
+  transform-origin: 0 0;
+}
+
+/* ---------------------------------------------------------------- v2: the cockpit label, the end card */
+.ck-label .ck-sub {
+  margin-top: 6px;
+}
+.soon {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 28px 12px 22px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 0 0 2px rgba(11, 99, 206, 0.22), 0 10px 26px rgba(15, 23, 32, 0.08);
+  font-size: 32px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  white-space: nowrap;
+}
+.soon-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+}

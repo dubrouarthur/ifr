@@ -30,7 +30,16 @@ export interface FlightSpec {
 }
 
 const calm = (sim: Sim) => {
-  Object.assign(sim.weather, { windKt: 0, gustKt: 0, turbulence: 0 });
+  // no wind at any height: the winds aloft default to a veered, stronger copy of the surface wind (sim/wind.ts)
+  Object.assign(sim.weather, {
+    windKt: 0,
+    gustKt: 0,
+    turbulence: 0,
+    aloft: [
+      { altFt: 3000, dir: 360, kt: 0 },
+      { altFt: 9000, dir: 360, kt: 0 },
+    ],
+  });
 };
 
 export class Track {
@@ -117,6 +126,31 @@ export function ilsFinal(rate = 1): FlightSpec {
       sim.ap.pressAlt(sim.ac.data);
       sim.ap.pressApr(sim.ac.data, sim.navInputs());
       for (let i = 0; i < 120 * 70; i++) sim.step(STEP);
+      return sim;
+    },
+  };
+}
+
+/** The slide's situation flown in the cockpit (shot C): ARD R-276, 4,000 ft, 100 kt, heading `hdg`, `bankDeg` to the
+ *  right held by the autopilot in ROL, ALT hold: the turn the author set on the slide, now flying. */
+export function slideSituation(hdg: number, bankDeg: number): FlightSpec {
+  return {
+    build() {
+      const sim = new Sim();
+      applyScene(sim, demoScene("g1000"));
+      // the slide's own weather (its wind), without gusts or turbulence
+      Object.assign(sim.weather, { gustKt: 0, turbulence: 0 });
+      sim.ap.hdgBug = hdg;
+      sim.ac.s.psi = (hdg * Math.PI) / 180;
+      sim.ac.s.phi = (bankDeg * Math.PI) / 180;
+      sim.step(STEP);
+      sim.ac.s.phi = (bankDeg * Math.PI) / 180;
+      sim.step(STEP);
+      sim.ap.toggleAp(sim.ac.data);
+      sim.ap.pressAlt(sim.ac.data);
+      sim.ap.rollRef = bankDeg;
+      sim.ap.bankCmd = bankDeg;
+      sim.ac.s.psi = (hdg * Math.PI) / 180;
       return sim;
     },
   };
