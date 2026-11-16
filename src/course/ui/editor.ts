@@ -33,11 +33,11 @@ import { KINDS, kindLabel } from "./reader";
 import { CanvasEditor } from "../canvas/editor";
 import { SceneSims, rememberScene } from "../canvas/instruments";
 import { renderThumb, type SlideView } from "../canvas/render";
-import { baseThemeId } from "../canvas/themes";
+import { baseThemeId, resolveTheme } from "../canvas/themes";
+import { slideCrowded, tidySlide } from "../canvas/placement";
 import {
   DEMO_SCENE_ID,
   demoScene,
-  libraryItem,
   type BlockDraft,
 } from "../canvas/factory";
 import { compactScene, encodeScene } from "../scene";
@@ -259,6 +259,11 @@ export class CourseEditor implements InspectorHost {
   private bodyEl!: HTMLElement;
   private stripEl!: HTMLElement;
   private emptyEl: HTMLElement | null = null;
+  /** the reveal preview (Tout · Début · 1 · 2…) sits in the step bar, beside « n apparitions » */
+  private revealHost = h("span", { class: "ce-sb-reveal" });
+  private emptyKill: (() => void) | null = null;
+  /** slides whose author chose « Partir d’une diapo vide » (the first-run card stays away) */
+  private emptyBlank = new Set<string>();
   private startEl: { destroy(): void } | null = null;
   private inspOpen = true;
   private zoom = 1;
@@ -654,6 +659,45 @@ export class CourseEditor implements InspectorHost {
   offerNewSlideIfCrowded(b: SlideBlock, d: BlockDraft) {
     const c = this.canvasEd?.canvas;
     if (!c) return;
+    // on the author's own slide (no designed layout), an element that had to shrink a lot: the slide reflows
+    // into a clean order instead (one more undo step, said in the toast)
+    const layout = this.step?.slide?.layout;
+    const core = this.canvasEd?.core;
+    if (core && !core.full && core.lastScale < 0.85 && (!layout || layout === "blank") && c.blocks.length <= 6) {
+      const ed = this.canvasEd!;
+      const theme = resolveTheme(this.step?.slide?.theme ?? this.course.theme, this.course.brand);
+      const grown = {
+        ...c,
+        blocks: c.blocks.map((x) => (x.id === b.id ? { ...x, frame: { ...x.frame, w: d.frame.w, h: d.frame.h } } : x)),
+      };
+      const next = tidySlide(grown, theme, this.lang);
+      if (!slideCrowded(next)) {
+        ed.set(next, "tidy");
+        this.toast(
+          t2(this.lang, "Slide rearranged to make room.", "Diapo réorganisée pour faire de la place."),
+          () => ed.run({ k: "undo" }),
+        );
+        return;
+      }
+    }
+    // the placement found no free space (placement.ts): two ways out, in one line
+    if (this.canvasEd?.core.full) {
+      this.toastActions(
+        t2(this.lang, "No room left on this slide.", "Plus de place sur cette diapo."),
+        [
+          {
+            label: t2(this.lang, "New slide with this element", "Nouvelle diapo avec cet élément"),
+            run: () => {
+              this.canvasEd?.run({ k: "undo" });
+              this.addTemplate("slide", { layout: "blank" });
+              this.canvasEd?.add(d);
+            },
+          },
+          { label: t2(this.lang, "Tidy the slide", "Réorganiser la diapo"), run: () => this.tidySlide() },
+        ],
+      );
+      return;
+    }
     const f = b.frame;
     let covered = 0;
     for (const x of c.blocks) {
@@ -678,6 +722,41 @@ export class CourseEditor implements InspectorHost {
       },
       t2(this.lang, "New slide with this block", "Nouvelle diapo avec ce bloc"),
     );
+  }
+  /** « Réorganiser la diapo »: the slide in a clean order, one undo step (placement.ts tidySlide). */
+  tidySlide() {
+    const ed = this.canvasEd;
+    if (!ed) return;
+    const theme = resolveTheme(this.step?.slide?.theme ?? this.course.theme, this.course.brand);
+    const before = ed.canvas;
+    const next = tidySlide(before, theme, this.lang);
+    if (next === before) return;
+    ed.set(next, "tidy");
+    this.toast(t2(this.lang, "Slide tidied.", "Diapo réorganisée."), () => ed.run({ k: "undo" }));
+  }
+  /** is the current slide in a mess (two elements cover each other)? */
+  get slideCrowded(): boolean {
+    const c = this.canvasEd?.canvas;
+    return !!c && slideCrowded(c);
+  }
+  /** a message with up to two actions (the first is the one most people want) */
+  toastActions(msg: string, actions: { label: string; run: () => void }[]) {
+    clearTimeout(this.toastTimer);
+    this.toastEl.replaceChildren(h("span", {}, msg));
+    for (const a of actions)
+      this.toastEl.append(
+        btn(
+          a.label,
+          () => {
+            this.toastEl.hidden = true;
+            a.run();
+          },
+          { cls: "sm ghost inv" },
+        ),
+      );
+    this.toastEl.hidden = false;
+    this.liveEl.textContent = msg;
+    this.toastTimer = window.setTimeout(() => (this.toastEl.hidden = true), 9000);
   }
   toast(msg: string, undo?: () => void, actionLabel?: string) {
     clearTimeout(this.toastTimer);
@@ -989,6 +1068,12 @@ export class CourseEditor implements InspectorHost {
       }),
     );
   }
+  /** a panel of the rail, from the inspector's next steps (an empty course gets its first slide) */
+  openRail(t: string) {
+    if (!RAIL_TABS.includes(t as RailTab) && !["elements", "diagrams", "brand"].includes(t)) return;
+    if (!this.course.steps.length) this.addTemplate("slide", { layout: "blank" });
+    this.openPanel(t as RailTab);
+  }
   togglePanel(t: RailTab) {
     if (this.studio.tab === t) this.closePanel();
     else this.openPanel(t);
@@ -1142,13 +1227,8 @@ export class CourseEditor implements InspectorHost {
   // ================================================================ rendering
   private renderAll() {
     this.renderRail();
-    // an empty course or an empty first slide opens on the templates
-    if (
-      this.course.steps.length === 1 &&
-      this.step?.slide &&
-      !this.step.slide.blocks.length
-    )
-      queueMicrotask(() => this.openPanel("templates"));
+    // an empty first slide opens on « Que voulez-vous montrer ? » (the first-run card over the slide, syncEmpty);
+    // the rail stays closed so the card has the room
     this.renderTop();
     this.renderSteps();
     this.renderTool();
@@ -1358,7 +1438,8 @@ export class CourseEditor implements InspectorHost {
           railIcon("plus", "M12 5v14 M5 12h14"),
           h("span", {}, t2(lang, "Add", "Ajouter")),
         );
-        b.addEventListener("click", () => this.openPanel("templates"));
+        // a new slide opens on « Que voulez-vous montrer ? » (the first-run card), « Tous les modèles » beside it
+        b.addEventListener("click", () => this.addTemplate("slide", { layout: "blank" }));
         return b;
       })(),
     );
@@ -1755,10 +1836,10 @@ export class CourseEditor implements InspectorHost {
             fr ? "Texte des diapos" : "Slide text",
           ),
           langSeg,
-          revealSeg,
           inspB,
         ),
       );
+      this.revealHost.replaceChildren(...(revealSeg ? [revealSeg] : []));
       this.toolEl.classList.remove("two");
     } else {
       const dev = seg(
@@ -1935,8 +2016,10 @@ export class CourseEditor implements InspectorHost {
   }
   /** The empty-slide card over the canvas (three moves); gone as soon as the slide has a block. */
   private syncEmpty(c: SlideCanvas) {
-    const empty = !c.blocks.length && !c.background?.image;
+    const empty = !c.blocks.length && !c.background?.image && !this.emptyBlank.has(this.step?.id ?? "");
     if (!empty) {
+      this.emptyKill?.();
+      this.emptyKill = null;
       this.emptyEl?.remove();
       this.emptyEl = null;
       return;
@@ -1944,21 +2027,27 @@ export class CourseEditor implements InspectorHost {
     if (this.emptyEl) return;
     const wrap = this.stageArea.querySelector(".ce-canvaswrap");
     if (!wrap) return;
-    this.emptyEl = h(
-      "div",
-      { class: "ce-empty-wrap" },
-      emptySlideCard(this.lang, {
-        templates: () => this.openPanel("templates"),
-        instruments: () => this.openPanel("instruments"),
-        title: () => {
-          const it = libraryItem("text:title");
-          if (!it || !this.canvasEd) return;
-          const b = this.canvasEd.add(it.make());
-          requestAnimationFrame(() => this.canvasEd?.run({ k: "edit" }));
-          void b;
+    const card = emptySlideCard(
+      this.lang,
+      {
+        layout: (id) => this.applyLayout(id),
+        flight: () => this.addSimContent("flight"),
+        more: () => this.openPanel("templates"),
+        blank: () => {
+          this.emptyBlank.add(this.step?.id ?? "");
+          if (this.canvasEd) this.syncEmpty(this.canvasEd.canvas);
+          this.openPanel("text");
         },
-      }),
+      },
+      {
+        theme: this.course.theme,
+        brand: this.course.brand,
+        scenes: this.course.scenes,
+        cockpit: this.course.cockpit,
+      },
     );
+    this.emptyKill = card.destroy;
+    this.emptyEl = h("div", { class: "ce-empty-wrap" }, card.el);
     wrap.append(this.emptyEl);
   }
   /** Right click / long press on the empty slide: slide-level actions. */
@@ -1988,6 +2077,8 @@ export class CourseEditor implements InspectorHost {
     ];
   }
   private teardownCentre() {
+    this.emptyKill?.();
+    this.emptyKill = null;
     this.emptyEl?.remove();
     this.emptyEl = null;
     this.player?.destroy();
@@ -2145,6 +2236,7 @@ export class CourseEditor implements InspectorHost {
         h("b", {}, t.head),
         t.tail ? ` · ${t.tail}` : "",
       ),
+      ...(s.slide ? [this.revealHost] : []),
       h("span", { class: "ce-sp" }),
       btn(fr ? "Dupliquer" : "Duplicate", () => this.duplicate(), {
         cls: "sm quiet hide-s",
@@ -2181,11 +2273,11 @@ export class CourseEditor implements InspectorHost {
         s.slide
           ? {
               label: fr
-                ? "Convertir en page de lecture avec scène"
-                : "Convert to a reading page with a scene",
+                ? "Convertir en page de lecture avec un instrument"
+                : "Convert to a reading page with an instrument",
               sub: fr
-                ? "Le premier instrument devient la scène"
-                : "The first instrument becomes the stage",
+                ? "Le premier instrument accompagne le texte"
+                : "The first instrument goes beside the text",
               icon: "convert",
               onClick: () => this.convert(),
             }

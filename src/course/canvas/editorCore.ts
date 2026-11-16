@@ -44,6 +44,7 @@ import {
 } from "./ops";
 import { History } from "./history";
 import { placeDraft, type BlockDraft } from "./factory";
+import { fitFree } from "./placement";
 
 export interface Mods {
   shift?: boolean;
@@ -200,9 +201,39 @@ export class EditorCore {
   ) {
     this.apply(updateBlock(this.canvas, id, patch), key ?? `edit:${id}`, !key);
   }
-  /** Add a library draft centred at `at` (default the slide centre) and select it. */
+  /**
+   * Add a library draft centred at `at` and select it. Without a point (added from the rail) it lands in the free
+   * space of the slide, a little smaller when that keeps it clear (placement.ts fitFree); `full` then says whether
+   * no free space was found (it went on the least-covered spot).
+   */
+  full = false;
+  /** …and not even a picture to wait on: it covers words until the author chooses */
+  onWords = false;
+  /** the scale the last element added from the rail took to fit (1: its full size) */
+  lastScale = 1;
   addDraft(d: BlockDraft, at?: Pt): SlideBlock {
-    const b = placeDraft(this.canvas, d, at, this.grid);
+    let draft = d;
+    this.full = false;
+    this.onWords = false;
+    this.lastScale = 1;
+    if (!at && d.kind !== "arrow") {
+      const r = fitFree(this.canvas, d.frame.w, d.frame.h, d.kind);
+      if (r) {
+        at = r.at;
+        this.lastScale = r.scale;
+        if (r.scale < 1) draft = { ...d, frame: { ...d.frame, w: r.w, h: r.h } } as BlockDraft;
+      } else {
+        // the slide is full: the studio offers a new slide or a tidy; meanwhile never on the words
+        this.full = true;
+        const w = fitFree(this.canvas, d.frame.w, d.frame.h, d.kind, { wordsOnly: true });
+        this.onWords = !w;
+        if (w) {
+          at = w.at;
+          if (w.scale < 1) draft = { ...d, frame: { ...d.frame, w: w.w, h: w.h } } as BlockDraft;
+        }
+      }
+    }
+    const b = placeDraft(this.canvas, draft, at, this.grid);
     this.apply(addBlock(this.canvas, b));
     const added = this.canvas.blocks[this.canvas.blocks.length - 1];
     this.setSelection([added.id]);

@@ -49,8 +49,8 @@ export const INTRO_LINKS = {
 /** What the library holds, as its landing shows it (src/library/model shelves(); tests/intro.test.ts keeps these in
  *  step with the live model): items per formation and its number of subjects, and the whole library. */
 export const INTRO_COUNTS = {
-  total: 129,
-  ppl: { n: 60, s: 15 },
+  total: 130,
+  ppl: { n: 61, s: 15 },
   night: { n: 22, s: 4 },
   ir: { n: 92, s: 7 },
   atpl: { n: 6, s: 13 },

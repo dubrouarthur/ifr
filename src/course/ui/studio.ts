@@ -79,7 +79,7 @@ const RAIL_LABEL: Record<RailTab, [string, string]> = {
   elements: ["Shapes", "Formes"],
   instruments: ["Instruments", "Instruments"],
   diagrams: ["Diagrams", "Schémas"],
-  media: ["Images", "Images"],
+  media: ["Media", "Médias"],
   interactive: ["Questions", "Questions"],
   brand: ["Club logo", "Logo du club"],
   cockpit: ["Simulator", "Simulateur"],
@@ -103,33 +103,42 @@ const RAIL_HINT: Record<RailTab, [string, string]> = {
     "Entrée en attente, 1 sur 60, plan à 3°, VDP, triangle des vents, espaces…",
   ],
   media: [
-    "Your photos, the library, aviation icons",
-    "Vos photos, la photothèque, les icônes",
+    "Pictures, shapes, diagrams and your club’s logo",
+    "Images, formes, schémas et le logo du club",
   ],
   interactive: [
-    "Quiz, calculation, sim view, checklist",
-    "Quiz, calcul, vue simu, check-list",
+    "A question, a calculation, a checklist the simulator ticks",
+    "Une question, un calcul, une check-list cochée par le simulateur",
   ],
   brand: [
     "Your school's logo and colour on every slide",
     "Le logo et la couleur de l’école sur chaque diapo",
   ],
   cockpit: [
-    "Live instruments, flights and the flight situation of the slide",
-    "Instruments vivants, vols et situation de vol de la diapo",
+    "What the aircraft does, and the student at the controls",
+    "Ce que fait l’avion, et l’élève aux commandes",
   ],
 };
+/** The rail, in the order a creator thinks: a slide, its words, its instruments, the simulator, a question, the
+ *  rest (images, shapes, diagrams, club logo under « Médias »). Shapes, diagrams and the logo stay tabs of their
+ *  own inside « Médias » (and for older callers of show()). */
 export const RAIL_TABS: readonly RailTab[] = [
   "templates",
   "text",
-  "elements",
   "instruments",
-  "diagrams",
-  "media",
-  "interactive",
-  "brand",
   "cockpit",
+  "interactive",
+  "media",
 ];
+/** the parts of « Médias », in order */
+const MEDIA_PARTS: readonly RailTab[] = ["media", "elements", "diagrams", "brand"];
+const MEDIA_PART_LABEL: Record<string, [string, string]> = {
+  media: ["Images", "Images"],
+  elements: ["Shapes", "Formes"],
+  diagrams: ["Diagrams", "Schémas"],
+  brand: ["Club logo", "Logo du club"],
+};
+let MEDIA_PART: RailTab = "media";
 /** Rail tabs that add blocks to a designed slide (off on a Reader + Stage step). */
 export const SLIDE_ONLY: ReadonlySet<RailTab> = new Set([
   "text",
@@ -206,9 +215,12 @@ export interface StudioHost {
 
 /** the way to get a situation the author used last in the Simulateur panel */
 let SIM_WAY: "set" | "ready" | "fly" = "set";
+/** the three ways are folded until asked for (back from the cockpit they open on « Voler et capturer ») */
+let SIM_OPEN = false;
 /** Open the Simulateur panel on one of its three ways (back from the cockpit: on « Voler et capturer »). */
 export function setSimWay(w: "set" | "ready" | "fly") {
   SIM_WAY = w;
+  SIM_OPEN = true;
 }
 // the four simulator contents, drawn (our own constant strings)
 const SIM_ART: Record<SimContentKind, string> = {
@@ -287,6 +299,41 @@ export class StudioPanel {
   get open(): boolean {
     return this.tab !== null;
   }
+  /** drawing a part of « Médias » */
+  private inMedia = false;
+  /** « Médias »: Images · Formes · Schémas · Logo du club, one choice at the top, the part below. */
+  private media() {
+    const lang = this.host.lang;
+    const part = MEDIA_PART;
+    this.inMedia = true;
+    try {
+      if (part === "brand") this.brand();
+      else this.library(part);
+    } finally {
+      this.inMedia = false;
+    }
+    const bar = h("div", {
+      class: "ce-subtabs",
+      role: "radiogroup",
+      "aria-label": t2(lang, "What to add", "Quoi ajouter"),
+    });
+    for (const p of MEDIA_PARTS) {
+      const on = p === part;
+      const b = h(
+        "button",
+        { type: "button", role: "radio", "aria-checked": on ? "true" : "false", class: on ? "on" : "" },
+        MEDIA_PART_LABEL[p][lang === "fr" ? 1 : 0],
+      );
+      b.addEventListener("click", () => {
+        if (on) return;
+        MEDIA_PART = p;
+        this.show("media");
+      });
+      bar.append(b);
+    }
+    this.hintEl.textContent = RAIL_HINT[part][lang === "fr" ? 1 : 0];
+    this.body.prepend(bar);
+  }
   show(tab: RailTab) {
     this.teardown();
     this.tab = tab;
@@ -297,6 +344,12 @@ export class StudioPanel {
     this.titleEl.textContent = railLabel(tab, lang);
     this.hintEl.textContent = RAIL_HINT[tab][lang === "fr" ? 1 : 0];
     if (tab === "templates") this.templates();
+    else if (MEDIA_PARTS.includes(tab) && RAIL_TABS.includes("media") && tab !== "media" && !this.inMedia) {
+      // an older caller opens a part of « Médias »: open « Médias » on that part
+      MEDIA_PART = tab;
+      this.show("media");
+      return;
+    } else if (tab === "media") this.media();
     else if (tab === "brand") this.brand();
     else if (tab === "cockpit") this.simulator();
     else this.library(tab);
@@ -410,10 +463,7 @@ export class StudioPanel {
         { class: "ce-panel-note" },
         read.own
           ? T("Only this element shows it.", "Seul cet élément la montre.")
-          : T(
-              "Every instrument of the slide shows it: they move together.",
-              "Tous les instruments de la diapo la montrent : ils bougent ensemble.",
-            ),
+          : T("Every instrument of the slide shows it.", "Tous les instruments de la diapo la montrent."),
       ),
     );
     const ways: { id: typeof SIM_WAY; label: string; line: string }[] = [
@@ -543,9 +593,29 @@ export class StudioPanel {
       });
       tabs.append(b);
     }
-    out.push(tabs, pane);
+    // the three ways, folded: a creator first adds, then changes the situation when needed
+    const fold = h(
+      "details",
+      { class: "sit-fold sim-ways-fold" },
+      h("summary", {}, T("Change the flight situation", "Changer la situation de vol")),
+      h("div", { class: "sit-fold-b" }, tabs, pane),
+    );
+    let drawn = false;
+    const open = () => {
+      if (drawn) return;
+      drawn = true;
+      showWay(SIM_WAY);
+    };
+    fold.addEventListener("toggle", () => {
+      SIM_OPEN = fold.open;
+      if (fold.open) open();
+    });
+    if (SIM_OPEN) {
+      fold.open = true;
+      open();
+    }
+    out.push(fold);
     this.body.replaceChildren(...out);
-    showWay(SIM_WAY);
   }
 
   // ---------------------------------------------------------------- the asset library tabs
@@ -1076,69 +1146,125 @@ export class StudioPanel {
   }
 }
 
-/** The empty slide teaches the builder in ten seconds: three moves, each one tap. */
+/** What the first-run card of an empty slide can start. */
+export interface EmptyStarts {
+  /** the empty slide takes a layout */
+  layout(id: SlideLayoutId): void;
+  /** a flight in the simulator, with a goal, on this slide */
+  flight(): void;
+  /** start from nothing: the card goes away */
+  blank(): void;
+  /** the whole template gallery (the « Modèles » panel) */
+  more?(): void;
+}
+/** the keyboard hints are shown once on this device */
+const KEYS_SEEN = "ifr.studio.keys.v1";
+const STARTS: { id: SlideLayoutId | "flight"; t: [string, string]; s: [string, string] }[] = [
+  { id: "cover", t: ["A cover", "Une couverture"], s: ["The title of the course", "Le titre du cours"] },
+  {
+    id: "instrumentNotes",
+    t: ["An idea and an instrument", "Une idée et un instrument"],
+    s: ["A live instrument, explained", "Un instrument en direct, expliqué"],
+  },
+  {
+    id: "yourTurn",
+    t: ["The student at the controls", "L’élève aux commandes"],
+    s: ["“Your turn”: the simulator checks", "« À vous » : le simulateur vérifie"],
+  },
+  { id: "quiz", t: ["A question", "Une question"], s: ["Answers as tiles", "Des réponses en tuiles"] },
+  {
+    id: "flight",
+    t: ["A flight in the simulator", "Un vol dans le simulateur"],
+    s: ["With a goal, then back to the course", "Avec un objectif, puis retour au cours"],
+  },
+];
+/**
+ * The empty slide teaches the builder without a manual: « Que voulez-vous montrer ? » and five starting slides
+ * drawn for real (a cover, an idea with a live instrument, the student at the controls, a question, a flight in
+ * the simulator), « Partir d’une diapo vide », and the keyboard hints the first time.
+ */
 export function emptySlideCard(
   lang: Lang,
-  on: { templates(): void; instruments(): void; title(): void },
-): HTMLElement {
+  on: EmptyStarts,
+  thumbs?: { theme?: ThemeId; brand?: SchoolBrand; scenes?: Course["scenes"]; cockpit?: Course["cockpit"] },
+): { el: HTMLElement; destroy(): void } {
   const fr = lang === "fr";
-  const step = (
-    n: string,
-    title: string,
-    sub: string,
-    run: () => void,
-    ic: RailTab,
-  ) => {
+  const views: SlideView[] = [];
+  const grid = h("div", { class: "ce-fr-grid", role: "list" });
+  for (const st of STARTS) {
+    const th = h("span", { class: "ce-fr-th", "aria-hidden": "true" });
+    if (st.id === "flight") {
+      th.classList.add("art");
+      th.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 64" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${SIM_ART.flight}</svg>`;
+    } else if (thumbs) {
+      const id = st.id;
+      requestAnimationFrame(() => {
+        if (!th.isConnected) return;
+        try {
+          views.push(renderThumb(layoutCanvas(id, { theme: thumbs.theme }), th, { lang, ...thumbs }));
+        } catch {
+          /* a thumbnail is decoration */
+        }
+      });
+    }
     const b = h(
       "button",
-      { type: "button", class: "ce-empty-step" },
-      h("span", { class: "ce-empty-n" }, n),
-      railIcon(ic),
-      h("span", {}, h("b", {}, title), h("small", {}, sub)),
+      { type: "button", class: "ce-fr", role: "listitem" },
+      th,
+      h("span", { class: "ce-fr-l" }, h("b", {}, st.t[fr ? 1 : 0]), h("small", {}, st.s[fr ? 1 : 0])),
     );
     b.addEventListener("click", (e) => {
       e.stopPropagation();
-      run();
+      if (st.id === "flight") on.flight();
+      else on.layout(st.id);
     });
     b.addEventListener("pointerdown", (e) => e.stopPropagation());
-    return b;
-  };
-  return h(
+    grid.append(b);
+  }
+  const blank = h("button", { type: "button", class: "ce-link ce-fr-blank" }, fr ? "Partir d’une diapo vide" : "Start from an empty slide");
+  blank.addEventListener("click", (e) => {
+    e.stopPropagation();
+    on.blank();
+  });
+  blank.addEventListener("pointerdown", (e) => e.stopPropagation());
+  let more: HTMLElement | null = null;
+  if (on.more) {
+    more = h("button", { type: "button", class: "ce-link ce-fr-blank" }, fr ? "Tous les modèles" : "All templates");
+    more.addEventListener("click", (e) => {
+      e.stopPropagation();
+      on.more?.();
+    });
+    more.addEventListener("pointerdown", (e) => e.stopPropagation());
+  }
+  let seen = true;
+  try {
+    seen = localStorage.getItem(KEYS_SEEN) === "1";
+    if (!seen) localStorage.setItem(KEYS_SEEN, "1");
+  } catch {
+    seen = true;
+  }
+  const mod = PASTE_KEY.startsWith("⌘") ? "⌘" : "Ctrl+";
+  const keys = seen
+    ? null
+    : h(
+        "p",
+        { class: "ce-fr-keys" },
+        fr
+          ? `Double-clic : écrire · Glisser : déplacer · Suppr : effacer · ${mod}Z : annuler`
+          : `Double-click: type · Drag: move · Delete: remove · ${mod}Z: undo`,
+      );
+  const el = h(
     "div",
-    {
-      class: "ce-empty-card",
-      role: "group",
-      "aria-label": fr ? "Diapo vide" : "Empty slide",
-    },
-    h(
-      "b",
-      { class: "ce-empty-t" },
-      fr ? "Une diapo vide. Trois gestes :" : "An empty slide. Three moves:",
-    ),
-    step(
-      "1",
-      fr ? "Choisissez un modèle" : "Pick a template",
-      fr
-        ? "Entrée en attente, 1 sur 60, HSI, quiz…"
-        : "Hold entry, 1 in 60, HSI, quiz…",
-      on.templates,
-      "templates",
-    ),
-    step(
-      "2",
-      fr ? "Glissez un instrument" : "Drag in an instrument",
-      fr ? "PFD, HSI, six instruments, en direct" : "PFD, HSI, six-pack, live",
-      on.instruments,
-      "instruments",
-    ),
-    step(
-      "3",
-      fr ? "Écrivez un titre" : "Write a title",
-      fr
-        ? "Double-cliquez pour modifier le texte"
-        : "Double-click to edit any text",
-      on.title,
-      "text",
-    ),
+    { class: "ce-empty-card ce-fr-card", role: "group", "aria-label": fr ? "Diapo vide" : "Empty slide" },
+    h("h2", { class: "ce-empty-t" }, fr ? "Que voulez-vous montrer ?" : "What do you want to show?"),
+    grid,
+    h("div", { class: "ce-fr-ft" }, h("span", { class: "ce-fr-links" }, more, blank), keys),
   );
+  return {
+    el,
+    destroy: () => {
+      for (const v of views.splice(0)) v.destroy();
+      el.remove();
+    },
+  };
 }

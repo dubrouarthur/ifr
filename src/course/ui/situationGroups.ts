@@ -53,6 +53,9 @@ export interface ShowsOptions {
   title?: string;
   /** the form is open (an instrument) or folded under « Régler ici » (a step, where the summary comes first) */
   folded?: boolean;
+  /** takes the details of the situation (position, radios, wind, failures, autopilot) and « Ouvrir dans le
+   *  simulateur » out of the group, for the inspector's « Plus de réglages » */
+  more?: (nodes: Node[]) => void;
 }
 
 /** « Ce qu’il montre »: the situation in one line, who shares it, the ready situations, the form, the cockpit. */
@@ -196,8 +199,8 @@ export function showsGroup(
         { class: "sit-fly" },
         btn(
           T(
-            "Open this situation in the simulator",
-            "Ouvrir cette situation dans le simulateur",
+            "Open in the simulator",
+            "Ouvrir dans le simulateur",
           ),
           () => S.fly(sceneOfSituation(editor.value, { base: read.scene })),
           { cls: "sm", icon: "play" },
@@ -212,13 +215,17 @@ export function showsGroup(
       )
     : null;
 
+  if (o.more) {
+    const secs = editor.el.querySelector(".sit-secs");
+    o.more([secs, fly].filter((x): x is HTMLElement => !!x));
+  }
   const el = group(o.title ?? T("What it shows", "Ce qu’il montre"), [
     head,
     share,
     ready,
     form,
     ...(o.extra ?? []),
-    fly,
+    o.more ? null : fly,
   ]);
   el.classList.add("sit-grp");
   return { el, live };

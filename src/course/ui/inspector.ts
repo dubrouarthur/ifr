@@ -75,6 +75,7 @@ import { blockLabel } from "../canvas/blocks";
 import { rememberScene } from "../canvas/instruments";
 import type { SituationHost } from "./situationEditor";
 import { askGroup, showsGroup, type SitGroupCtx } from "./situationGroups";
+import { renderMotionGroup, type MotionBlock } from "./motionGroup";
 import { viewTitle } from "../canvas/factory";
 import {
   STRIP_GROUPS,
@@ -575,6 +576,12 @@ export interface InspectorHost {
   assetUrl(id: string): string | null | Promise<string | null>;
   flyToCapture(): void;
   toast(msg: string, undo?: () => void): void;
+  /** open a panel of the left rail (instruments, text, cockpit…) */
+  openRail?(tab: string): void;
+  /** « Réorganiser la diapo » (placement.ts tidySlide), one undo step */
+  tidySlide?(): void;
+  /** two elements of the slide cover each other */
+  readonly slideCrowded?: boolean;
   /** the studio's « Situation de vol » plumbing (ui/situationEditor.ts); without it the older scene fields show */
   readonly situations?: SituationHost;
 }
@@ -1037,6 +1044,8 @@ export class Inspector {
   private scroll = new Map<string, number>();
   /** the element or step whose instrument was just turned live by ticking a control (one line says so) */
   private wentLive = "";
+  /** the instrument whose author picked « À vous » and has not chosen the goal yet */
+  private askFor = "";
   /** the instrument shown in the inspector, and whether its controls are being tried on the slide */
   private trialBlock = "";
   private trialDirty = false;
@@ -4301,17 +4310,35 @@ export class Inspector {
   private blockTab(): Kid[] {
     const sel = this.host.selection;
     const c = this.host.step.slide!;
-    if (!sel.length)
-      return [
-        note(
-          this.t(
-            "Select a block on the slide (Shift adds to it, right click or a long press opens its menu), or add one from the rail on the left: templates, text, instruments, diagrams.",
-            "Sélectionnez un bloc sur la diapo (Maj l’ajoute à la sélection, clic droit ou appui long ouvre son menu), ou ajoutez-en un depuis le rail à gauche : modèles, texte, instruments, schémas.",
-          ),
-          "",
-        ),
-        this.layersGroup(c),
+    if (!sel.length) {
+      // nothing selected: what to do next, in three buttons, then the elements of the slide
+      const T = this.t.bind(this);
+      const H = this.host;
+      const acts: Kid[] = [
+        H.slideCrowded && H.tidySlide
+          ? btn(T("Tidy the slide", "Réorganiser la diapo"), () => H.tidySlide?.(), { cls: "ce-act", icon: "layout" })
+          : null,
+        H.openRail ? btn(T("Add an instrument", "Ajouter un instrument"), () => H.openRail?.("instruments"), { cls: "ce-act", icon: "gauge" }) : null,
+        H.openRail ? btn(T("Add text", "Ajouter du texte"), () => H.openRail?.("text"), { cls: "ce-act", icon: "text" }) : null,
+        H.openRail && !H.slideCrowded
+          ? btn(T("Give the student the controls", "Donner les commandes à l’élève"), () => H.openRail?.("cockpit"), { cls: "ce-act", icon: "play" })
+          : null,
       ];
+      return [
+        h(
+          "div",
+          { class: "ce-idle" },
+          h("p", { class: "ce-idle-t" }, T("Click an element to change it", "Cliquez sur un élément pour le modifier")),
+          h(
+            "p",
+            { class: "ce-note muted" },
+            T("Or add one:", "Ou ajoutez-en un :"),
+          ),
+          h("div", { class: "ce-acts" }, ...kids(acts)),
+        ),
+        c.blocks.length ? this.layersGroup(c) : null,
+      ];
+    }
     // a group (an instrument with its markers): edit its main block, the group stays together
     const grp = sel[0].frame.group;
     const grouped =
@@ -4429,6 +4456,8 @@ export class Inspector {
         : null,
     ];
     out.push(...this.blockFields(b, setB));
+    // what follows (appearance, position, accessible name, on tap) is folded under « Plus de réglages »
+    const tailFrom = out.length;
     // reveal
     const orders =
       Math.max(3, ...c.blocks.map((x) => x.reveal?.order ?? 0)) + 1;
@@ -4607,6 +4636,18 @@ export class Inspector {
       );
     }
     out.push(this.tapGroup(b, setB));
+    const tail = out.splice(tailFrom);
+    const fold = out.find(
+      (x): x is HTMLElement => x instanceof HTMLElement && x.classList.contains("ce-more-fold"),
+    );
+    if (fold) fold.querySelector(".ce-mf-b")?.append(...kids(tail));
+    else
+      out.push(
+        this.moreFold(
+          tail,
+          this.t("Appearance, position, accessible name, on tap", "Apparition, position, nom accessible, au toucher"),
+        ),
+      );
     return out;
   }
   private tapGroup(
@@ -5518,17 +5559,18 @@ export class Inspector {
     };
     const setYt = (yt: YourTurn | undefined) =>
       setFresh((x) => (yt ? (x.yourTurn = yt) : delete x.yourTurn));
+    // the details of the situation and « Ouvrir dans le simulateur » go to « Plus de réglages »
+    let moreSit: Node[] = [];
     const shows = b.fromCalc
       ? null
-      : showsGroup(ctx, { blockId: b.id });
+      : showsGroup(ctx, { blockId: b.id, more: (n) => (moreSit = n) });
     const fromCalc = calcSteps.find((s) => s.id === b.fromCalc);
     const advanced = h(
-      "details",
-      { class: "sit-fold ce-adv" },
-      h("summary", {}, T("Advanced settings", "Réglages avancés")),
+      "div",
+      { class: "ce-adv" },
       h(
         "div",
-        { class: "sit-fold-b" },
+        { class: "ce-adv-b" },
         field(
           T("Instrument", "Instrument"),
           selectIn<string>(
@@ -5601,13 +5643,12 @@ export class Inspector {
         : group(T("What it shows", "Ce qu’il montre"), [
             note(
               T(
-                `The numbers of the calculation “${fromCalc ? tr(fromCalc.title, this.lang) : ""}”: each student sees their own problem. Change it under Advanced settings.`,
-                `Les chiffres du calcul « ${fromCalc ? tr(fromCalc.title, this.lang) : ""} » : chaque élève voit son propre énoncé. À changer dans Réglages avancés.`,
+                `The numbers of the calculation “${fromCalc ? tr(fromCalc.title, this.lang) : ""}”: each student sees their own problem. Change it under More settings.`,
+                `Les chiffres du calcul « ${fromCalc ? tr(fromCalc.title, this.lang) : ""} » : chaque élève voit son propre énoncé. À changer dans Plus de réglages.`,
               ),
             ),
           ]),
-      this.stripGroup(b, setB),
-      shows
+      this.studentGroup(b, setB, setFresh, () => (shows
         ? askGroup(ctx, shows.live, {
             where: "slide",
             yt: b.yourTurn,
@@ -5630,15 +5671,110 @@ export class Inspector {
               }, render),
             detail: () => this.yourTurnGroup(b.yourTurn, "slide", setYt, b.scene),
           })
-        : this.yourTurnGroup(b.yourTurn, "slide", setYt, b.scene),
-      this.calloutsGroup(
-        { annotations: b.annotations },
-        (list) => setB((x) => ((x as B).annotations = list)),
-        b.view.kind === "gauge" ? undefined : (b.view as PaneView),
-        T("Markers · order of appearance", "Repères · ordre d’apparition"),
-      ),
-      group(T("More", "Plus"), [advanced]),
+        : this.yourTurnGroup(b.yourTurn, "slide", setYt, b.scene))),
+      renderMotionGroup({
+        lang: this.lang,
+        block: b,
+        course: this.host.course,
+        update: (f, key) => setB((x) => f(x as MotionBlock), key),
+        redraw: () => this.render(),
+        keep: (p) => ctx.keep(p),
+      }),
+      this.moreFold([
+        ...moreSit,
+        this.calloutsGroup(
+          { annotations: b.annotations },
+          (list) => setB((x) => ((x as B).annotations = list)),
+          b.view.kind === "gauge" ? undefined : (b.view as PaneView),
+          T("Markers · order of appearance", "Repères · ordre d’apparition"),
+        ),
+        group(T("The instrument", "L’instrument"), [advanced]),
+      ], T("Position, radios, failures, markers, which instrument…", "Position, radios, pannes, repères, quel instrument…")),
     ];
+  }
+  /** « Plus de réglages »: everything a creator rarely needs first, folded, with one line of what is inside. */
+  private moreFold(body: Kid[], line: string): HTMLElement {
+    const T = this.t.bind(this);
+    return h(
+      "details",
+      { class: "ce-more-fold" },
+      h(
+        "summary",
+        {},
+        h("span", { class: "ce-mf-t" }, T("More settings", "Plus de réglages")),
+        h("span", { class: "ce-mf-l" }, line),
+      ),
+      h("div", { class: "ce-mf-b" }, ...kids(body)),
+    );
+  }
+  /**
+   * « Ce que l’élève peut faire » of an instrument on a slide, in one choice: Regarder (nothing to touch), Explorer
+   * (a few controls under the instrument, « Les plus utiles » first), « À vous » (a goal the simulator checks).
+   */
+  private studentGroup(
+    b: Extract<SlideBlock, { kind: "instrument" }>,
+    setB: (f: (x: SlideBlock) => void, key?: string, render?: boolean) => void,
+    setFresh: (f: (x: Extract<SlideBlock, { kind: "instrument" }>) => void, render?: boolean) => void,
+    ask: () => HTMLElement,
+  ): HTMLElement {
+    const T = this.t.bind(this);
+    const state: "watch" | "explore" | "goal" = b.yourTurn || this.askFor === b.id ? "goal" : b.controls?.length ? "explore" : "watch";
+    const useful = usefulControls(b.view);
+    const pick = (v: typeof state) => {
+      if (v === "watch") {
+        this.askFor = "";
+        setFresh((x) => {
+          delete x.controls;
+          delete x.yourTurn;
+        });
+      } else if (v === "explore") {
+        this.askFor = "";
+        setFresh((x) => {
+          delete x.yourTurn;
+          if (x.controls?.length || !useful.length) return;
+          const r = withControls(x, useful);
+          if (r.block.controls) x.controls = r.block.controls;
+          if (r.wentLive) x.mode = "live";
+          const f = growForStrip({ blocks: this.host.step.slide!.blocks.map((k) => (k.id === x.id ? x : k)) }, x.id);
+          if (f) x.frame = f;
+        });
+      } else {
+        this.askFor = b.id;
+        this.render();
+      }
+    };
+    const line =
+      state === "watch"
+        ? T("The student looks at the instrument; nothing to touch.", "L’élève regarde l’instrument ; il ne touche à rien.")
+        : state === "explore"
+          ? T("The student turns the controls under the instrument, freely.", "L’élève manie les commandes sous l’instrument, librement.")
+          : T(
+              "The student presses “Take the controls” and must reach a goal; the simulator checks it.",
+              "L’élève appuie sur « Prendre les commandes » et doit tenir un objectif ; le simulateur vérifie.",
+            );
+    const body: Kid[] = [
+      seg(
+        [
+          { value: "watch" as const, label: T("Watch", "Regarder") },
+          { value: "explore" as const, label: T("Explore", "Explorer") },
+          { value: "goal" as const, label: T("Your turn", "À vous") },
+        ],
+        state,
+        pick,
+        { full: true, label: T("What the student can do", "Ce que l’élève peut faire") },
+      ),
+      note(line, "muted"),
+    ];
+    if (state === "goal") {
+      const a = ask();
+      a.querySelector(":scope > .ce-grp-hd")?.remove();
+      a.classList.add("ce-do-ask");
+      body.push(a);
+    }
+    if (state !== "watch") body.push(this.stripGroup(b, setB, { bare: true }));
+    const el = group(T("What the student can do", "Ce que l’élève peut faire"), body);
+    el.classList.add("ce-do");
+    return el;
   }
   /**
    * « Commandes de l’élève » of an instrument on a slide: the chips by family, « Les plus utiles », where the
@@ -5648,6 +5784,7 @@ export class Inspector {
   private stripGroup(
     b: Extract<SlideBlock, { kind: "instrument" }>,
     setB: (f: (x: SlideBlock) => void, key?: string, render?: boolean) => void,
+    o: { bare?: boolean } = {},
   ): HTMLElement {
     const T = this.t.bind(this);
     type B = typeof b;
@@ -5676,14 +5813,31 @@ export class Inspector {
     this.trialBlock = b.id;
     this.trialDirty = !!trial?.dirty();
     const slide = this.host.step.slide!;
-    return group(T("What the student can touch", "Ce que l’élève peut toucher"), [
-      note(
-        T(
-          "Tick what the student may handle: each control shows under the instrument, on the slide.",
-          "Cochez ce que l’élève peut manier : chaque commande apparaît sous l’instrument, sur la diapo.",
-        ),
-        "muted",
-      ),
+    const chipsEl = controlGroups(
+      b.controls,
+      (k, on) => {
+        const set = new Set(b.controls ?? []);
+        if (on) set.add(k);
+        else set.delete(k);
+        apply([...set]);
+      },
+      this.lang,
+    );
+    const list: Kid[] = [
+      o.bare
+        ? h(
+            "p",
+            { class: "ce-do-now" },
+            h("span", {}, T("Under the instrument: ", "Sous l’instrument : ")),
+            h("b", {}, drawn.length ? drawn.map((k) => stripLabel(k, this.lang)).join(", ") : T("nothing yet", "rien pour l’instant")),
+          )
+        : note(
+            T(
+              "Tick what the student may handle: each control shows under the instrument, on the slide.",
+              "Cochez ce que l’élève peut manier : chaque commande apparaît sous l’instrument, sur la diapo.",
+            ),
+            "muted",
+          ),
       useful.length && !usefulOn
         ? h(
             "div",
@@ -5692,16 +5846,14 @@ export class Inspector {
             h("span", {}, useful.map((k) => stripLabel(k, this.lang)).join(", ")),
           )
         : null,
-      controlGroups(
-        b.controls,
-        (k, on) => {
-          const set = new Set(b.controls ?? []);
-          if (on) set.add(k);
-          else set.delete(k);
-          apply([...set]);
-        },
-        this.lang,
-      ),
+      o.bare
+        ? h(
+            "details",
+            { class: "sit-fold" },
+            h("summary", {}, T("Choose the controls", "Choisir les commandes")),
+            h("div", { class: "sit-fold-b" }, chipsEl),
+          )
+        : chipsEl,
       this.wentLive === b.id && mode === "live"
         ? note(
             T(
@@ -5782,7 +5934,10 @@ export class Inspector {
             ),
           )
         : null,
-    ]);
+    ];
+    return o.bare
+      ? h("div", { class: "ce-do-b" }, ...kids(list))
+      : group(T("What the student can touch", "Ce que l’élève peut toucher"), list);
   }
   /** « Garder comme départ »: the situation the author set with the controls becomes the start of the instruments
    *  of this slide that showed the same situation. One new situation in the course; the old one is not changed. */

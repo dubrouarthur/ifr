@@ -15,6 +15,10 @@ import {
   ATPL_022_INSTRUMENTS_ID,
   atpl022InstrumentsCourse,
 } from "./atpl-022-instruments";
+import {
+  PPL_FLIGHT_MANOEUVRES_ID,
+  pplFlightManoeuvresCourse,
+} from "./ppl-flight-manoeuvres";
 
 export const REG_A1: readonly LibraryDef[] = [
   {
@@ -51,6 +55,15 @@ export const REG_A1: readonly LibraryDef[] = [
     blurb: {
       en: "Spatial disorientation and the spiral, vision, oxygen, IMSAFE and alcohol, threat and error management: a spiral recovery live, then flown",
       fr: "Désorientation spatiale et spirale, vision, oxygène, IMSAFE et alcool, gestion des menaces et des erreurs : une sortie de spirale en direct, puis en vol",
+    },
+  },
+  {
+    id: PPL_FLIGHT_MANOEUVRES_ID,
+    program: "lapl-ppl",
+    build: pplFlightManoeuvresCourse,
+    blurb: {
+      en: "Attitude plus power gives performance: level flight, climbs, descents and 30° turns on the live six instruments, three moments at the controls, then flown",
+      fr: "Assiette plus puissance donnent la performance : palier, montée, descente et virages à 30° sur les six instruments en direct, trois prises des commandes, puis en vol",
     },
   },
   {

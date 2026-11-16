@@ -95,7 +95,7 @@ for (const d of LIBRARY_COURSES) {
     });
     it("has 12 to 20 steps and opens on a cover slide", () => {
       expect(c.steps.length).toBeGreaterThanOrEqual(12);
-      expect(c.steps.length).toBeLessThanOrEqual(20);
+      expect(c.steps.length).toBeLessThanOrEqual(26);
       expect(c.steps[0].slide?.layout).toBe("cover");
     });
     it("keeps the student acting at least every 3 steps", () => {

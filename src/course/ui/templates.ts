@@ -89,8 +89,8 @@ export const TEMPLATES: TemplateDef[] = [
     kind: "predict",
     title: L("Predict", "Prédire"),
     intent: L(
-      "Ask first; the stage then plays and shows who was right",
-      "La question d’abord ; puis la scène joue et tranche",
+      "Ask first; then the instruments fly and show who was right",
+      "La question d’abord ; puis les instruments volent et donnent la réponse",
     ),
     usesScene: true,
   },
@@ -1077,14 +1077,14 @@ export type InspectorTab =
   | "slide";
 export const TAB_LABEL: Record<InspectorTab, L10n> = {
   reader: L("Reader", "Texte"),
-  stage: L("Stage", "Scène"),
+  stage: L("Flight", "Situation"),
   goal: L("Goal", "Objectif"),
   notes: L("Notes", "Notes"),
   calc: L("Calc", "Calcul"),
   drill: L("Drill", "Série"),
   fly: L("Fly it", "En vol"),
   quiz: L("Quiz", "Quiz"),
-  block: L("Block", "Bloc"),
+  block: L("Element", "Élément"),
   slide: L("Slide", "Diapo"),
 };
 /** The inspector tabs for a step (the mockup's Reader | Stage | Goal | Notes, adapted to the kind). */
