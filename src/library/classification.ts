@@ -148,6 +148,31 @@ export const CLASSIFICATION: Readonly<Record<string, Placement>> = {
   "sample-lib-atpl-033-flight-planning": { home: "atpl.033", level: 3 },
   "sample-lib-club-essentials": { home: "club.life", level: 1 },
   "sample-lib-club-teaching": { home: "instructors.teach", level: 1 },
+  // ---- the short ready-to-teach decks (samples/decks)
+  "sample-deck-basic-instruments": {
+    home: "ppl.agk",
+    level: 1,
+    also: ["ir.att"],
+    words: "anemometre horizon altimetre variometre conservateur de cap bille indicateur de virage airspeed attitude altimeter vsi heading turn coordinator ball",
+  },
+  "sample-deck-standard-turn-scan": {
+    home: "ppl.bif",
+    level: 1,
+    also: ["ir.att"],
+    words: "virage standard taux 1 circuit visuel virage chronometre standard rate turn scan timed turn",
+  },
+  "sample-deck-vor-intercept": {
+    home: "ir.nav",
+    level: 2,
+    also: ["ppl.xc", "atpl.062"],
+    words: "vor obs radial to from interception encadrement intercept bracketing",
+  },
+  "sample-deck-ils-end-to-end": {
+    home: "ir.app",
+    level: 2,
+    also: ["atpl.062"],
+    words: "ils localizer glide minima da remise de gaz decision altitude go-around missed approach",
+  },
   // ---- the course library, wave 2 (planned in samples/library/catalogue.ts; one home each, set here so that the
   // authors never edit this shared file)
   "sample-lib-ppl-effects-of-controls": {
