@@ -1,53 +1,54 @@
-// Ground school editor (package F): the tray of cockpit captures (SPEC §5, mockup final/editor.png, left column).
-// C in the cockpit stores a moment (scene + panel thumbnail + 3D still), Shift+C the last 60 s as a clip; each lands
-// here with its time and scene line and becomes a step in one tap: "Add as a step: Explain · Try it · Fly it · More".
-// The store's BroadcastChannel brings captures made in another window at once.
+// Ground school studio: « Vos captures », the moments captured in the simulator for this course (« Capturer un moment
+// pour la diapo »). Each card says what it is (a moment or the last 60 s, when, the numbers in pilot words, with the
+// instruments' picture) and offers the two things a slide does with it: « Utiliser comme situation de la diapo » (the
+// slide's instruments show that moment) and « Ajouter une vue du simulateur (moment de vol) »; « Plus » keeps the older
+// ways (a new step from the capture) and « Supprimer ». The store's BroadcastChannel brings captures made in another
+// window at once. The section stays out of the way until there is a capture.
 import type { Lang } from "../types";
 import type { CourseStore, TrayItem } from "../store";
 import { h } from "../../ui/dom";
 import { cockpitBridgeReady } from "../cockpitLink";
+import { momentLine, noStorageText, sceneRefusal } from "../captureMoment";
 import { TEMPLATES, tr, type TemplateId } from "./templates";
 import { btn, ico, popover, t2 } from "./inspector";
 
-const COCKPIT_NAME = {
-  g1000: "G1000",
-  steam: "Steam gauges",
-  airliner: "Airliner",
-} as const;
-const COCKPIT_NAME_FR = {
-  g1000: "G1000",
-  steam: "Instruments classiques",
-  airliner: "Liner",
-} as const;
-
-/** "14:32 · ILS 27 · 5 NM" (the capture's own label after the time). */
-export function trayTitle(item: TrayItem, lang: Lang = "en"): string {
-  const t = new Date(item.at);
-  const time = Number.isNaN(t.getTime())
+const hhmm = (iso: string) => {
+  const t = new Date(iso);
+  return Number.isNaN(t.getTime())
     ? ""
     : `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
-  const label = item.clip
-    ? lang === "fr"
-      ? `${Math.round(item.clip.durS)} dernières s`
-      : `last ${Math.round(item.clip.durS)} s`
-    : (item.label ??
-      item.scene.label ??
-      (lang === "fr" ? "capture" : "capture"));
-  return time ? `${time} · ${label}` : label;
-}
-/** "G1000 · captured state" / "Clip · ILS 27 · 5 NM". */
-export function traySub(item: TrayItem, lang: Lang = "en"): string {
+};
+
+/** « Moment · 14:32 » / « 60 dernières secondes · 14:32 » */
+export function trayTitle(item: TrayItem, lang: Lang = "en"): string {
   const fr = lang === "fr";
-  if (item.clip)
-    return `${fr ? "Séquence" : "Clip"}${(item.label ?? item.scene.label) ? ` · ${item.label ?? item.scene.label}` : ""}`;
-  const ck =
-    (fr ? COCKPIT_NAME_FR : COCKPIT_NAME)[item.scene.cockpit] ??
-    item.scene.cockpit;
-  return `${ck} · ${fr ? "état capturé" : "captured state"}`;
+  const time = hhmm(item.at);
+  const kind = item.clip
+    ? fr
+      ? `${Math.round(item.clip.durS)} dernières secondes`
+      : `Last ${Math.round(item.clip.durS)} seconds`
+    : "Moment";
+  return time ? `${kind} · ${time}` : kind;
+}
+/** the numbers of the capture in pilot words (older captures: their label) */
+export function traySub(item: TrayItem, lang: Lang = "en"): string {
+  if (item.moment) return momentLine(item.moment, lang);
+  return (
+    item.label ??
+    item.scene.label ??
+    (lang === "fr" ? "État capturé" : "Captured state")
+  );
 }
 /** The quick templates for a capture (a clip suggests Watch first). */
 export function quickTemplates(item: TrayItem): TemplateId[] {
   return item.clip ? ["watch", "try", "fly"] : ["explain", "try", "fly"];
+}
+
+/** what the panel says after a capture was used (« La diapo montre maintenant… », with « Annuler ») */
+export interface TrayResult {
+  item: string;
+  text: string;
+  undo?: () => void;
 }
 
 export interface TrayViewOptions {
@@ -55,198 +56,254 @@ export interface TrayViewOptions {
   store: CourseStore | null;
   courseId: string;
   onAdd(item: TrayItem, template: TemplateId): void;
-  /** the captured moment becomes what the current slide's instruments show (the studio's Simulateur panel) */
+  /** the captured moment becomes the slide's situation (its instruments show it) */
   onUse?(item: TrayItem): void;
+  /** a simulator view of the captured moment (a recording plays) goes on the slide */
+  onView?(item: TrayItem): void;
   onFlyToCapture(): void;
   assetUrl(id: string): string | null | Promise<string | null>;
+  /** the list changed (the rail's badge) */
+  onCount?(n: number): void;
 }
 export class TrayView {
   readonly el: HTMLElement;
   private items: TrayItem[] = [];
-  private head: HTMLElement;
-  private box: HTMLElement;
-  private open: string | null = null;
   private unsub: (() => void) | null = null;
+  /** captures newer than this (ms) are « Nouvelle » (the ones made since the author left for the cockpit) */
+  private newSince = Infinity;
+  private result: TrayResult | null = null;
+  private loaded: Promise<void>;
   constructor(private o: TrayViewOptions) {
-    this.head = h("div", { class: "ce-sect" });
-    this.box = h("div", { class: "ce-tray" });
-    this.el = h(
-      "section",
-      {
-        class: "ce-traywrap",
-        "aria-label": t2(
-          o.lang,
-          "Captures from the cockpit",
-          "Captures du cockpit",
-        ),
-      },
-      this.head,
-      this.box,
-    );
+    this.el = h("section", { class: "ce-traywrap", hidden: "" });
     this.unsub =
       o.store?.onChange((c) => {
         if (c.store === "tray") void this.refresh();
       }) ?? null;
-    void this.refresh();
+    this.loaded = this.refresh();
   }
   setLang(l: Lang) {
     this.o.lang = l;
     this.render();
   }
+  /** back from the cockpit: the captures made since `ms` are marked new */
+  setNewSince(ms: number) {
+    this.newSince = ms;
+    this.render();
+  }
+  setResult(r: TrayResult | null) {
+    this.result = r;
+    this.render();
+  }
+  /** the list once read from the store */
+  async whenLoaded(): Promise<TrayItem[]> {
+    await this.loaded;
+    return this.items;
+  }
   async refresh() {
     try {
-      this.items = (await this.o.store?.listTray(this.o.courseId)) ?? [];
+      this.items = ((await this.o.store?.listTray(this.o.courseId)) ?? []).sort(
+        (a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0),
+      );
     } catch {
       this.items = [];
     }
-    if (this.open && !this.items.some((i) => i.id === this.open))
-      this.open = null;
     this.render();
+    this.o.onCount?.(this.items.length);
   }
   get count() {
     return this.items.length;
   }
   private render() {
     const lang = this.o.lang;
-    const fr = lang === "fr";
-    this.head.replaceChildren(
-      h(
-        "span",
-        { class: "ce-label" },
-        `${fr ? "Depuis le cockpit" : "From the cockpit"} · ${this.items.length}`,
-      ),
-    );
-    if (!this.items.length) {
-      this.box.className = "ce-tray empty";
-      // until the cockpit can send captures back (its course bridge), say so instead of a dead "press C"
-      if (!cockpitBridgeReady()) {
-        this.box.replaceChildren(
-          h(
-            "p",
-            { class: "ce-tray-empty" },
-            fr
-              ? "Les captures du cockpit arriveront ici avec la prochaine mise à jour du cockpit. En attendant, réglez la scène dans l’inspecteur."
-              : "Captures from the cockpit will land here with the next cockpit update. Meanwhile, set the scene in the inspector.",
-          ),
-        );
-        return;
-      }
-      const fly = btn(
-        fr ? "Capturer depuis le simulateur" : "Capture from the simulator",
-        () => this.o.onFlyToCapture(),
-        { cls: "sm", icon: "pulse" },
-      );
-      this.box.replaceChildren(
-        h(
-          "p",
-          { class: "ce-tray-empty" },
-          fr
-            ? "Aucun moment capturé pour l’instant. Dans le simulateur, appuyez sur C au bon moment : il arrive ici."
-            : "No captured moment yet. In the simulator, press C at the right moment: it lands here.",
-        ),
-        fly,
-      );
+    const T = (en: string, fr: string) => t2(lang, en, fr);
+    this.el.setAttribute("aria-label", T("Your captures", "Vos captures"));
+    // nothing captured yet: the « Voler et capturer » way explains how; this section waits for the first one
+    this.el.hidden = !this.items.length && !this.result;
+    if (this.el.hidden) {
+      this.el.replaceChildren();
       return;
     }
-    this.box.className = "ce-tray";
-    const first = this.open ?? this.items[0].id;
-    this.box.replaceChildren(
-      ...this.items.slice(0, 6).map((it) => {
-        const thumb = h("div", { class: "ce-thumb" });
-        const tid = it.thumb ?? it.scene.captured?.thumb;
-        if (tid)
-          void Promise.resolve(this.o.assetUrl(tid)).then((u) => {
-            if (u) thumb.append(h("img", { src: u, alt: "" }));
-          });
-        else thumb.append(ico(it.clip ? "play" : "gauge", "ce-i ce-thumb-ic"));
-        const head = h(
-          "button",
-          {
-            type: "button",
-            class: "ce-cap",
-            "aria-expanded": it.id === first ? "true" : "false",
-          },
-          thumb,
-          h(
-            "div",
-            {},
-            h("b", {}, trayTitle(it, lang)),
-            h("span", {}, traySub(it, lang)),
+    const memory = this.o.store?.backend === "memory";
+    const head = h(
+      "div",
+      { class: "ce-capt-hd" },
+      h(
+        "h3",
+        { class: "sim-h" },
+        T("Your captures", "Vos captures"),
+        h("i", { class: "ce-capt-n" }, String(this.items.length)),
+      ),
+      h(
+        "p",
+        { class: "ce-panel-note" },
+        T(
+          "Moments captured in the simulator for this course. Pick the one this slide shows.",
+          "Les moments capturés dans le simulateur pour ce cours. Choisissez celui que montre cette diapo.",
+        ),
+      ),
+      memory
+        ? h("p", { class: "ce-capt-warn", role: "alert" }, noStorageText(lang))
+        : null,
+    );
+    const res = this.result;
+    const result = res
+      ? h(
+          "div",
+          { class: "ce-capt-result", role: "status" },
+          ico("check", "ce-i"),
+          h("p", {}, res.text),
+          res.undo
+            ? btn(
+                T("Undo", "Annuler"),
+                () => {
+                  res.undo?.();
+                  this.setResult(null);
+                },
+                { cls: "sm" },
+              )
+            : null,
+        )
+      : null;
+    const cards = h(
+      "ol",
+      { class: "ce-capt-list" },
+      ...this.items.slice(0, 12).map((it) => this.card(it)),
+    );
+    this.el.replaceChildren(head, ...(result ? [result] : []), cards);
+    if (!cockpitBridgeReady() && !this.items.length) this.el.hidden = true;
+  }
+  private card(it: TrayItem): HTMLElement {
+    const lang = this.o.lang;
+    const T = (en: string, fr: string) => t2(lang, en, fr);
+    const pic = h("div", { class: "ce-capt-pic" });
+    const tid = it.thumb ?? it.scene.captured?.thumb;
+    if (tid)
+      void Promise.resolve(this.o.assetUrl(tid)).then((u) => {
+        if (u)
+          pic.replaceChildren(
+            h("img", {
+              src: u,
+              alt: T(
+                "The instruments at that moment",
+                "Les instruments à ce moment",
+              ),
+            }),
+          );
+      });
+    pic.append(ico(it.clip ? "play" : "gauge", "ce-i ce-thumb-ic"));
+    const fresh = Date.parse(it.at) >= this.newSince;
+    const refusal = sceneRefusal(it.scene, lang);
+    const used = this.result?.item === it.id;
+    const acts = h("div", { class: "ce-capt-acts" });
+    if (refusal) acts.append(h("p", { class: "ce-capt-warn" }, refusal.text));
+    else {
+      if (this.o.onUse) {
+        const onUse = this.o.onUse;
+        acts.append(
+          btn(
+            it.clip
+              ? T(
+                  "Use its start as the slide’s situation",
+                  "Utiliser son début comme situation de la diapo",
+                )
+              : T(
+                  "Use as the slide’s situation",
+                  "Utiliser comme situation de la diapo",
+                ),
+            () => onUse(it),
+            { cls: "sm primary ce-cap-use", icon: "gauge" },
           ),
         );
-        head.addEventListener("click", () => {
-          this.open = it.id;
-          this.render();
-        });
-        const parts: Node[] = [head];
-        if (it.id === first) {
-          if (this.o.onUse) {
-            const onUse = this.o.onUse;
-            const use = btn(
-              fr ? "Montrer ce moment sur cette diapo" : "Show this moment on this slide",
-              () => onUse(it),
-              { cls: "sm ce-cap-use", icon: "gauge" },
-            );
-            parts.push(h("div", { class: "ce-quick" }, use));
-          }
-          const quick = h(
-            "div",
-            { class: "ce-quick" },
-            h(
-              "span",
-              { class: "ce-muted sm full" },
-              fr ? "Ajouter comme étape" : "Add as a step",
+      }
+      if (this.o.onView) {
+        const onView = this.o.onView;
+        acts.append(
+          btn(
+            T(
+              "Add a simulator view (flight moment)",
+              "Ajouter une vue du simulateur (moment de vol)",
             ),
-          );
-          quickTemplates(it).forEach((tid2, i) => {
-            const def = TEMPLATES.find((t) => t.id === tid2)!;
-            const b = h(
-              "button",
-              { type: "button", class: i === 0 ? "def" : "" },
-              tr(def.title, lang),
-            );
-            b.addEventListener("click", () => this.o.onAdd(it, tid2));
-            quick.append(b);
-          });
-          const more = h(
-            "button",
-            { type: "button", "aria-haspopup": "menu" },
-            fr ? "Plus" : "More",
-          );
-          more.addEventListener("click", () =>
-            popover(
-              more,
-              [
-                ...TEMPLATES.filter(
-                  (t) => t.id !== "calc" && t.id !== "drill" && t.id !== "quiz",
-                ).map((t) => ({
-                  label: tr(t.title, lang),
-                  sub: tr(t.intent, lang),
-                  onClick: () => this.o.onAdd(it, t.id),
-                  disabled: t.id === "watch" && !it.clip,
-                })),
-                {
-                  label: fr ? "Retirer du bac" : "Remove from the tray",
-                  icon: "trash",
-                  danger: true,
-                  onClick: () =>
-                    void this.o.store
-                      ?.removeTray(it.id)
-                      .then(() => this.refresh()),
-                },
-              ],
-              { width: 300, title: fr ? "Ajouter comme étape" : "Add as a step" },
-            ),
-          );
-          quick.append(more);
-          parts.push(quick);
-        }
-        return h(
-          "div",
-          { class: `ce-capwrap${it.id === first ? " open" : ""}` },
-          ...parts,
+            () => onView(it),
+            { cls: "sm ce-cap-view", icon: "play" },
+          ),
         );
-      }),
+      }
+    }
+    const more = h(
+      "button",
+      { type: "button", class: "ce-btn sm ghost", "aria-haspopup": "menu" },
+      T("More", "Plus"),
+    );
+    more.addEventListener("click", () =>
+      popover(
+        more,
+        [
+          ...(refusal
+            ? []
+            : TEMPLATES.filter(
+                (t) => t.id !== "calc" && t.id !== "drill" && t.id !== "quiz",
+              ).map((t) => ({
+                label: `${T("New step:", "Nouvelle étape :")} ${tr(t.title, lang)}`,
+                sub: tr(t.intent, lang),
+                onClick: () => this.o.onAdd(it, t.id),
+                disabled: t.id === "watch" && !it.clip,
+              }))),
+          {
+            label: T("Delete this capture", "Supprimer cette capture"),
+            icon: "trash",
+            danger: true,
+            onClick: () =>
+              void this.o.store?.removeTray(it.id).then(() => this.refresh()),
+          },
+        ],
+        { width: 320, title: trayTitle(it, lang) },
+      ),
+    );
+    acts.append(more);
+    return h(
+      "li",
+      {
+        class: `ce-capt${fresh ? " fresh" : ""}${used ? " used" : ""}`,
+        "data-tray": it.id,
+      },
+      pic,
+      h(
+        "div",
+        { class: "ce-capt-t" },
+        h(
+          "small",
+          {},
+          trayTitle(it, lang),
+          fresh ? h("i", { class: "ce-capt-new" }, T("New", "Nouvelle")) : null,
+          used
+            ? h(
+                "i",
+                { class: "ce-capt-used" },
+                T("On this slide", "Sur cette diapo"),
+              )
+            : null,
+        ),
+        h("b", {}, traySub(it, lang)),
+      ),
+      acts,
+    );
+  }
+  /** the empty way in (the « Voler et capturer » pane): how to get a capture */
+  emptyHelp(): HTMLElement {
+    const lang = this.o.lang;
+    const T = (en: string, fr: string) => t2(lang, en, fr);
+    return h(
+      "p",
+      { class: "ce-panel-note" },
+      this.items.length
+        ? T(
+            `${this.items.length} capture(s) wait under « Your captures », at the top of this panel.`,
+            `${this.items.length} capture(s) vous attendent sous « Vos captures », en haut de ce panneau.`,
+          )
+        : T(
+            "Your captures will appear at the top of this panel, under « Your captures ».",
+            "Vos captures apparaîtront en haut de ce panneau, sous « Vos captures ».",
+          ),
     );
   }
   destroy() {

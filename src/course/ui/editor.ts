@@ -51,14 +51,19 @@ import {
   simContentDraft,
   splitBlock,
   situationOfScene,
+  sitLabel,
   type SimContentKind,
   type Situation,
 } from "../situations";
 import type { SitTarget, SituationHost } from "./situationEditor";
-import { setSimWay } from "./studio";
 
-/** set when the author leaves for the cockpit from this course (« Voler et capturer ») */
-const FLYING_KEY = "ifr.course.flying";
+import {
+  captureLink,
+  markFlying,
+  takeCaptureChoice,
+  takeFlying,
+} from "../captureHandoff";
+import { momentLine, sceneRefusal } from "../captureMoment";
 import type { EditorCommand } from "../canvas/editorCore";
 import { paneFrame } from "../stage/geometry";
 import { drawFrame, newInstrumentStates } from "../stage/views";
@@ -321,6 +326,8 @@ export class CourseEditor implements InspectorHost {
       courseId: this.course.id,
       onAdd: (it, t) => void this.addFromTray(it, t),
       onUse: (it) => this.useCapture(it),
+      onView: (it) => this.addCaptureView(it),
+      onCount: () => this.renderRail(),
       onFlyToCapture: () => void this.flyFrom(this.step?.slide ? this.situations.read().scene : undefined),
       assetUrl: (id) => this.assetUrl(id),
     });
@@ -328,15 +335,7 @@ export class CourseEditor implements InspectorHost {
     this.build();
     if (this.store && this.store.backend === "memory") this.saving = "memory";
     this.renderAll();
-    try {
-      if (sessionStorage.getItem(FLYING_KEY) === this.course.id) {
-        sessionStorage.removeItem(FLYING_KEY);
-        setSimWay("fly");
-        queueMicrotask(() => this.openPanel("cockpit"));
-      }
-    } catch {
-      /* no session storage */
-    }
+    this.backFromCockpit();
     this.el.addEventListener("keydown", (e) => this.onKeyCapture(e), true);
     this.el.addEventListener("keydown", (e) => this.onKey(e));
     this.el.addEventListener("paste", (e) => this.onPaste(e));
@@ -513,12 +512,8 @@ export class CourseEditor implements InspectorHost {
       return;
     }
     await this.saveNow();
-    // back from the cockpit, the editor opens on the captured moments
-    try {
-      sessionStorage.setItem(FLYING_KEY, this.course.id);
-    } catch {
-      /* private mode: the author opens the panel */
-    }
+    // back from the cockpit, the editor opens on this slide and its captured moments
+    markFlying({ course: this.course.id, ...(this.step ? { step: this.step.id } : {}), at: Date.now() });
     if (!scene && this.o.onFlyToCapture) {
       this.o.onFlyToCapture(this.course.id);
       return;
@@ -534,7 +529,12 @@ export class CourseEditor implements InspectorHost {
       }
     }
     this.go(
-      `index.html?capture=${encodeURIComponent(this.course.id)}${code ? `&scene=${code}` : ""}&return=${encodeURIComponent(location.href)}`,
+      captureLink({
+        courseId: this.course.id,
+        ...(this.step ? { stepId: this.step.id } : {}),
+        ...(code ? { sceneCode: code } : {}),
+        returnHref: location.href,
+      }),
     );
   }
   /** One of the four simulator contents of the « Simulateur » panel, on the slide, ready to work and selected. */
@@ -547,25 +547,120 @@ export class CourseEditor implements InspectorHost {
     if (b) this.offerNewSlideIfCrowded(b, d as BlockDraft);
     this.afterPanelAdd();
   }
-  /** A captured moment becomes what this slide's instruments show. */
+  /** while set, the canvas's own change joins the course change made just before it (one undo step) */
+  private groupKey: string | undefined;
+  private grouped(fn: () => void) {
+    this.groupKey = `grp.${Date.now()}.${Math.random().toString(36).slice(2, 7)}`;
+    try {
+      fn();
+    } finally {
+      this.groupKey = undefined;
+    }
+  }
+  /** what a scene shows, in pilot words (the panel's « avant / maintenant ») */
+  private sceneWords(sc: SimScene | undefined): string {
+    if (!sc) return "";
+    try {
+      return sitLabel(situationOfScene(sc));
+    } catch {
+      return "";
+    }
+  }
+  /** Back from the cockpit: this slide, the Simulateur panel on « Vos captures », the capture chosen there applied. */
+  private backFromCockpit() {
+    const flying = takeFlying(this.course.id);
+    const choice = takeCaptureChoice(this.course.id);
+    if (!flying && !choice) return;
+    const sid = choice?.step ?? flying?.step;
+    if (sid && this.step?.id !== sid && this.course.steps.some((x) => x.id === sid)) queueMicrotask(() => this.goTo(sid));
+    if (flying) this.tray.setNewSince(flying.at);
+    queueMicrotask(() => this.openPanel("cockpit"));
+    if (choice)
+      void this.tray.whenLoaded().then((items) => {
+        const it = items.find((x) => x.id === choice.item);
+        if (!it) return;
+        // after the step and the panel are up
+        setTimeout(() => {
+          if (!this.destroyed) this.useCapture(it);
+        }, 0);
+      });
+  }
+  /** A captured moment becomes the situation of this slide: its instruments show it. One undo step. */
   useCapture(it: TrayItem) {
     const s = this.step;
     const slide = s?.slide;
-    if (!s || !slide || !this.canvasEd) return;
-    rememberScene(it.scene);
-    this.apply({ ...this.course, scenes: { ...this.course.scenes, [it.scene.id]: it.scene } }, undefined, {
-      inspector: false,
-      centre: false,
+    const fr = this.lang === "fr";
+    const refusal = sceneRefusal(it.scene, this.lang);
+    if (refusal) {
+      this.toast(refusal.text);
+      return;
+    }
+    if (!s || !slide || !this.canvasEd) {
+      this.toast(t2(this.lang, "Pick a designed slide first: a capture sets a slide’s situation.", "Choisissez d’abord une diapo : une capture règle la situation d’une diapo."));
+      return;
+    }
+    const before = this.sceneWords(this.situations.read().scene);
+    const sc: SimScene = { ...it.scene };
+    rememberScene(sc);
+    this.grouped(() => {
+      this.apply({ ...this.course, scenes: { ...this.course.scenes, [sc.id]: sc } }, this.groupKey, {
+        inspector: false,
+        centre: false,
+      });
+      this.canvasEd!.set(repointSlide(slide, slide.scene, sc.id));
     });
-    this.canvasEd.set(repointSlide(slide, slide.scene, it.scene.id));
     this.inspector.render();
-    this.toast(
-      t2(
-        this.lang,
-        "The instruments of this slide now show the captured moment.",
-        "Les instruments de cette diapo montrent maintenant le moment capturé.",
-      ),
-    );
+    if (this.studio.tab === "cockpit") this.studio.refresh();
+    const now = it.moment ? momentLine(it.moment, this.lang) : this.sceneWords(sc);
+    const title = tr(s.title, this.lang);
+    const text = fr
+      ? `La situation de la diapo « ${title} » est maintenant le moment capturé : ${now}.${before ? ` Avant : ${before}.` : ""} Tous ses instruments le montrent.`
+      : `The situation of the slide “${title}” is now the captured moment: ${now}.${before ? ` Before: ${before}.` : ""} All its instruments show it.`;
+    this.tray.setResult({ item: it.id, text, undo: () => this.undo() });
+    this.toast(t2(this.lang, "The slide’s instruments now show the captured moment.", "Les instruments de la diapo montrent maintenant le moment capturé."), () => {
+      this.undo();
+      this.tray.setResult(null);
+    });
+  }
+  /** A simulator view of the captured moment (its recording, for the last 60 s) on this slide. One undo step. */
+  addCaptureView(it: TrayItem) {
+    const s = this.step;
+    const slide = s?.slide;
+    const refusal = sceneRefusal(it.scene, this.lang);
+    if (refusal) {
+      this.toast(refusal.text);
+      return;
+    }
+    if (!s || !slide || !this.canvasEd) {
+      this.toast(t2(this.lang, "Pick a designed slide first.", "Choisissez d’abord une diapo."));
+      return;
+    }
+    const sc: SimScene = { ...it.scene };
+    let c: Course = { ...this.course, scenes: { ...this.course.scenes, [sc.id]: sc } };
+    let clipId: string | undefined;
+    if (it.clip) {
+      clipId = `clip-${it.id}`;
+      c = { ...c, clips: { ...c.clips, [clipId]: { ...structuredClone(it.clip), id: clipId, startScene: sc.id } } };
+    }
+    rememberScene(sc);
+    const d = { ...simContentDraft("moment", situationOfScene(sc), this.course.cockpit, clipId), scene: sc.id } as BlockDraft;
+    let b: SlideBlock | null = null;
+    this.grouped(() => {
+      this.apply(c, this.groupKey, { inspector: false, centre: false });
+      b = this.canvasEd!.add(d);
+    });
+    if (b) this.offerNewSlideIfCrowded(b, d);
+    const what = it.moment ? momentLine(it.moment, this.lang) : this.sceneWords(sc);
+    const text = it.clip
+      ? t2(this.lang, `A simulator view was added to the slide: it replays the recorded ${Math.round(it.clip.durS)} s (${what}).`, `Une vue du simulateur a été ajoutée à la diapo : elle rejoue les ${Math.round(it.clip.durS)} s enregistrées (${what}).`)
+      : t2(this.lang, `A simulator view was added to the slide: it shows the captured moment (${what}).`, `Une vue du simulateur a été ajoutée à la diapo : elle montre le moment capturé (${what}).`);
+    this.tray.setResult({ item: it.id, text, undo: () => this.undo() });
+    // the panel may close to show the slide (narrow screens): the toast says it too, with « Annuler »
+    this.toast(text, () => {
+      this.undo();
+      this.tray.setResult(null);
+    });
+    this.afterPanelAdd();
   }
   async importImage(
     file: File,
@@ -647,10 +742,15 @@ export class CourseEditor implements InspectorHost {
       return;
     }
     void this.saveNow().then(() => {
+      markFlying({ course: this.course.id, ...(this.step ? { step: this.step.id } : {}), at: Date.now() });
       if (this.o.onFlyToCapture) this.o.onFlyToCapture(this.course.id);
       else
         this.go(
-          `index.html?capture=${encodeURIComponent(this.course.id)}&return=${encodeURIComponent(location.href)}`,
+          captureLink({
+            courseId: this.course.id,
+            ...(this.step ? { stepId: this.step.id } : {}),
+            returnHref: location.href,
+          }),
         );
     });
   }
@@ -1257,6 +1357,8 @@ export class CourseEditor implements InspectorHost {
     const j = c.steps.findIndex((s) => s.id === id);
     if (j >= 0) this.i = j;
     this.changed({ inspector: true, centre: false });
+    // the Simulateur panel reads the slide's situation: say the restored one (an undone capture)
+    if (this.studio.tab === "cockpit") this.studio.refresh();
     // the canvas reloads the restored slide, keeping what is still selected
     const s = this.step;
     if (s?.slide && this.canvasEd && this.canvasFor === s.id) {
@@ -2017,7 +2119,7 @@ export class CourseEditor implements InspectorHost {
           if (!final) return;
           const st = this.step;
           if (!st || st.id !== this.canvasFor) return;
-          this.apply(replaceStep(this.course, { ...st, slide: c }), undefined, {
+          this.apply(replaceStep(this.course, { ...st, slide: c }), this.groupKey, {
             centre: false,
             inspector:
               this.inspector.currentTab === "block" &&

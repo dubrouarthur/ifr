@@ -41,7 +41,15 @@ import {
   validateScene,
   verifyLine,
 } from "./scene";
-import { RewindRing } from "./rewind";
+import { RewindRing, type RewindFrame } from "./rewind";
+import {
+  captureRefusal,
+  momentFacts,
+  momentLine,
+  noStorageText,
+  type Refusal,
+} from "./captureMoment";
+import { setCaptureChoice, type KV } from "./captureHandoff";
 import { flyCriteria } from "./goals";
 import { ClipRecorder } from "./clip";
 import { generate } from "./calc";
@@ -55,6 +63,8 @@ export interface CourseLinkParams {
   ret?: string;
   /** ?proc=<id>: a course's procedure block "Drill it" */
   proc?: string;
+  /** capture mode: the slide (step id) the moment is for */
+  step?: string;
 }
 /** Read ?fly=, ?scene=, ?capture= and &return= (bad values are dropped). */
 export function courseLinkParams(search: string): CourseLinkParams {
@@ -66,6 +76,8 @@ export function courseLinkParams(search: string): CourseLinkParams {
   if (sc && /^S[01]\.[A-Za-z0-9_-]+$/.test(sc)) out.scene = sc;
   const cap = q.get("capture");
   if (cap !== null && /^[A-Za-z0-9._-]{0,80}$/.test(cap)) out.capture = cap;
+  const step = q.get("step");
+  if (out.capture !== undefined && step && /^[A-Za-z0-9._-]{1,80}$/.test(step)) out.step = step;
   const proc = q.get("proc");
   if (proc && /^[A-Za-z0-9._-]{1,80}$/.test(proc)) out.proc = proc;
   const ret = q.get("return");
@@ -100,6 +112,10 @@ export interface CockpitHost {
   startScenario(scenarioId: string, wx?: string): void;
   /** start a procedure drill (procedures mode) */
   startProcedure?(procId: string): void;
+  /** capture mode: a moment was refused (a crash, beyond VNE…): the cockpit says why where the pilot looks */
+  refused?(r: Refusal): void;
+  /** capture mode: a capture landed in the tray (the cockpit's strip of captures shows it at once) */
+  captured?(item: TrayItem): void;
   /** panel thumbnail 320×240 for the tray (optional) */
   panelThumb?(): Promise<Blob | null>;
   /** 3D still 480×270 for the tray (optional) */
@@ -145,18 +161,22 @@ const T = {
     "Ce lien de scène est inutilisable : {r}",
   ],
   sceneOk: ["Scene loaded", "Scène chargée"],
-  captured: ["Captured for the course: {t}", "Capturé pour le cours : {t}"],
+  captured: ["Moment captured: {t}", "Moment capturé : {t}"],
   clipped: [
-    "Captured the last {n} s for the course",
-    "Les {n} dernières s capturées pour le cours",
+    "The last {n} s are recorded for the slide",
+    "Les {n} dernières secondes sont enregistrées pour la diapo",
   ],
   noClip: [
-    "Nothing to clip yet: fly a little first",
-    "Rien à découper encore : volez un peu d’abord",
+    "Nothing to record yet: fly a few seconds first",
+    "Rien à enregistrer encore : volez quelques secondes d’abord",
   ],
   noStore: [
     "Captures need this device's storage (it is off in this window)",
     "Les captures demandent le stockage de l’appareil (désactivé dans cette fenêtre)",
+  ],
+  restarted: [
+    "Back at the slide’s situation",
+    "Retour à la situation de la diapo",
   ],
 } as const;
 const tx = (
@@ -184,6 +204,12 @@ export class CourseBridge {
   exercise: CourseExercise | null = null;
   private store: CourseStore | null;
   private started = 0;
+  /** capture mode: the slide's situation the cockpit opened on (?scene=), for « Repartir de la situation de la diapo » */
+  startScene: SimScene | null = null;
+  /** capture mode: this device keeps nothing (no store, or a store on memory): captures cannot reach the studio */
+  storageBlocked = false;
+  /** the last moment refused (a crash, beyond VNE…), for the cockpit's card */
+  lastRefusal: Refusal | null = null;
 
   constructor(
     private host: CockpitHost,
@@ -379,6 +405,7 @@ export class CourseBridge {
       return errs;
     }
     const diffs = applyScene(this.host.sim, sc);
+    if (this.capturing) this.startScene = sc;
     const line = verifyLine(this.host.sim, sc, diffs, lang);
     this.host.toast(
       diffs.length ? line.text : tx("sceneOk", lang),
@@ -390,25 +417,114 @@ export class CourseBridge {
     );
   }
 
-  /** C: capture the current scene into the editor's tray. */
-  async capture(label?: string): Promise<TrayItem | null> {
-    return this.addToTray(
-      captureScene(this.host.sim, this.captureOpts()),
-      undefined,
-      label,
-    );
+  /** Why a capture cannot be taken now (null: it can): blocked storage, a crash, out of the envelope. */
+  refusal(): Refusal | null {
+    const lang = this.host.lang();
+    if (!this.store || this.storageBlocked)
+      return { code: "invalid", text: noStorageText(lang) };
+    return captureRefusal(this.host.sim, lang);
   }
-  /** Shift+C: the last 60 s as a clip (with its start scene). */
+  private refuse(r: Refusal): null {
+    this.lastRefusal = r;
+    if (this.host.refused) this.host.refused(r);
+    else this.host.toast(r.text, "warn", 7000);
+    return null;
+  }
+  /** C: capture the current moment into the editor's tray (refused, with the reason, when it cannot be one). */
+  async capture(label?: string): Promise<TrayItem | null> {
+    const r = this.refusal();
+    if (r) return this.refuse(r);
+    this.lastRefusal = null;
+    const scene = captureScene(this.host.sim, this.captureOpts());
+    return this.addToTray(scene, undefined, label);
+  }
+  /** Shift+C: the last 60 s as a clip (with its start scene). Refused after a crash (the clip would end in it). */
   async captureClip(seconds = 60, label?: string): Promise<TrayItem | null> {
     const lang = this.host.lang();
-    const r = ClipRecorder.lastSeconds(this.ring, this.host.sim.rec, seconds, {
-      capture: this.captureOpts(),
-    });
-    if (!r) {
+    const r = this.refusal();
+    if (r) return this.refuse(r);
+    if (this.ring.spanS < 4) {
       this.host.toast(tx("noClip", lang), "warn");
       return null;
     }
-    return this.addToTray(r.scene, r.clip, label, seconds);
+    const res = ClipRecorder.lastSeconds(this.ring, this.host.sim.rec, seconds, {
+      capture: this.captureOpts(),
+    });
+    if (!res) {
+      this.host.toast(tx("noClip", lang), "warn");
+      return null;
+    }
+    this.lastRefusal = null;
+    return this.addToTray(res.scene, res.clip, label, Math.min(seconds, Math.round(res.clip.durS)));
+  }
+  /**
+   * After a crash (or any time): fly on from `seconds` before the newest frame of the ring that is not a crash.
+   * The flight waits paused there. Returns the frame, or null when the ring holds nothing to go back to.
+   */
+  rewindBefore(seconds = 10): RewindFrame | null {
+    const sim = this.host.sim;
+    const ring = this.ring;
+    if (ring.previewing) ring.endPreview(sim);
+    const ok = ring.frames.filter((f) => f.scene.pose.kind === "exact" && !f.scene.pose.ac.crashed);
+    if (!ok.length) return null;
+    const last = ok[ok.length - 1];
+    const want = last.t - seconds;
+    const f = [...ok].reverse().find((x) => x.t <= want + 1e-6) ?? ok[0];
+    const got = ring.resumeFrom(sim, f.t);
+    if (!got) return null;
+    sim.paused = true;
+    this.lastRefusal = null;
+    return got;
+  }
+  /** « Repartir de la situation de la diapo »: the situation the cockpit opened on (false: it opened on none). */
+  restartFromSlide(): boolean {
+    const sc = this.startScene;
+    if (!sc) return false;
+    const sim = this.host.sim;
+    if (this.ring.previewing) this.ring.endPreview(sim);
+    try {
+      applyScene(sim, sc);
+    } catch {
+      return false;
+    }
+    this.ring.clear();
+    this.lastRefusal = null;
+    this.host.toast(tx("restarted", this.host.lang()), "good", 3500);
+    return true;
+  }
+  /** the captures that will go back to the studio with the author, newest first */
+  async captures(): Promise<TrayItem[]> {
+    if (!this.store || this.params.capture === undefined) return [];
+    try {
+      const l = await this.store.listTray(this.params.capture || undefined);
+      return l.filter((i) => (this.params.capture ? i.courseId === this.params.capture : true)).sort((a, b) => (a.at < b.at ? 1 : -1));
+    } catch {
+      return [];
+    }
+  }
+  async removeCapture(id: string): Promise<void> {
+    await this.store?.removeTray(id).catch(() => undefined);
+  }
+  /** put back a capture removed a moment ago (« Annuler ») */
+  async restoreCapture(item: TrayItem): Promise<void> {
+    await this.store?.addTray(item).catch(() => undefined);
+  }
+  async assetBlob(id: string): Promise<Blob | null> {
+    try {
+      return (await this.store?.getAsset(id)) ?? null;
+    } catch {
+      return null;
+    }
+  }
+  /** « Utiliser pour la diapo »: remember the choice for the studio, then the URL to go back to (null: none) */
+  chooseForSlide(item: TrayItem, kv?: KV | null): string | null {
+    const course = this.params.capture;
+    if (course)
+      setCaptureChoice(
+        { course, item: item.id, at: Date.now(), ...(this.params.step ? { step: this.params.step } : {}) },
+        kv,
+      );
+    return this.captureReturn;
   }
   private captureOpts() {
     return {
@@ -430,6 +546,8 @@ export class CourseBridge {
       this.host.toast(tx("noStore", lang), "warn");
       return null;
     }
+    const moment = momentFacts(this.host.sim);
+    const line = momentLine(moment, lang);
     let thumb: string | undefined;
     let still: string | undefined;
     try {
@@ -444,25 +562,31 @@ export class CourseBridge {
     } catch {
       /* the capture still goes in without pictures */
     }
-    const name = label ?? scene.label ?? "";
-    const item = await store.addTray({
-      scene,
-      ...(clip ? { clip } : {}),
-      ...(this.params.capture ? { courseId: this.params.capture } : {}),
-      ...(thumb ? { thumb } : {}),
-      ...(still ? { still } : {}),
-      ...(name ? { label: name } : {}),
-    });
+    const name = label ?? line;
+    let item: TrayItem;
+    try {
+      item = await store.addTray({
+        scene,
+        ...(clip ? { clip } : {}),
+        ...(this.params.capture ? { courseId: this.params.capture } : {}),
+        ...(this.params.step ? { stepId: this.params.step } : {}),
+        moment,
+        ...(thumb ? { thumb } : {}),
+        ...(still ? { still } : {}),
+        ...(name ? { label: name } : {}),
+      });
+    } catch {
+      return this.refuse({ code: "invalid", text: noStorageText(lang) });
+    }
     const missing = scene.notCaptured?.length
       ? ` (${scene.notCaptured.map((x) => describeNotCaptured(x, lang)).join("; ")})`
       : "";
-    this.host.toast(
-      (clip
-        ? tx("clipped", lang, { n: secs ?? 60 })
-        : tx("captured", lang, { t: name || "scene" })) + missing,
-      "good",
-      5000,
-    );
+    const said = (clip ? tx("clipped", lang, { n: secs ?? 60 }) : tx("captured", lang, { t: line })) + missing;
+    // the cockpit's strip of captures shows the new card (and says it); a toast only for what was not captured
+    if (this.host.captured) {
+      this.host.captured(item);
+      if (missing) this.host.toast(said, "info", 7000);
+    } else this.host.toast(said, "good", 5000);
     return item;
   }
 }
@@ -480,6 +604,8 @@ export async function installCourseBridge(
   let store: CourseStore | null = opts.store ?? null;
   if (opts.store === undefined) store = await courseStore().catch(() => null);
   const b = new CourseBridge(host, store, search);
+  // a store on memory (storage blocked) lives only as long as this page: captures could never reach the studio
+  if (b.capturing && (!store || store.backend !== "idb")) b.storageBlocked = true;
   markCockpitBridge();
   try {
     if (b.params.fly) await b.startFlight();

@@ -431,11 +431,11 @@ export class StudioPanel {
           host.newSlide ? add : null,
         ),
       );
-      this.body.replaceChildren(...out, host.trayEl);
+      this.body.replaceChildren(host.trayEl, ...out);
       return;
     }
     if (!S) {
-      this.body.replaceChildren(...out, host.trayEl);
+      this.body.replaceChildren(host.trayEl, ...out);
       return;
     }
     // ---- the situation of the slide (or of the selected element, when it has its own)
@@ -562,8 +562,8 @@ export class StudioPanel {
             "ol",
             { class: "sim-steps" },
             h("li", {}, T("The course is saved, then the simulator opens with the aircraft in this situation.", "Le cours est enregistré, puis le simulateur s’ouvre avec l’avion dans cette situation.")),
-            h("li", {}, T("Fly. At the right moment, press C (Shift + C also keeps the last 60 seconds).", "Volez. Au bon moment, appuyez sur C (Maj + C garde aussi les 60 dernières secondes).")),
-            h("li", {}, T("“Back to the editor” brings you back here: the captured moment waits below.", "« Retour à l’éditeur » vous ramène ici : le moment capturé vous attend ci-dessous.")),
+            h("li", {}, T("Fly to the right moment, then « Capture this moment » (key C). « Record the last 60 seconds » (Shift + C) keeps the minute just flown.", "Volez jusqu’au bon moment, puis « Capturer ce moment » (touche C). « Enregistrer les 60 dernières secondes » (Maj + C) garde la minute qui vient de passer.")),
+            h("li", {}, T("« Go back to the slide » brings you back here: your captures wait at the top of this panel, under « Your captures ».", "« Revenir à la diapo » vous ramène ici : vos captures vous attendent en haut de ce panneau, sous « Vos captures ».")),
           ),
           go,
           S.canFly
@@ -576,7 +576,6 @@ export class StudioPanel {
                   "Le simulateur ne peut pas s’ouvrir depuis cette fenêtre. Réglez plutôt la situation ici.",
                 ),
               ),
-          host.trayEl,
         ];
         pane.replaceChildren(...kids.filter((k): k is Node => !!k));
       }
@@ -617,7 +616,8 @@ export class StudioPanel {
       open();
     }
     out.push(fold);
-    this.body.replaceChildren(...out);
+    // « Vos captures » first: back from the simulator, the captured moments are the first thing in the panel
+    this.body.replaceChildren(host.trayEl, ...out);
   }
 
   // ---------------------------------------------------------------- the asset library tabs
