@@ -2692,3 +2692,21 @@
   color: var(--text, #111827);
   margin-top: 22px;
 }
+
+/* the note to the author, quiet (starting templates, samples/starterDecks.ts noteBlock): a thin dashed slip in the
+   bottom corner, small grey words; shown only while editing (render.ts hides it everywhere else) */
+.sl-editor-note {
+  outline: 2px dashed rgba(197, 138, 0, 0.55);
+  outline-offset: 10px;
+  border-radius: 4px;
+  background: none;
+}
+/* the six first slides of an empty slide (samples/showcaseDecks.ts startSlides): two rows of three, bigger pictures */
+.ce-fr-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (max-width: 760px) {
+  .ce-fr-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

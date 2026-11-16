@@ -74,16 +74,16 @@ const make = (starter: (typeof DECK_STARTERS)[number], title = "", program: "ppl
 
 describe("the starting template of each formation", () => {
   it("each formation starts from its own template, then its subject decks, then the blank slide", () => {
-    expect(startersFor("ppl")[0].id).toBe("ppl-turns");
-    expect(startersFor("night")[0].id).toBe("night-instruments");
-    expect(startersFor("ir")[0].id).toBe("ir-radial");
-    expect(startersFor("atpl")[0].id).toBe("atpl-gyros");
+    expect(startersFor("ppl")[0].id).toBe("ppl-circuit");
+    expect(startersFor("night")[0].id).toBe("night-flight");
+    expect(startersFor("ir")[0].id).toBe("ir-ils");
+    expect(startersFor("atpl")[0].id).toBe("atpl-displays");
     // LAPL · PPL never offers an IR template (the old bug: the holding briefing was preselected)
     const ppl = startersFor("ppl").map((d) => d.id);
     expect(ppl).not.toContain("hold-briefing");
-    expect(ppl).not.toContain("ir-radial");
+    expect(ppl).not.toContain("ir-ils");
     expect(ppl.at(-1)).toBe(BLANK_STARTER.id);
-    expect(startersFor("ir").map((d) => d.id)).not.toContain("ppl-turns");
+    expect(startersFor("ir").map((d) => d.id)).not.toContain("ppl-circuit");
     // nothing chosen: every template, the blank slide last
     expect(startersFor(null).length).toBe(DECK_STARTERS.length + 1);
   });
@@ -100,7 +100,7 @@ describe("the starting template of each formation", () => {
     const hold = make(DECK_STARTERS.find((d) => d.id === "hold-briefing")!, "Mon attente");
     expect(JSON.stringify(hold.steps[0].slide)).toContain("Mon attente");
   });
-  it("5 to 7 slides: a moving instrument, a live one with controls and a goal, a question, the takeaways", () => {
+  it("5 to 7 slides: a moving instrument, a live one with controls and a goal, a question, a question or the takeaways last", () => {
     for (const d of FORMATION_DECKS) {
       const c = make(d);
       expect(c.steps.length).toBeGreaterThanOrEqual(5);
@@ -109,7 +109,7 @@ describe("the starting template of each formation", () => {
       expect(insts(blocks).some((b) => b.motion), d.id).toBe(true);
       expect(insts(blocks).some((b) => b.mode === "live" && b.controls?.length && b.yourTurn?.goal.all.length), d.id).toBe(true);
       expect(blocks.some((b) => b.kind === "quiz"), d.id).toBe(true);
-      expect(c.steps.at(-1)!.slide!.layout, d.id).toBe("recap");
+      expect(["recap", "quiz"], d.id).toContain(c.steps.at(-1)!.slide!.layout);
       // every slide's situation is in the course
       for (const b of insts(blocks)) if (b.scene) expect(c.scenes[b.scene], `${d.id} ${b.scene}`).toBeTruthy();
       // every slide says what to replace, to the author only

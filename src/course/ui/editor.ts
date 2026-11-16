@@ -129,7 +129,7 @@ import {
   type DeckStarter,
 } from "./deckStarters";
 import { exampleScenes } from "../canvas/examples";
-import { galleryScenes, gallerySlide } from "../samples/exampleSlides";
+import { showcaseScenes, startSlide } from "../samples/showcaseDecks";
 import type { SlideLayoutId, ThemeId } from "../types";
 import "../../styles/course-editor.css";
 import "../../styles/course-studio.css";
@@ -2052,8 +2052,9 @@ export class CourseEditor implements InspectorHost {
         flight: () => this.addSimContent("flight"),
         more: () => this.openPanel("templates"),
         example: (id) => {
-          const ex = gallerySlide(id);
-          if (ex) this.addComposedSlide(ex.slide, ex.title, galleryScenes());
+          // the first slides of « Que voulez-vous montrer ? » (samples/showcaseDecks.ts), then the gallery's
+          const ex = startSlide(id);
+          if (ex) this.addComposedSlide(ex.slide, ex.title, showcaseScenes());
         },
         blank: () => {
           this.emptyBlank.add(this.step?.id ?? "");

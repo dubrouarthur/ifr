@@ -19,6 +19,7 @@ import { LAYOUTS, layoutCanvas } from "../canvas/layouts";
 import { renderThumb, type SlideView } from "../canvas/render";
 import { exampleSlides, exampleScenes } from "../canvas/examples";
 import { GALLERY_GROUPS, galleryScenes, gallerySlides } from "../samples/exampleSlides";
+import { showcaseScenes, startSlides } from "../samples/showcaseDecks";
 import { LibraryPanel } from "../canvas/libraryPanel";
 import type { BlockDraft, LibraryTab } from "../canvas/factory";
 import { baseThemeId } from "../canvas/themes";
@@ -1188,14 +1189,16 @@ export interface EmptyStarts {
    *  offers the gallery's most useful slides instead of the bare layouts */
   example?(id: string): void;
 }
-/** The ready slides an empty slide offers first, in the order a lesson uses them. */
+/** The ready slides an empty slide offers first: one per thing the simulator does on a slide, each with a different
+ *  instrument (samples/showcaseDecks.ts startSlides): the aircraft flying on a cover, the view from the cockpit, a
+ *  demonstration the instructor flies, the student at the controls, a flight in the simulator, a calculation. */
 export const EMPTY_STARTS: readonly string[] = [
-  "gx-cover",
-  "gx-turn-std",
-  "gx-asi-arcs",
-  "gx-hold-heading",
-  "gx-quiz",
+  "sx-cover",
+  "sx-moment",
+  "sx-demo",
+  "gx-set-obs",
   "gx-flight",
+  "sx-wind",
 ];
 /** the keyboard hints are shown once on this device */
 const KEYS_SEEN = "ifr.studio.keys.v1";
@@ -1233,8 +1236,8 @@ export function emptySlideCard(
   const grid = h("div", { class: "ce-fr-grid", role: "list" });
   if (on.example) {
     const pick = on.example;
-    const all = gallerySlides();
-    const sc = { ...galleryScenes(), ...(thumbs?.scenes ?? {}) };
+    const all = startSlides();
+    const sc = { ...showcaseScenes(), ...(thumbs?.scenes ?? {}) };
     for (const id of EMPTY_STARTS) {
       const ex = all.find((g) => g.id === id);
       if (!ex) continue;

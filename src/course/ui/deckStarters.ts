@@ -44,6 +44,9 @@ export interface DeckStarter {
   notes?: Partial<Record<number, L10n>>;
   /** the situations its slides show (added to the course with the slides) */
   scenes?: () => Record<string, SimScene>;
+  /** the capability its card names (samples/showcaseDecks.ts CAPABILITY) and the slide its card plays */
+  badge?: import("../samples/showcaseDecks").Capability;
+  hero?: number;
 }
 
 export interface DeckCover {
@@ -90,6 +93,7 @@ export const DECK_STARTERS: readonly DeckStarter[] = [
     ),
     theme: "classroom",
     level: L("LAPL / PPL", "LAPL / PPL"),
+    badge: "calc",
     slides: ["cover", "heroDiagram", "quiz", "recap"],
     make: { 1: WB_SLIDES[0], 2: WB_SLIDES[1], 3: WB_SLIDES[2] },
     cover: {
@@ -136,6 +140,7 @@ export const DECK_STARTERS: readonly DeckStarter[] = [
     ),
     theme: "classroom",
     level: L("PPL / IR", "PPL / IR"),
+    badge: "calc",
     slides: ["cover", "bigNumber", "formula", "quiz", "recap"],
     cover: {
       eyebrow: L("Ground school · Maths for IFR", "Théorie · Maths de l’IFR"),
@@ -158,6 +163,7 @@ export const DECK_STARTERS: readonly DeckStarter[] = [
     ),
     theme: "classroom",
     level: L("IR", "IR"),
+    badge: "sim",
     slides: ["cover", "instrumentNotes", "compare", "checklist", "recap"],
     cover: {
       eyebrow: L("Instruments · HSI", "Instruments · HSI"),
@@ -242,6 +248,8 @@ export function deckTitle(d: DeckStarter): L10n | null {
   const c = d.cover;
   if (!c) return null;
   const low = (x: string) => x.charAt(0).toLowerCase() + x.slice(1);
+  // a template without a subtitle (the showcase templates) is named by its title alone
+  if (!c.subtitle.en) return { ...c.title };
   return {
     en: `${c.title.en}: ${low(c.subtitle.en)}`,
     fr: `${c.title.fr} : ${low(c.subtitle.fr ?? c.subtitle.en)}`,

@@ -458,3 +458,132 @@
     transform: none;
   }
 }
+
+/* ---------- the starting points as a showcase: a template of the formation is a wide card that plays its slide
+   (the aircraft flies, the needles move), one badge names what it shows; a line under the grid says what the
+   course will contain */
+.nc-card.is-feature {
+  grid-column: span 2;
+}
+@media (max-width: 620px) {
+  .nc-card.is-feature {
+    grid-column: auto;
+  }
+}
+.nc-badge {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  padding: 4px 11px 4px 9px;
+  border-radius: 999px;
+  background: #13202f;
+  color: #fff;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: 0.005em;
+}
+.nc-badge > i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #5ad1e6;
+  box-shadow: 0 0 0 3px rgba(90, 209, 230, 0.22);
+}
+.nc-badge.is-motion > i,
+.nc-badge.is-demo > i {
+  background: #ffcf5a;
+  box-shadow: 0 0 0 3px rgba(255, 207, 90, 0.22);
+}
+.nc-badge.is-calc > i {
+  background: #8fe39b;
+  box-shadow: 0 0 0 3px rgba(143, 227, 155, 0.22);
+}
+.nc-card.is-feature .nc-card-t {
+  font-size: 1.0625rem;
+}
+.nc-sum {
+  margin: 16px 0 0;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--ink-2);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+.nc-sum-k {
+  font-weight: 650;
+  color: var(--ink);
+}
+
+/* ---------- the tip beside the editor's « Simulateur » tab, once after « Créer le cours » (simTip.ts) */
+.nc-simtip {
+  --card: #ffffff;
+  --ink: #14181f;
+  --ink-2: #353c47;
+  --mute: #5d6671;
+  --rule: #e4e1da;
+  --rule-strong: #cbc7be;
+  --accent: #1d5fd1;
+  position: fixed;
+  z-index: 1000;
+  width: 300px;
+  max-width: calc(100vw - 120px);
+  padding: 16px 18px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow:
+    0 2px 4px rgba(20, 24, 31, 0.06),
+    0 16px 40px rgba(20, 24, 31, 0.16);
+  font-size: 0.9375rem;
+}
+.nc-simtip > b {
+  display: block;
+  font-size: 1rem;
+  margin-bottom: 4px;
+}
+.nc-simtip > p {
+  margin: 0 0 12px;
+  color: var(--ink-2);
+  line-height: 1.45;
+}
+.nc-simtip-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.nc-simtip-arrow {
+  position: absolute;
+  top: 34px;
+  left: -7px;
+  width: 12px;
+  height: 12px;
+  background: var(--card);
+  border-left: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  transform: rotate(45deg);
+}
+.nc-simtip-for {
+  outline: 2px solid #1d5fd1;
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+/* a card plays its slide as a picture: no « Pause » on it, nothing in it takes the pointer */
+.nc-cover .sl-motion-btn,
+.nc-cover .sl-hud-btn {
+  display: none;
+}
+.nc-simtip {
+  font-family: "Inter", system-ui, sans-serif;
+  line-height: 1.4;
+}
+/* a wide card does not stretch the small ones beside it */
+.nc-grid {
+  align-items: start;
+}

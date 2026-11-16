@@ -32,8 +32,8 @@ import {
   SlideInstrument,
   SceneSims,
   readoutText,
-  drawOutsideStill,
 } from "./instruments";
+import { mountOutsideView } from "./outsideView";
 import { instrumentFrame } from "../stage/geometry";
 import {
   ControlStrip,
@@ -995,6 +995,7 @@ function simViewportBlock(b: Of<"simViewport">, env: BlockEnv): BlockView {
     fire: env.fire,
   });
   let inst: SlideInstrument | undefined;
+  let stopOutside: (() => void) | undefined;
   if (!slot) {
     if (b.poster) {
       const img = mk("img", "sl-vp-poster");
@@ -1025,17 +1026,33 @@ function simViewportBlock(b: Of<"simViewport">, env: BlockEnv): BlockView {
     } else {
       const cv = mk("canvas", "sl-vp-still");
       box.append(cv);
-      const entry = env.sims.get(b.scene ?? env.slideScene ?? DEMO_SCENE_ID);
-      const W = 640;
+      // the slide's own aircraft (with the animation another block of the slide plays on it): the view follows it
+      const sid = b.scene ?? env.slideScene ?? DEMO_SCENE_ID;
+      const mo = env.motionOf?.(sid);
+      const entry = mo
+        ? env.sims.get(sid, undefined, mo, env.mode === "play" ? "start" : "telling")
+        : env.sims.get(sid);
+      const W = env.mode === "thumb" ? 480 : 960;
       const H = Math.max(
         1,
         Math.round((W * b.frame.h) / Math.max(1, b.frame.w)),
       );
       cv.width = W;
       cv.height = H;
-      const ctx = cv.getContext("2d");
-      if (ctx)
-        drawOutsideStill(ctx, W, H, entry?.sim ?? null, b.view === "cockpit");
+      stopOutside = mountOutsideView(cv, () => entry?.sim ?? null, {
+        cockpit: b.view === "cockpit",
+        night: entry?.scene.timeOfDay === "night",
+        // a cloud layer only when the situation has one (a clear day says 25,000 ft)
+        ...(entry?.scene.weather?.ceilingFt !== undefined && entry.scene.weather.ceilingFt < 20000
+          ? {
+              cloud: {
+                baseFt: entry.scene.weather.ceilingFt,
+                topFt: entry.scene.weather.cloudTopFt ?? entry.scene.weather.ceilingFt + 3000,
+              },
+            }
+          : {}),
+        live: env.mode !== "thumb",
+      });
     }
   }
   const bar = mk("div", "sl-vp-bar");
@@ -1071,6 +1088,7 @@ function simViewportBlock(b: Of<"simViewport">, env: BlockEnv): BlockView {
     destroy: () => {
       if (slot) slot.destroy?.();
       inst?.destroy();
+      stopOutside?.();
       el.remove();
     },
   };
