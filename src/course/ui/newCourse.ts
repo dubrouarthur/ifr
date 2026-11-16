@@ -27,6 +27,7 @@ import {
   type ProgramId,
   type SubjectId,
 } from "../../library/programs";
+import { aiCreateButton } from "../ai/entry";
 import "../../styles/newcourse.css";
 
 // ------------------------------------------------------------------ the formations a course can be filed in
@@ -561,6 +562,7 @@ export function mountNewCourse(
             "Partez d’un modèle déjà mis en page : vous changez les mots, les instruments restent vivants. Tout se modifie ensuite.",
           ),
         ),
+        aiCreateButton({ lang, store: o.store, program, onCreated: o.onCreated }),
         fields,
         h(
           "div",

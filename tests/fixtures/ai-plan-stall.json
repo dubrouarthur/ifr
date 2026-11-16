@@ -1,0 +1,356 @@
+{
+  "title": {
+    "en": "The stall",
+    "fr": "Le décrochage"
+  },
+  "subtitle": {
+    "en": "Recognise it, recover from it",
+    "fr": "Le reconnaître, en sortir"
+  },
+  "summary": {
+    "en": "A PPL lesson on the stall in the C172S: the warning, the recovery and a flight in the simulator.",
+    "fr": "Une leçon PPL sur le décrochage du C172S : l’alarme, la sortie et un vol dans le simulateur."
+  },
+  "slides": [
+    {
+      "kind": "cover",
+      "eyebrow": {
+        "en": "Flying · PPL",
+        "fr": "Pilotage · PPL"
+      },
+      "title": {
+        "en": "The stall",
+        "fr": "Le décrochage"
+      },
+      "subtitle": {
+        "en": "Recognise it, recover from it",
+        "fr": "Le reconnaître, en sortir"
+      },
+      "lead": {
+        "en": "The wing stops lifting at its critical angle, not at a speed.",
+        "fr": "L’aile cesse de porter à son angle critique, pas à une vitesse."
+      },
+      "source": {
+        "en": "FAA AFH ch. 5 · C172S POH section 2",
+        "fr": "FAA AFH ch. 5 · POH C172S section 2"
+      },
+      "instrument": {
+        "view": "six",
+        "animation": "stall",
+        "situation": {
+          "start": "level",
+          "headingDeg": 270,
+          "altitudeFt": 3000,
+          "speedKt": 100,
+          "verticalSpeedFpm": 0,
+          "bankDeg": 0,
+          "powerPct": 58,
+          "flaps": 0
+        },
+        "alt": {
+          "en": "Six instruments: the speed falls to the stall",
+          "fr": "Six instruments : la vitesse baisse jusqu’au décrochage"
+        }
+      }
+    },
+    {
+      "kind": "goals",
+      "items": [
+        {
+          "en": "Name the stall speed: 48 KIAS clean",
+          "fr": "Citer la vitesse de décrochage : 48 KIAS lisse"
+        },
+        {
+          "en": "Recover within 100 ft",
+          "fr": "Sortir en perdant moins de 100 ft"
+        },
+        {
+          "en": "Hold 65 kt ± 5 kt in slow flight",
+          "fr": "Tenir 65 kt ± 5 kt en vol lent"
+        }
+      ],
+      "source": {
+        "en": "EASA Part-FCL PPL syllabus · FAA ACS",
+        "fr": "Programme PPL EASA Part-FCL · FAA ACS"
+      },
+      "instrument": {
+        "view": "asi",
+        "animation": "stall",
+        "situation": {
+          "start": "level",
+          "headingDeg": 270,
+          "altitudeFt": 3000,
+          "speedKt": 100,
+          "verticalSpeedFpm": 0,
+          "bankDeg": 0,
+          "powerPct": 58,
+          "flaps": 0
+        },
+        "alt": {
+          "en": "Airspeed indicator: the speed falls",
+          "fr": "Anémomètre : la vitesse baisse"
+        }
+      }
+    },
+    {
+      "kind": "yourTurn",
+      "title": {
+        "en": "Your turn: hold 65 kt",
+        "fr": "À vous : tenez 65 kt"
+      },
+      "goal": "holdSpeed",
+      "tolerance": 5,
+      "holdSeconds": 15,
+      "controls": [
+        "pitch",
+        "power"
+      ],
+      "view": "six",
+      "situation": {
+        "start": "slow",
+        "headingDeg": 270,
+        "altitudeFt": 3000,
+        "speedKt": 65,
+        "verticalSpeedFpm": 0,
+        "bankDeg": 0,
+        "powerPct": 55,
+        "flaps": 1
+      },
+      "tip": {
+        "en": "Pitch for the speed, power for the altitude.",
+        "fr": "L’assiette pour la vitesse, la puissance pour l’altitude."
+      },
+      "hint": {
+        "en": "Small pitch changes: one degree at a time.",
+        "fr": "Petites corrections d’assiette : un degré à la fois."
+      },
+      "success": {
+        "en": "65 kt held for 15 seconds.",
+        "fr": "65 kt tenus 15 secondes."
+      },
+      "source": {
+        "en": "FAA AFH ch. 5 · slow flight",
+        "fr": "FAA AFH ch. 5 · vol lent"
+      }
+    },
+    {
+      "kind": "idea",
+      "eyebrow": {
+        "en": "Flying · PPL",
+        "fr": "Pilotage · PPL"
+      },
+      "title": {
+        "en": "Approaching the stall",
+        "fr": "L’approche du décrochage"
+      },
+      "lines": [
+        {
+          "text": {
+            "en": "Power idle, hold the altitude: the speed falls",
+            "fr": "Réduit, on tient l’altitude : la vitesse baisse"
+          },
+          "moment": ""
+        },
+        {
+          "text": {
+            "en": "The **warning** sounds 5 to 10 kt before",
+            "fr": "L’**avertisseur** retentit 5 à 10 kt avant"
+          },
+          "moment": "warn"
+        },
+        {
+          "text": {
+            "en": "At **48 kt**: lower the nose, full power",
+            "fr": "À **48 kt** : rendez la main, pleine puissance"
+          },
+          "moment": "stall"
+        }
+      ],
+      "source": {
+        "en": "C172S POH sections 2 and 4 · FAA AFH ch. 5",
+        "fr": "POH C172S sections 2 et 4 · FAA AFH ch. 5"
+      },
+      "instrument": {
+        "view": "six",
+        "animation": "stall",
+        "situation": {
+          "start": "level",
+          "headingDeg": 270,
+          "altitudeFt": 3000,
+          "speedKt": 100,
+          "verticalSpeedFpm": 0,
+          "bankDeg": 0,
+          "powerPct": 58,
+          "flaps": 0
+        },
+        "alt": {
+          "en": "Six instruments: the stall and the recovery",
+          "fr": "Six instruments : le décrochage et la sortie"
+        }
+      }
+    },
+    {
+      "kind": "quiz",
+      "question": {
+        "en": "What makes the wing stall?",
+        "fr": "Qu’est-ce qui fait décrocher l’aile ?"
+      },
+      "options": [
+        {
+          "en": "A speed too low",
+          "fr": "Une vitesse trop faible"
+        },
+        {
+          "en": "The critical angle of attack",
+          "fr": "L’angle d’incidence critique"
+        },
+        {
+          "en": "Too much power",
+          "fr": "Trop de puissance"
+        }
+      ],
+      "answer": 1,
+      "explain": {
+        "en": "The wing stalls when it exceeds its critical angle of attack, at any speed and any attitude.",
+        "fr": "L’aile décroche quand elle dépasse son incidence critique, à n’importe quelle vitesse et assiette."
+      },
+      "source": {
+        "en": "FAA PHAK ch. 5",
+        "fr": "FAA PHAK ch. 5"
+      },
+      "instrument": {
+        "view": "ai",
+        "animation": "stall",
+        "situation": {
+          "start": "level",
+          "headingDeg": 270,
+          "altitudeFt": 3000,
+          "speedKt": 100,
+          "verticalSpeedFpm": 0,
+          "bankDeg": 0,
+          "powerPct": 58,
+          "flaps": 0
+        },
+        "alt": {
+          "en": "Attitude indicator: the nose rises, then drops",
+          "fr": "Horizon : le nez monte, puis tombe"
+        }
+      }
+    },
+    {
+      "kind": "calc",
+      "eyebrow": {
+        "en": "Load factor",
+        "fr": "Facteur de charge"
+      },
+      "title": {
+        "en": "The stall speed rises in a turn",
+        "fr": "La vitesse de décrochage monte en virage"
+      },
+      "lead": {
+        "en": "Bank adds load: the wing needs more lift.",
+        "fr": "L’inclinaison ajoute de la charge : l’aile doit porter plus."
+      },
+      "diagram": {
+        "kind": "turn",
+        "tasKt": 100,
+        "bankDeg": 45
+      },
+      "lines": [
+        {
+          "en": "At 45°, the load factor is **1.41 g**",
+          "fr": "À 45°, le facteur de charge est de **1,41 g**"
+        },
+        {
+          "en": "Stall speed × √1.41: 48 → **57 kt**",
+          "fr": "Vitesse × √1,41 : 48 → **57 kt**"
+        }
+      ],
+      "alt": {
+        "en": "A 45° turn at 100 kt: rate and radius",
+        "fr": "Un virage à 45° à 100 kt : taux et rayon"
+      },
+      "caption": {
+        "en": "",
+        "fr": ""
+      },
+      "source": {
+        "en": "FAA PHAK ch. 5 · C172S POH section 5",
+        "fr": "FAA PHAK ch. 5 · POH C172S section 5"
+      }
+    },
+    {
+      "kind": "flight",
+      "title": {
+        "en": "Fly it: slow flight at 3,000 ft",
+        "fr": "En vol : vol lent à 3 000 ft"
+      },
+      "brief": {
+        "en": "Slow to 65 kt with flaps 10°, keep the altitude, then hold heading 270 for 10 seconds.",
+        "fr": "Ralentissez à 65 kt volets 10°, gardez l’altitude, puis tenez le cap 270 pendant 10 secondes."
+      },
+      "goal": "holdHeading",
+      "situation": {
+        "start": "slow",
+        "headingDeg": 270,
+        "altitudeFt": 3000,
+        "speedKt": 65,
+        "verticalSpeedFpm": 0,
+        "bankDeg": 0,
+        "powerPct": 55,
+        "flaps": 1
+      },
+      "success": {
+        "en": "Heading held in slow flight.",
+        "fr": "Cap tenu en vol lent."
+      },
+      "source": {
+        "en": "FAA AFH ch. 5 · slow flight",
+        "fr": "FAA AFH ch. 5 · vol lent"
+      }
+    },
+    {
+      "kind": "recap",
+      "title": {
+        "en": "Three numbers for the stall",
+        "fr": "Trois chiffres pour le décrochage"
+      },
+      "items": [
+        {
+          "figure": {
+            "en": "48 kt",
+            "fr": "48 kt"
+          },
+          "text": {
+            "en": "clean stall speed at max weight",
+            "fr": "décrochage lisse à la masse maximale"
+          }
+        },
+        {
+          "figure": {
+            "en": "40 kt",
+            "fr": "40 kt"
+          },
+          "text": {
+            "en": "with full flaps (VS0)",
+            "fr": "avec les volets sortis (VS0)"
+          }
+        },
+        {
+          "figure": {
+            "en": "1.41 g",
+            "fr": "1,41 g"
+          },
+          "text": {
+            "en": "at 45° of bank: the stall speed rises",
+            "fr": "à 45° d’inclinaison : le décrochage monte"
+          }
+        }
+      ],
+      "source": {
+        "en": "C172S POH sections 2 and 5",
+        "fr": "POH C172S sections 2 et 5"
+      }
+    }
+  ]
+}
