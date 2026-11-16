@@ -18,6 +18,7 @@ import {
 } from "../stage/views";
 import { Overlay } from "../stage/overlay";
 import { stageLoop, type LoopClient, type StageLoop } from "../stage/host";
+import { StripPilot, type Box } from "./controlStrip";
 import type {
   Annotation,
   Cockpit,
@@ -25,6 +26,7 @@ import type {
   Lang,
   ReadoutId,
   SimScene,
+  StageControl,
 } from "../types";
 
 export interface SceneEnv {
@@ -32,13 +34,25 @@ export interface SceneEnv {
   cockpit?: Cockpit;
 }
 
-interface SimEntry {
+export interface SimEntry {
   sim: Sim;
   scene: SimScene;
   diffs: SceneDiff[];
   /** live widgets drawing from it */
   live: Set<SlideInstrument>;
   stepped: number;
+  /** the failures it was built with (« Réinitialiser » builds it again) */
+  failures?: Partial<Failures>;
+  /** the hands on the flying controls, when a control strip shows this situation (canvas/controlStrip.ts) */
+  pilot?: StripPilot;
+}
+
+// A situation added to the course while a slide is open (« Garder comme départ » in the editor): the open view
+// was built with the course's scenes of that moment, so it finds the new one here. Ids are unique per capture.
+const lateScenes = new Map<string, SimScene>();
+export function rememberScene(scene: SimScene) {
+  lateScenes.set(scene.id, scene);
+  if (lateScenes.size > 64) lateScenes.delete(lateScenes.keys().next().value as string);
 }
 
 /**
@@ -71,7 +85,10 @@ export class SceneSims implements LoopClient {
     if (!scene) return null;
     const k = this.key(scene, failures);
     if (this.map.has(k)) return this.map.get(k)!;
-    const sc = typeof scene === "string" ? this.env.scenes[scene] : scene;
+    const sc =
+      typeof scene === "string"
+        ? (this.env.scenes[scene] ?? lateScenes.get(scene))
+        : scene;
     let entry: SimEntry | null = null;
     if (sc) {
       try {
@@ -80,7 +97,14 @@ export class SceneSims implements LoopClient {
         for (const [f, on] of Object.entries(failures ?? {}))
           if (on) sim.setFailure(f as keyof Failures, true);
         sim.updateAvionics(0);
-        entry = { sim, scene: sc, diffs, live: new Set(), stepped: -1 };
+        entry = {
+          sim,
+          scene: sc,
+          diffs,
+          live: new Set(),
+          stepped: -1,
+          ...(failures ? { failures: { ...failures } } : {}),
+        };
       } catch {
         entry = null;
       }
@@ -94,6 +118,61 @@ export class SceneSims implements LoopClient {
   reset(scene: string) {
     for (const k of [...this.map.keys()])
       if (k.startsWith(`id:${scene}`)) this.map.delete(k);
+  }
+  /** The hands on the flying controls of a situation, with the controls of one more strip. */
+  pilot(e: SimEntry, controls: readonly StageControl[]): StripPilot {
+    const p = e.pilot ?? (e.pilot = new StripPilot());
+    p.configure(e.sim, controls);
+    return p;
+  }
+  /** Put a situation back at its start (« Réinitialiser »): every instrument showing it follows. */
+  restart(e: SimEntry) {
+    try {
+      const sim = new Sim();
+      const diffs = applyScene(sim, e.scene);
+      for (const [f, on] of Object.entries(e.failures ?? {}))
+        if (on) sim.setFailure(f as keyof Failures, true);
+      sim.updateAvionics(0);
+      e.sim = sim;
+      e.diffs = diffs;
+    } catch {
+      return;
+    }
+    e.pilot?.capture(e.sim);
+    for (const w of this.widgets) if (w.entry === e) w.invalidate();
+  }
+  /**
+   * A situation was edited in the studio (« Situation de vol »): every instrument showing the scene of that id
+   * follows at once, on the same Sim (no rebuild: this runs while the author drags a slider).
+   */
+  replace(scene: SimScene) {
+    this.env.scenes = { ...this.env.scenes, [scene.id]: scene };
+    for (const [k, e] of this.map) {
+      if (!e || !(k === `id:${scene.id}` || k.startsWith(`id:${scene.id}|`))) continue;
+      try {
+        e.scene = scene;
+        e.diffs = applyScene(e.sim, scene);
+        for (const [f, on] of Object.entries(e.failures ?? {}))
+          if (on) e.sim.setFailure(f as keyof Failures, true);
+        e.sim.updateAvionics(0);
+      } catch {
+        continue;
+      }
+      e.pilot?.capture(e.sim);
+      for (const w of this.widgets) if (w.entry === e) w.invalidate();
+    }
+    this.ensureLoop();
+  }
+  /** Run or stop the clock of a situation (the editor's try: time runs once the author flies it). */
+  run(e: SimEntry, on: boolean) {
+    for (const w of this.widgets)
+      if (w.entry === e) w.setMode(on ? "live" : "frozen");
+    if (on) this.ensureLoop();
+  }
+  /** Redraw every instrument of a situation (a knob was turned while it is frozen). */
+  touch(e: SimEntry) {
+    e.sim.updateAvionics(0);
+    for (const w of this.widgets) if (w.entry === e) w.invalidate();
   }
   register(w: SlideInstrument) {
     this.widgets.add(w);
@@ -122,6 +201,7 @@ export class SceneSims implements LoopClient {
       if (e && e.stepped !== this.frameNo) {
         e.stepped = this.frameNo;
         e.sim.paused = false;
+        e.pilot?.apply(e.sim, dt);
         e.sim.step(dt);
       }
     }
@@ -153,6 +233,10 @@ export interface InstrumentOptions {
   /** draw once into an <img> (thumbnails): no canvas stays alive */
   still?: boolean;
   alt?: string;
+  /** where the instrument sits inside the block when its control strip takes a part of it (default: all of it) */
+  box?: Box;
+  /** called after each draw (the control strip shows its values) */
+  onDraw?: () => void;
 }
 
 /** One instrument on a slide. */
@@ -188,12 +272,8 @@ export class SlideInstrument {
     this.screen.className = "sl-inst-screen";
     this.el.append(this.screen);
     // the screen keeps the drawing's aspect inside the block (the bezel takes ~3 % of the short side)
-    const box = instrumentScreen(o.view, o.w, o.h, o.bezel !== false, sims.env.cockpit ?? "g1000");
-    const s = this.screen.style;
-    s.left = `${box.x}px`;
-    s.top = `${box.y}px`;
-    s.width = `${box.w}px`;
-    s.height = `${box.h}px`;
+    if (o.box) this.setBox(o.box);
+    else this.placeScreen(o.w, o.h);
     if (!this.entry) {
       const m = document.createElement("div");
       m.className = "sl-inst-msg";
@@ -233,6 +313,26 @@ export class SlideInstrument {
   }
   get sim(): Sim | null {
     return this.entry?.sim ?? null;
+  }
+  private placeScreen(w: number, h: number) {
+    const o = this.o;
+    const box = instrumentScreen(o.view, w, h, o.bezel !== false, this.sims.env.cockpit ?? "g1000");
+    const s = this.screen.style;
+    s.left = `${box.x}px`;
+    s.top = `${box.y}px`;
+    s.width = `${box.w}px`;
+    s.height = `${box.h}px`;
+  }
+  /** Draw the instrument in a part of the block (its control strip takes the rest). */
+  setBox(b: Box) {
+    const s = this.el.style;
+    s.inset = "auto";
+    s.left = `${b.x}px`;
+    s.top = `${b.y}px`;
+    s.width = `${b.w}px`;
+    s.height = `${b.h}px`;
+    this.placeScreen(b.w, b.h);
+    if (this.canvas) this.invalidate();
   }
   /** the CSS size of the screen box (logical × scale) */
   private screenPx(): { w: number; h: number } {
@@ -301,6 +401,7 @@ export class SlideInstrument {
       if (a !== this.lastAria)
         this.el.setAttribute("aria-label", (this.lastAria = a));
     }
+    this.o.onDraw?.();
   }
   private drawStill() {
     this.draw(0);

@@ -24,6 +24,21 @@ import { baseThemeId } from "../canvas/themes";
 import { KINDS } from "./reader";
 import { TEMPLATES, titleOfSlide, tr, type TemplateId } from "./templates";
 import type { DeckStarter } from "./deckStarters";
+import {
+  SIM_CONTENTS,
+  mainInstrument,
+  posLine,
+  sceneOfSituation,
+  sitLabel,
+  situationOfScene,
+  type SimContentKind,
+} from "../situations";
+import {
+  SituationEditor,
+  readyGrid,
+  type SitTarget,
+  type SituationHost,
+} from "./situationEditor";
 
 /** the paste shortcut as the platform writes it */
 const PASTE_KEY =
@@ -100,8 +115,8 @@ const RAIL_HINT: Record<RailTab, [string, string]> = {
     "Le logo et la couleur de l’école sur chaque diapo",
   ],
   cockpit: [
-    "Moments captured in the cockpit",
-    "Les moments capturés au cockpit",
+    "Live instruments, flights and the flight situation of the slide",
+    "Instruments vivants, vols et situation de vol de la diapo",
   ],
 };
 export const RAIL_TABS: readonly RailTab[] = [
@@ -179,7 +194,32 @@ export interface StudioHost {
   trayEl: HTMLElement;
   /** a block was added from the panel (the host may close an overlay panel) */
   afterAdd?(): void;
+  /** the « Situation de vol » plumbing (ui/situationEditor.ts): the Simulateur panel sets the slide's situation */
+  readonly situations?: SituationHost;
+  /** the selected instrument or simulator view, when there is exactly one */
+  readonly simSelection?: string;
+  /** one of the four simulator contents on the slide, ready to work */
+  addSim?(kind: SimContentKind): void;
+  /** a blank slide after the current step */
+  newSlide?(): void;
 }
+
+/** the way to get a situation the author used last in the Simulateur panel */
+let SIM_WAY: "set" | "ready" | "fly" = "set";
+/** Open the Simulateur panel on one of its three ways (back from the cockpit: on « Voler et capturer »). */
+export function setSimWay(w: "set" | "ready" | "fly") {
+  SIM_WAY = w;
+}
+// the four simulator contents, drawn (our own constant strings)
+const SIM_ART: Record<SimContentKind, string> = {
+  live: '<circle cx="48" cy="32" r="22"/><path d="M48 32l12-12"/><path d="M48 14v4M30 32h4M62 32h4"/><path d="M78 20c4 7 4 17 0 24M84 15c6 10 6 24 0 34" stroke-opacity=".45"/>',
+  yourTurn:
+    '<circle cx="38" cy="28" r="19"/><path d="M38 28l9-10"/><circle cx="74" cy="44" r="10"/><path d="M74 38v6"/><path d="M60 58h28" stroke-opacity=".45"/>',
+  moment:
+    '<rect x="12" y="10" width="72" height="44" rx="5"/><path d="M12 38c16-5 38-7 72-2" stroke-opacity=".5"/><path d="M42 23v18l15-9z" fill="currentColor" stroke="none"/>',
+  flight:
+    '<rect x="10" y="10" width="62" height="44" rx="5"/><path d="M10 36h62" stroke-opacity=".45"/><path d="M28 30h26M41 22v16"/><path d="M82 12v42"/><path d="M82 14h10l-3 5 3 5H82" fill="currentColor" fill-opacity=".2"/>',
+};
 
 const t2 = (lang: Lang, en: string, fr: string) => (lang === "fr" ? fr : en);
 
@@ -209,6 +249,8 @@ export class StudioPanel {
   private hintEl: HTMLElement;
   tab: RailTab | null = null;
   private lib: LibraryPanel | null = null;
+  /** the situation form and the ready situations of the Simulateur panel (they hold instruments) */
+  private simParts: { destroy(): void }[] = [];
   private views: SlideView[] = [];
   private io: IntersectionObserver | null = null;
   private decks: { destroy(): void } | null = null;
@@ -256,7 +298,7 @@ export class StudioPanel {
     this.hintEl.textContent = RAIL_HINT[tab][lang === "fr" ? 1 : 0];
     if (tab === "templates") this.templates();
     else if (tab === "brand") this.brand();
-    else if (tab === "cockpit") this.body.replaceChildren(this.host.trayEl);
+    else if (tab === "cockpit") this.simulator();
     else this.library(tab);
   }
   hide() {
@@ -280,7 +322,230 @@ export class StudioPanel {
     this.io = null;
     this.decks?.destroy();
     this.decks = null;
+    for (const p of this.simParts.splice(0)) p.destroy();
     this.body.replaceChildren();
+  }
+
+  // ---------------------------------------------------------------- the Simulateur panel
+  /**
+   * Everything the simulator brings to a slide, in one place: four things to add (each lands ready to work), then
+   * the flight situation of the slide and three ways to get one: set it here, start from a ready one, or fly and
+   * capture.
+   */
+  private simulator() {
+    const host = this.host;
+    const lang = host.lang;
+    const T = (en: string, fr: string) => t2(lang, en, fr);
+    const S = host.situations;
+    const out: Node[] = [];
+    // ---- add
+    const cards = h("div", { class: "sim-add", role: "list" });
+    for (const c of SIM_CONTENTS) {
+      const art = h("span", { class: "sim-add-art", "aria-hidden": "true" });
+      art.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 64" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${SIM_ART[c.kind]}</svg>`;
+      const b = h(
+        "button",
+        { type: "button", class: "sim-add-b", role: "listitem", "data-sim": c.kind },
+        art,
+        h("span", { class: "sim-add-t" }, h("b", {}, tr(c.name, lang)), h("span", {}, tr(c.line, lang))),
+      );
+      b.disabled = !host.onSlide || !host.addSim;
+      b.addEventListener("click", () => host.addSim?.(c.kind));
+      cards.append(b);
+    }
+    out.push(h("h3", { class: "sim-h" }, T("Add to the slide", "Ajouter à la diapo")), cards);
+    if (!host.onSlide) {
+      const add = h(
+        "button",
+        { type: "button", class: "ce-btn sm" },
+        h("span", {}, T("New slide", "Nouvelle diapo")),
+      );
+      add.addEventListener("click", () => host.newSlide?.());
+      out.push(
+        h(
+          "div",
+          { class: "ce-panel-off" },
+          h(
+            "p",
+            {},
+            T(
+              "These go on a slide. Pick a slide in the strip below, or start a new one.",
+              "Ces éléments vont sur une diapo. Choisissez une diapo dans la bande du bas, ou commencez-en une.",
+            ),
+          ),
+          host.newSlide ? add : null,
+        ),
+      );
+      this.body.replaceChildren(...out, host.trayEl);
+      return;
+    }
+    if (!S) {
+      this.body.replaceChildren(...out, host.trayEl);
+      return;
+    }
+    // ---- the situation of the slide (or of the selected element, when it has its own)
+    const sel = host.simSelection;
+    const read = S.read(sel);
+    const target = (): SitTarget => {
+      const id = host.simSelection;
+      const r = S.read(id);
+      return r.own && id ? { kind: "block", id, from: "panel" } : { kind: "slide", from: "panel" };
+    };
+    let sit = situationOfScene(read.scene);
+    const headName = h("b", {}, sitLabel(sit));
+    const headPos = h("span", {}, posLine(sit.pos, lang));
+    const paint = () => {
+      headName.textContent = sitLabel(sit);
+      headPos.textContent = posLine(sit.pos, lang);
+    };
+    out.push(
+      h(
+        "h3",
+        { class: "sim-h" },
+        read.own ? T("The situation of the selected element", "La situation de l’élément sélectionné") : T("The flight situation of this slide", "La situation de vol de cette diapo"),
+      ),
+      h("div", { class: "sit-head" }, headName, headPos),
+      h(
+        "p",
+        { class: "ce-panel-note" },
+        read.own
+          ? T("Only this element shows it.", "Seul cet élément la montre.")
+          : T(
+              "Every instrument of the slide shows it: they move together.",
+              "Tous les instruments de la diapo la montrent : ils bougent ensemble.",
+            ),
+      ),
+    );
+    const ways: { id: typeof SIM_WAY; label: string; line: string }[] = [
+      {
+        id: "set",
+        label: T("Set it here", "Régler ici"),
+        line: T("Heading, altitude, speed, power… with sliders.", "Cap, altitude, vitesse, puissance… avec des curseurs."),
+      },
+      {
+        id: "ready",
+        label: T("Start from a ready situation", "Partir d’une situation prête"),
+        line: T("Steady flights with a name, to adjust.", "Des vols stables qui ont un nom, à ajuster."),
+      },
+      {
+        id: "fly",
+        label: T("Fly and capture", "Voler et capturer"),
+        line: T("In the simulator from this situation, then back here.", "Dans le simulateur depuis cette situation, puis retour ici."),
+      },
+    ];
+    const tabs = h("div", {
+      class: "sim-ways",
+      role: "tablist",
+      "aria-label": T("Three ways to get a situation", "Trois façons d’obtenir une situation"),
+    });
+    const pane = h("div", { class: "sim-way", role: "tabpanel" });
+    const showWay = (w: typeof SIM_WAY) => {
+      SIM_WAY = w;
+      for (const p of this.simParts.splice(0)) p.destroy();
+      for (const b of tabs.querySelectorAll("button")) {
+        const on = b.dataset.way === w;
+        b.classList.toggle("on", on);
+        b.setAttribute("aria-selected", on ? "true" : "false");
+      }
+      if (w === "set") {
+        const ed = new SituationEditor({
+          lang,
+          sit,
+          base: read.scene,
+          cockpit: host.course.cockpit,
+          preview: mainInstrument(host.course.cockpit),
+          onChange: (s, final) => {
+            sit = s;
+            paint();
+            S.write(s, final, target());
+          },
+        });
+        this.simParts.push(ed);
+        pane.replaceChildren(
+          h(
+            "p",
+            { class: "ce-panel-note" },
+            T(
+              "Move a value: the instruments on the slide follow at once.",
+              "Bougez une valeur : les instruments de la diapo suivent aussitôt.",
+            ),
+          ),
+          ed.el,
+        );
+      } else if (w === "ready") {
+        const grid = readyGrid(
+          lang,
+          (r) => {
+            sit = r.sit;
+            paint();
+            S.write(r.sit, true, target());
+            showWay("set");
+            tabs.scrollIntoView?.({ block: "start" });
+          },
+          { cockpit: host.course.cockpit },
+        );
+        this.simParts.push(grid);
+        pane.replaceChildren(
+          h(
+            "p",
+            { class: "ce-panel-note" },
+            T(
+              "A steady flight to start from: pick one, then adjust it.",
+              "Un vol stable pour partir : choisissez-en une, puis ajustez-la.",
+            ),
+          ),
+          grid.el,
+        );
+      } else {
+        const go = h(
+          "button",
+          { type: "button", class: "ce-btn sim-fly" },
+          railIcon("fly", "M5 4l14 8-14 8z"),
+          h("span", {}, T("Open the simulator from this situation", "Ouvrir le simulateur depuis cette situation")),
+        );
+        go.disabled = !S.canFly;
+        go.addEventListener("click", () => S.fly(sceneOfSituation(sit, { base: read.scene })));
+        const kids: (Node | null)[] = [
+          h(
+            "ol",
+            { class: "sim-steps" },
+            h("li", {}, T("The course is saved, then the simulator opens with the aircraft in this situation.", "Le cours est enregistré, puis le simulateur s’ouvre avec l’avion dans cette situation.")),
+            h("li", {}, T("Fly. At the right moment, press C (Shift + C also keeps the last 60 seconds).", "Volez. Au bon moment, appuyez sur C (Maj + C garde aussi les 60 dernières secondes).")),
+            h("li", {}, T("“Back to the editor” brings you back here: the captured moment waits below.", "« Retour à l’éditeur » vous ramène ici : le moment capturé vous attend ci-dessous.")),
+          ),
+          go,
+          S.canFly
+            ? null
+            : h(
+                "p",
+                { class: "ce-panel-note" },
+                T(
+                  "The simulator cannot be opened from this window. Set the situation here instead.",
+                  "Le simulateur ne peut pas s’ouvrir depuis cette fenêtre. Réglez plutôt la situation ici.",
+                ),
+              ),
+          host.trayEl,
+        ];
+        pane.replaceChildren(...kids.filter((k): k is Node => !!k));
+      }
+    };
+    for (const w of ways) {
+      const b = h(
+        "button",
+        { type: "button", role: "tab", class: "sim-way-b", "data-way": w.id },
+        h("b", {}, w.label),
+        h("span", {}, w.line),
+      );
+      b.addEventListener("click", () => {
+        showWay(w.id);
+        // the chosen way starts at the top of the panel's view
+        tabs.scrollIntoView?.({ block: "start" });
+      });
+      tabs.append(b);
+    }
+    out.push(tabs, pane);
+    this.body.replaceChildren(...out);
+    showWay(SIM_WAY);
   }
 
   // ---------------------------------------------------------------- the asset library tabs

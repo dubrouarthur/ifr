@@ -455,6 +455,8 @@ export interface SimScene {
     thumb?: AssetId;
     still?: AssetId;
   };
+  /** the studio's « Situation de vol » this scene was set from (course/situations.ts): the form opens as it was left */
+  situation?: import("./situations").Situation;
 }
 
 export interface Clip {
@@ -1367,6 +1369,12 @@ export type SlideBlock = BlockBase &
         clip?: string;
         /** the knobs the student may turn on the slide (everything else shows "Locked by this step") */
         controls?: StageControl[];
+        /**
+         * where the controls are drawn on the slide when the instrument is live (canvas/controlStrip.ts): under the
+         * instrument (default), on its right, or hidden until « À vous ». The controls sit inside the element's
+         * frame: the instrument makes room for them.
+         */
+        strip?: "below" | "right" | "hidden";
         /** annotations in the instrument's logical 1024 × 768 coordinates (pane 0) */
         annotations?: Annotation[];
         covers?: ("ai" | "dg")[];

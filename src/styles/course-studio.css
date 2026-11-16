@@ -1831,3 +1831,525 @@
   min-height: 46px;
   padding: 0 18px;
 }
+
+/* ------------------------------------------------------------------ « Situation de vol » (ui/situationEditor.ts)
+   The form that says what the aircraft is doing: one row per value (name, slider, number and unit), folded
+   sections for the rest, « Stabiliser », and what does not go together. Light; the instruments stay dark. */
+.sit {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.sit-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.sit-main:disabled {
+  opacity: 0.75;
+}
+.sit-legend {
+  padding: 0 0 4px;
+  font: 700 11px/1 var(--font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.sit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 104px;
+  grid-template-areas: "l v" "r r";
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 0;
+  padding: 3px 0;
+  min-width: 0;
+}
+.sit-row > .sit-l {
+  grid-area: l;
+}
+.sit-row > .sit-val {
+  grid-area: v;
+}
+.sit-row > .sit-range {
+  grid-area: r;
+}
+.sit-l {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 8px;
+  row-gap: 1px;
+  min-width: 0;
+  font: 600 13px/1.2 var(--font);
+  color: var(--text);
+}
+.sit-sub {
+  font: 400 11.5px/1.2 var(--font);
+  color: var(--muted);
+  min-height: 0;
+}
+.sit-sub:empty {
+  display: none;
+}
+.sit-auto {
+  align-self: flex-start;
+  padding: 0;
+  font-size: 11.5px;
+}
+.sit-range {
+  width: 100%;
+  min-width: 0;
+  height: 26px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.sit-range:disabled {
+  cursor: default;
+}
+.sit-val {
+  width: 104px;
+}
+.sit-val .sit-num {
+  min-height: 34px;
+  padding: 4px 0 4px 8px;
+  text-align: right;
+  font-size: 13.5px;
+}
+.sit-val .ce-unit {
+  padding: 0 7px 0 3px;
+  font-size: 11.5px;
+}
+.sit-row[data-k="flaps"] {
+  grid-template-columns: 78px minmax(0, 1fr);
+  grid-template-areas: "l f";
+  padding: 6px 0 2px;
+}
+.sit-row[data-k="flaps"] > .sit-flaps {
+  grid-area: f;
+}
+.sit-flaps button {
+  padding: 0 4px;
+}
+.sit-stabrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.sit-stab {
+  flex: 0 0 auto;
+}
+.sit-lead {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+.sit-status {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--good);
+  background: var(--good-bg);
+  border: 1px solid var(--good-line);
+}
+.sit-status.bad {
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-color: var(--warn-line);
+}
+.sit-issues {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sit-issue {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  background: var(--surface-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+.sit-issue-k {
+  font: 700 10.5px/1 var(--font);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.sit-issue.error {
+  border-left-color: var(--bad);
+  background: var(--bad-bg);
+}
+.sit-issue.error .sit-issue-k {
+  color: var(--bad);
+}
+.sit-issue.warn {
+  border-left-color: var(--warn);
+  background: var(--warn-bg);
+}
+.sit-issue.warn .sit-issue-k {
+  color: var(--warn);
+}
+.sit-issue .ce-link {
+  padding: 2px 0;
+}
+.sit-secs {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+}
+.sit-sec {
+  border-bottom: 1px solid var(--line);
+}
+.sit-sec > summary,
+.sit-fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  cursor: pointer;
+  list-style: none;
+  font: 600 13px/1.2 var(--font);
+  color: var(--text);
+}
+.sit-sec > summary::-webkit-details-marker,
+.sit-fold > summary::-webkit-details-marker {
+  display: none;
+}
+.sit-sec > summary::before,
+.sit-fold > summary::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform 0.12s;
+}
+.sit-sec[open] > summary::before,
+.sit-fold[open] > summary::before {
+  transform: rotate(45deg);
+}
+.sit-sec-t {
+  flex: 0 0 auto;
+}
+.sit-sum {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font: 400 12px/1.2 var(--font);
+  color: var(--muted);
+}
+.sit-sec-b,
+.sit-fold-b {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 0 12px;
+  min-width: 0;
+}
+.sit-fold {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0 10px;
+  background: var(--surface);
+}
+.sit-fold-b {
+  padding-bottom: 10px;
+}
+.sit-cap {
+  margin-top: 2px;
+}
+.sit-set {
+  color: var(--good);
+}
+.sit-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  min-width: 0;
+}
+.sit-head b {
+  font: 700 14px/1.25 var(--font);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.sit-head span {
+  font: 400 12.5px/1.3 var(--font);
+  color: var(--muted);
+}
+.sit-share .ce-link {
+  padding: 0;
+  display: inline;
+}
+.sit-fly {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding-top: 2px;
+}
+.sit-preview {
+  display: flex;
+  justify-content: center;
+  padding: 10px;
+  border-radius: 12px;
+  background: #11161d;
+}
+/* the ready situations */
+.sit-ready {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.sit-ready-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  text-align: left;
+  color: var(--text);
+  min-width: 0;
+}
+.sit-ready-tile:hover {
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-sm);
+}
+.sit-ready-tile.on {
+  border-color: var(--accent);
+}
+.sit-ready-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 98px;
+  border-radius: 7px;
+  background: #11161d;
+  overflow: hidden;
+}
+.sit-ready-n {
+  font: 600 12.5px/1.25 var(--font);
+}
+.sit-ready-d {
+  font: 400 11.5px/1.35 var(--font);
+  color: var(--muted);
+}
+.sit-ready.compact .sit-ready-art {
+  height: 72px;
+}
+/* « Ce qu’on lui demande » */
+.sit-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sit-ask-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sit-ask-b {
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--surface);
+  text-align: left;
+  font: 500 13px/1.3 var(--font);
+  color: var(--text);
+}
+.sit-ask-b:hover {
+  border-color: var(--accent);
+}
+.sit-ask-task {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font: 600 13px/1.4 var(--font);
+  color: var(--text);
+}
+/* the Simulateur panel */
+.ce-panel[data-tab="cockpit"] .ce-panel-b {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sim-h {
+  margin: 6px 0 0;
+  font: 700 11px/1 var(--font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.sim-add {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sim-add-b {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 60px;
+  padding: 6px 10px 6px 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  text-align: left;
+  color: var(--text);
+}
+.sim-add-b:hover:not(:disabled) {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+.sim-add-b:disabled {
+  opacity: 0.5;
+}
+.sim-add-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 48px;
+  border-radius: 7px;
+  background: #11161d;
+  color: #e8eef5;
+}
+.sim-add-art svg {
+  width: 60px;
+  height: 40px;
+}
+.sim-add-t {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.sim-add-t b {
+  font: 600 13.5px/1.25 var(--font);
+}
+.sim-add-t span {
+  font: 400 12px/1.35 var(--font);
+  color: var(--muted);
+}
+.sim-ways {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sim-way-b {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 48px;
+  padding: 8px 10px 8px 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  text-align: left;
+  color: var(--text);
+}
+.sim-way-b b {
+  font: 600 13.5px/1.25 var(--font);
+}
+.sim-way-b span {
+  font: 400 12px/1.35 var(--font);
+  color: var(--muted);
+}
+.sim-way-b.on {
+  border-color: var(--accent);
+  border-left-color: var(--accent);
+  background: rgb(var(--accent-rgb) / 0.05);
+}
+.sim-way {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.sim-steps {
+  margin: 0;
+  padding: 0 0 0 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+.sim-fly {
+  align-self: flex-start;
+}
+.sim-fly svg {
+  width: 16px;
+  height: 16px;
+}
+.ce-cap-use {
+  width: 100%;
+  justify-content: center;
+}
+@media (pointer: coarse) {
+  .sit-range {
+    height: 44px;
+  }
+  .sit-val .sit-num {
+    min-height: 44px;
+  }
+  .sit-sec > summary,
+  .sit-fold > summary {
+    min-height: 44px;
+  }
+  .sit-ask-b {
+    min-height: 44px;
+  }
+  .sit-flaps button {
+    min-height: 44px;
+  }
+  .sit-issue .ce-link,
+  .sit-auto,
+  .sit-share .ce-link {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+}
+.sit-val .sit-num,
+.sit-val .sit-num:focus {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}

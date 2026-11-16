@@ -2450,6 +2450,8 @@ export class CoursePlayer {
       t?.isContentEditable
     )
       return;
+    // a control of a slide's instrument has the focus (canvas/controlStrip.ts): its keys are its own
+    if (t?.closest?.(".sl-strip")) return;
     const layout = this.body.dataset.layout;
     // the arrow keys turn the instrument only when one of its controls has the focus; otherwise they page the steps
     if (

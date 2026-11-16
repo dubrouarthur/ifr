@@ -1812,3 +1812,272 @@ button.sl-q-opt.is-right:hover {
 .sle-ghost .sle-tile-art {
   border-radius: 0;
 }
+
+/* ---------------------------------------------------------------- the control strip of a live instrument
+   (canvas/controlStrip.ts). It sits inside the element's frame, attached to the instrument, in the instrument's
+   own dark look. Its measures are logical slide px at zoom 1 (texts 24, targets 72); the inner box is scaled by
+   the zoom that keeps every target at 44 CSS px on the screen it is shown on. */
+.sl-strip {
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  overflow: hidden;
+  border-radius: 20px;
+  background: #0b0e12;
+  box-shadow: inset 0 0 0 2px #2a333d;
+  color: #e7edf3;
+  font-family: var(--sl-font-body, "Inter", system-ui, sans-serif);
+  pointer-events: auto;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.sl-mode-thumb .sl-strip,
+.sl-strip.is-static {
+  pointer-events: none;
+}
+.sl-strip-in {
+  position: absolute;
+  left: 0;
+  top: 0;
+  box-sizing: border-box;
+  padding: 14px;
+  transform-origin: 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sl-strip-hint {
+  height: 30px;
+  font: 500 24px/30px var(--sl-font-body, "Inter", system-ui, sans-serif);
+  color: #a3aeb9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+.sl-strip-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sl-strip-line {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+}
+.sl-strip[data-side="right"] .sl-strip-body {
+  flex-direction: row;
+  gap: 20px;
+}
+.sl-strip[data-side="right"] .sl-strip-line {
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 10px;
+}
+.sl-sc {
+  flex: none;
+  width: 228px;
+}
+.sl-sc.is-slider,
+.sl-sc.is-lever {
+  flex: 1 1 220px;
+  width: auto;
+  min-width: 220px;
+  max-width: 280px;
+}
+.sl-sc.is-key {
+  flex: 1 1 168px;
+  width: auto;
+  min-width: 168px;
+  max-width: 228px;
+}
+.sl-strip[data-side="right"] .sl-sc {
+  flex: none;
+  width: auto;
+  max-width: none;
+}
+.sl-sc-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  height: 30px;
+  white-space: nowrap;
+}
+.sl-sc-n {
+  font: 600 24px/30px var(--sl-font-body, "Inter", system-ui, sans-serif);
+  color: #c3ccd5;
+}
+.sl-sc-v {
+  font: 700 25px/30px "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  color: #00e4ff;
+}
+.sl-sc-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 72px;
+  margin-top: 6px;
+}
+.sl-sc-btn,
+.sl-sc-key {
+  flex: none;
+  box-sizing: border-box;
+  height: 72px;
+  border: 2px solid #3a4552;
+  border-radius: 16px;
+  background: #12171d;
+  color: #e7edf3;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.sl-sc-btn {
+  width: 72px;
+  padding: 0;
+  font: 500 40px/1 var(--sl-font-body, "Inter", system-ui, sans-serif);
+}
+.sl-sc-key {
+  width: 100%;
+  padding: 0 16px;
+  font: 700 25px/1 "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+  color: #00e4ff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sl-sc-key.on {
+  border-color: #2bd576;
+  color: #2bd576;
+}
+.sl-sc-btn:hover,
+.sl-sc-key:hover {
+  background: #1a2129;
+}
+.sl-sc-btn:active {
+  border-color: #00e4ff;
+  color: #00e4ff;
+}
+.sl-sc-knob {
+  --a: 0deg;
+  position: relative;
+  flex: none;
+  box-sizing: border-box;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 3px solid #4a5665;
+  background: radial-gradient(circle at 50% 50%, #232b34 0 58%, #171d24 60%);
+  transform: rotate(var(--a));
+  cursor: grab;
+  touch-action: none;
+}
+.sl-sc-knob::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 6px;
+  width: 5px;
+  height: 20px;
+  margin-left: -2.5px;
+  border-radius: 3px;
+  background: #e7edf3;
+}
+.sl-sc-knob.on,
+.sl-sc-knob:hover {
+  border-color: #00e4ff;
+}
+.sl-sc-track {
+  position: relative;
+  flex: 1 1 auto;
+  height: 72px;
+  cursor: pointer;
+  touch-action: none;
+}
+.sl-sc-track::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 30px;
+  height: 12px;
+  border-radius: 6px;
+  background: #1f2730;
+  box-shadow: inset 0 0 0 2px #3a4552;
+}
+.sl-sc-fill {
+  position: absolute;
+  top: 30px;
+  height: 12px;
+  border-radius: 6px;
+  background: #00e4ff;
+  opacity: 0.75;
+}
+.sl-sc-zero {
+  position: absolute;
+  top: 18px;
+  width: 2px;
+  height: 36px;
+  margin-left: -1px;
+  background: #66717d;
+}
+.sl-sc-thumb {
+  position: absolute;
+  top: 10px;
+  width: 26px;
+  height: 52px;
+  margin-left: -13px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  border: 2px solid #0b0e12;
+  background: #e7edf3;
+}
+/* the throttle is a lever: a wide dark handle with a bright line */
+.sl-sc-track.is-lever .sl-sc-thumb {
+  top: 6px;
+  width: 36px;
+  height: 60px;
+  margin-left: -18px;
+  border: 2px solid #e7edf3;
+  border-radius: 10px;
+  background: #171d24;
+  box-shadow: inset 0 26px 0 -22px #e7edf3;
+}
+.sl-sc-btn:focus-visible,
+.sl-sc-key:focus-visible,
+.sl-sc-knob:focus-visible,
+.sl-sc-track:focus-visible,
+.sl-strip-reset:focus-visible {
+  outline: 5px solid #00e4ff;
+  outline-offset: 2px;
+}
+.sl-sc-track:focus-visible {
+  outline-offset: -4px;
+  border-radius: 14px;
+}
+.sl-strip-reset {
+  --z: 1;
+  position: absolute;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: calc(10px * var(--z));
+  height: calc(72px * var(--z));
+  padding: 0 calc(22px * var(--z));
+  border: 2px solid #4a5665;
+  border-radius: calc(16px * var(--z));
+  background: rgba(5, 8, 11, 0.88);
+  color: #e7edf3;
+  font: 600 calc(24px * var(--z)) / 1 var(--sl-font-body, "Inter", system-ui, sans-serif);
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.sl-strip-reset[hidden] {
+  display: none;
+}
+.sl-strip-reset-ic {
+  font-size: 1.15em;
+  line-height: 1;
+}

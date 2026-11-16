@@ -43,6 +43,7 @@ import {
   sectionBlocks,
   sheetBlocks,
 } from "./mathsSlides";
+import { stripPlan } from "../canvas/controlStrip";
 
 export const MATHS_IFR_ID = "sample-maths-ifr";
 /** what the cover promises: the step count and the minutes (course.minutes is the sum of the steps', a test checks) */
@@ -493,8 +494,10 @@ function sixty(): Step {
 /** A5 — the 1 in 60 rule on the VOR CDI, live: 4 dots at 30 NM is 8° and 4 NM; the student centres the needle. */
 function sixtyCdi(): Step {
   const [x, y, s] = [G.left, 120, 840];
-  const dots = gaugePoint("cdi", x, y, s, -0.6, 0.24);
-  const obs = gaugePoint("cdi", x, y, s, 0.2, -0.56);
+  // the live gauge makes room for its control strip (OBS): the markers follow the gauge as it is drawn
+  const box = stripPlan(["obs2"], "below", s, s, 1, 1)!.inst;
+  const dots = gaugePoint("cdi", x + box.x, y + box.y, box.w, -0.6, 0.24);
+  const obs = gaugePoint("cdi", x + box.x, y + box.y, box.w, 0.2, -0.56);
   return slideStep(
     "mi-60-cdi",
     L("1 in 60 on the CDI", "Le 1 sur 60 sur le CDI"),
@@ -1103,7 +1106,9 @@ function vdpSlide(): Step {
 /** A5 — standard-rate turn: the turn coordinator, live — the student rolls in and rolls out on 135 — and three rows. */
 function turnSlide(): Step {
   const [x, y, s] = [G.left, 120, 840];
-  const mark = gaugePoint("tc", x, y, s, 0.76, 0.52);
+  // the live gauge makes room for its control strip (bank): the marker follows the gauge as it is drawn
+  const box = stripPlan(["bank"], "below", s, s, 1, 1)!.inst;
+  const mark = gaugePoint("tc", x + box.x, y + box.y, box.w, 0.76, 0.52);
   return slideStep(
     "mi-turn",
     L(

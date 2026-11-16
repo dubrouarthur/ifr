@@ -33,6 +33,17 @@ import {
   readoutText,
   drawOutsideStill,
 } from "./instruments";
+import { instrumentFrame } from "../stage/geometry";
+import {
+  ControlStrip,
+  setStripTrial,
+  stripPlan,
+  stripShown,
+  stripTrialChanged,
+  stripWidget,
+  stripZoom,
+  type StripPlan,
+} from "./controlStrip";
 import { DEMO_SCENE_ID } from "./factory";
 import { tx, blockKindLabel } from "./strings";
 import {
@@ -698,6 +709,11 @@ function diagramBlock(b: Of<"diagram">, env: BlockEnv): BlockView {
 }
 
 // ------------------------------------------------------------------ instrument
+/** a finger may be the pointer (a tablet, a phone, a touch laptop): the strip keeps 44 CSS px targets */
+const coarsePointer = (): boolean =>
+  typeof navigator !== "undefined" &&
+  ((navigator.maxTouchPoints ?? 0) > 0 ||
+    (typeof matchMedia === "function" && matchMedia("(any-pointer: coarse)").matches));
 function yourTurnButton(
   env: BlockEnv,
   b: SlideBlock,
@@ -745,6 +761,16 @@ function instrumentBlock(b: Of<"instrument">, env: BlockEnv): BlockView {
         ? "frozen"
         : (b.mode ?? "frozen")
       : "frozen";
+  // the control strip of a live instrument (canvas/controlStrip.ts): inside the block's frame, the instrument
+  // makes room for it; a block without controls is drawn exactly as before
+  const side = stripShown(b);
+  const zoom = () => (env.mode === "thumb" ? 1 : stripZoom(env.scale(), coarsePointer()));
+  const shape = instrumentFrame(b.view, env.sims.env.cockpit ?? "g1000").rect;
+  const aspect = shape[2] / shape[3];
+  let plan: StripPlan | null = side
+    ? stripPlan(b.controls, side, b.frame.w, b.frame.h, zoom(), aspect)
+    : null;
+  let strip: ControlStrip | null = null;
   const inst = new SlideInstrument(env.sims, {
     view: b.view,
     scene,
@@ -759,24 +785,107 @@ function instrumentBlock(b: Of<"instrument">, env: BlockEnv): BlockView {
     scale: env.scale,
     still: env.mode === "thumb",
     alt: b.alt ? loc(b.alt, env.lang) : undefined,
+    ...(plan ? { box: plan.inst } : {}),
+    onDraw: () => strip?.refresh(),
   });
   el.append(inst.el);
   if (isDemo && env.mode === "edit")
     el.dataset.demo = tx("sampleScene", env.lang);
+  let chip: HTMLElement | null = null;
   if (env.mode !== "thumb" && mode === "live") {
-    const chip = mk("span", "sl-live", tx("live", env.lang));
+    chip = mk("span", "sl-live", tx("live", env.lang));
     el.append(chip);
   }
+  const entry = inst.entry;
+  if (plan && entry) {
+    const pilot = env.sims.pilot(entry, b.controls ?? []);
+    const editing = env.mode === "edit";
+    strip = new ControlStrip({
+      controls: b.controls ?? [],
+      lang: env.lang,
+      sim: () => inst.sim,
+      pilot,
+      interactive: env.mode !== "thumb",
+      changed: (c) => {
+        if (editing) {
+          // the author's try: a knob only redraws the frozen instrument, a flying control starts the clock
+          const w = stripWidget(c);
+          if (w === "slider" || w === "lever") env.sims.run(entry, true);
+          else env.sims.touch(entry);
+          stripTrialChanged();
+        } else if (inst.mode !== "live") env.sims.touch(entry);
+        else inst.invalidate();
+      },
+      reset: () => {
+        env.sims.restart(entry);
+        if (editing) {
+          env.sims.run(entry, false);
+          stripTrialChanged();
+        }
+      },
+    });
+    el.classList.add("has-strip");
+    el.append(strip.el, strip.resetEl);
+    if (editing)
+      setStripTrial(b.id, {
+        sim: () => inst.sim,
+        dirty: () => pilot.dirty,
+        reset: () => strip?.resetEl.click(),
+      });
+  } else plan = null;
+  const place = () => {
+    if (!plan || !strip) return;
+    inst.setBox(plan.inst);
+    strip.setPlan(plan);
+    // « Réinitialiser » and the live chip sit on the instrument's top corners
+    const r = strip.resetEl.style;
+    r.right = `${b.frame.w - (plan.inst.x + plan.inst.w) + 14}px`;
+    r.top = `${plan.inst.y + 14}px`;
+    if (chip) {
+      chip.style.left = `${plan.inst.x + 14}px`;
+      chip.style.top = `${plan.inst.y + 14}px`;
+    }
+  };
+  place();
+  // the projector shows the strip to the room: nobody handles it there
+  const onProjector = () => {
+    if (!strip || !strip.el.closest(".cp-projector")) return;
+    strip.el.setAttribute("inert", "");
+    strip.el.classList.add("is-static");
+    strip.resetEl.hidden = true;
+  };
+  if (strip && env.mode === "play" && typeof requestAnimationFrame === "function")
+    requestAnimationFrame(onProjector);
   const hud: HudItem[] = [];
-  if (env.mode === "play" && b.yourTurn)
-    hud.push(yourTurnButton(env, b, b.yourTurn, b.yourTurn.where === "sim"));
+  if (env.mode === "play" && b.yourTurn) {
+    const btn = yourTurnButton(env, b, b.yourTurn, b.yourTurn.where === "sim");
+    // « À vous » stays on the instrument: it never covers a control of the strip
+    if (plan)
+      btn.at = [
+        (plan.inst.x + plan.inst.w - 24) / b.frame.w,
+        (plan.inst.y + plan.inst.h - 24) / b.frame.h,
+      ];
+    hud.push(btn);
+  }
   return {
     el,
     block: b,
     inst,
     hud,
-    layout: () => inst.resized(),
+    layout: () => {
+      if (side && strip) {
+        const next = stripPlan(b.controls, side, b.frame.w, b.frame.h, zoom(), aspect);
+        if (next && (!plan || next.z !== plan.z)) {
+          plan = next;
+          place();
+        }
+        onProjector();
+      }
+      inst.resized();
+    },
     destroy: () => {
+      if (strip && env.mode === "edit") setStripTrial(b.id, null);
+      strip?.destroy();
       inst.destroy();
       el.remove();
     },

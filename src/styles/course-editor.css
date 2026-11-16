@@ -2145,3 +2145,48 @@ select.ce-in {
   text-align: center;
   padding: 4px 8px;
 }
+
+/* « Commandes de l’élève »: the chips by family (Navigation, Pilotage, Altitude, Automatismes), one line each */
+.ce-ctlgrps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ce-ctlgrp-hd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  margin-bottom: 6px;
+  font: 500 12.5px/1.35 var(--font);
+  color: var(--text-2);
+}
+.ce-ctlgrp-hd b {
+  font-weight: 700;
+  color: var(--text);
+}
+.ce-ctlgrp .ce-chips > button:not(.ce-btn) {
+  min-height: 40px;
+}
+@media (pointer: coarse) {
+  .ce-ctlgrp .ce-chips > button:not(.ce-btn) {
+    min-height: 44px;
+  }
+}
+.ce-trial {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.ce-useful {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font: 500 12.5px/1.35 var(--font);
+  color: var(--text-2);
+}

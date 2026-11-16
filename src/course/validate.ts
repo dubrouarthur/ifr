@@ -45,6 +45,7 @@ import type {
   YourTurn,
 } from "./types";
 import { goalParamIssues } from "./goals";
+import { stripCramped } from "./canvas/controlStrip";
 import { sha256Hex } from "../lib/idb";
 
 export type IssueLevel = "error" | "warn";
@@ -3032,6 +3033,23 @@ function slide(cx: Ctx, s: Step, c: SlideCanvas, path: string) {
               ids,
             ),
         );
+        if (
+          b.strip !== undefined &&
+          b.strip !== "below" &&
+          b.strip !== "right" &&
+          b.strip !== "hidden"
+        )
+          push(
+            cx,
+            "error",
+            "slide",
+            `${p}.strip`,
+            L(
+              "The place of the controls is 'below', 'right' or 'hidden'",
+              "La place des commandes est « below », « right » ou « hidden »",
+            ),
+            ids,
+          );
         if (b.yourTurn)
           yourTurn(
             cx,
@@ -3228,6 +3246,20 @@ export function courseAdvisories(
       ),
     );
   course.steps.forEach((s, i) => {
+    // a live instrument whose controls leave it too small to read (the inspector's « Commandes de l’élève »
+    // enlarges the element or moves the controls in one click)
+    (s.slide?.blocks ?? []).forEach((b, j) => {
+      if (b?.kind === "instrument" && b.frame && stripCramped(b))
+        add(
+          "slide",
+          `steps[${i}].slide.blocks[${j}].controls`,
+          L(
+            "An instrument is small with its controls: enlarge it, or put the controls on its right (Student controls)",
+            "Un instrument est petit avec ses commandes : agrandissez-le, ou placez les commandes à droite (Commandes de l’élève)",
+          ),
+          { stepId: s.id, blockId: b.id },
+        );
+    });
     (s.reader ?? []).forEach((b, j) => {
       if (
         b?.t === "image" &&

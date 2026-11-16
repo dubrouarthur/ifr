@@ -55,6 +55,8 @@ export interface TrayViewOptions {
   store: CourseStore | null;
   courseId: string;
   onAdd(item: TrayItem, template: TemplateId): void;
+  /** the captured moment becomes what the current slide's instruments show (the studio's Simulateur panel) */
+  onUse?(item: TrayItem): void;
   onFlyToCapture(): void;
   assetUrl(id: string): string | null | Promise<string | null>;
 }
@@ -139,8 +141,8 @@ export class TrayView {
           "p",
           { class: "ce-tray-empty" },
           fr
-            ? "Volez jusqu’au bon moment et appuyez sur C : la scène arrive ici, prête à devenir une étape."
-            : "Fly to the moment and press C: the scene lands here, ready to become a step.",
+            ? "Aucun moment capturé pour l’instant. Dans le simulateur, appuyez sur C au bon moment : il arrive ici."
+            : "No captured moment yet. In the simulator, press C at the right moment: it lands here.",
         ),
         fly,
       );
@@ -178,6 +180,15 @@ export class TrayView {
         });
         const parts: Node[] = [head];
         if (it.id === first) {
+          if (this.o.onUse) {
+            const onUse = this.o.onUse;
+            const use = btn(
+              fr ? "Montrer ce moment sur cette diapo" : "Show this moment on this slide",
+              () => onUse(it),
+              { cls: "sm ce-cap-use", icon: "gauge" },
+            );
+            parts.push(h("div", { class: "ce-quick" }, use));
+          }
           const quick = h(
             "div",
             { class: "ce-quick" },

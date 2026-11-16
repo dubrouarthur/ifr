@@ -52,6 +52,7 @@ import {
   type GoalId,
 } from "../goals";
 import {
+  captureScene,
   fieldsOf,
   sceneFromFields,
   sceneSummary,
@@ -71,7 +72,24 @@ import { LAYOUTS, layoutCanvas } from "../canvas/layouts";
 import { baseThemeId, THEMES, THEME_IDS } from "../canvas/themes";
 import { renderThumb } from "../canvas/render";
 import { blockLabel } from "../canvas/blocks";
+import { rememberScene } from "../canvas/instruments";
+import type { SituationHost } from "./situationEditor";
+import { askGroup, showsGroup, type SitGroupCtx } from "./situationGroups";
 import { viewTitle } from "../canvas/factory";
+import {
+  STRIP_GROUPS,
+  growForStrip,
+  onStripTrial,
+  stripChoice,
+  stripControls,
+  stripCramped,
+  stripDesc,
+  stripLabel,
+  stripTrial,
+  usefulControls,
+  withControls,
+  type StripChoice,
+} from "../canvas/controlStrip";
 import type { EditorCommand } from "../canvas/editorCore";
 import {
   explainRegion,
@@ -557,6 +575,8 @@ export interface InspectorHost {
   assetUrl(id: string): string | null | Promise<string | null>;
   flyToCapture(): void;
   toast(msg: string, undo?: () => void): void;
+  /** the studio's « Situation de vol » plumbing (ui/situationEditor.ts); without it the older scene fields show */
+  readonly situations?: SituationHost;
 }
 
 // labels ------------------------------------------------------------
@@ -577,6 +597,47 @@ const CONTROL_LABEL: Record<StageControl, L10n> = {
   ap: L("Autopilot", "Pilote auto"),
 };
 const ALL_CONTROLS = Object.keys(CONTROL_LABEL) as StageControl[];
+/** One line per family of controls, in plain words (the « Commandes de l’élève » groups). */
+const CONTROL_GROUP_DESC: Record<string, L10n> = {
+  nav: L("Set a heading, a course, a source.", "Régler un cap, une route, une source."),
+  fly: L("Fly the aircraft: the instruments respond.", "Piloter l’avion : les instruments répondent."),
+  alt: L("Select an altitude, set the altimeter.", "Afficher une altitude, caler l’altimètre."),
+  auto: L("Engage the autopilot.", "Engager le pilote automatique."),
+};
+/** The student's controls as chips grouped by what they are (Navigation, Flying, Altitude, Automation). */
+function controlGroups(
+  selected: readonly StageControl[] | undefined,
+  onToggle: (c: StageControl, on: boolean) => void,
+  lang: Lang,
+): HTMLElement {
+  return h(
+    "div",
+    { class: "ce-ctlgrps" },
+    ...STRIP_GROUPS.map((g) =>
+      h(
+        "div",
+        { class: "ce-ctlgrp" },
+        h(
+          "div",
+          { class: "ce-ctlgrp-hd" },
+          h("b", {}, tr(g.title, lang)),
+          h("span", {}, tr(CONTROL_GROUP_DESC[g.id], lang)),
+        ),
+        chips(
+          g.controls.map((k) => ({
+            value: k,
+            label: stripLabel(k, lang),
+            title: stripDesc(k, lang),
+            on: !!selected?.includes(k),
+          })),
+          onToggle,
+          { label: tr(g.title, lang) },
+        ),
+      ),
+    ),
+  );
+}
+let unsubStripTrial: (() => void) | null = null;
 const STYLE_LABEL: Record<TextStyle, L10n> = {
   // the same names as the canvas format bar (canvas/editor.ts STYLES): one style, one name everywhere
   display: L("Cover title", "Titre de couverture"),
@@ -974,10 +1035,24 @@ export class Inspector {
   private previewSeed = 1;
   private sceneForm: SceneFields | null = null;
   private scroll = new Map<string, number>();
+  /** the element or step whose instrument was just turned live by ticking a control (one line says so) */
+  private wentLive = "";
+  /** the instrument shown in the inspector, and whether its controls are being tried on the slide */
+  private trialBlock = "";
+  private trialDirty = false;
+  /** the situation forms and ready-situation grids on screen (they hold instruments: destroyed on a redraw) */
+  private sitParts: { destroy(): void }[] = [];
   constructor(private host: InspectorHost) {
     this.tabsEl = h("div", { class: "ce-tabs", role: "tablist" });
     this.body = h("div", { class: "ce-insp", role: "tabpanel" });
     this.el = h("aside", { class: "ce-col ce-right" }, this.tabsEl, this.body);
+    // the author tries the controls on the slide: « Garder comme départ » shows as soon as one was used
+    unsubStripTrial?.();
+    unsubStripTrial = onStripTrial(() => {
+      if (!this.trialBlock || !this.el.isConnected) return;
+      const dirty = !!stripTrial(this.trialBlock)?.dirty();
+      if (dirty !== this.trialDirty) this.render();
+    });
   }
   get currentTab(): InspectorTab {
     return this.tab || "reader";
@@ -1045,6 +1120,7 @@ export class Inspector {
         return b;
       }),
     );
+    for (const p of this.sitParts.splice(0)) p.destroy();
     let content: Kid[] = [];
     try {
       content = this.content(tab);
@@ -1054,6 +1130,31 @@ export class Inspector {
     }
     this.body.replaceChildren(...kids(content));
     this.body.scrollTop = top;
+  }
+
+  /** What the situation groups need (null: a host without the studio's situation plumbing). */
+  private sitCtx(): SitGroupCtx | null {
+    const situations = this.host.situations;
+    if (!situations) return null;
+    return {
+      lang: this.host.lang,
+      situations,
+      cockpit: this.host.course.cockpit,
+      simOf: (id) => this.host.stageInfo(id)?.sim ?? null,
+      keep: (p) => void this.sitParts.push(p),
+      redraw: () => {
+        // the field in use keeps the focus (a slider moved with the keyboard, a number being typed)
+        const a = document.activeElement as HTMLElement | null;
+        const row = a && this.body.contains(a) ? a.closest<HTMLElement>("[data-k]") : null;
+        const key = row?.dataset.k;
+        const sec = row?.closest<HTMLElement>(".sit-sec")?.dataset.k;
+        const type = a?.getAttribute("type");
+        this.render();
+        if (!key) return;
+        const scope = sec ? `.sit-sec[data-k="${sec}"] ` : ".sit-main ";
+        this.body.querySelector<HTMLElement>(`${scope}[data-k="${key}"] input[type="${type}"]`)?.focus();
+      },
+    };
   }
 
   // ---------------------------------------------------------------- helpers bound to the host
@@ -1945,42 +2046,62 @@ export class Inspector {
         setCue((q) => (q.annotations = list), key, render),
       ),
     );
-    // controls
-    const frozen = cue.mode === "frozen" || cue.mode === "fly";
-    out.push(
-      group(this.t("Student controls", "Commandes de l’élève"), [
-        chips(
-          ALL_CONTROLS.map((k) => ({
-            value: k,
-            label: tr(CONTROL_LABEL[k], this.lang),
-            on: !!cue.controls?.includes(k),
-            disabled: frozen,
-          })),
-          (k, on) =>
-            setCue((q) => {
-              const set = new Set(q.controls ?? []);
-              if (on) set.add(k);
-              else set.delete(k);
-              q.controls = ALL_CONTROLS.filter((x) => set.has(x));
-              if (!q.controls.length) delete q.controls;
-            }),
-        ),
-        frozen
-          ? note(
-              this.t(
-                "A frozen step has no controls. Choose Live to open some.",
-                "Un pas figé n’a pas de commandes. Choisissez Direct pour en ouvrir.",
-              ),
-            )
-          : note(
-              this.t(
-                "The student sees only these controls.",
-                "L’élève ne voit que ces commandes.",
-              ),
-              "muted",
+    // controls: no disabled chip, no dead end — ticking one on a frozen step turns it live, and says so
+    if (cue.mode === "fly")
+      out.push(
+        group(this.t("Student controls", "Commandes de l’élève"), [
+          note(
+            this.t(
+              "In the simulator the student has every control of the cockpit.",
+              "Dans le simulateur, l’élève a toutes les commandes du cockpit.",
             ),
-      ]),
-    );
+            "muted",
+          ),
+        ]),
+      );
+    else
+      out.push(
+        group(this.t("Student controls", "Commandes de l’élève"), [
+          controlGroups(
+            cue.controls,
+            (k, on) => {
+              const turnsLive = on && cue.mode === "frozen";
+              this.wentLive = turnsLive ? `cue:${s.id}` : "";
+              setCue((q) => {
+                const set = new Set(q.controls ?? []);
+                if (on) set.add(k);
+                else set.delete(k);
+                q.controls = ALL_CONTROLS.filter((x) => set.has(x));
+                if (!q.controls.length) delete q.controls;
+                if (turnsLive) q.mode = "live";
+              });
+            },
+            this.lang,
+          ),
+          this.wentLive === `cue:${s.id}` && cue.mode === "live"
+            ? note(
+                this.t(
+                  "The instrument is now Live: its controls act.",
+                  "L’instrument est passé « En direct » : ses commandes agissent.",
+                ),
+              )
+            : cue.mode === "frozen" && cue.controls?.length
+              ? note(
+                  this.t(
+                    "Frozen: the controls show once the student takes them.",
+                    "Figé : les commandes apparaissent quand l’élève les prend.",
+                  ),
+                  "muted",
+                )
+              : note(
+                  this.t(
+                    "The student sees only these controls.",
+                    "L’élève ne voit que ces commandes.",
+                  ),
+                  "muted",
+                ),
+        ]),
+      );
     // assist, panel
     const assisted = !!(
       cue.assist?.holdAlt ||
@@ -2087,6 +2208,29 @@ export class Inspector {
   ): HTMLElement {
     const c = this.host.course;
     const ids = Object.keys(c.scenes);
+    const sctx = this.sitCtx();
+    if (sctx) {
+      // the studio's form: the situation in one line, the ready ones, « Régler ici », the cockpit
+      const shows = showsGroup(sctx, {
+        scene: { id: sceneId, set: setScene },
+        title: this.t("Flight situation", "Situation de vol"),
+        folded: true,
+      });
+      if (ids.length > 1 || (ids.length === 1 && !sceneId))
+        shows.el.insertBefore(
+          field(
+            this.t("Use a situation of the course", "Reprendre une situation du cours"),
+            selectIn(
+              ids.map((id) => ({ value: id, label: c.scenes[id].label ?? id })),
+              sceneId,
+              setScene,
+              { ph: this.t("Choose", "Choisir") },
+            ),
+          ),
+          shows.el.children[2] ?? null,
+        );
+      return shows.el;
+    }
     const info = sceneId ? this.host.stageInfo(sceneId) : null;
     const editBtn = linkBtn(
       this.sceneForm
@@ -2408,6 +2552,7 @@ export class Inspector {
     cue: { annotations?: Annotation[]; panes?: PaneView[] },
     set: (list: Annotation[], render?: boolean, key?: string) => void,
     pane?: PaneView,
+    title?: string,
   ): HTMLElement {
     const list = cue.annotations ?? [];
     const p = pane ?? cue.panes?.[0];
@@ -2550,7 +2695,7 @@ export class Inspector {
       { disabled: !spots.length },
     );
     return group(
-      this.t("Callouts · reveal order", "Légendes · ordre d’apparition"),
+      title ?? this.t("Callouts · reveal order", "Légendes · ordre d’apparition"),
       [
         rows,
         h(
@@ -2759,7 +2904,7 @@ export class Inspector {
     );
     if (!list.length) return null;
     return group(
-      this.t("Suggested for this scene", "Suggéré pour cette scène"),
+      this.t("Suggested for this situation", "Suggéré pour cette situation"),
       [
         h(
           "div",
@@ -3651,7 +3796,7 @@ export class Inspector {
       group(this.t("What they fly", "Ce qui est volé"), [
         seg(
           [
-            { value: "scene", label: this.t("This scene", "Cette scène") },
+            { value: "scene", label: this.t("This situation", "Cette situation") },
             { value: "lesson", label: this.t("Lesson", "Leçon") },
             {
               value: "calc",
@@ -4935,7 +5080,12 @@ export class Inspector {
       case "instrument":
         out.push(...this.instrumentFields(b, setB));
         break;
-      case "simViewport":
+      case "simViewport": {
+        const sctx = this.sitCtx();
+        if (sctx) {
+          out.push(...this.simViewGroups(sctx, b, setB));
+          break;
+        }
         out.push(
           group(T("Simulator view", "Vue du simulateur"), [
             seg(
@@ -4999,6 +5149,7 @@ export class Inspector {
           ),
         );
         break;
+      }
       case "quiz":
         out.push(
           group(
@@ -5151,7 +5302,8 @@ export class Inspector {
     ];
     const cur = JSON.stringify(b.view);
     const calcSteps = this.host.course.steps.filter((s) => s.kind === "calc");
-    const frozen = (b.mode ?? "frozen") === "frozen";
+    const ctx = this.sitCtx();
+    if (ctx) return this.instrumentGroups(ctx, b, setB, { classic, glass, name, cur });
     return [
       group(T("Instrument", "Instrument"), [
         selectIn<string>(
@@ -5241,34 +5393,7 @@ export class Inspector {
             )
           : null,
       ]),
-      group(T("Student controls", "Commandes de l’élève"), [
-        chips(
-          ALL_CONTROLS.map((k) => ({
-            value: k,
-            label: tr(CONTROL_LABEL[k], this.lang),
-            on: !!b.controls?.includes(k),
-            disabled: frozen && !b.yourTurn,
-          })),
-          (k, on) =>
-            setB((x) => {
-              const set = new Set((x as typeof b).controls ?? []);
-              if (on) set.add(k);
-              else set.delete(k);
-              (x as typeof b).controls = ALL_CONTROLS.filter((c) => set.has(c));
-              if (!(x as typeof b).controls!.length)
-                delete (x as typeof b).controls;
-            }),
-        ),
-        frozen && !b.yourTurn
-          ? note(
-              T(
-                "A frozen instrument has no controls. Choose Live, or hand it over with Your turn.",
-                "Un instrument figé n’a pas de commandes. Choisissez Direct, ou donnez la main avec À vous.",
-              ),
-              "muted",
-            )
-          : null,
-      ]),
+      this.stripGroup(b, setB),
       this.calloutsGroup(
         { annotations: b.annotations },
         (list) => setB((x) => ((x as typeof b).annotations = list)),
@@ -5287,6 +5412,412 @@ export class Inspector {
       ),
     ];
   }
+  /** A simulator view on a slide: « Ce qu’il montre » (the situation, the view, a recorded moment) and
+   *  « Ce qu’on lui demande » (a flight in the full simulator, with a goal, then back to the course). */
+  private simViewGroups(
+    ctx: SitGroupCtx,
+    b: Extract<SlideBlock, { kind: "simViewport" }>,
+    setB: (f: (x: SlideBlock) => void, key?: string, render?: boolean) => void,
+  ): Kid[] {
+    const T = this.t.bind(this);
+    type B = typeof b;
+    const clips = this.host.course.clips;
+    const setFresh = (f: (x: B) => void, render = true) => {
+      const slide = this.host.step.slide;
+      if (!slide) return;
+      const next = clone(slide);
+      const x = next.blocks.find((k) => k.id === b.id);
+      if (!x || x.kind !== "simViewport") return;
+      f(x);
+      this.host.setSlide(next);
+      if (render) this.render();
+    };
+    const setYt = (yt: YourTurn | undefined) => setFresh((x) => (yt ? (x.yourTurn = yt) : delete x.yourTurn));
+    const shows = showsGroup(ctx, {
+      blockId: b.id,
+      folded: true,
+      extra: [
+        field(
+          T("Seen from", "Vu depuis"),
+          seg(
+            [
+              { value: "outside" as const, label: T("Outside", "L’extérieur") },
+              { value: "cockpit" as const, label: T("The cockpit", "Le cockpit") },
+              { value: "panel" as const, label: T("The panel", "Le tableau") },
+            ],
+            b.view,
+            (v) => setB((x) => ((x as B).view = v)),
+            { full: true },
+          ),
+        ),
+        Object.keys(clips).length
+          ? field(
+              T("Play a recorded moment", "Rejouer un moment enregistré"),
+              selectIn<string>(
+                [
+                  { value: "", label: T("No: a still of the situation", "Non : une image de la situation") },
+                  ...Object.keys(clips).map((id) => ({ value: id, label: `${id} · ${Math.round(clips[id].durS)} s` })),
+                ],
+                b.clip ?? "",
+                (v) => setB((x) => (v ? ((x as B).clip = v) : delete (x as B).clip)),
+              ),
+            )
+          : note(
+              T(
+                "To play a moment you flew: open the simulator, fly, press Shift + C; the recording comes back here.",
+                "Pour rejouer un moment que vous avez volé : ouvrez le simulateur, volez, appuyez sur Maj + C ; l’enregistrement revient ici.",
+              ),
+              "muted",
+            ),
+        b.clip
+          ? sw(
+              !!b.autoplay,
+              (on) => setB((x) => ((x as B).autoplay = on || undefined)),
+              T("Play when the slide opens", "Lire à l’ouverture de la diapo"),
+            )
+          : null,
+      ],
+    });
+    return [
+      shows.el,
+      askGroup(ctx, shows.live, {
+        where: "sim",
+        yt: b.yourTurn,
+        scene: b.scene,
+        apply: (yt, _controls, render) => setFresh((x) => (yt ? (x.yourTurn = yt) : delete x.yourTurn), render),
+        detail: () => this.yourTurnGroup(b.yourTurn, "sim", setYt, b.scene),
+      }),
+    ];
+  }
+  /**
+   * An instrument in the author's order: « Ce qu’il montre » (the flight situation), « Ce que l’élève peut toucher »
+   * (the controls), « Ce qu’on lui demande » (À vous), « Repères » (callouts); the rest folded under « Réglages
+   * avancés » (which instrument, its frame, still or moving, a recorded moment, the numbers of a calculation).
+   */
+  private instrumentGroups(
+    ctx: SitGroupCtx,
+    b: Extract<SlideBlock, { kind: "instrument" }>,
+    setB: (f: (x: SlideBlock) => void, key?: string, render?: boolean) => void,
+    o: { classic: InstrumentView[]; glass: InstrumentView[]; name: (v: InstrumentView) => string; cur: string },
+  ): Kid[] {
+    const T = this.t.bind(this);
+    type B = typeof b;
+    const calcSteps = this.host.course.steps.filter((s) => s.kind === "calc");
+    const clips = Object.keys(this.host.course.clips);
+    const nav = b.view.kind === "gauge" && ["hsi", "cdi", "rmi", "pfd.hsi"].includes(b.view.gauge);
+    // the slide as it is now (a situation edit may have pointed it at a new scene since the inspector was drawn)
+    const setFresh = (f: (x: B) => void, render = true) => {
+      const slide = this.host.step.slide;
+      if (!slide) return;
+      const next = clone(slide);
+      const x = next.blocks.find((k) => k.id === b.id);
+      if (!x || x.kind !== "instrument") return;
+      f(x);
+      this.host.setSlide(next);
+      if (render) this.render();
+    };
+    const setYt = (yt: YourTurn | undefined) =>
+      setFresh((x) => (yt ? (x.yourTurn = yt) : delete x.yourTurn));
+    const shows = b.fromCalc
+      ? null
+      : showsGroup(ctx, { blockId: b.id });
+    const fromCalc = calcSteps.find((s) => s.id === b.fromCalc);
+    const advanced = h(
+      "details",
+      { class: "sit-fold ce-adv" },
+      h("summary", {}, T("Advanced settings", "Réglages avancés")),
+      h(
+        "div",
+        { class: "sit-fold-b" },
+        field(
+          T("Instrument", "Instrument"),
+          selectIn<string>(
+            [
+              {
+                group: T("Classic instruments", "Instruments classiques"),
+                opts: o.classic.map((v) => ({ value: JSON.stringify(v), label: o.name(v) })),
+              },
+              {
+                group: T("Glass cockpit screens", "Écrans glass cockpit"),
+                opts: o.glass.map((v) => ({ value: JSON.stringify(v), label: o.name(v) })),
+              },
+            ],
+            o.cur,
+            (v) => setB((x) => ((x as B).view = JSON.parse(v) as InstrumentView)),
+            { label: T("Instrument", "Instrument") },
+          ),
+        ),
+        sw(
+          b.bezel !== false,
+          (on) => setB((x) => (on ? delete (x as B).bezel : ((x as B).bezel = false))),
+          T("Frame around the instrument", "Cadre autour de l’instrument"),
+        ),
+        field(
+          T("On the slide, the instrument is", "Sur la diapo, l’instrument est"),
+          seg(
+            [
+              { value: "frozen" as const, label: T("Still", "Fixe"), title: T("A still picture of the situation", "Une image fixe de la situation") },
+              { value: "live" as const, label: T("Moving", "En mouvement"), title: T("The situation flies: the instrument moves", "La situation vole : l’instrument bouge") },
+              {
+                value: "clip" as const,
+                label: T("A recording", "Un enregistrement"),
+                title: T("Plays a moment you recorded in the simulator", "Rejoue un moment enregistré dans le simulateur"),
+                disabled: !clips.length,
+              },
+            ],
+            b.mode ?? "frozen",
+            (v) => setB((x) => ((x as B).mode = v)),
+            { full: true },
+          ),
+        ),
+        b.mode === "clip"
+          ? field(
+              T("Recorded moment", "Moment enregistré"),
+              selectIn(
+                clips.map((id) => ({ value: id, label: id })),
+                b.clip,
+                (v) => setB((x) => ((x as B).clip = v)),
+              ),
+            )
+          : null,
+        calcSteps.length
+          ? field(
+              T("Show the numbers of a calculation", "Montrer les chiffres d’un calcul"),
+              selectIn<string>(
+                [
+                  { value: "", label: T("No: the situation above", "Non : la situation ci-dessus") },
+                  ...calcSteps.map((s) => ({ value: s.id, label: tr(s.title, this.lang) })),
+                ],
+                b.fromCalc ?? "",
+                (v) => setB((x) => (v ? ((x as B).fromCalc = v) : delete (x as B).fromCalc)),
+              ),
+            )
+          : null,
+      ),
+    );
+    return [
+      shows
+        ? shows.el
+        : group(T("What it shows", "Ce qu’il montre"), [
+            note(
+              T(
+                `The numbers of the calculation “${fromCalc ? tr(fromCalc.title, this.lang) : ""}”: each student sees their own problem. Change it under Advanced settings.`,
+                `Les chiffres du calcul « ${fromCalc ? tr(fromCalc.title, this.lang) : ""} » : chaque élève voit son propre énoncé. À changer dans Réglages avancés.`,
+              ),
+            ),
+          ]),
+      this.stripGroup(b, setB),
+      shows
+        ? askGroup(ctx, shows.live, {
+            where: "slide",
+            yt: b.yourTurn,
+            nav,
+            scene: b.scene,
+            apply: (yt, controls, render) =>
+              setFresh((x) => {
+                if (yt) x.yourTurn = yt;
+                else delete x.yourTurn;
+                if (!controls?.length) return;
+                // what the goal needs is ticked: the controls show on the slide and the instrument moves
+                const first = !x.controls?.length;
+                const r = withControls(x, ALL_CONTROLS.filter((k) => x.controls?.includes(k) || controls.includes(k)));
+                if (r.block.controls) x.controls = r.block.controls;
+                if (r.wentLive) x.mode = "live";
+                if (first) {
+                  const f = growForStrip({ blocks: this.host.step.slide!.blocks.map((k) => (k.id === x.id ? x : k)) }, x.id);
+                  if (f) x.frame = f;
+                }
+              }, render),
+            detail: () => this.yourTurnGroup(b.yourTurn, "slide", setYt, b.scene),
+          })
+        : this.yourTurnGroup(b.yourTurn, "slide", setYt, b.scene),
+      this.calloutsGroup(
+        { annotations: b.annotations },
+        (list) => setB((x) => ((x as B).annotations = list)),
+        b.view.kind === "gauge" ? undefined : (b.view as PaneView),
+        T("Markers · order of appearance", "Repères · ordre d’apparition"),
+      ),
+      group(T("More", "Plus"), [advanced]),
+    ];
+  }
+  /**
+   * « Commandes de l’élève » of an instrument on a slide: the chips by family, « Les plus utiles », where the
+   * controls sit, and the author's try (« Garder comme départ »). What is ticked shows on the slide at once
+   * (canvas/controlStrip.ts); ticking a control on a frozen instrument turns it live.
+   */
+  private stripGroup(
+    b: Extract<SlideBlock, { kind: "instrument" }>,
+    setB: (f: (x: SlideBlock) => void, key?: string, render?: boolean) => void,
+  ): HTMLElement {
+    const T = this.t.bind(this);
+    type B = typeof b;
+    const apply = (list: StageControl[]) => {
+      const r = withControls(b, ALL_CONTROLS.filter((k) => list.includes(k)));
+      this.wentLive = r.wentLive ? b.id : "";
+      setB((x) => {
+        const n = x as B;
+        if (r.block.controls) n.controls = r.block.controls;
+        else delete n.controls;
+        if (r.wentLive) n.mode = "live";
+        // the element grows into the free space under it (or on its right): the instrument keeps its size
+        const first = !b.controls?.length && !!n.controls?.length;
+        if (first) {
+          const f = growForStrip({ blocks: this.host.step.slide!.blocks.map((o) => (o.id === n.id ? n : o)) }, n.id);
+          if (f) n.frame = f;
+        }
+      });
+    };
+    const mode = b.mode ?? "frozen";
+    const drawn = stripControls(b.controls);
+    const useful = usefulControls(b.view);
+    const usefulOn = useful.length > 0 && useful.every((k) => b.controls?.includes(k)) && b.controls?.length === useful.length;
+    const choice = stripChoice(b);
+    const trial = stripTrial(b.id);
+    this.trialBlock = b.id;
+    this.trialDirty = !!trial?.dirty();
+    const slide = this.host.step.slide!;
+    return group(T("What the student can touch", "Ce que l’élève peut toucher"), [
+      note(
+        T(
+          "Tick what the student may handle: each control shows under the instrument, on the slide.",
+          "Cochez ce que l’élève peut manier : chaque commande apparaît sous l’instrument, sur la diapo.",
+        ),
+        "muted",
+      ),
+      useful.length && !usefulOn
+        ? h(
+            "div",
+            { class: "ce-useful" },
+            btn(T("Most useful", "Les plus utiles"), () => apply(useful), { cls: "sm" }),
+            h("span", {}, useful.map((k) => stripLabel(k, this.lang)).join(", ")),
+          )
+        : null,
+      controlGroups(
+        b.controls,
+        (k, on) => {
+          const set = new Set(b.controls ?? []);
+          if (on) set.add(k);
+          else set.delete(k);
+          apply([...set]);
+        },
+        this.lang,
+      ),
+      this.wentLive === b.id && mode === "live"
+        ? note(
+            T(
+              "The instrument is now Live: its controls act on the slide.",
+              "L’instrument est passé « En direct » : ses commandes agissent sur la diapo.",
+            ),
+          )
+        : null,
+      drawn.length
+        ? field(
+            T("Where the controls sit", "Place des commandes"),
+            selectIn<StripChoice>(
+              [
+                { value: "below", label: T("Under the instrument", "Sous l’instrument") },
+                { value: "right", label: T("On its right", "À droite") },
+                { value: "hidden", label: T("Hidden until “Your turn”", "Masquées jusqu’à « À vous »") },
+              ],
+              choice,
+              (v) =>
+                setB((x) => ((x as B).strip = v)),
+            ),
+          )
+        : null,
+      drawn.length && mode !== "live" && choice !== "hidden"
+        ? h(
+            "div",
+            { class: "ce-row" },
+            note(
+              T(
+                "Frozen: the controls show only after “Your turn”.",
+                "Figé : les commandes n’apparaissent qu’après « À vous ».",
+              ),
+              "muted",
+            ),
+            btn(T("Make it live", "Passer en direct"), () => setB((x) => ((x as B).mode = "live")), { cls: "sm" }),
+          )
+        : null,
+      stripCramped(b)
+        ? h(
+            "div",
+            { class: "ce-row" },
+            note(
+              T(
+                "With its controls the instrument is small.",
+                "Avec ses commandes, l’instrument est petit.",
+              ),
+            ),
+            growForStrip(slide, b.id)
+              ? btn(
+                  T("Enlarge the element", "Agrandir l’élément"),
+                  () =>
+                    setB((x) => {
+                      const f = growForStrip(slide, b.id);
+                      if (f) x.frame = f;
+                    }),
+                  { cls: "sm" },
+                )
+              : choice !== "right"
+                ? btn(T("Put the controls on the right", "Placer les commandes à droite"), () => setB((x) => ((x as B).strip = "right")), { cls: "sm" })
+                : null,
+          )
+        : null,
+      trial && this.trialDirty
+        ? h(
+            "div",
+            { class: "ce-trial" },
+            note(
+              T(
+                "You are trying the controls on the slide: nothing is saved. Keep this situation as the start, or go back to the start.",
+                "Vous essayez les commandes sur la diapo : rien n’est enregistré. Gardez cette situation comme départ, ou revenez au départ.",
+              ),
+            ),
+            h(
+              "div",
+              { class: "ce-row" },
+              btn(T("Keep as the start", "Garder comme départ"), () => this.keepStart(b), { cls: "sm" }),
+              btn(T("Reset", "Réinitialiser"), () => trial.reset(), { cls: "sm" }),
+            ),
+          )
+        : null,
+    ]);
+  }
+  /** « Garder comme départ »: the situation the author set with the controls becomes the start of the instruments
+   *  of this slide that showed the same situation. One new situation in the course; the old one is not changed. */
+  private keepStart(b: Extract<SlideBlock, { kind: "instrument" }>) {
+    const trial = stripTrial(b.id);
+    const sim = trial?.sim();
+    const c = this.host.course;
+    const slide = this.host.step.slide;
+    if (!trial || !sim || !slide) return;
+    let id = `sc-${Math.random().toString(36).slice(2, 7)}`;
+    while (c.scenes[id]) id = `sc-${Math.random().toString(36).slice(2, 7)}`;
+    const old = b.scene ?? slide.scene;
+    let scene: SimScene;
+    try {
+      scene = captureScene(sim, {
+        id,
+        label: this.t("Start set on the slide", "Départ réglé sur la diapo"),
+        cockpit: c.cockpit,
+        world: c.world,
+      });
+    } catch {
+      this.host.toast(this.t("This situation could not be kept.", "Cette situation n’a pas pu être gardée."));
+      return;
+    }
+    trial.reset();
+    rememberScene(scene);
+    this.host.setCourse({ ...c, scenes: { ...c.scenes, [id]: scene } }, undefined, false);
+    const next = clone(slide);
+    for (const x of next.blocks)
+      if ((x.kind === "instrument" || x.kind === "simViewport") && (x.scene ?? next.scene) === old)
+        x.scene = id;
+    this.host.setSlide(next);
+    this.render();
+    this.host.toast(this.t("Kept as the start.", "Gardé comme départ."));
+  }
   private yourTurnGroup(
     yt: YourTurn | undefined,
     where: "slide" | "sim",
@@ -5303,8 +5834,8 @@ export class Inspector {
                 "Donnez l’instrument à l’élève : il tourne les commandes permises, le simulateur vérifie l’objectif en direct, le résultat revient sur la diapo.",
               )
             : T(
-                "Open the full simulator from this scene, check goals live, and come back to this slide with the result.",
-                "Ouvrez le simulateur complet depuis cette scène, vérifiez en direct, puis revenez sur cette diapo avec le résultat.",
+                "Open the full simulator from this situation, check goals live, and come back to this slide with the result.",
+                "Ouvrez le simulateur complet depuis cette situation, vérifiez en direct, puis revenez sur cette diapo avec le résultat.",
               ),
           "muted",
         ),
@@ -5511,17 +6042,43 @@ export class Inspector {
             )
           : null,
       ]),
-      group(this.t("Scene of the instruments", "Scène des instruments"), [
-        this.sceneSelect(c.scene, (v) =>
-          setC((x) => (v ? (x.scene = v) : delete x.scene)),
-        ),
-        note(
-          this.t(
-            "Instruments that name no scene use this one; they share one stage sim, so they move together.",
-            "Les instruments sans scène utilisent celle-ci ; ils partagent un simulateur et bougent ensemble.",
-          ),
-          "muted",
-        ),
+      ...(this.sitCtx() &&
+      c.blocks.some((b) => b.kind === "instrument" || b.kind === "simViewport")
+        ? [
+            // the slide's own situation, in the same form as on an instrument
+            (() => {
+              const g = showsGroup(this.sitCtx()!, {
+                title: this.t("Flight situation of the slide", "Situation de vol de la diapo"),
+                folded: true,
+                extra: [
+                  note(
+                    this.t(
+                      "The instruments of the slide show this situation and move together, except those that were given their own.",
+                      "Les instruments de la diapo montrent cette situation et bougent ensemble, sauf ceux qui ont reçu la leur.",
+                    ),
+                    "muted",
+                  ),
+                ],
+              });
+              return g.el;
+            })(),
+          ]
+        : []),
+      group(this.t("Slide options", "Options de la diapo"), [
+        ...(this.sitCtx()
+          ? []
+          : [
+              this.sceneSelect(c.scene, (v) =>
+                setC((x) => (v ? (x.scene = v) : delete x.scene)),
+              ),
+              note(
+                this.t(
+                  "Instruments that name no scene use this one; they share one stage sim, so they move together.",
+                  "Les instruments sans scène utilisent celle-ci ; ils partagent un simulateur et bougent ensemble.",
+                ),
+                "muted",
+              ),
+            ]),
         sw(
           !!c.hideBrand,
           (on) => setC((x) => (on ? (x.hideBrand = true) : delete x.hideBrand)),

@@ -19,6 +19,7 @@ import type {
   AssetRef,
   Course,
   Lang,
+  SimScene,
   SlideBlock,
   SlideCanvas,
   Step,
@@ -30,10 +31,34 @@ import { h } from "../../ui/dom";
 import { CoursePlayer } from "./player";
 import { KINDS, kindLabel } from "./reader";
 import { CanvasEditor } from "../canvas/editor";
-import { SceneSims } from "../canvas/instruments";
+import { SceneSims, rememberScene } from "../canvas/instruments";
 import { renderThumb, type SlideView } from "../canvas/render";
 import { baseThemeId } from "../canvas/themes";
-import { libraryItem, type BlockDraft } from "../canvas/factory";
+import {
+  DEMO_SCENE_ID,
+  demoScene,
+  libraryItem,
+  type BlockDraft,
+} from "../canvas/factory";
+import { compactScene, encodeScene } from "../scene";
+import {
+  blockSceneId,
+  joinBlock,
+  planSituation,
+  repointSlide,
+  sceneUsedElsewhere,
+  sharedWith,
+  simContentDraft,
+  splitBlock,
+  situationOfScene,
+  type SimContentKind,
+  type Situation,
+} from "../situations";
+import type { SitTarget, SituationHost } from "./situationEditor";
+import { setSimWay } from "./studio";
+
+/** set when the author leaves for the cockpit from this course (« Voler et capturer ») */
+const FLYING_KEY = "ifr.course.flying";
 import type { EditorCommand } from "../canvas/editorCore";
 import { paneFrame } from "../stage/geometry";
 import { drawFrame, newInstrumentStates } from "../stage/views";
@@ -288,13 +313,23 @@ export class CourseEditor implements InspectorHost {
       store: this.store,
       courseId: this.course.id,
       onAdd: (it, t) => void this.addFromTray(it, t),
-      onFlyToCapture: () => this.flyToCapture(),
+      onUse: (it) => this.useCapture(it),
+      onFlyToCapture: () => void this.flyFrom(this.step?.slide ? this.situations.read().scene : undefined),
       assetUrl: (id) => this.assetUrl(id),
     });
     this.inspector = new Inspector(this);
     this.build();
     if (this.store && this.store.backend === "memory") this.saving = "memory";
     this.renderAll();
+    try {
+      if (sessionStorage.getItem(FLYING_KEY) === this.course.id) {
+        sessionStorage.removeItem(FLYING_KEY);
+        setSimWay("fly");
+        queueMicrotask(() => this.openPanel("cockpit"));
+      }
+    } catch {
+      /* no session storage */
+    }
     this.el.addEventListener("keydown", (e) => this.onKeyCapture(e), true);
     this.el.addEventListener("keydown", (e) => this.onKey(e));
     this.el.addEventListener("paste", (e) => this.onPaste(e));
@@ -333,6 +368,197 @@ export class CourseEditor implements InspectorHost {
     this.ensureSims();
     const e = this.sims.get(sceneId);
     return e ? { sim: e.sim, scene: e.scene, diffs: e.diffs } : null;
+  }
+
+  // ================================================================ « Situation de vol » (ui/situationEditor.ts)
+  /** true while a situation edit points the slide at its new scene: the inspector (and the slider held) stays */
+  private sitBusy = false;
+  /** What the studio's situation form needs: read what an element shows, write it back (live while a slider
+   *  moves), give an element its own situation, open the cockpit from it. */
+  get situations(): SituationHost {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const ed = this;
+    return {
+      get canFly() {
+        return ed.captureReady;
+      },
+      read: (blockId) => {
+        const s = ed.step;
+        const slide = s?.slide;
+        const { id, own } = slide ? blockSceneId(slide, blockId) : { id: undefined, own: false };
+        const have = id ? ed.course.scenes[id] : undefined;
+        return {
+          scene: have ?? demoScene(ed.course.cockpit),
+          sceneId: have ? id : undefined,
+          own,
+          shared: slide ? sharedWith(slide, blockId) : 0,
+          elsewhere: !!have && !!s && sceneUsedElsewhere(ed.course, id!, s.id),
+        };
+      },
+      readScene: (sceneId) => {
+        const have = sceneId ? ed.course.scenes[sceneId] : undefined;
+        return {
+          scene: have ?? demoScene(ed.course.cockpit),
+          sceneId: have ? sceneId : undefined,
+          own: true,
+          shared: 0,
+          elsewhere: !!have && !!ed.step && sceneUsedElsewhere(ed.course, sceneId!, ed.step.id),
+        };
+      },
+      write: (sit, final, target) => ed.writeSituation(sit, final, target),
+      split: (blockId) => {
+        const slide = ed.step?.slide;
+        if (!slide || !ed.canvasEd) return;
+        const r = splitBlock(ed.course, slide, blockId, demoScene(ed.course.cockpit));
+        if (!r) return;
+        rememberScene(r.scene);
+        ed.apply({ ...ed.course, scenes: { ...ed.course.scenes, [r.scene.id]: r.scene } }, undefined, {
+          inspector: false,
+          centre: false,
+        });
+        ed.canvasEd.set(r.slide);
+        ed.inspector.render();
+      },
+      join: (blockId) => {
+        const slide = ed.step?.slide;
+        if (!slide || !ed.canvasEd) return;
+        ed.canvasEd.set(joinBlock(slide, blockId));
+        ed.inspector.render();
+      },
+      fly: (scene) => void ed.flyFrom(scene),
+    };
+  }
+  /** Store a situation (or, while a slider is held, only show it). True when the element now points at a new
+   *  scene: what the inspector read from the slide is out of date and it must be drawn again. */
+  private writeSituation(sit: Situation, final: boolean, target: SitTarget): boolean {
+    const s = this.step;
+    if (!s) return false;
+    const slide = s.slide;
+    const blockId = target.kind === "block" ? target.id : undefined;
+    const cur = target.kind === "scene" ? target.id : slide ? blockSceneId(slide, blockId).id : undefined;
+    const plan = planSituation(this.course, s.id, cur, sit, demoScene(this.course.cockpit));
+    const sims = this.canvasEd?.view.sims;
+    if (!plan.isNew) {
+      rememberScene(plan.scene);
+      sims?.replace(plan.scene);
+      if (!final) return false;
+      this.apply(
+        { ...this.course, scenes: { ...this.course.scenes, [plan.sceneId]: plan.scene } },
+        `sit.${plan.sceneId}`,
+        { inspector: false, centre: !slide },
+      );
+      this.afterSituation(target.from);
+      return false;
+    }
+    // The first change of a situation that was the sample one, or one other steps show too: this step gets its
+    // own. While the slider is held nothing is stored: the instruments that show the current one follow.
+    const shown = cur && this.course.scenes[cur] ? cur : DEMO_SCENE_ID;
+    if (!final) {
+      if (target.kind !== "scene") sims?.replace({ ...plan.scene, id: shown });
+      return false;
+    }
+    rememberScene(plan.scene);
+    this.apply({ ...this.course, scenes: { ...this.course.scenes, [plan.sceneId]: plan.scene } }, undefined, {
+      inspector: false,
+      centre: false,
+    });
+    if (target.kind === "scene") {
+      target.set(plan.sceneId);
+      return true;
+    }
+    if (!slide || !this.canvasEd) return false;
+    this.sitBusy = true;
+    try {
+      this.canvasEd.set(repointSlide(slide, cur, plan.sceneId, blockId));
+    } finally {
+      this.sitBusy = false;
+    }
+    // what showed the old situation elsewhere on the slide gets it back as stored
+    sims?.replace(this.course.scenes[shown] ?? demoScene(this.course.cockpit));
+    this.afterSituation(target.from);
+    return true;
+  }
+  /** A situation was stored: the other place that shows it (the inspector, the Simulateur panel) follows. */
+  private afterSituation(from?: "inspector" | "panel") {
+    if (from !== "inspector") this.inspector.render();
+    if (from !== "panel" && this.studio.tab === "cockpit") this.studio.refresh();
+  }
+  private simSelectionId(): string | undefined {
+    const b = this.sel.length === 1 ? this.sel[0] : null;
+    return b && (b.kind === "instrument" || b.kind === "simViewport") ? b.id : undefined;
+  }
+  /** After an undo or a redo: the instruments on the slide show the course's situations again. */
+  private syncCanvasScenes() {
+    const sims = this.canvasEd?.view.sims;
+    if (!sims) return;
+    for (const sc of Object.values(this.course.scenes)) {
+      rememberScene(sc);
+      if (JSON.stringify(sims.env.scenes[sc.id]) !== JSON.stringify(sc)) sims.replace(sc);
+    }
+  }
+  /**
+   * « Voler et capturer » / « Ouvrir cette situation dans le simulateur »: the course is saved, the cockpit opens
+   * with the aircraft in that situation, C captures the moment, « Retour au cours » comes back here.
+   */
+  async flyFrom(scene?: SimScene) {
+    if (!this.captureReady) {
+      this.flyToCapture();
+      return;
+    }
+    await this.saveNow();
+    // back from the cockpit, the editor opens on the captured moments
+    try {
+      sessionStorage.setItem(FLYING_KEY, this.course.id);
+    } catch {
+      /* private mode: the author opens the panel */
+    }
+    if (!scene && this.o.onFlyToCapture) {
+      this.o.onFlyToCapture(this.course.id);
+      return;
+    }
+    let code = "";
+    if (scene) {
+      try {
+        const { situation: _sit, ...plain } = scene;
+        void _sit;
+        code = await encodeScene(compactScene(plain as SimScene));
+      } catch {
+        code = "";
+      }
+    }
+    this.go(
+      `index.html?capture=${encodeURIComponent(this.course.id)}${code ? `&scene=${code}` : ""}&return=${encodeURIComponent(location.href)}`,
+    );
+  }
+  /** One of the four simulator contents of the « Simulateur » panel, on the slide, ready to work and selected. */
+  addSimContent(kind: SimContentKind) {
+    const slide = this.step?.slide;
+    if (!slide || !this.canvasEd) return;
+    const { scene } = this.situations.read();
+    const d = simContentDraft(kind, situationOfScene(scene), this.course.cockpit, Object.keys(this.course.clips)[0]);
+    const b = this.canvasEd.add(d as BlockDraft);
+    if (b) this.offerNewSlideIfCrowded(b, d as BlockDraft);
+    this.afterPanelAdd();
+  }
+  /** A captured moment becomes what this slide's instruments show. */
+  useCapture(it: TrayItem) {
+    const s = this.step;
+    const slide = s?.slide;
+    if (!s || !slide || !this.canvasEd) return;
+    rememberScene(it.scene);
+    this.apply({ ...this.course, scenes: { ...this.course.scenes, [it.scene.id]: it.scene } }, undefined, {
+      inspector: false,
+      centre: false,
+    });
+    this.canvasEd.set(repointSlide(slide, slide.scene, it.scene.id));
+    this.inspector.render();
+    this.toast(
+      t2(
+        this.lang,
+        "The instruments of this slide now show the captured moment.",
+        "Les instruments de cette diapo montrent maintenant le moment capturé.",
+      ),
+    );
   }
   async importImage(
     file: File,
@@ -706,6 +932,15 @@ export class CourseEditor implements InspectorHost {
       assetUrl: (id: string) => ed.assetUrl(id),
       trayEl: ed.tray.el,
       afterAdd: () => ed.afterPanelAdd(),
+      get situations() {
+        return ed.situations;
+      },
+      /** the selected instrument or simulator view (its situation is the one the panel edits) */
+      get simSelection() {
+        return ed.simSelectionId();
+      },
+      addSim: (kind: SimContentKind) => ed.addSimContent(kind),
+      newSlide: () => ed.addTemplate("slide", { layout: "blank" }),
     };
   }
   /** Below 1280 px the panel floats over the slide: it closes after an add so the new block shows. */
@@ -718,9 +953,7 @@ export class CourseEditor implements InspectorHost {
     const empty = !this.course.steps.length;
     this.railEl.replaceChildren(
       // the cockpit tray only once the cockpit can send captures (or has sent some): never a "coming soon" slot
-      ...RAIL_TABS.filter(
-        (t) => t !== "cockpit" || this.captureReady || this.tray.count > 0,
-      ).map((t) => {
+      ...RAIL_TABS.map((t) => {
         // on an empty course these still work: they start a blank slide first
         const off = SLIDE_ONLY.has(t) && !onSlide && !empty;
         const on = this.studio.tab === t;
@@ -899,6 +1132,7 @@ export class CourseEditor implements InspectorHost {
     if (s?.slide && this.canvasEd && this.canvasFor === s.id) {
       const ids = this.sel.map((b) => b.id);
       this.canvasEd.load(s.slide);
+      this.syncCanvasScenes();
       this.canvasEd.select(
         ids.filter((x) => s.slide!.blocks.some((b) => b.id === x)),
       );
@@ -1256,19 +1490,22 @@ export class CourseEditor implements InspectorHost {
     };
     this.thumbTimer = window.setTimeout(run, 60);
   }
+  /** changes when a scene's content changes (a situation edited in place keeps its length and its id) */
+  private scenesKey(): string {
+    const s = JSON.stringify(this.course.scenes);
+    let hash = 0;
+    for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) | 0;
+    return `${s.length}.${hash}`;
+  }
   private makeSims(): SceneSims {
-    this.simsKey =
-      String(JSON.stringify(this.course.scenes).length) +
-      Object.keys(this.course.scenes).join(",");
+    this.simsKey = this.scenesKey();
     return new SceneSims({
       scenes: this.course.scenes,
       cockpit: this.course.cockpit,
     });
   }
   private ensureSims() {
-    const k =
-      String(JSON.stringify(this.course.scenes).length) +
-      Object.keys(this.course.scenes).join(",");
+    const k = this.scenesKey();
     if (k !== this.simsKey) {
       this.sims.destroy();
       this.sims = this.makeSims();
@@ -1658,11 +1895,14 @@ export class CourseEditor implements InspectorHost {
             centre: false,
             inspector:
               this.inspector.currentTab === "block" &&
+              !this.sitBusy &&
               !this.inspector.el.contains(document.activeElement),
           });
         },
         onSelect: (_ids, blocks) => {
+          const was = this.simSelectionId();
           this.sel = blocks;
+          if (this.studio.tab === "cockpit" && was !== this.simSelectionId()) this.studio.refresh();
           if (
             this.inspector.currentTab !== "block" &&
             blocks.length &&

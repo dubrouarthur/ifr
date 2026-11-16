@@ -465,6 +465,8 @@ export class CanvasEditor {
     if (e.button !== 0 && e.pointerType === "mouse") return;
     const t = e.target as HTMLElement;
     if (t.closest(".sle-bar") || t.closest(".sle-text") || t.closest(".sle-menu") || t.closest(".sle-pop")) return;
+    // the control strip of a live instrument is tried in place (canvas/controlStrip.ts): no selection, no drag
+    if (t.closest(".sl-strip") || t.closest(".sl-strip-reset")) return;
     this.closeMenu();
     this.closePop();
     if (e.pointerType === "touch") {
@@ -608,6 +610,8 @@ export class CanvasEditor {
   }
   private onKey(e: KeyboardEvent) {
     if (this.textEd) return;
+    // a control of the strip has the focus: its keys are its own (never Delete the element from there)
+    if ((e.target as HTMLElement | null)?.closest?.(".sl-strip, .sl-strip-reset")) return;
     if (e.key === "Escape" && this.core.gesture) {
       this.core.cancel();
       this.draw();

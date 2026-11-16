@@ -192,6 +192,13 @@ export function rederive(sim: Sim): void {
   sim.systems.step(0, sim);
 }
 
+/** Put a flying Sim at another height without a spike on the vertical speed (« Stabiliser » keeps the height
+ *  asked while the flight model settles the speed). */
+export function shiftAltitude(sim: Sim, altFt: number): void {
+  sim.ac.s.altFt = altFt;
+  (sim.ac as unknown as AircraftInternals).lastAlt = altFt;
+}
+
 /** TAS (m/s) that indicates `iasKt` at this altitude, with the C172 pitot-static position error */
 export function tasForIas(
   iasKt: number,
@@ -908,7 +915,11 @@ export function applyScene(sim: Sim, scene: SimScene): SceneDiff[] {
   if (exact) {
     Object.assign(sim.ac.s, { ...exact.ac });
     Object.assign(sim.av, cloneAvionics(exact.av));
-  } else applyFieldsPose(sim, fields!);
+  } else {
+    applyFieldsPose(sim, fields!);
+    // a situation set as numbers with flaps: they are out already (the motor takes 9 s per detent otherwise)
+    if (scene.controls && !start.onGround) sim.ac.s.flapPos = sim.controls.flaps / 3;
+  }
   // 5
   rederive(sim);
   // 6
