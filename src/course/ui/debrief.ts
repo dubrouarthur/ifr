@@ -497,6 +497,9 @@ export class FlyItView {
         ),
       );
     card.append(acts);
+    // hand-over: where the button leads, what waits there and how to come back (course/handover.ts)
+    if (m.canFly && !m.flyLabel)
+      card.append(h("p", { class: "cp-fly-go" }, ps("flyGoNote", lang)));
     return card;
   }
 

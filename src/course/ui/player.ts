@@ -253,6 +253,8 @@ export interface PlayerOptions {
   level?: GuidanceLevel;
   /** designed slides (default: the canvas renderer, course/canvas/render.ts); null shows their linear text */
   renderSlide?: SlideRenderer | null;
+  /** hand-over: how the course continues after a Try it, one sentence under the result (default: « Suivant ») */
+  handoverWayOn?: (lang: Lang) => string;
   /** the trace of a flown attempt (the recorder lives in the cockpit; the integrator provides it) */
   loadTrace?: (
     attempt: AttemptRecord,
@@ -822,6 +824,7 @@ export class CoursePlayer {
     this.renderTop();
     this.syncFoot();
     this.applyReveal();
+    this.handOver(step, st, fresh); // hand-over
     this.scroll.scrollTop = 0;
     this.emitState();
     if (fresh) {
@@ -835,6 +838,63 @@ export class CoursePlayer {
         }),
       );
     }
+  }
+  // ---------------- hand-over (course/handover.ts): a Try it step gives its controls to the student. The stage
+  // freezes under the « À vous » card until « Prendre les commandes »; the words come from the step's data.
+  private handOver(step: Step, st: StepState, fresh: boolean) {
+    const cue = step.stage;
+    const layout = this.body.dataset.layout;
+    if (st.showMe && this.frame.handover.active) return; // the demo is playing: the layer keeps its state
+    if (
+      step.kind !== "try" ||
+      !cue?.controls?.length ||
+      (cue.mode !== "live" && cue.mode !== "frozen") ||
+      (layout !== "split" && layout !== "stageWide")
+    )
+      return this.frame.setHandover(null);
+    const lang = this.lang;
+    const goal = this.trackerGoal;
+    const rowTexts: string[] = [];
+    for (const r of this.tracker?.state().rows ?? [])
+      if (r.check >= 0) rowTexts[r.check] = r.text;
+    const clip = step.showMe ? this.course.clips[step.showMe] : undefined;
+    this.frame.setHandover({
+      key: step.id,
+      prompt: L(step.title, lang),
+      input: {
+        where: "stage",
+        controls: cue.controls,
+        goal,
+        rowTexts,
+        assist: cue.assist,
+        clock: cue.mode === "live",
+      },
+      rows: () => this.tracker?.state().rows ?? [],
+      success: goal?.success ? L(goal.success, lang) : undefined,
+      onShowMe: clip ? () => this.toggleShowMe(true) : undefined,
+      onRetry: () => this.retryGoal(step),
+      wayOn:
+        this.o.handoverWayOn?.(lang) ??
+        (lang === "fr"
+          ? `Le cours continue avec « ${ps("next", lang)} ».`
+          : `The course continues with “${ps("next", lang)}”.`),
+      alreadyMet: !!st.goalMet,
+    });
+    // keyboard: the one filled button is one key away when the student arrives on the step
+    if (fresh)
+      requestAnimationFrame(() => {
+        const at = document.activeElement;
+        if (this.step === step && (at === document.body || !this.el.contains(at)))
+          this.frame.handover.focusTake();
+      });
+  }
+  /** hand-over: « Réessayer » — the ticks and the hold timer start again (the layer put the scene back) */
+  private retryGoal(step: Step) {
+    if (this.step !== step) return;
+    this.state(step).goalMet = false;
+    this.tracker = null;
+    this.lastRows = "";
+    this.show(false);
   }
   private renderEmpty() {
     this.body.dataset.layout = "readerOnly";
@@ -1294,7 +1354,8 @@ export class CoursePlayer {
       ? L(goal.success, this.lang)
       : ps("goalMet", this.lang);
     this.announce(msg);
-    this.toast(msg);
+    // hand-over: the result card says it on the stage; the toast is for a goal met without one
+    if (!this.frame.handover.active) this.toast(msg);
     this.applyReveal();
     this.renderTopTicks();
     this.syncFoot();

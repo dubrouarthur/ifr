@@ -227,6 +227,9 @@ const READOUTS = keys<ReadoutId>({
   vs: 1,
   gs: 1,
   wca: 1,
+  bank: 1,
+  loadFactor: 1,
+  stallIas: 1,
 });
 const LAYOUTS = keys<SlideLayoutId>({
   cover: 1,

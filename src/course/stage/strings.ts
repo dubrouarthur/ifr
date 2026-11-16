@@ -1,6 +1,7 @@
 // Ground school stage — UI strings (FR / EN). Author content is L10n in the course; these are the stage's own
 // labels. Kept here so the stage has no dependency on the academy host (course/i18n.ts may re-export them).
 import type { L10n, Lang } from "../types";
+import { HANDOVER_WORDS } from "../handoverWords";
 
 const S = {
   live: ["Live instrument", "Instrument en direct"],
@@ -14,7 +15,7 @@ const S = {
   planTitle: ["Top view", "Vue de dessus"],
   play: ["Play", "Lecture"],
   pause: ["Pause", "Pause"],
-  takeOver: ["Take over", "Prendre les commandes"],
+  takeOver: HANDOVER_WORDS.take,
   back10: ["Back 10 s", "−10 s"],
   goal: ["Goal", "Objectif"],
   nextOpen: ["Next is always open", "Suivant reste toujours possible"],
@@ -63,6 +64,19 @@ const S = {
   calm: ["calm", "calme"],
   timeScale: ["time ×", "temps ×"],
   stage: ["Live instrument", "Instrument en direct"],
+  // hand-over (course/handover.ts): what each pad button does, and the quiet line for the controls the step keeps
+  noseUp: ["Nose up", "Cabrer"],
+  noseDown: ["Nose down", "Piquer"],
+  less: ["Less", "Réduire"],
+  more: ["More", "Augmenter"],
+  lockedRest: ["Other controls: locked", "Autres commandes : verrouillées"],
+  lockedWhy: [
+    "This step hands you only the controls above: the rest of the panel stays as it is, so nothing else changes during the exercise.",
+    "Cette étape ne vous confie que les commandes ci-dessus : le reste du tableau de bord ne bouge pas, pour que rien d’autre ne change pendant l’exercice.",
+  ],
+  demo: ["Demonstration: watch", "Démonstration : regardez"],
+  handedBack: ["Controls handed back", "Commandes rendues"],
+  waiting: ["Paused: waiting for you", "En pause : l’avion vous attend"],
   plusOne: ["+1", "+1"],
   minusOne: ["−1", "−1"],
 } as const satisfies Record<string, readonly [string, string]>;

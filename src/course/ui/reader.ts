@@ -20,6 +20,7 @@ import type { RowState } from "../goals";
 import { richFragment } from "../canvas/text";
 import { diagramPane, type DiagramPane } from "../stage/diagrams";
 import { getProcedure } from "../../train/procedureStore";
+import { hwPair, hwq } from "../handoverWords";
 
 // ------------------------------------------------------------------ strings
 const S = {
@@ -54,8 +55,8 @@ const S = {
   moreLeft: ["{n} more on this step", "encore {n} sur cette étape"],
   hint: ["A hint", "Un indice"],
   hideHint: ["Hide hint", "Masquer l’indice"],
-  showMe: ["Show me", "Montre-moi"],
-  myTurn: ["Back to my turn", "À moi"],
+  showMe: hwPair("showMe"),
+  myTurn: ["Stop the demo", "Arrêter la démonstration"],
   close: ["Close", "Fermer"],
   briefing: ["Briefing", "Briefing"],
   backToFlyIt: ["Back to Fly it", "Retour au vol"],
@@ -191,7 +192,11 @@ const S = {
   youAnswered: ["You answered {a}", "Vous avez répondu {a}"],
   bestRun: ["Best run: {c} of {n}", "Meilleure série : {c} sur {n}"],
   // fly it + debrief
-  flyIt: ["Fly", "Voler"],
+  flyIt: hwPair("flyInSim"),
+  flyGoNote: [
+    `You leave the course for the simulator’s full cockpit. The aircraft waits there, paused, with this briefing. To come back: ${hwq("backToCourse", "en")}, at the top of the cockpit; your result shows on this step.`,
+    `Vous quittez le cours pour le cockpit complet du simulateur. L’avion vous y attend en pause, avec ce briefing. Pour revenir : ${hwq("backToCourse", "fr")}, en haut du cockpit ; votre résultat s’affiche sur cette étape.`,
+  ],
   flyBrief: ["Brief", "Briefing"],
   flyBriefSub: ["read here", "à lire ici"],
   flyFly: ["Fly", "Vol"],

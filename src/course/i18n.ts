@@ -2,6 +2,7 @@
 // and never goes through this table. The language follows the app's switch (ui/i18n.ts: ifr.lang, else the
 // browser), so the cockpit, Flight Center and the academy always agree.
 import type { L10n, Lang } from "./types";
+import { HANDOVER_WORDS } from "./handoverWords";
 import {
   lang as appLang,
   onLangChange,
@@ -156,8 +157,9 @@ const EN = {
   undo: "Undo",
   redo: "Redo",
   // your turn (on a slide)
-  yourTurn: "Try it",
-  backToSlide: "Back to the slide",
+  // hand-over: the one vocabulary (course/handoverWords.ts)
+  yourTurn: HANDOVER_WORDS.yourTurn[0],
+  backToSlide: HANDOVER_WORDS.backToCourse[0],
   yourTurnMet: "Done: {t}",
   yourTurnSim:
     "This exercise happens in the full simulator: fly it from the cockpit, the course stays open in another tab.",
@@ -305,8 +307,8 @@ const FR: Record<CourseStringKey, string> = {
   sampleCopy: "Les exemples sont en lecture seule : voici votre copie.",
   undo: "Annuler",
   redo: "Rétablir",
-  yourTurn: "Manipulation",
-  backToSlide: "Retour à la diapositive",
+  yourTurn: HANDOVER_WORDS.yourTurn[1],
+  backToSlide: HANDOVER_WORDS.backToCourse[1],
   yourTurnMet: "Réussi : {t}",
   yourTurnSim:
     "Cet exercice se fait dans le simulateur complet : volez-le au cockpit, le cours reste ouvert dans un autre onglet.",

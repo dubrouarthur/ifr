@@ -1,6 +1,6 @@
 // Step D of the UX logic (uxlogic/UX-LOGIC.md §7): the cockpit chrome speaks the UI language. A French pilot reads
 // « ← Accueil », « Vue : Extérieur », « Point 1 sur 2 », « Commencer le vol », « Résultat · Réussi » and
-// « Retour au cours (étape 13) »; the English words of the "never in the UI" list do not appear in French.
+// « Reprendre le cours (étape 13) »; the English words of the "never in the UI" list do not appear in French.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -79,12 +79,14 @@ describe("cockpit chrome in French", () => {
     expect(aircraftLabel("steam")).toBe("C172 · instruments classiques");
   });
 
-  it("starts the flight with « Commencer le vol », and the course strip counts the course's steps", () => {
+  // a lesson starts with « Commencer le vol »; a course flight is a hand-over and uses the one vocabulary of
+  // course/handoverWords.ts: « Prendre les commandes », « Reprendre le cours »
+  it("starts a lesson with « Commencer le vol », a course flight with « Prendre les commandes », and the course strip counts the course's steps", () => {
     expect(t("br.start")).toBe("Commencer le vol");
-    expect(t("cf.start")).toBe("Commencer le vol");
+    expect(t("cf.start")).toBe("Prendre les commandes");
     expect(t("cf.stepOf", { n: 13, t: 14 })).toBe("Étape 13 sur 14");
-    expect(t("cf.backCourseN", { n: 13 })).toBe("Retour au cours (étape 13)");
-    expect(t("cf.backingQ")).toBe("Retour au cours…");
+    expect(t("cf.backCourseN", { n: 13 })).toBe("Reprendre le cours (étape 13)");
+    expect(t("cf.backingQ")).toBe("Vous reprenez le cours…");
   });
 
   it("the result says « Résultat », a verdict word, and « Recommencer le vol » (never « Revoler »)", () => {

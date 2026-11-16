@@ -4,6 +4,9 @@
 // Every action calls the SHARED handlers in src/sim/avionicsControls.ts (never copies of main.ts code).
 // Touch: knobs 58 px in a 104 px drag zone (1° per 6 px), ±1 tap zones on each side, every target ≥ 44 px.
 // Keyboard (SPEC §7): ←/→ OBS 1° (Shift 10°), [ / ] HDG bug, A / D bank (hold), each knob also by its own arrows.
+// Hand-over (course/handover.ts): while the student has the controls the layer drives them through act() with the
+// one keyboard map (a chosen control, the arrow keys, 1…9 to choose), wherever the focus is; every button says what
+// it does (« ▲ Cabrer »), and the controls the step keeps are one quiet « verrouillé » line with its reason on demand.
 import type { Sim } from "../../sim/sim";
 import {
   centerCdi,
@@ -19,6 +22,7 @@ import {
   syncHdgBug,
 } from "../../sim/avionicsControls";
 import type { Lang, StageControl } from "../types";
+import type { KeyAction } from "../handover";
 import type { StageAssist } from "./assist";
 import { t, type StageString } from "./strings";
 
@@ -276,11 +280,19 @@ export class StageControls {
     v: HTMLElement;
     knob?: HTMLElement;
     angle: number;
+    rotate?: (d: number) => void;
   }[] = [];
   private cx: StageControlsOptions;
   private list: StageControl[] = [];
   private heldKeys = new Set<string>();
   private padTimers: number[] = [];
+  // hand-over: the chosen control (the arrow keys drive it), the pad buttons by "id:dir", the quiet locked line
+  private chosenI = 0;
+  private wraps: HTMLElement[] = [];
+  private padBtns = new Map<string, HTMLButtonElement>();
+  private handover = false;
+  private keyboard = false;
+  private lockOpen = false;
   constructor(cx: StageControlsOptions) {
     this.cx = cx;
     this.el = mk("div", "cs-controls");
@@ -298,13 +310,24 @@ export class StageControls {
     this.specs = controlSpecs(this.list, this.cx);
     this.el.replaceChildren();
     this.values = [];
+    this.wraps = [];
+    this.padBtns.clear();
+    this.chosenI = Math.min(this.chosenI, Math.max(0, this.specs.length - 1));
     this.el.classList.toggle("empty", this.specs.length === 0);
     for (const s of this.specs) {
-      if (s.kind === "knob") this.el.append(this.knob(s));
-      else if (s.kind === "pad") this.el.append(this.pad(s));
-      else if (s.kind === "key") this.el.append(this.key(s));
-      else this.el.append(this.info(s));
+      const w =
+        s.kind === "knob"
+          ? this.knob(s)
+          : s.kind === "pad"
+            ? this.pad(s)
+            : s.kind === "key"
+              ? this.key(s)
+              : this.info(s);
+      w.dataset.ctl = s.id;
+      this.wraps.push(w);
+      this.el.append(w);
     }
+    this.syncHandover();
     // only the controls the student may use: the ones the step keeps are simply not drawn (a row of greyed
     // "Locked by this step" chips was noise beside the task)
     this.refresh();
@@ -364,6 +387,117 @@ export class StageControls {
     this.el.remove();
   }
 
+  // ---------------- hand-over (course/handover.ts; stage/handoverLayer.ts drives these)
+  /** The step hands these controls to the student: each shows its number key (with a keyboard and several
+   *  controls) and the quiet « verrouillé » line appears. */
+  setHandover(on: boolean, keyboard = false) {
+    this.handover = on;
+    this.keyboard = keyboard;
+    if (!on) this.lockOpen = false;
+    this.syncHandover();
+  }
+  /** the control the arrow keys drive (index in display order) */
+  get chosen(): number {
+    return this.chosenI;
+  }
+  choose(i: number) {
+    if (i < 0 || i >= this.specs.length) return;
+    this.chosenI = i;
+    this.syncHandover();
+  }
+  /** Focus the chosen control (the student took the controls from the keyboard). */
+  focusChosen() {
+    const w = this.wraps[this.chosenI] ?? this.wraps[0];
+    w?.querySelector<HTMLElement>(".cs-knob, button")?.focus({ preventScroll: true });
+  }
+  /** Apply a key of the hand-over keyboard map; `down` false releases a held pad. Returns true when it acted. */
+  act(a: KeyAction, down = true): boolean {
+    const sim = this.cx.sim();
+    const assist = this.cx.assist;
+    if (a.k === "select") {
+      if (down) this.choose(a.index);
+      return true;
+    }
+    if (a.k === "hold") {
+      const key = `${a.control}:${down ? a.dir : 0}`;
+      if (down && this.heldKeys.has(key)) return true;
+      for (const k of [...this.heldKeys]) if (k.startsWith(`${a.control}:`)) this.heldKeys.delete(k);
+      if (down) this.heldKeys.add(key);
+      if (a.control === "bank") assist?.setBank(down ? a.dir : 0, sim);
+      else assist?.setPitch(down ? a.dir : 0, sim);
+      for (const [k, b] of this.padBtns)
+        if (k.startsWith(`${a.control}:`)) b.classList.toggle("on", down && k === `${a.control}:${a.dir}`);
+      this.cx.changed(a.control);
+      return true;
+    }
+    if (!down) return false;
+    if (a.k === "turn") {
+      const x = this.values.find((v) => v.spec.id === a.control);
+      if (!x?.spec.turn) return false;
+      x.spec.turn(a.d, a.coarse);
+      x.rotate?.(a.d);
+      this.refresh();
+      return true;
+    }
+    if (a.k === "power") {
+      this.nudgePower(a.d);
+      return true;
+    }
+    if (a.k === "press") {
+      const sp = this.specs.find((s) => s.id === a.control);
+      if (!sp?.press) return false;
+      sp.press();
+      this.refresh();
+      return true;
+    }
+    return false;
+  }
+  /** Let go of every held pad (the controls were handed back while a key or a finger was down). */
+  releaseAll() {
+    const sim = this.cx.sim();
+    this.heldKeys.clear();
+    this.cx.assist?.setBank(0, sim);
+    this.cx.assist?.setPitch(0, sim);
+    for (const b of this.padBtns.values()) b.classList.remove("on");
+  }
+  private nudgePower(dir: -1 | 1) {
+    const sim = this.cx.sim;
+    if (this.cx.assist) this.cx.assist.nudgePower(dir, sim());
+    else
+      sim().controls.throttle = Math.max(
+        0,
+        Math.min(1, sim().controls.throttle + dir * 0.05),
+      );
+    this.refresh();
+    this.cx.changed("power");
+  }
+  private syncHandover() {
+    const many = this.specs.filter((s) => s.kind !== "info").length > 1;
+    this.wraps.forEach((w, i) => {
+      const pick = w.querySelector<HTMLElement>(".cs-pick");
+      const show = this.handover && this.keyboard && many && this.specs[i].kind !== "info";
+      if (pick) pick.hidden = !show;
+      w.classList.toggle("chosen", show && i === this.chosenI);
+    });
+    this.el.querySelector(".cs-lockline")?.remove();
+    if (!this.handover || !this.specs.length) return;
+    const L = this.cx.lang;
+    const line = mk("div", "cs-lockline");
+    const b = mk("button", "cs-lockbtn", t("lockedRest", L));
+    b.type = "button";
+    b.setAttribute("aria-expanded", String(this.lockOpen));
+    const why = mk("p", "cs-lockwhy");
+    why.textContent = t("lockedWhy", L);
+    why.hidden = !this.lockOpen;
+    b.addEventListener("click", () => {
+      this.lockOpen = !this.lockOpen;
+      b.setAttribute("aria-expanded", String(this.lockOpen));
+      why.hidden = !this.lockOpen;
+    });
+    line.append(b, why);
+    this.el.append(line);
+  }
+
   private knob(s: ControlSpec): HTMLElement {
     const wrap = mk("div", "cs-ctl");
     const v = mk("span", "v");
@@ -376,13 +510,14 @@ export class StageControls {
     k.setAttribute("aria-label", s.aria);
     zone.append(minus, k, plus);
     const n = mk("span", "n", s.name);
-    wrap.append(v, zone, n);
-    const entry = { spec: s, v, knob: k, angle: 0 };
+    wrap.append(v, zone, n, this.pick());
+    const entry: (typeof this.values)[number] = { spec: s, v, knob: k, angle: 0 };
     this.values.push(entry);
     const rotate = (d: number) => {
       entry.angle += d * 12;
       k.style.setProperty("--a", `${entry.angle}deg`);
     };
+    entry.rotate = rotate;
     let start: { x: number; y: number; used: number; id: number } | null = null;
     zone.addEventListener("pointerdown", (e) => {
       start = { x: e.clientX, y: e.clientY, used: 0, id: e.pointerId };
@@ -466,6 +601,8 @@ export class StageControls {
     const L = this.cx.lang;
     const assist = this.cx.assist;
     const sim = this.cx.sim;
+    const dirs = s.id === "pitch" ? [1, -1] : [-1, 1];
+    let nth = 0;
     const hold = (
       label: string,
       aria: string,
@@ -476,6 +613,8 @@ export class StageControls {
       const b = mk("button", "cs-btn", label);
       b.type = "button";
       b.setAttribute("aria-label", aria);
+      // the first button of a pad is « left » (bank) or « nose up » (pitch), the second its opposite
+      this.padBtns.set(`${s.id}:${dirs[nth++ % 2]}`, b);
       let t0 = 0;
       let down = false;
       b.addEventListener("pointerdown", (e) => {
@@ -533,14 +672,14 @@ export class StageControls {
     } else if (s.id === "pitch") {
       row.append(
         hold(
-          "▲",
+          `▲ ${t("noseUp", L)}`,
           L === "fr" ? "Cabrer (maintenir)" : "Nose up (hold)",
           () => assist?.setPitch(1, sim()),
           () => assist?.setPitch(0, sim()),
           () => assist && (assist.targetAlt += 100),
         ),
         hold(
-          "▼",
+          `▼ ${t("noseDown", L)}`,
           L === "fr" ? "Piquer (maintenir)" : "Nose down (hold)",
           () => assist?.setPitch(-1, sim()),
           () => assist?.setPitch(0, sim()),
@@ -552,24 +691,15 @@ export class StageControls {
         const b = mk("button", "cs-btn", label);
         b.type = "button";
         b.setAttribute("aria-label", aria);
-        b.addEventListener("click", () => {
-          if (assist) assist.nudgePower(dir, sim());
-          else
-            sim().controls.throttle = Math.max(
-              0,
-              Math.min(1, sim().controls.throttle + dir * 0.05),
-            );
-          this.refresh();
-          this.cx.changed("power");
-        });
+        b.addEventListener("click", () => this.nudgePower(dir));
         return b;
       };
       row.append(
-        step(-1, "−", L === "fr" ? "Réduire" : "Less power"),
-        step(1, "+", L === "fr" ? "Augmenter" : "More power"),
+        step(-1, `− ${t("less", L)}`, L === "fr" ? "Réduire la puissance" : "Less power"),
+        step(1, `+ ${t("more", L)}`, L === "fr" ? "Augmenter la puissance" : "More power"),
       );
     }
-    wrap.append(v, row, mk("span", "n", s.name));
+    wrap.append(v, row, mk("span", "n", s.name), this.pick());
     this.values.push({ spec: s, v, angle: 0 });
     return wrap;
   }
@@ -584,9 +714,17 @@ export class StageControls {
       this.refresh();
     });
     // the key shows its live state ("CDI NAV1", "AP HDG ALT")
-    wrap.append(mk("span", "v", "\u00a0"), b, mk("span", "n", "\u00a0"));
+    wrap.append(mk("span", "v", "\u00a0"), b, mk("span", "n", "\u00a0"), this.pick());
     this.values.push({ spec: s, v: b, angle: 0 });
     return wrap;
+  }
+
+  /** the number key that chooses this control (shown by the hand-over, with a keyboard and several controls) */
+  private pick(): HTMLElement {
+    const p = mk("kbd", "cs-pick", String(this.wraps.length + 1));
+    p.setAttribute("aria-hidden", "true");
+    p.hidden = true;
+    return p;
   }
 
   private info(s: ControlSpec): HTMLElement {

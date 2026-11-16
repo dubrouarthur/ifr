@@ -242,7 +242,13 @@ export type ReadoutId =
   | "entry"
   | "vs"
   | "gs"
-  | "wca";
+  | "wca"
+  /** bank angle, "30° R" (additive: aircraft-handling courses) */
+  | "bank"
+  /** load factor from the flight state, "1.15 g" */
+  | "loadFactor"
+  /** the clean stall speed at this load factor: Vs1 × √n (C172S POH section 5: 48 KIAS at 1 g) */
+  | "stallIas";
 export type DiagramSpec =
   | {
       kind: "hold";
@@ -307,7 +313,13 @@ export interface StageCue {
   clip?: string;
   annotations?: Annotation[];
   controls?: StageControl[];
-  assist?: { holdAlt?: boolean; holdIas?: boolean; timeScale?: 1 | 2 | 4 };
+  /** `bankDeg`: the bank the bank pad rolls to while held (default: the standard-rate bank, at most 25°) */
+  assist?: {
+    holdAlt?: boolean;
+    holdIas?: boolean;
+    timeScale?: 1 | 2 | 4;
+    bankDeg?: number;
+  };
   /** predict: run N s after commit */
   liveForS?: number;
   failuresOnEnter?: Partial<Failures>;
@@ -495,7 +507,10 @@ export type GoalCheck =
   /** ground track (true) within tol of value — e.g. hold the track after computing the WCA */
   | { id: "track"; p: { value: number; tol: number } }
   /** vertical speed band (ft/min, negative = descent) — e.g. fly the computed descent rate */
-  | { id: "vsBand"; p: { min: number; max: number } };
+  | { id: "vsBand"; p: { min: number; max: number } }
+  /** bank angle (absolute) inside a band, e.g. a medium turn at 30° ± 5°; its live readout shows the bank, the
+   *  load factor and the clean stall speed at that load factor (Vs1 × √n) */
+  | { id: "bankBand"; p: { min: number; max: number } };
 
 export type Quiz =
   | {

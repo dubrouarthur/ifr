@@ -1,0 +1,457 @@
+/* Taking the controls (course/handover.ts, stage/handoverLayer.ts): the « À vous » card before, « Vous avez les
+   commandes » during, the result after. One look everywhere a course hands the aircraft over: a light card with one
+   filled button over the dark instrument stage (the same card the cockpit shows before a course flight), a cyan
+   frame and banner while the student flies (cyan = selected, the cockpit convention). No animation. */
+
+.cstage {
+  position: relative;
+}
+
+/* ---------------------------------------------------------------- the card (before / after) */
+.ho-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  background: rgba(8, 11, 15, 0.66);
+  overflow: auto;
+}
+.ho-veil[hidden] {
+  display: none;
+}
+.ho-card {
+  --ho-text: #0f1722;
+  --ho-text-2: #2b3846;
+  --ho-muted: #5f6b77;
+  --ho-accent: #0b63ce;
+  --ho-good: #127a52;
+  --ho-line: #e2e7ed;
+  --ho-surface-2: #f4f6f9;
+  box-sizing: border-box;
+  width: min(680px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  margin: auto;
+  padding: 14px 20px 0;
+  background: #fff;
+  color: var(--ho-text);
+  border-radius: 12px;
+  border-top: 3px solid var(--ho-accent);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  font: 400 14.5px/1.45 var(--cs-font, "Inter", system-ui, sans-serif);
+  text-align: left;
+}
+.ho-card * {
+  box-sizing: border-box;
+}
+.ho-card p,
+.ho-card ul,
+.ho-card h2 {
+  margin: 0;
+}
+.ho-k {
+  font: 700 12px/1.2 inherit;
+  font-family: inherit;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ho-accent);
+}
+.ho-title {
+  margin-top: 3px !important;
+  font: 700 18px/1.25 inherit;
+  font-family: inherit;
+  color: var(--ho-text);
+  outline: none;
+}
+.ho-card.ok {
+  border-top-color: var(--ho-good);
+}
+.ho-card.ok .ho-k,
+.ho-card.ok .ho-title {
+  color: var(--ho-good);
+}
+.ho-card.ok .ho-title::before {
+  content: "✓ ";
+}
+.ho-body {
+  margin-top: 8px;
+}
+.ho-row {
+  display: grid;
+  grid-template-columns: 124px minmax(0, 1fr);
+  gap: 4px 12px;
+  padding: 7px 0;
+  border-top: 1px solid var(--ho-line);
+}
+.ho-row-k {
+  padding-top: 2px;
+  font: 600 12px/1.3 inherit;
+  font-family: inherit;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ho-muted);
+}
+.ho-ctls,
+.ho-goals,
+.ho-missing {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 5px;
+}
+.ho-goals li,
+.ho-missing li {
+  position: relative;
+  padding-left: 16px;
+}
+.ho-goals li::before,
+.ho-missing li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 0.55em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ho-accent);
+}
+.ho-missing {
+  margin-top: 8px !important;
+}
+.ho-missing li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 12px;
+}
+.ho-missing li::before {
+  background: #b45309;
+}
+.ho-missing b {
+  font-weight: 600;
+  color: #8a4b00;
+  font-variant-numeric: tabular-nums;
+}
+.ho-card kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  margin: 0 2px;
+  padding: 0 5px;
+  border: 1px solid #c5ced8;
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: #fff;
+  color: var(--ho-text);
+  font: 600 12.5px/1 var(--cs-font, system-ui, sans-serif);
+}
+.ho-pick {
+  margin: 0 8px 0 0 !important;
+  background: var(--ho-surface-2) !important;
+}
+.ho-keys {
+  color: var(--ho-muted);
+  white-space: nowrap;
+}
+.ho-note {
+  margin-top: 4px !important;
+  font-size: 13px;
+  color: var(--ho-muted);
+}
+.ho-why {
+  color: var(--ho-text-2);
+}
+/* the buttons stay in view whatever the height of the stage (the text above scrolls) */
+.ho-acts {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 4px -20px 0;
+  padding: 10px 20px 12px;
+  border-top: 1px solid var(--ho-line);
+  background: var(--ho-surface-2);
+}
+.ho-wait {
+  flex: 1 1 220px;
+  color: var(--ho-text-2);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.ho-take,
+.ho-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 22px;
+  border-radius: 9px;
+  font: 600 15px/1 var(--cs-font, "Inter", system-ui, sans-serif);
+  cursor: pointer;
+}
+.ho-take {
+  border: 0;
+  background: var(--ho-accent);
+  color: #fff;
+}
+.ho-take:hover {
+  background: #0956b4;
+}
+.ho-btn {
+  min-height: 48px;
+  padding: 0 18px;
+  border: 1px solid #c5ced8;
+  background: #fff;
+  color: var(--ho-text);
+}
+.ho-btn:hover {
+  background: var(--ho-surface-2);
+}
+.ho-take:focus-visible,
+.ho-btn:focus-visible {
+  outline: 3px solid #0b63ce;
+  outline-offset: 2px;
+}
+.ho-take:focus-visible {
+  outline-color: #0f1722;
+}
+
+/* ---------------------------------------------------------------- the bar: who flies */
+.ho-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--ck-line-hi, #3a4552);
+  border-radius: 999px;
+  color: var(--ck-text, #e7edf3);
+  font: 700 12.5px/1 var(--cs-font, system-ui, sans-serif);
+  white-space: nowrap;
+}
+.ho-state b {
+  font-weight: 700;
+}
+.ho-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ck-muted, #8b97a4);
+}
+.ho-state[data-s="inControl"] {
+  border-color: var(--ck-accent, #00e4ff);
+  background: rgba(0, 228, 255, 0.12);
+  color: var(--ck-accent, #00e4ff);
+}
+.ho-state[data-s="inControl"] .ho-dot {
+  background: var(--ck-accent, #00e4ff);
+}
+.ho-state[data-s="demo"] {
+  border-color: var(--ck-warn, #ffb020);
+  color: var(--ck-warn, #ffb020);
+}
+.ho-state[data-s="demo"] .ho-dot {
+  background: var(--ck-warn, #ffb020);
+}
+.ho-state[data-s="done"] {
+  border-color: var(--ck-good, #2bd576);
+  color: var(--ck-good, #2bd576);
+}
+.ho-state[data-s="done"] .ho-dot {
+  background: var(--ck-good, #2bd576);
+}
+.ho-time {
+  padding-left: 8px;
+  border-left: 1px solid currentColor;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.cs-bar .cs-btn.ho-back {
+  min-height: 44px;
+  border-color: var(--ck-accent, #00e4ff);
+  color: var(--ck-text, #e7edf3);
+}
+
+/* the bar keeps one row when it can: the situation line gives way to who flies and the two buttons */
+.cstage[data-handover] .cs-scn {
+  flex: 1 1 0;
+  min-width: 9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cstage[data-handover] .cs-bar .sp {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- the live area, framed */
+.cstage[data-handover="inControl"] {
+  border-color: var(--ck-accent, #00e4ff);
+  box-shadow: 0 0 0 2px rgba(0, 228, 255, 0.35);
+}
+.cs-controls.ho-live {
+  border-top-color: var(--ck-accent, #00e4ff);
+  background: #0c171c;
+}
+.cs-controls[inert] {
+  opacity: 0.45;
+}
+
+/* ---------------------------------------------------------------- the controls: named, 44 px, the chosen one */
+.cstage .cs-controls .cs-kzone .tz {
+  width: 44px;
+  height: 44px;
+}
+.cs-ctl {
+  position: relative;
+}
+.cs-pick {
+  position: absolute;
+  top: -4px;
+  left: -10px;
+  display: grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border: 1px solid var(--ck-line-hi, #3a4552);
+  border-radius: 5px;
+  background: var(--ck-bg2, #12171d);
+  color: var(--ck-muted, #8b97a4);
+  font: 600 12px/1 var(--cs-font, system-ui, sans-serif);
+}
+.cs-ctl.chosen .cs-pick {
+  border-color: var(--ck-accent, #00e4ff);
+  background: var(--ck-accent, #00e4ff);
+  color: #04222a;
+}
+.cs-ctl.chosen .n {
+  color: var(--ck-text, #e7edf3);
+}
+.cs-lockline {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-top: 2px;
+}
+.cs-lockbtn {
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--ck-muted, #8b97a4);
+  font: 500 12.5px/1.2 var(--cs-font, system-ui, sans-serif);
+  text-decoration: underline;
+  text-decoration-color: var(--ck-line-hi, #3a4552);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.cs-lockbtn:hover {
+  color: var(--ck-text, #e7edf3);
+}
+.cs-lockbtn:focus-visible {
+  outline: 2px solid var(--ck-accent, #00e4ff);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.cs-lockwhy {
+  flex: 1 1 280px;
+  margin: 0;
+  color: var(--ck-text, #e7edf3);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+/* ---------------------------------------------------------------- narrow stages (phone, a small pane) */
+@media (max-width: 760px) {
+  .ho-veil {
+    padding: 8px;
+    align-items: flex-start;
+  }
+  .ho-card {
+    padding: 12px 14px 0;
+    font-size: 14px;
+  }
+  .ho-acts {
+    margin: 4px -14px 0;
+    padding: 10px 14px 12px;
+  }
+  .ho-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ho-take,
+  .ho-btn {
+    flex: 1 1 auto;
+  }
+}
+
+/* ---------------------------------------------------------------- Your turn over a slide: the way back, the result */
+.ga-yt-bar .ga-yt-back {
+  background: transparent;
+  border-color: #56616d;
+  color: #f4f6f8;
+}
+.ga-yt-bar .ga-yt-back:hover {
+  background: #1b2633;
+}
+.ga-yt:has(.cstage[data-handover="done"]) .ga-yt-bar .ga-yt-back {
+  border-color: #0b63ce;
+  background: #0b63ce;
+  color: #fff;
+}
+.ga-yt-bar .ga-yt-back.is-met::before {
+  content: "✓";
+  margin-right: 6px;
+}
+.cp-slide {
+  position: relative;
+}
+.sl-yt-result {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  z-index: 4;
+  max-width: min(92%, 760px);
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid #c8d0da;
+  background: #fff;
+  color: #0f1722;
+  font: 600 14px/1.35 "Inter", system-ui, sans-serif;
+  text-align: center;
+  box-shadow: 0 6px 20px rgba(15, 23, 34, 0.16);
+}
+.sl-yt-result.ok {
+  border-color: #127a52;
+  color: #0b5c3d;
+}
+.sl-yt-result.ok::before {
+  content: "✓ ";
+}
+.sl-yourturn[data-result]::after {
+  content: "· " attr(data-result-text);
+  margin-left: 6px;
+  font-weight: 600;
+}
+.sl-yourturn[data-result="ok"]::after {
+  content: "· " attr(data-result-text) " ✓";
+  color: #0b5c3d;
+}
+
+/* Fly it: where the button leads and how to come back */
+.cp-fly-go {
+  margin: 10px 0 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--cp-text-2, #344054);
+}

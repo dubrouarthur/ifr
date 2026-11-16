@@ -20,6 +20,9 @@ import { StageControls } from "./controls";
 import { sceneLine } from "./views";
 import { bubbleText, type CalloutNote } from "./overlay";
 import { t } from "./strings";
+// hand-over: the « À vous » card, « Vous avez les commandes », the result (course/handover.ts)
+import { HandoverLayer, type HandoverSpec } from "./handoverLayer";
+import { hw } from "../handoverWords";
 import type { SceneDiff } from "../scene";
 
 const ICON = {
@@ -81,6 +84,8 @@ export class StageFrame {
   readonly host: StageHost;
   readonly plan: PlanInset;
   readonly controls: StageControls;
+  /** hand-over: the layer that gives the controls to the student and takes them back */
+  readonly handover: HandoverLayer;
   private lang: Lang;
   private chip: HTMLSpanElement;
   private scn: HTMLSpanElement;
@@ -131,7 +136,10 @@ export class StageFrame {
     this.bFreeze = button("", t("freeze", this.lang), ICON.pause);
     this.bPlan = button("", t("plan", this.lang));
     bar.append(this.chip, this.scn, sp, this.bReset, this.bFreeze, this.bPlan);
-    this.bReset.addEventListener("click", () => this.host.reset());
+    // hand-over: « Réessayer » puts the scene back AND the card (frozen); without a hand-over, the plain reset
+    this.bReset.addEventListener("click", () =>
+      this.handover.active ? this.handover.retry() : this.host.reset(),
+    );
     this.bFreeze.addEventListener("click", () => this.host.toggleFreeze());
     this.bPlan.addEventListener("click", () => {
       this.planOn = !this.planOn;
@@ -208,6 +216,24 @@ export class StageFrame {
       this.live,
     );
     this.host.attachPlan(this.plan);
+    // hand-over
+    this.handover = new HandoverLayer(
+      {
+        frame: this.el,
+        view,
+        bar,
+        before: this.bFreeze,
+        host: this.host,
+        controls: this.controls,
+        plan: this.planWrap,
+        announce: (text) => this.announce(text),
+      },
+      this.lang,
+    );
+    this.handover.on(() => {
+      this.syncChrome();
+      this.relayout();
+    });
     this.unsub = this.host.on((e) => this.onEvent(e));
     this.el.addEventListener("keydown", (e) => {
       if ((e.target as HTMLElement)?.closest?.("input, textarea, select"))
@@ -257,6 +283,7 @@ export class StageFrame {
       (cue.inset === "plan" || !!cue.controls?.includes("dragAircraft"));
     this.planOn = this.planAvailable;
     this.controls.set(this.projector ? [] : (cue?.controls ?? []));
+    this.handover.cueChanged(cue); // hand-over
     this.goalState = null;
     this.syncChrome();
     this.relayout();
@@ -277,6 +304,14 @@ export class StageFrame {
   setGoal(g: GoalStrip | null) {
     this.goalState = g;
     this.syncGoal();
+    this.handover.goal(!!g?.met); // hand-over: met while the student flies = the result card
+  }
+  /** Hand this step's controls to the student (null: no hand-over, the stage behaves as before). Call it right
+   *  after show(): the stage freezes under the « À vous » card until « Prendre les commandes ». */
+  setHandover(spec: HandoverSpec | null) {
+    if (this.projector) return;
+    this.handover.set(spec);
+    this.syncChrome();
   }
   /** Announce a change to screen readers ("Heading 120: done"). */
   announce(text: string) {
@@ -289,6 +324,7 @@ export class StageFrame {
     this.host.setLang(l);
     this.plan.setLang(l);
     this.controls.setLang(l);
+    this.handover.setLang(l); // hand-over
     this.el.setAttribute("aria-label", t("stage", l));
     this.bReset.lastChild!.textContent = t("reset", l);
     this.bPlan.textContent = t("plan", l);
@@ -302,6 +338,7 @@ export class StageFrame {
   }
   destroy() {
     this.unsub();
+    this.handover.destroy(); // hand-over
     this.controls.destroy();
     this.host.destroy();
     this.el.remove();
@@ -316,6 +353,7 @@ export class StageFrame {
         this.lineT = 0;
         this.syncLine();
         this.controls.refresh();
+        this.handover.tick(); // hand-over: the hold countdown
       }
       this.syncClip();
     }
@@ -351,6 +389,15 @@ export class StageFrame {
       document.createTextNode(m === "live" ? t("freeze", L) : t("resume", L)),
     );
     this.bReset.hidden = !cue?.scene && !this.host.currentScene;
+    // hand-over: the banner says who flies (the chip steps aside), « Rendre les commandes » replaces Pause, and
+    // Reset is « Réessayer » once there is something to try again
+    const ho = this.handover.active ? this.handover.state : null;
+    this.chip.hidden = !!ho;
+    if (ho) {
+      this.bFreeze.hidden = true;
+      this.bReset.hidden = this.bReset.hidden || ho === "briefed" || ho === "demo";
+    }
+    this.bReset.lastChild!.textContent = ho ? hw("tryAgain", L) : t("reset", L);
     this.bPlan.hidden = !this.planAvailable;
     this.bPlan.classList.toggle("on", this.planOn);
     this.bPlan.setAttribute("aria-pressed", String(this.planOn));

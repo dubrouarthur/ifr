@@ -1128,6 +1128,8 @@ let captureTitle: string | null = null;
 const courseExIds = new Set<string>();
 /** the course flight being started while the bridge installs (the strip names it at once) */
 let pendingFlight: { course: string; step: string } | null = null;
+// hand-over: the goal of the course flight, shown in the course strip while the student flies
+let courseGoalLine = '';
 /** a ?fly= link is being resolved: the strip says so, no Paused veil, no Resume, no title of the previous flight */
 let courseLoading = new URLSearchParams(location.search).has('fly');
 /** the bridge's own messages while it installs (course changed, started again, link expired): they go into the brief
@@ -1188,7 +1190,7 @@ function syncCourseStrip() {
   if (b?.capturing) st.capture = { title: captureTitle, previewAgo: previewT !== null && newest ? Math.round(newest.t - previewT) : null, canBack: canBack10(b), hasEditor: !!b.captureReturn };
   else if (b?.handoff && b.course && b.step) {
     const n = b.course.steps.findIndex((x) => x.id === b.step!.id) + 1;
-    st.flight = { course: l10n(b.course.title), step: l10n(b.step.title), hasResult: !!courseOutcome || (b.plan?.kind === 'scenario' && !lesson && (debriefShown || !!sim.ac.s.crashed)), ...(n > 0 ? { n, of: b.course.steps.length } : {}) };
+    st.flight = { course: l10n(b.course.title), step: l10n(b.step.title), hasResult: !!courseOutcome || (b.plan?.kind === 'scenario' && !lesson && (debriefShown || !!sim.ac.s.crashed)), ...(n > 0 ? { n, of: b.course.steps.length } : {}), ...(courseGoalLine ? { goal: courseGoalLine } : {}) /* hand-over */ };
   }
   else if (!b && pendingFlight) st.flight = { ...pendingFlight, hasResult: false };
   else if (courseLoading) st.loading = true;
@@ -1334,6 +1336,7 @@ const courseHost: CockpitHost = {
     }
     courseLoading = false;
     pendingFlight = { course: l10n(course.title), step: l10n(step.title) };
+    courseGoalLine = ''; // hand-over
     syncCourseStrip();
     if (t.kind === 'lesson') {
       // a lesson has its own briefing window (pickExercise): it names the course step (no toast under the window)
@@ -1357,7 +1360,10 @@ const courseHost: CockpitHost = {
       givens: calc ? calcGivens(calc) : [],
       doThis: (calc?.stage?.doThis ?? []).map(l10n).filter(Boolean),
       notes,
+      // hand-over: how the flight ends, and the goal the strip keeps in view
+      durationS: t.kind === 'scene' || t.kind === 'calc' ? t.durationS : undefined,
     };
+    courseGoalLine = b.goals.slice(0, 2).join(' · ');
     placeBriefCard();
     courseUi.showBrief(b);
     syncPauseBtn();

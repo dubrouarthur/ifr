@@ -29,6 +29,8 @@ export class StageAssist {
   holdAlt = false;
   holdIas = false;
   timeScale: 1 | 2 | 4 = 1;
+  /** the bank the bank pad rolls to while held (null: the standard-rate bank) */
+  bankDeg: number | null = null;
   /** the lateral helper runs when the student has the bank pad or the HDG bug */
   lateral = false;
   targetAlt = 0;
@@ -51,6 +53,8 @@ export class StageAssist {
     this.holdAlt = !!cfg?.holdAlt;
     this.holdIas = !!cfg?.holdIas;
     this.timeScale = cfg?.timeScale ?? 1;
+    this.bankDeg =
+      cfg?.bankDeg !== undefined ? clamp(Math.abs(cfg.bankDeg), 5, 45) : null;
     this.lateral = lateral;
     this.capture(sim);
   }
@@ -84,7 +88,10 @@ export class StageAssist {
     if (this.lateral) this.targetHdg = v;
   }
   setBank(dir: -1 | 0 | 1, sim: Sim): void {
-    if (dir === 0 && this.bankInput !== 0) this.targetHdg = sim.ac.data.hdgTrue;
+    if (dir === 0 && this.bankInput !== 0)
+      // with a set bank (bankDeg) the wings roll level and the heading reached is then held: the student leads
+      // the roll-out, as in the aircraft; otherwise the heading at release is held (the standard-rate pad)
+      this.targetHdg = this.bankDeg !== null ? null : sim.ac.data.hdgTrue;
     this.bankInput = dir;
   }
   setPitch(dir: -1 | 0 | 1, sim: Sim): void {
@@ -118,10 +125,15 @@ export class StageAssist {
     if (this.lateral) {
       const std = standardRateBankDeg(d.tasKt);
       let bank: number;
-      if (this.bankInput !== 0) bank = this.bankInput * std;
+      if (this.bankInput !== 0) bank = this.bankInput * (this.bankDeg ?? std);
       else if (this.targetHdg !== null)
         bank = clamp(wrap180(this.targetHdg - d.hdgTrue) * 1.1, -std, std);
-      else bank = 0;
+      else {
+        bank = 0;
+        // a set bank released: once the wings are level, hold the heading reached
+        if (this.bankDeg !== null && Math.abs(d.rollDeg) < 2)
+          this.targetHdg = d.hdgTrue;
+      }
       this.bankCmd += (bank - this.bankCmd) * Math.min(1, dt * 1.6);
       const be = this.bankCmd - d.rollDeg;
       c.aileron = clamp(be * 0.02 - rr * 0.012, -0.35, 0.35);

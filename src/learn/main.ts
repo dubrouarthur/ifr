@@ -47,6 +47,7 @@ import {
   type SlideRenderer,
 } from "../course/ui/player";
 import {
+  flySlideYourTurn,
   runSlideYourTurn,
   yourTurnSlideRenderer,
   type YourTurnCtx,
@@ -529,7 +530,8 @@ async function yourTurn(c: YourTurnCtx): Promise<YourTurnResult | null> {
       store: c.store,
     });
   if (c.yt.where === "sim") {
-    toast(ct("yourTurnSim", c.lang));
+    // hand-over: a Your turn in the full simulator goes through the cockpit bridge like a Fly it
+    if (!(await flySlideYourTurn(c))) toast(ct("yourTurnSim", c.lang));
     return null;
   }
   return runSlideYourTurn(c, root);

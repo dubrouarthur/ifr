@@ -44,6 +44,7 @@ import {
 } from "../train/procedureChecks";
 import { fakeView, simView, type ProcSimView } from "../train/procedures";
 import type { Sim } from "../sim/sim";
+import { AIRFRAME } from "../sim/aircraft";
 import type { HoldEvaluator } from "../train/holdEval";
 import {
   holdEntry,
@@ -114,6 +115,8 @@ export interface StageView extends ProcSimView {
   taps: string[];
   /** the option the student chose (choice goals) */
   choice: number | null;
+  /** load factor from the flight state (absent in hand-made views: 1 ÷ cos(bank) is used) */
+  gLoad?: number;
 }
 
 const NAV_OFF: NavView = {
@@ -205,6 +208,7 @@ export function stageView(sim: Sim, x: StageViewExtras = {}): StageView {
     hold: def ? holdView(def, s, x.holdEval) : null,
     taps: x.taps ?? [],
     choice: x.choice ?? null,
+    gLoad: d.gLoad,
   };
 }
 
@@ -1335,6 +1339,61 @@ const NAV: Record<NavGoalId, GoalDef> = {
       v.vsFpm <= n(p, "max", -400),
     holdS: () => 0,
   },
+  bankBand: {
+    id: "bankBand",
+    kind: "path",
+    name: L("Bank angle band", "Plage d’inclinaison"),
+    params: [
+      {
+        name: "min",
+        type: "number",
+        label: { en: "Min bank (°)", fr: "Inclinaison min (°)" },
+        default: 25,
+        min: 0,
+        max: 60,
+        step: 1,
+        unit: "°",
+      },
+      {
+        name: "max",
+        type: "number",
+        label: { en: "Max bank (°)", fr: "Inclinaison max (°)" },
+        default: 35,
+        min: 0,
+        max: 60,
+        step: 1,
+        unit: "°",
+      },
+    ],
+    label: (p, lang) =>
+      `${word(lang, "Bank", "Inclinaison")} ${Math.round(n(p, "min", 25))}–${Math.round(n(p, "max", 35))}°`,
+    row: (p, lang) => {
+      const a = Math.round(n(p, "min", 25)),
+        b = Math.round(n(p, "max", 35));
+      const mid = Math.round((a + b) / 2);
+      return fr(lang)
+        ? `Inclinez à ${mid}° (${a} à ${b}°)`
+        : `Bank ${mid}° (${a} to ${b}°)`;
+    },
+    // the bank, the load factor and the clean stall speed at that load factor: Vs1 × √n
+    readout: (v, _p, lang) => {
+      const bank = Math.abs(v.bankDeg);
+      const g = Math.max(
+        0,
+        v.gLoad ?? 1 / Math.max(0.2, Math.cos((bank * Math.PI) / 180)),
+      );
+      const gTxt = fr(lang) ? g.toFixed(2).replace(".", ",") : g.toFixed(2);
+      return `${Math.round(bank)}° · ${gTxt} g · Vs ${Math.round(AIRFRAME.vs1 * Math.sqrt(g))} kt`;
+    },
+    standard: (p, lang) => NAV.bankBand.label(p, lang),
+    violation: (v, p, lang) =>
+      `${word(lang, "Bank", "Inclinaison")} ${Math.round(Math.abs(v.bankDeg))}° (${Math.round(n(p, "min", 25))}–${Math.round(n(p, "max", 35))}°)`,
+    evaluate: (v, p) =>
+      !v.onGround &&
+      Math.abs(v.bankDeg) >= n(p, "min", 25) &&
+      Math.abs(v.bankDeg) <= n(p, "max", 35),
+    holdS: () => 2,
+  },
 };
 
 function dmeOf(v: StageView): number | null {
@@ -1449,6 +1508,7 @@ export const COURSE_GOAL_ORDER: GoalId[] = [
   "ias",
   "vsBand",
   "bankMax",
+  "bankBand",
   "pitchAtt",
   "dme",
   "distTo",

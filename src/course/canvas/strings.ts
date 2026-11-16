@@ -1,12 +1,14 @@
 // Ground school — designed slides: UI strings (package N). EN / FR, never machine-translated at run time.
 import type { Lang } from "../types";
+import { hwPair } from "../handoverWords";
 
 const S = {
   // blocks
-  yourTurn: ["Use the instrument", "Manipuler l’instrument"],
+  // hand-over: the one vocabulary (course/handoverWords.ts)
+  yourTurn: hwPair("yourTurn"),
   play: ["Play", "Lire"],
   replay: ["Replay", "Revoir"],
-  openSim: ["Fly it in the simulator", "Le faire dans le simulateur"],
+  openSim: hwPair("flyInSim"),
   outsideView: ["Outside view", "Vue extérieure"],
   cockpitView: ["Cockpit view", "Vue cockpit"],
   panelView: ["Instrument panel", "Tableau de bord"],

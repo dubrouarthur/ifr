@@ -6,6 +6,7 @@
 import { Sim } from "../../sim/sim";
 import type { Failures } from "../../sim/sim";
 import { applyScene, type SceneDiff } from "../scene";
+import { AIRFRAME } from "../../sim/aircraft";
 import { stageView, lateralDots, verticalDots } from "../goals";
 import { instrumentFrame, type PaneFrame } from "../stage/geometry";
 import { DEMO_SCENE_ID, instrumentScreen } from "./factory";
@@ -382,6 +383,16 @@ export function readoutText(
       const w = ((v.hdgDeg - v.trkDeg + 540) % 360) - 180;
       return `${w > 0 ? "+" : ""}${Math.round(w)}°`;
     }
+    case "bank": {
+      const b = Math.round(v.bankDeg);
+      const side = lang === "fr" ? ["G", "D"] : ["L", "R"];
+      return b === 0 ? "0°" : `${Math.abs(b)}° ${b < 0 ? side[0] : side[1]}`;
+    }
+    case "loadFactor":
+      return `${dec(Math.max(0, sim.ac.data.gLoad), 2)} g`;
+    case "stallIas":
+      // the clean stall speed grows with the square root of the load factor (C172S: Vs1 48 KIAS at 1 g)
+      return `${Math.round(AIRFRAME.vs1 * Math.sqrt(Math.max(0, sim.ac.data.gLoad)))} kt`;
     default:
       return null;
   }
