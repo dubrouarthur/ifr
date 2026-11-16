@@ -93,7 +93,9 @@ describe("the course player", () => {
 
 describe("light cards, drawn covers", () => {
   it("the night rating's card is light like the others (dark is for instruments)", () => {
-    for (const f of ["src/styles/library.css", "src/styles/ui-landing.css"]) {
+    // (the start page no longer draws formation cards: it links to the formations by name and count)
+    expect(read("src/styles/ui-landing.css")).not.toMatch(/prog-night/);
+    for (const f of ["src/styles/library.css"]) {
       const css = read(f);
       const i = css.search(/prog-night \.(lb|intro)-pc-top \{/);
       expect(i, f).toBeGreaterThan(0);
@@ -118,10 +120,13 @@ describe("small things a first visit trips on", () => {
     expect(src).not.toMatch(/'End and debrief', 'Shift D'/);
     expect(src).toMatch(/'Shift N': 'Maj N'/);
   });
-  it("the start page tells a club where its students' results live", () => {
+  it("the start page names the clubs it is for, and promises nothing about their results it does not show", () => {
     const src = read("src/ui/intro.ts");
-    expect(src).toMatch(/Les résultats de chaque élève, gardés sur le simulateur du club/);
-    expect(src).toMatch(/Each student’s results, kept on the club’s simulator/);
+    // the start page is about slides now (« Des cours d'aviation qui volent »): it names the aeroclubs among those it
+    // is for; where a club's results live is said on the Club page, not promised on the way in
+    expect(src).toMatch(/Pour les instructeurs, les aéroclubs, les écoles de pilotage et leurs élèves/);
+    expect(src).toMatch(/For instructors, aeroclubs, flight schools and their students/);
+    expect(src).not.toMatch(/résultats de chaque élève|each student’s results/i);
   });
   it("one French word for trimming in the briefing and the result: « compenser »", () => {
     for (const f of ["src/lesson/briefingDeck.ts", "src/ui/result/i18n.ts"]) expect(read(f), f).not.toMatch(/[Tt]rimez/);

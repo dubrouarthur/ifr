@@ -1,24 +1,31 @@
-// The first-run start page (a scrolling product page that presents the whole platform) and the product's
-// positioning copy: every slot in both languages, the real captures (alt text, intrinsic size, on disk, within the
-// weight budget), the library counts in step with the live model, one filled button per screen, everything behind
-// the page inert while it is open, the 3D world held back, no slide deck or carousel any more.
+// The first-run start page, centred on slides for aviation: every slot in both languages, one primary action
+// (« Créer un cours »), the app's own routes only, the library counts in step with the live model, the live slides
+// drawn by the slide renderer (no screenshot), lazy and still under reduced motion, one filled button per screen,
+// everything behind the page inert while it is open, the 3D world held back.
 import { describe, expect, it } from "vitest";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
+  INTRO_ACTIONS,
   INTRO_COPY,
   INTRO_COUNTS,
+  INTRO_DECKS,
   INTRO_LINKS,
-  INTRO_PHOTO,
-  INTRO_REFS,
-  INTRO_SHOTS,
-  INTRO_STEP_IDS,
+  INTRO_PROGS,
+  deckLink,
+  fill,
   frTypo,
   inertOthers,
   introWanted,
-  shotSrc,
-  type IntroShot,
 } from "../src/ui/intro";
+import {
+  INTRO_BEATS,
+  INTRO_HERO,
+  INTRO_HERO_SCENE,
+  introBeatSlide,
+  introHeroSlide,
+  introScenes,
+} from "../src/course/samples/introSlides";
 import {
   brandAudience,
   brandEyebrow,
@@ -29,10 +36,15 @@ import {
 } from "../src/brand";
 import { productDeck } from "../src/course/samples/productDeck";
 import { CATEGORY_LABELS, libraryFor } from "../src/train/procedureLibrary";
-import { SAMPLES, allSamples } from "../src/course/samples";
-import { libraryEntries } from "../src/course/ui/library";
+import { SAMPLES, allSamples, sampleCourse } from "../src/course/samples";
+import { DECKS } from "../src/course/samples/decks";
+import { academyRoute, libraryEntries } from "../src/course/ui/library";
 import { shelves } from "../src/library/model";
 import { libraryItems } from "../src/library/sources";
+import { stripShown } from "../src/course/canvas/controlStrip";
+import { READ_FAILS, readIssueText, slideReadability } from "../src/course/canvas/readability";
+import { resolveTheme } from "../src/course/canvas/themes";
+import type { SlideBlock, SlideCanvas } from "../src/course/types";
 
 const SRC = () => readFileSync("src/ui/intro.ts", "utf8");
 const CSS = () => readFileSync("src/styles/ui-landing.css", "utf8");
@@ -105,6 +117,26 @@ const shape = (o: unknown): unknown =>
         ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k, shape(v)]))
         : o;
 
+const inFrame = (s: SlideCanvas) =>
+  s.blocks.every(
+    (b) =>
+      b.frame.x >= 0 &&
+      b.frame.y >= 0 &&
+      b.frame.x + b.frame.w <= 1920 &&
+      b.frame.y + b.frame.h <= 1080,
+  );
+type Inst = Extract<SlideBlock, { kind: "instrument" }>;
+const instruments = (s: SlideCanvas): Inst[] =>
+  s.blocks.filter((b): b is Inst => b.kind === "instrument");
+/** the situation ids a slide's instruments and views name */
+const scenesOf = (s: SlideCanvas): string[] =>
+  s.blocks.flatMap((b) =>
+    (b.kind === "instrument" || b.kind === "simViewport") &&
+    typeof (b as { scene?: unknown }).scene === "string"
+      ? [(b as { scene: string }).scene]
+      : [],
+  );
+
 describe("start page: words", () => {
   it("every slot has its French and English text, with the same shape", () => {
     expect(shape(INTRO_COPY.fr)).toEqual(shape(INTRO_COPY.en));
@@ -112,197 +144,124 @@ describe("start page: words", () => {
       for (const [p, s] of strings(INTRO_COPY[l]))
         expect(s.trim(), `${l}${p}`).not.toBe("");
   });
-  it("the words of the page (snapshot of the key slots)", () => {
+  it("says in one line what Wingdeck is and for whom, centred on slides", () => {
     const { fr, en } = INTRO_COPY;
-    expect([fr.start, en.start]).toEqual(["Commencer", "Start"]);
-    // the app bar's word: Bibliothèque (one word per thing, UX logic §2)
-    expect([fr.explore, en.explore]).toEqual([
-      "Explorer la bibliothèque",
-      "Explore the library",
+    expect([fr.eyebrow, en.eyebrow]).toEqual([
+      "Diapositives pour l’aviation",
+      "Slides for aviation",
     ]);
-    // the bar's in-page anchors are section words, never the app's place names (they scroll, they do not go
-    // there: one word per thing)
-    expect([fr.navHow, fr.navWho, fr.navLib, fr.navSim]).toEqual([
-      "Comment ça marche",
-      "Pour qui",
-      "Les formations",
-      "Le simulateur intégré",
+    expect([fr.h1, en.h1]).toEqual([
+      "Des cours d’aviation qui volent",
+      "Aviation courses that fly",
     ]);
-    expect([en.navHow, en.navWho, en.navLib, en.navSim]).toEqual([
-      "How it works",
-      "Who it’s for",
-      "The training",
-      "The built-in simulator",
+    // create and share, slides, real aviation tools inside
+    expect(fr.lead).toMatch(/^Créez et partagez vos cours en diapositives/);
+    expect(fr.lead).toMatch(/instruments en direct, simulateur de vol, calculs/);
+    expect(en.lead).toMatch(/^Build and share your courses as slides/);
+    // for whom
+    expect(fr.who).toMatch(/instructeurs.*aéroclubs.*écoles de pilotage.*élèves/);
+    expect(en.who).toMatch(/instructors.*aeroclubs.*flight schools.*students/);
+    // the actions, in the app's words
+    expect([fr.create, en.create]).toEqual(["Créer un cours", "Create a course"]);
+    expect([fr.discover, en.discover]).toEqual([
+      "Découvrir les cours",
+      "Explore the courses",
     ]);
-    for (const l of ["fr", "en"] as const)
-      for (const [, place] of INTRO_COPY[l].places)
-        expect([INTRO_COPY[l].navLib, INTRO_COPY[l].navSim]).not.toContain(
-          place,
-        );
-    // no overclaim: a flight simulator, not « a real one » (it is not certified), and live instruments
-    for (const l of ["fr", "en"] as const)
-      for (const [p, t] of strings(INTRO_COPY[l]))
-        expect(/vrais? (simulateur|instruments)|real (simulator|instruments)/i.test(t), `${l}${p}`).toBe(false);
-    // one eyebrow line, the same at every width
-    expect(fr.eyebrow).toBe("Cours · Salle de classe · Simulateur de vol");
-    expect(en.eyebrow).toBe("Courses · Classroom · Flight simulator");
-    expect(fr.facts).toEqual([
-      "Élèves, instructeurs et aéroclubs",
-      "Du LAPL et du PPL à l’IR et à la théorie ATPL",
-      "En français et en anglais",
-    ]);
-    // the five verbs of the route, in order, with who does each
-    expect(fr.steps.map((s) => s.v)).toEqual([
-      "Créer",
-      "Enseigner",
-      "Apprendre",
-      "Voler",
-      "Débriefer",
-    ]);
-    expect(en.steps.map((s) => s.v)).toEqual([
-      "Create",
-      "Teach",
-      "Learn",
-      "Fly",
-      "Debrief",
-    ]);
-    expect(fr.steps.map((s) => s.role)).toEqual([
-      "Instructeur",
-      "Instructeur",
-      "Élève",
-      "Élève",
-      "Élève et instructeur",
-    ]);
-    expect(INTRO_STEP_IDS).toHaveLength(5);
-    // the three places of the app, named as the app bar names them
-    expect(fr.places.map((p) => p[0])).toEqual([
-      "Accueil",
-      "Bibliothèque",
-      "Simulateur",
-    ]);
-    expect(en.places.map((p) => p[0])).toEqual([
-      "Home",
-      "Library",
-      "Simulator",
-    ]);
-    expect(fr.finH).toBe("Commencez par l’Accueil");
+    // the simulator is what makes the slides alive, not the product
+    expect(fr.simDoor[0]).toBe("Le simulateur intégré donne vie à vos diapos.");
+    expect(en.simDoor[0]).toBe("The built-in simulator brings your slides to life.");
+    // the three beats: create, present and share (the studio's own buttons), fly
+    expect(fr.beatsH).toBe("Créez. Partagez. Faites voler.");
+    expect(en.beatsH).toBe("Create. Share. Fly.");
+    expect(fr.beats.map((b) => b.h)).toEqual(["Créez", "Présentez, partagez", "Faites voler"]);
+    expect(en.beats.map((b) => b.h)).toEqual(["Create", "Present, share", "Fly"]);
+    expect(fr.beats[1].p).toMatch(/«\u00a0Présenter\u00a0».*«\u00a0Partager\u00a0»/);
+    expect(en.beats[1].p).toMatch(/“Present”.*“Share”/);
+    expect(fr.beats[2].p).toMatch(/^«\u00a0À vous\u00a0»/);
+    // the AI assistant is a helper: a first draft, with the user's own key, nothing more
+    expect(fr.ai[1]).toMatch(/premier jet.*votre propre clé API/);
+    expect(en.ai[1]).toMatch(/drafts.*your own API key/);
     expect(fr.skip).toBe("Ne plus afficher cette page au démarrage");
     expect(en.skip).toBe("Don’t show this page at start-up");
-    // the honest note: procedure training, not a certified FSTD, explained in plain words next to it
+    // the page can be found again, and says where
+    expect(fr.again).toMatch(/Accueil.*«\u00a0Voir la présentation\u00a0»/);
+    // the honest note
     expect(fr.note).toBe("Entraînement procédural, non certifié FSTD");
     expect(en.note).toBe("Procedural training, not a certified FSTD");
-    expect(fr.trNote[1]).toMatch(/pas un simulateur certifié.*ne comptent pas/);
-    expect(en.trNote[1]).toMatch(/not a certified simulator.*not logged/);
     expect(fr.noteTip).toMatch(/FSTD/);
-    // the simulator also works on its own
-    expect(fr.alone[0]).toBe("Le simulateur fonctionne aussi seul.");
   });
-  it("French typography: a no-break space before « : ; ? ! », never a plain one", () => {
+  it("is short: readable in five seconds", () => {
+    for (const l of ["fr", "en"] as const) {
+      const C = INTRO_COPY[l];
+      expect(C.h1.split(" ").length, l).toBeLessThanOrEqual(6);
+      expect(C.lead.length, l).toBeLessThan(160);
+      expect(C.beats).toHaveLength(3);
+      for (const b of C.beats) expect(b.p.length, b.h).toBeLessThan(170);
+      // the whole page, every word of it, stays under ~1,800 characters
+      const all = strings(C).map(([, s]) => s).join(" ");
+      expect(all.length, l).toBeLessThan(1800);
+    }
+  });
+  it("French typography: a no-break space before « : ; ? ! » and inside guillemets, never a plain one", () => {
     for (const [p, s] of strings(INTRO_COPY.fr))
-      expect(/ [:;?!]/.test(s), p).toBe(false);
-    expect(frTypo({ a: ["x : y ?"] })).toEqual({ a: ["x : y ?"] });
+      expect(/ [:;?!»]|« /.test(s), p).toBe(false);
+    expect(frTypo({ a: ["x : y ?"] })).toEqual({ a: ["x\u00a0: y\u00a0?"] });
+    expect(frTypo("« Voir »")).toBe("«\u00a0Voir\u00a0»");
   });
-  it("names no old place, no claim, no testimonial", () => {
+  it("no claim, no testimonial, no number of users, no brand, no PDF import", () => {
     for (const l of ["fr", "en"] as const)
       for (const [p, s] of strings(INTRO_COPY[l])) {
         expect(s, p).not.toMatch(/Flight Center|Centre de vol|IFR Trainer/);
         expect(s, p).not.toMatch(
-          /approuvé|homologué|approved|certified by|n°\s*1|★|testimonial|témoignage/i,
+          /approuvé|homologué|approved|certified by|n°\s*1|★|testimonial|témoignage|le meilleur|the best|utilisateurs|users|clients/i,
         );
+        expect(s, p).not.toMatch(/Claude|Anthropic|OpenAI|Garmin|Cessna|PowerPoint|Keynote/);
+        expect(s, p).not.toMatch(/PDF|import/i);
+        // a flight simulator, not « a real one » (it is not certified)
+        expect(/vrais? (simulateur|instruments)|real (simulator|instruments)/i.test(s), p).toBe(false);
       }
-  });
-  it("cites the library's references, FAA and EASA", () => {
-    expect(INTRO_REFS.map((r) => `${r.org} ${r.docs}`)).toEqual([
-      "FAA PHAK, AIM, IFH, ACS",
-      "EASA Part-FCL, Part-NCO",
-    ]);
   });
 });
 
-describe("start page: the real captures", () => {
-  const keys = Object.keys(INTRO_SHOTS) as IntroShot[];
-  const referenced = () => {
-    const files = new Set<string>();
-    for (const k of keys)
-      for (const l of ["fr", "en"] as const) files.add(shotSrc(k, l));
-    return [...files];
-  };
-  it("every picture has its alt text in both languages and its intrinsic size", () => {
-    for (const k of keys) {
-      const s = INTRO_SHOTS[k];
-      for (const l of ["fr", "en"] as const)
-        expect(s.alt[l].length, k).toBeGreaterThan(30);
-      expect(s.alt.fr).not.toBe(s.alt.en);
-      expect(s.size.fr[0] > 0 && s.size.fr[1] > 0, k).toBe(true);
-    }
-    expect(INTRO_PHOTO.alt.fr && INTRO_PHOTO.alt.en).toBeTruthy();
-    // every <img> the page draws goes through the table (size + alt + lazy/eager), or is the final photo
+describe("start page: the model (actions, links, counts)", () => {
+  it("one primary action, « Créer un cours », to the new course page; the library second; the simulator a quiet door", () => {
+    expect(INTRO_ACTIONS.primary).toBe("academy.html#new");
+    expect(academyRoute(INTRO_ACTIONS.primary.split("#")[1]).k).toBe("new");
+    expect(INTRO_ACTIONS.secondary).toBe("academy.html#library");
+    expect(academyRoute(INTRO_ACTIONS.secondary.split("#")[1]).k).toBe("library");
+    expect(INTRO_ACTIONS.tertiary).toBe("#simulateur");
+    // the simulator door is a link inside a sentence, never a button
     const src = SRC();
-    const imgs = src.match(/h\(\s*"img"/g) ?? [];
-    expect(imgs).toHaveLength(2);
-    expect(src).toMatch(/alt: INTRO_SHOTS\[k\]\.alt\[l\]/);
-    expect(src).toMatch(/alt: INTRO_PHOTO\.alt\[l\]/);
-    // below the fold everything is lazy; only the hero's three screens load first
-    expect(src).toMatch(/loading: eager \? "eager" : "lazy"/);
-    expect(src.match(/shot\(k, "", true\)/g) ?? []).toHaveLength(1);
-    expect(src.match(/heroShot\("/g) ?? []).toHaveLength(3);
-  });
-  it("each referenced capture exists on disk, with the size the page says, and the set stays under 1.5 MB", () => {
-    let total = 0;
-    for (const f of referenced()) {
-      const p = join("public", f);
-      expect(existsSync(p), p).toBe(true);
-      total += statSync(p).size;
-      // a WebP's VP8/VP8L/VP8X header carries its size: check it against the table (no layout shift)
-      const b = readFileSync(p);
-      expect(b.toString("ascii", 0, 4)).toBe("RIFF");
-      expect(b.toString("ascii", 8, 12)).toBe("WEBP");
-      const kind = b.toString("ascii", 12, 16);
-      let w = 0;
-      let hh = 0;
-      if (kind === "VP8X") {
-        w = 1 + b.readUIntLE(24, 3);
-        hh = 1 + b.readUIntLE(27, 3);
-      } else if (kind === "VP8 ") {
-        w = b.readUInt16LE(26) & 0x3fff;
-        hh = b.readUInt16LE(28) & 0x3fff;
-      } else if (kind === "VP8L") {
-        const v = b.readUInt32LE(21);
-        w = (v & 0x3fff) + 1;
-        hh = ((v >> 14) & 0x3fff) + 1;
-      }
-      const m = /landing\/(.+)-(fr|en)\.webp$/.exec(f)!;
-      const s = INTRO_SHOTS[m[1] as IntroShot].size as Record<
-        string,
-        readonly [number, number] | undefined
-      >;
-      expect([w, hh], f).toEqual(s[m[2]]);
-    }
-    // the final card's photo lives in the same folder and counts in the same budget
-    total += statSync(join("public", INTRO_PHOTO.src)).size;
-    expect(total).toBeLessThan(1.5 * 1024 * 1024);
-    // the folder holds only what the page uses (nothing shipped for nothing)
-    const used = new Set(
-      [...referenced(), INTRO_PHOTO.src].map((f) =>
-        f.replace("img/landing/", ""),
-      ),
-    );
-    for (const f of readdirSync("public/img/landing"))
-      expect(used.has(f), f).toBe(true);
-    expect(existsSync(join("public", INTRO_PHOTO.src))).toBe(true);
+    expect(src).toMatch(/INTRO_ACTIONS\.tertiary,\s*"door-a"/);
+    // the filled button is drawn by one factory, used three times: the hero, the closing card, the bar
+    expect(src.match(/btn-primary/g) ?? []).toHaveLength(1);
+    expect(src.match(/createBtn\(/g) ?? []).toHaveLength(3);
+    expect(src).toMatch(/const createBtn = \(cls = ""\) =>\s*out\(\s*INTRO_ACTIONS\.primary/);
   });
   it("links nowhere outside the app; every deep link is one of the app's own routes", () => {
     const src = SRC();
     expect(src).not.toMatch(/https?:\/\//i);
-    for (const href of Object.values(INTRO_LINKS))
-      expect(href).toMatch(
-        /^academy\.html#(library&p=(ppl|night|ir|atpl|club|instructors)|new)$/,
+    for (const [k, href] of Object.entries(INTRO_LINKS))
+      expect(href, k).toMatch(
+        /^(academy\.html#(library(&p=(ppl|night|ir|atpl))?|new)|#simulateur)$/,
       );
+    for (const p of INTRO_PROGS) {
+      const r = academyRoute(INTRO_LINKS[p].split("#")[1]);
+      expect(r, p).toMatchObject({ k: "library", p });
+    }
   });
-});
-
-describe("start page: the library counts", () => {
-  it("say what the library's landing shows (the live model)", () => {
+  it("the ready decks are the library's own decks, each playable by its link", () => {
+    expect([...INTRO_DECKS]).toEqual(DECKS.map((d) => d.id));
+    for (const id of INTRO_DECKS) {
+      expect(academyRoute(deckLink(id).split("#")[1]), id).toEqual({ k: "play", id });
+      const c = sampleCourse(id);
+      expect(c, id).toBeTruthy();
+      expect(c!.steps.some((s) => s.slide), id).toBe(true);
+    }
+    expect(fill(INTRO_COPY.fr.slidesN, 10)).toBe("10 diapos");
+    expect(fill(INTRO_COPY.en.itemsN, 64)).toBe("64 items");
+  });
+  it("the library counts say what the library's landing shows (the live model)", () => {
     const list = libraryItems({
       lang: "fr",
       courses: libraryEntries({ samples: allSamples(), stored: [] }),
@@ -320,18 +279,96 @@ describe("start page: the library counts", () => {
       );
     }
     expect(INTRO_COUNTS.club.n).toBe(sh.get("club")!.total);
-    // the page prints the count it holds, never a number of its own
-    expect(INTRO_COPY.fr.libP[0]).toBe(String(list.length));
+    // the page prints the counts it holds, never a number of its own
+    const src = SRC();
+    expect(src).toMatch(/fill\(C\.itemsN, INTRO_COUNTS\[p\]\.n\)/);
+    expect(src).toMatch(/fill\(C\.itemsN, INTRO_COUNTS\.total\)/);
+    expect(strings(INTRO_COPY).some(([, s]) => /\d{2,}/.test(s))).toBe(false);
+  });
+});
+
+describe("start page: the live slides", () => {
+  const scenes = introScenes();
+  it("the hero is a real slide: the G1000 PFD live on its autopilot, its heading knob in the control strip", () => {
+    const s = introHeroSlide();
+    expect(inFrame(s)).toBe(true);
+    const [pfd, ...others] = instruments(s);
+    expect(others).toHaveLength(0);
+    expect(pfd.view).toEqual({ kind: "pfd" });
+    expect(pfd.mode).toBe("live");
+    expect(pfd.controls).toEqual(["hdgBug"]);
+    expect(stripShown(pfd)).not.toBeNull();
+    expect(pfd.alt?.fr && pfd.alt.en).toBeTruthy();
+    // every text in both languages
+    for (const b of s.blocks)
+      if (b.kind === "text") expect(b.text.fr && b.text.en, b.id).toBeTruthy();
+    // its situation: the autopilot in HDG, the bug off the heading so the aircraft turns as the page opens …
+    const sc = scenes[INTRO_HERO_SCENE];
+    expect(sc.cockpit).toBe("g1000");
+    expect(sc.ap).toMatchObject({ engaged: true, lat: "HDG", vert: "ALT", hdg: INTRO_HERO.bug });
+    expect(INTRO_HERO.bug).not.toBe(INTRO_HERO.hdg);
+    // … and with reduced motion the bug starts on the heading: nothing moves until the visitor turns the knob
+    expect(introScenes(true)[INTRO_HERO_SCENE].ap?.hdg).toBe(INTRO_HERO.hdg);
+  });
+  for (const lang of ["fr", "en"] as const)
+    it(`the hero slide passes the readability guard (${lang}): every text fits its box`, () => {
+      const fails = slideReadability(introHeroSlide(), { theme: resolveTheme("classroom"), lang })
+        .filter((i) => READ_FAILS.has(i.kind))
+        .map((i) => `${i.blockId}: ${readIssueText(i, "en").en}`);
+      expect(fails).toEqual([]);
+    });
+  it("three beats, each a ready slide that moves: a needle by itself, a template's cover, a student at the controls", () => {
+    expect([...INTRO_BEATS]).toEqual(["create", "share", "fly"]);
+    for (const id of INTRO_BEATS) {
+      const s = introBeatSlide(id);
+      expect(inFrame(s), id).toBe(true);
+      for (const sc of scenesOf(s)) expect(scenes[sc], `${id} ${sc}`).toBeTruthy();
+    }
+    expect(instruments(introBeatSlide("create")).some((b) => b.motion)).toBe(true);
+    expect(introBeatSlide("share").blocks.some((b) => b.kind === "simViewport")).toBe(true);
+    // the student's slide keeps its control strip; its « À vous » (which needs the player around it) is off
+    const fly = instruments(introBeatSlide("fly"));
+    expect(fly.some((b) => stripShown(b) !== null)).toBe(true);
+    expect(fly.some((b) => b.yourTurn)).toBe(false);
+  });
+  it("drawn by the slide renderer, loaded on demand, never a screenshot", () => {
+    const src = SRC();
+    expect(src).not.toMatch(/h\(\s*"img"/);
+    expect(src).not.toMatch(/img\/landing|\.webp/);
+    expect(existsSync("public/img/landing")).toBe(false);
+    expect(src).toMatch(/renderSlide\(slide, host, \{\s*mode: "play"/);
+    expect(src).toMatch(/renderThumb\(pick, thumb/);
+    // the renderer and the slides come in their own chunk (a type import only at the top)
+    expect(src).toMatch(/import\("\.\.\/course\/canvas\/render"\)/);
+    expect(src).not.toMatch(/^import \{[^}]*\} from "\.\.\/course\//m);
+  });
+  it("fast: the hero first, the rest when it comes near; one loop; everything destroyed with the page", () => {
+    const src = SRC();
+    expect(src).toMatch(/play\(heroStage, I\.introHeroSlide\(\)/);
+    expect(src).toMatch(/new IntersectionObserver\([\s\S]*?rootMargin: "50% 0px"/);
+    expect(src).toMatch(/io\?\.unobserve\(e\.target\)/);
+    expect(src).toMatch(/for \(const v of this\.views\) v\.destroy\(\);/);
+    // a slide that loads after the page closed or changed language is dropped
+    expect(src).toMatch(/if \(gen !== this\.gen \|\| !this\.isOpen\) return;/);
+    // no timer of the page's own: the instruments run on the stage's one rAF loop, which stops off screen and while
+    // the tab is hidden
+    expect(src).not.toMatch(/setInterval|requestAnimationFrame\(\(\) => this\.tick/);
+    const host = readFileSync("src/course/stage/host.ts", "utf8");
+    expect(host).toMatch(/visibilitychange/);
+  });
+  it("reduced motion: still frames (the animations rest, the hero waits for the visitor)", () => {
+    const src = SRC();
+    expect(src).toMatch(/matchMedia\("\(prefers-reduced-motion: reduce\)"\)/);
+    expect(src).toMatch(/I\.introScenes\(reduce\)/);
+    expect(readFileSync("src/course/canvas/instruments.ts", "utf8")).toMatch(
+      /reduced: rest === "start" && prefersReducedMotion\(\)/,
+    );
   });
 });
 
 describe("start page: behaviour", () => {
-  it("one filled button per screen: the hero's, the final card's, and the bar's only while neither shows", () => {
+  it("one filled button per screen: the hero's, the closing card's, and the bar's only while neither shows", () => {
     const src = SRC();
-    // three « Commencer »: the bar, the hero, the final card; nothing else is filled
-    expect(src.match(/startBtn\("/g) ?? []).toHaveLength(3);
-    expect(src.match(/btn-primary/g) ?? []).toHaveLength(1);
-    // the bar's starts inert and hidden, and an observer shows it only while neither in-page one is on screen
     expect(src).toMatch(/barGo\.inert = true/);
     expect(src).toMatch(
       /const show = !\[\.\.\.vis\.values\(\)\]\.some\(Boolean\)/,
@@ -339,26 +376,28 @@ describe("start page: behaviour", () => {
     expect(src).toMatch(/barGo\.inert = !show/);
     expect(CSS()).toMatch(/\.intro \.intro-top-go\.intro-show \{/);
   });
-  it("keyboard: Tab follows the page's order (the bar first); the first Tab lands on « Commencer »; Enter (off a control), Esc and F2 open Accueil", () => {
+  it("keyboard: the title takes the focus, Tab wraps inside the page, Esc and F2 close it to Accueil, the slide's controls get their keys", () => {
     const src = SRC();
-    // the page opens with the hero title focused (tabindex -1): Tab reaches « Commencer », Shift+Tab the bar
     expect(src).toMatch(/h\("h1", \{ id: "intro-title", tabindex: -1 \}/);
     expect(src).toMatch(/setTimeout\(\(\) => this\.focusTitle\(\), 60\)/);
-    // no custom order: Tab only wraps at the ends (focus never leaves the dialog)
-    expect(src).not.toMatch(/this\.primary/);
     expect(src).toMatch(/else if \(!e\.shiftKey && i === f\.length - 1\) to = f\[0\]/);
-    // the hero's route is a preview, not a second set of the five step links
-    expect(src.match(/anchor\(\s*stepId\(i\)/g) ?? []).toHaveLength(1);
-    expect(src).toMatch(
-      /\(e\.key === "Enter" && !onControl\) \|\|\s*e\.key === "F2" \|\|\s*e\.key === "Escape"/,
-    );
-    expect(src).toMatch(
-      /querySelectorAll<HTMLElement>\("a\[href\], button, input"\)/,
-    );
-    // in-page links scroll the page and never touch the URL (the app routes on its hash)
-    expect(src).toMatch(/e\.preventDefault\(\);\s*this\.goTo\(id\)/);
+    expect(src).toMatch(/e\.key === "F2" \|\| e\.key === "Escape"/);
+    // a key on the page's own controls (the strip's knob) reaches them, then stops at the page
+    expect(src).toMatch(/this\.el\.addEventListener\("keydown", \(e\) => e\.stopPropagation\(\)\)/);
+    expect(src).toMatch(/if \(!inside\) e\.stopPropagation\(\);/);
+    // « Passer » in the bar does what Esc does
+    expect(src).toMatch(/class: cx\("skip-btn"\)[\s\S]{0,160}onclick: \(\) => this\.leave\(this\.hooks\.enter\)/);
+    // the title is a landing spot: no ring on it, even against the app's !important ring
+    expect(CSS()).toMatch(/#intro-title:focus-visible \{[^}]*box-shadow: none !important/);
   });
-  it("the page is its own scroll container; motion only when welcome", () => {
+  it("can be skipped for good and found again", () => {
+    const src = SRC();
+    expect(src).toMatch(/store\.set\(INTRO_SKIP_KEY, \(e\.target as HTMLInputElement\)\.checked\)/);
+    // Accueil and the library open it again
+    expect(readFileSync("src/ui/flightcenter.ts", "utf8")).toMatch(/index\.html\?intro=1/);
+    expect(readFileSync("src/course/ui/library.ts", "utf8")).toMatch(/\?intro=1/);
+  });
+  it("the page is its own scroll container; 44 px targets; motion only when welcome; every rule scoped", () => {
     const css = CSS();
     expect(css).toMatch(
       /\.intro \{\s*position: fixed;\s*inset: 0;[^}]*overflow-y: auto;[^}]*overscroll-behavior: contain;/,
@@ -367,11 +406,14 @@ describe("start page: behaviour", () => {
     expect(css).toMatch(
       /@media \(prefers-reduced-motion: reduce\) \{\s*\.intro \{\s*scroll-behavior: auto;/,
     );
-    // the reveal and the hero's rise only run when the page set .intro-motion (no reduced motion)
-    expect(css).not.toMatch(/(^|\n)\.intro \.intro-rv \{/);
-    expect(css).toMatch(/\.intro\.intro-motion \.intro-rv \{/);
-    expect(SRC()).toMatch(/matchMedia\("\(prefers-reduced-motion: reduce\)"\)/);
-    // every rule is scoped: nothing outside .intro
+    expect(css).toMatch(/\.intro\.intro-motion \.intro-on \{/);
+    expect(css).not.toMatch(/(^|\n)\.intro \.intro-on \{/);
+    // every control of the page is at least 44 px high
+    for (const sel of ["intro-btn-sm", "intro-lang button", "intro-skip-btn", "intro-door-a", "intro-prog", "intro-skip"]) {
+      const i = css.indexOf(`.intro .${sel} {`);
+      expect(i, sel).toBeGreaterThan(0);
+      expect(css.slice(i, css.indexOf("}", i)), sel).toMatch(/min-height: 44px/);
+    }
     for (const sel of css
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .matchAll(/(^|\})\s*([^{}@]+)\{/g)) {
@@ -380,6 +422,9 @@ describe("start page: behaviour", () => {
       for (const one of s.split(/,(?![^(]*\))/))
         expect(one.trim(), one).toMatch(/^(:where\()?\.intro\b/);
     }
+    expect(readFileSync("src/styles/ui-shell.css", "utf8")).not.toMatch(
+      /\.intro-/,
+    );
   });
   it("shown once per session, never back from a course, forced by ?intro=1", () => {
     const loc = (search: string, hash = "") => ({ search, hash });
@@ -406,7 +451,6 @@ describe("start page: behaviour", () => {
       true,
     ]);
     undo();
-    // only what it changed is restored: an element inert before stays inert
     expect([cockpit.inert, page.inert, toast.inert, already.inert]).toEqual([
       false,
       false,
@@ -422,35 +466,12 @@ describe("start page: behaviour", () => {
     expect(main).toMatch(/closed: \(\) => bootOutsideWhenIdle\(\)/);
     expect(main).toMatch(/if \(!intro\.isOpen\) void initOutside\(\)/);
   });
-  it("presents the platform, not one slide: no deck, no carousel, no autoplay", () => {
-    const src = SRC();
-    expect(src).not.toMatch(/deckStage|mountDeck|productDeck|INTRO_SLIDE/);
-    expect(src).not.toMatch(/carousel|carrousel|setInterval|AUTO_MS|autoplay/i);
-    // the seven parts, in reading order
-    const order = [
-      "intro-hero",
-      "intro-how",
-      "intro-who",
-      "intro-lib",
-      "intro-sim",
-      "intro-tr-h",
-      "intro-fin-h",
-    ];
-    const at = order.map((id) => src.indexOf(`"${id}"`));
-    for (const i of at) expect(i).toBeGreaterThan(0);
-    expect([...at].sort((a, b) => a - b)).toEqual(at);
-    // the start page's styles live in their own file
-    expect(readFileSync("src/styles/ui-shell.css", "utf8")).not.toMatch(
-      /\.intro-/,
-    );
-  });
-  it("Accueil opens on what to do, not on the pitch again, and without the graduated edge", () => {
+  it("Accueil opens on what to do, not on the pitch again", () => {
     const home = readFileSync("src/ui/home.ts", "utf8");
     expect(home).not.toMatch(
       /brandTagline|brandLead|brandEyebrow|brandAudience/,
     );
-    // the no-break space before « ? », written as the character or as its escape
-    expect(home).toMatch(/Que voulez-vous faire(?:\\u00a0| )\?/);
+    expect(home).toMatch(/Que voulez-vous faire(?:\\u00a0| )\?/);
     expect(readFileSync("src/styles/ui-flightcenter.css", "utf8")).not.toMatch(
       /\.fc-sh::before/,
     );
