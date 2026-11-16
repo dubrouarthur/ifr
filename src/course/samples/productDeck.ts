@@ -28,6 +28,8 @@ const canvas = (
   blocks: SlideBlock[],
   layout: SlideCanvas["layout"],
 ): SlideCanvas => ({ size: { w: 1920, h: 1080 }, grid: 8, layout, blocks });
+const withSweep = (b: SlideBlock): SlideBlock =>
+  b.kind === "instrument" ? { ...b, motion: { preset: "asi-arcs", loop: true } } : b;
 const rule = (x: number, y: number, w: number): SlideBlock =>
   SHAPE("line", x, y - 8, w, 16, { stroke: "line", strokeW: 2 });
 
@@ -67,7 +69,9 @@ export function productDeck(): ProductSlide[] {
       title: L("The airspeed indicator’s arcs", "Les arcs de l’anémomètre"),
       slide: canvas(
         [
-          INST(
+          // the needle sweeps the arcs in a loop (canvas/motion.ts « asi-arcs », POH 2 markings): the simulator's
+          // own airspeed indicator, driven from the flight state
+          withSweep(INST(
             { kind: "gauge", gauge: "asi" },
             L(
               "C172S airspeed indicator: white arc 40–85, green 48–129, yellow 129–163, red line 163 KIAS",
@@ -77,7 +81,7 @@ export function productDeck(): ProductSlide[] {
             y,
             s,
             s,
-          ),
+          )),
           ...rows.map((r, i) => {
             const p = asiPoint(x, y, s, r.at[0], r.at[1]);
             return MARK(i + 1, p[0], p[1], { size: 80 });

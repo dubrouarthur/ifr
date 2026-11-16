@@ -7,7 +7,7 @@
 // The pure helpers featuredEntry() and shelfOrder() keep the library's order (tested in tests/slides-first).
 import "../../styles/course-canvas.css";
 import { allSamples, HOLDING_ID, SAMPLES } from "../samples";
-import { renderThumb } from "../canvas/render";
+import { renderSlide, renderThumb } from "../canvas/render";
 import { SceneSims } from "../canvas/instruments";
 import type { CourseIndexEntry, CourseStore } from "../store";
 import {
@@ -232,6 +232,12 @@ export async function drawCover(
     ? new SceneSims({ scenes: course.scenes, cockpit: course.cockpit })
     : null;
   try {
+    // a product slide is drawn as it plays (its instrument moves; a picture, so nothing in it takes the pointer)
+    if ("product" in what) {
+      host.setAttribute("inert", "");
+      const pv = renderSlide(slide, host, { mode: "play", lang, theme: "classroom" });
+      return { destroy: () => pv.destroy() };
+    }
     const v = renderThumb(slide, host, {
       lang,
       theme: course?.theme ?? "classroom",

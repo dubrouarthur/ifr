@@ -319,6 +319,7 @@ export function yourTurnSlideRenderer(o: YourTurnRendererOptions): SlideRenderer
         if (lineFor) showResult(lineFor.yt, lineFor.r, l, !line.hidden);
       },
       destroy: () => v.destroy(),
+      sims: v.sims,
     };
   };
 }

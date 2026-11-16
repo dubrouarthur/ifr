@@ -49,6 +49,7 @@ import { problemFor } from "../calc";
 import { windText } from "../calc/text";
 import { Sim } from "../../sim/sim";
 import { clickSteps, isRevealed, renderSlide } from "../canvas/render";
+import type { SceneSims } from "../canvas/instruments";
 import { readingOrder } from "../canvas/geom";
 import { baseThemeId } from "../canvas/themes";
 import { StageFrame } from "../stage/frame";
@@ -135,6 +136,7 @@ export const canvasSlideRenderer: SlideRenderer = (ctx) => {
     prev: () => v.prev(),
     setLang: (l) => v.setLang(l),
     destroy: () => v.destroy(),
+    sims: v.sims,
   };
 };
 export interface SlideHost {
@@ -144,6 +146,8 @@ export interface SlideHost {
   prev?(): boolean;
   setLang?(l: Lang): void;
   destroy(): void;
+  /** the live situations of the slide (the presenter drives them and mirrors them on the projector) */
+  sims?: SceneSims;
 }
 export type SlideRenderer = (ctx: SlideContext) => SlideHost;
 
@@ -1446,7 +1450,7 @@ export class CoursePlayer {
     };
     const out: HTMLElement[] = [];
     for (const b of readingOrder(slide.blocks)) {
-      if (b.presenterOnly || !isRevealed(b, steps, reveal, none)) continue;
+      if (b.presenterOnly || b.editorOnly || !isRevealed(b, steps, reveal, none)) continue;
       if (b.kind === "text" && b.bind) {
         // a live value: the words as the slide draws them now (refreshed below while the panel shows)
         const live = host

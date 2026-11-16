@@ -41,19 +41,21 @@ export const NEW_COURSE_FORMATIONS: readonly ProgramId[] = [
 
 /** The formations a template teaches (from its level line: « LAPL / PPL », « PPL / IR », « IR »). */
 export function starterFormations(d: DeckStarter): ProgramId[] {
+  if (d.formations) return [...d.formations];
   const lv = (d.level?.en ?? "").toUpperCase();
   const out: ProgramId[] = [];
   if (/PPL|LAPL/.test(lv)) out.push("ppl", "night", "club");
   if (/\bIR\b/.test(lv)) out.push("ir", "atpl");
   return out;
 }
-/** The templates in the order the page shows them: those of the chosen formation first, then the others, then the
- *  empty course (always last). */
+/** The templates the page shows: with a formation chosen, only its own (its starting template first), else all of
+ *  them (the starting templates first); the blank slide is always last. */
 export function startersFor(p: ProgramId | null): DeckStarter[] {
   const all = [...DECK_STARTERS];
-  const mine = p ? all.filter((d) => starterFormations(d).includes(p)) : [];
-  const rest = all.filter((d) => !mine.includes(d));
-  return [...mine, ...rest, BLANK_STARTER];
+  if (!p) return [...all, BLANK_STARTER];
+  const mine = all.filter((d) => starterFormations(d).includes(p));
+  const first = mine.filter((d) => d.formations?.includes(p));
+  return [...first, ...mine.filter((d) => !first.includes(d)), BLANK_STARTER];
 }
 /** How long a template's course takes, as the editor will say it (templates.ts courseMinutes of the course it
  *  makes), so the card and the editor never disagree. */
@@ -89,12 +91,7 @@ export function starterMeta(d: DeckStarter, lang: Lang): string {
   if (d.id === BLANK_STARTER.id) return steps;
   return `${steps} · ${fr ? "environ" : "about"} ${Math.max(1, starterMinutes(d))} min`;
 }
-const starterName = (d: DeckStarter, lang: Lang): string =>
-  d.id === BLANK_STARTER.id
-    ? lang === "fr"
-      ? "Cours vide"
-      : "Empty course"
-    : loc(d.title, lang);
+const starterName = (d: DeckStarter, lang: Lang): string => loc(d.title, lang);
 
 /** The course « Créer le cours » saves: the chosen template's steps, the typed title (else the template's), filed
  *  in the formation and the subject chosen. */
@@ -137,7 +134,11 @@ export function buildNewCourse(o: {
     ...(cp ? { program: cp } : {}),
     ...(cp && subj ? { subject: subj } : {}),
   };
-  const r = addStarterDeck(base, o.starter, { at: 0, theme: o.starter.theme });
+  const r = addStarterDeck(base, o.starter, {
+    at: 0,
+    theme: o.starter.theme,
+    ...(typed ? { title } : {}),
+  });
   return { ...r.course, title };
 }
 
@@ -302,7 +303,8 @@ export function mountNewCourse(
     pSel.addEventListener("change", () => {
       program = pSel.value && isProgramId(pSel.value) ? pSel.value : null;
       subject = null;
-      // the gallery follows the formation; the pick stays when it still exists
+      // the gallery follows the formation, and so does the pick: its starting template
+      pick = startersFor(program)[0];
       render();
       el.querySelector<HTMLElement>("#nc-prog")?.focus();
     });
@@ -438,6 +440,7 @@ export function mountNewCourse(
             renderThumb(starterSlide(d, 0, d.theme), cover, {
               lang,
               theme: d.theme,
+              ...(d.scenes ? { scenes: d.scenes() } : {}),
             }),
           );
         } catch {
@@ -573,8 +576,8 @@ export function mountNewCourse(
                 { class: "nc-h2-sub" },
                 T(
                   lang,
-                  `The ${progName} templates first`,
-                  `Les modèles de la formation ${progName} d’abord`,
+                  `The ${progName} templates`,
+                  `Les modèles de la formation ${progName}`,
                 ),
               )
             : null,

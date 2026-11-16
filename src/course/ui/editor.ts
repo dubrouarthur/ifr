@@ -129,6 +129,7 @@ import {
   type DeckStarter,
 } from "./deckStarters";
 import { exampleScenes } from "../canvas/examples";
+import { galleryScenes, gallerySlide } from "../samples/exampleSlides";
 import type { SlideLayoutId, ThemeId } from "../types";
 import "../../styles/course-editor.css";
 import "../../styles/course-studio.css";
@@ -1117,12 +1118,29 @@ export class CourseEditor implements InspectorHost {
     const base: Course = Object.keys(add).length
       ? { ...this.course, scenes: { ...this.course.scenes, ...add } }
       : this.course;
+    const s2 = clone(slide);
+    delete s2.theme;
+    // an empty slide takes the ready slide in place (« + Diapo », then a pick of « Que voulez-vous montrer ? »)
+    const cur = this.step;
+    if (cur?.slide && !cur.slide.blocks.length && !cur.slide.background?.image) {
+      const before = this.course;
+      const t = { en: title.en, fr: title.fr ?? title.en };
+      this.apply(replaceStep(base, { ...cur, title: t, slide: s2, reader: linearText(s2) }), undefined, {
+        inspector: true,
+      });
+      this.canvasEd?.load(s2);
+      this.syncEmpty(s2);
+      this.toast(t2(this.lang, "Slide added", "Diapo ajoutée"), () => {
+        this.apply(before, undefined, { inspector: true });
+        const st = this.step;
+        if (st?.slide) this.canvasEd?.load(st.slide);
+      });
+      return;
+    }
     const made = makeStep(base, "slide", {
       layout: "blank",
       title: { en: title.en, fr: title.fr ?? title.en },
     });
-    const s2 = clone(slide);
-    delete s2.theme;
     this.insert({
       course: made.course,
       step: { ...made.step, slide: s2, reader: linearText(s2) },
@@ -2033,6 +2051,10 @@ export class CourseEditor implements InspectorHost {
         layout: (id) => this.applyLayout(id),
         flight: () => this.addSimContent("flight"),
         more: () => this.openPanel("templates"),
+        example: (id) => {
+          const ex = gallerySlide(id);
+          if (ex) this.addComposedSlide(ex.slide, ex.title, galleryScenes());
+        },
         blank: () => {
           this.emptyBlank.add(this.step?.id ?? "");
           if (this.canvasEd) this.syncEmpty(this.canvasEd.canvas);

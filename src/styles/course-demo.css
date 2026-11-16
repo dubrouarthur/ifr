@@ -1,0 +1,490 @@
+/* The presenter's demonstration (course/ui/demoPilot.ts, presenter.ts, projector.ts): the « Démonstration » card of
+   the console (three buttons), the deck that flies the slide's aircraft, and the projector's badge. Light and calm,
+   like the console; the instruments stay dark on the slide. */
+.dm-card,
+.dm-deck {
+  --dm-accent: var(--gl-accent, #0b63ce);
+  --dm-line: var(--gl-line, #e2e7ed);
+  --dm-muted: var(--gl-muted, #5f6b77);
+  --dm-text: var(--gl-text, #0f1722);
+  --dm-hand: #0e7490;
+  position: relative;
+  background: #fff;
+  border: 1px solid var(--dm-line);
+  border-radius: 12px;
+  padding: 12px;
+  color: var(--dm-text);
+  font: 14px/1.4 var(--gl-font, "Inter", system-ui, sans-serif);
+}
+.dm-card h2,
+.dm-deck h2 {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dm-muted);
+}
+.dm-card > p {
+  margin: 4px 0 10px;
+  color: var(--dm-muted);
+  font-size: 13px;
+}
+.dm-launch {
+  display: grid;
+  gap: 8px;
+}
+.dm-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--gl-line-strong, #c8d0da);
+  background: #fff;
+  color: var(--dm-text);
+  font: 600 14px/1.25 var(--gl-font, "Inter", sans-serif);
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.dm-btn:hover {
+  background: #f4f7fb;
+}
+.dm-btn.primary {
+  background: var(--dm-accent);
+  border-color: var(--dm-accent);
+  color: #fff;
+}
+.dm-btn.primary:hover {
+  background: #0a57b5;
+}
+.dm-btn small {
+  display: block;
+  font-weight: 400;
+  font-size: 12.5px;
+  color: var(--dm-muted);
+}
+.dm-btn.primary small {
+  color: rgba(255, 255, 255, 0.85);
+}
+.dm-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.dm-btn-strong {
+  background: var(--dm-hand);
+  border-color: var(--dm-hand);
+  color: #fff;
+}
+.dm-btn-strong:hover {
+  background: #0b5f76;
+}
+.dm-card svg.i,
+.dm-deck svg.i {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.dm-btn:focus-visible,
+.dm-chip:focus-visible,
+.dm-pm:focus-visible,
+.dm-x:focus-visible,
+.dm-seg button:focus-visible,
+.dm-range:focus-visible,
+.dm-hint button:focus-visible {
+  outline: 2px solid var(--dm-accent);
+  outline-offset: 2px;
+}
+.dm-msg {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--gl-warn, #8a4b00);
+}
+.dm-msg:empty {
+  display: none;
+}
+.dm-handstate {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #e6f4f7;
+  color: #0b4f61;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* the first-time hint: shown once, 20 s */
+.dm-hint {
+  position: relative;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #0f1722;
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.dm-hint b {
+  display: block;
+  margin-bottom: 4px;
+}
+.dm-hint ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.dm-hint li + li {
+  margin-top: 3px;
+}
+.dm-hint button {
+  margin-top: 8px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: transparent;
+  color: #fff;
+  font: 600 13px var(--gl-font, "Inter", sans-serif);
+  cursor: pointer;
+}
+@media (pointer: coarse) {
+  .dm-hint button {
+    min-height: 44px;
+  }
+}
+.dm-hint::after {
+  content: "";
+  position: absolute;
+  left: 22px;
+  bottom: -6px;
+  width: 12px;
+  height: 12px;
+  background: #0f1722;
+  transform: rotate(45deg);
+}
+
+/* the deck */
+.dm-deck {
+  padding: 10px 12px 12px;
+  box-shadow: 0 2px 10px rgba(15, 23, 32, 0.06);
+}
+.dm-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.dm-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--dm-accent);
+  box-shadow: 0 0 0 4px rgba(11, 99, 206, 0.15);
+  flex: none;
+}
+.dm-student .dm-dot {
+  background: var(--dm-hand);
+  box-shadow: 0 0 0 4px rgba(14, 116, 144, 0.18);
+}
+.dm-student {
+  border-color: var(--dm-hand);
+  box-shadow: 0 0 0 2px rgba(14, 116, 144, 0.25);
+}
+.dm-ttl {
+  flex: 1;
+  min-width: 0;
+}
+.dm-state {
+  display: block;
+  font-weight: 600;
+  font-size: 14px;
+}
+.dm-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: -6px -8px -6px 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--dm-muted);
+  cursor: pointer;
+}
+.dm-x:hover {
+  background: #f1f4f8;
+  color: var(--dm-text);
+}
+.dm-seg {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  background: #eef1f5;
+}
+.dm-seg button {
+  flex: 1;
+  min-height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font: 600 13px var(--gl-font, "Inter", sans-serif);
+  color: var(--dm-muted);
+  cursor: pointer;
+}
+.dm-seg button.on {
+  background: #fff;
+  color: var(--dm-text);
+  box-shadow: 0 1px 2px rgba(15, 23, 32, 0.08);
+}
+.dm-rows {
+  display: grid;
+  gap: 4px;
+}
+.dm-row {
+  padding: 6px 8px 6px 10px;
+  border-radius: 10px;
+  border-left: 3px solid transparent;
+}
+.dm-row.held {
+  border-left-color: var(--dm-accent);
+  background: #f3f7fd;
+}
+.dm-student .dm-row.held {
+  border-left-color: var(--dm-hand);
+  background: #eef8fa;
+}
+.dm-rh {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.dm-rh label {
+  font-weight: 600;
+  font-size: 13.5px;
+}
+.dm-held {
+  display: none;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--dm-accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+}
+.dm-student .dm-held {
+  background: var(--dm-hand);
+}
+.dm-row.held .dm-held {
+  display: inline-block;
+}
+.dm-sp {
+  flex: 1;
+}
+.dm-val {
+  font-size: 19px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.dm-now {
+  display: block;
+  font-size: 12px;
+  color: var(--dm-muted);
+  font-variant-numeric: tabular-nums;
+}
+.dm-ctl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 0;
+}
+.dm-pm {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 10px;
+  border: 1px solid var(--gl-line-strong, #c8d0da);
+  background: #fff;
+  color: var(--dm-text);
+  font: 600 20px/1 var(--gl-font, "Inter", sans-serif);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.dm-pm:hover {
+  background: #f4f7fb;
+}
+.dm-pm:active {
+  background: #e8eef6;
+}
+.dm-range {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  margin: 0;
+  accent-color: var(--dm-accent);
+  cursor: pointer;
+  touch-action: none;
+}
+.dm-student .dm-range {
+  accent-color: var(--dm-hand);
+}
+.dm-chipbox {
+  margin-top: 10px;
+}
+.dm-chips,
+.dm-fails {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.dm-fails {
+  margin-top: 6px;
+  padding: 8px;
+  border-radius: 10px;
+  background: #f6f3ee;
+}
+.dm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 22px;
+  border: 1px solid var(--gl-line-strong, #c8d0da);
+  background: #fff;
+  color: var(--dm-text);
+  font: 600 13px/1.2 var(--gl-font, "Inter", sans-serif);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.dm-chip svg.i {
+  width: 16px;
+  height: 16px;
+}
+.dm-chip:hover {
+  background: #f4f7fb;
+}
+.dm-chip.on {
+  background: #0f1722;
+  border-color: #0f1722;
+  color: #fff;
+}
+.dm-hand {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+.dm-line {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: #0b4f61;
+}
+.dm-keys {
+  margin: 10px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--dm-line);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--dm-muted);
+}
+@media (pointer: coarse) {
+  .dm-keys {
+    display: none;
+  }
+}
+
+/* the projector: a discreet badge while the instructor (or a student) flies */
+.pj-demo {
+  position: fixed;
+  top: 18px;
+  left: 18px;
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px 8px 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 34, 0.82);
+  color: #fff;
+  font: 600 18px/1.2 var(--gl-font, "Inter", system-ui, sans-serif);
+  pointer-events: none;
+}
+.pj-demo[hidden] {
+  display: none;
+}
+.pj-demo::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #5ab0ff;
+}
+.pj-demo.student::before {
+  background: #4fd1e8;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pj-demo {
+    animation: pj-demo-in 0.25s ease-out;
+  }
+  @keyframes pj-demo-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+  }
+}
+
+/* the console while the deck is open: a little more room on the side, the quick actions in two columns */
+@media (min-width: 1001px) {
+  .pr-app.dm-on .pr-body {
+    grid-template-columns: minmax(0, 1fr) 372px;
+  }
+}
+.dm-chips {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.dm-chip {
+  justify-content: flex-start;
+  padding: 6px 10px;
+  border-radius: 10px;
+  text-align: left;
+}
+.dm-fails {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.dm-row {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+.dm-ctl {
+  margin: 0;
+}
+/* a narrow console (portrait tablet): the side is a row under the slide; the deck takes the whole row */
+@media (max-width: 1000px) {
+  .pr-app.dm-on .pr-side {
+    max-height: 52vh;
+    flex-direction: column;
+  }
+  .pr-app.dm-on .pr-side > .dm-wrap {
+    flex: none;
+  }
+  .dm-rows {
+    grid-template-columns: 1fr 1fr;
+    column-gap: 8px;
+  }
+  .dm-chips {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}

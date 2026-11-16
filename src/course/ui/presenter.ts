@@ -7,7 +7,14 @@
 import type { Course, Lang, Step } from "../types";
 import type { CourseStore } from "../store";
 import { h } from "../../ui/dom";
-import { playCourse, type CoursePlayer, type SlideRenderer } from "./player";
+import {
+  canvasSlideRenderer,
+  playCourse,
+  type CoursePlayer,
+  type SlideHost,
+  type SlideRenderer,
+} from "./player";
+import { DemoPanel } from "./demoPilot";
 import { btn, L, taskChip } from "./reader";
 import { courseMinutes } from "./outline";
 import { stagePoseOf } from "../scene";
@@ -52,6 +59,10 @@ const S = {
   keys: [
     "→ next · ← previous · N black screen · Esc leave",
     "→ suivant · ← précédent · N écran noir · Échap quitter",
+  ],
+  keysDemo: [
+    "Space next · Esc closes the demonstration · N black screen",
+    "Espace suivant · Échap ferme la démonstration · N écran noir",
   ],
   late: ["behind the plan", "en retard sur le plan"],
 } as const;
@@ -100,6 +111,10 @@ export class Presenter {
   private stripViews: { destroy(): void }[] = [];
   private stripLang: Lang | null = null;
   private ready = false;
+  /** the slide on screen (its live situations: the demonstration drives them, the projector mirrors them) */
+  private slideHost: SlideHost | null = null;
+  private demo: DemoPanel;
+  private demoT = 0;
 
   constructor(private o: PresenterOptions) {
     this.lang = o.lang;
@@ -139,13 +154,44 @@ export class Presenter {
         this.side,
       ),
     );
+    this.demo = new DemoPanel({
+      lang: () => this.lang,
+      course: o.course,
+      store: o.store,
+      ...(o.page ? { page: o.page } : {}),
+      step: () => this.player.step,
+      slide: () => this.slideHost,
+      post: (m) => this.link.post(m),
+      primary: () =>
+        !this.link.ok || (!!this.projector && !this.projector.closed),
+      changed: () => {
+        if (this.ready) this.renderSide();
+      },
+    });
+    const inner = o.renderSlide ?? canvasSlideRenderer;
+    const renderSlide: SlideRenderer = (ctx) => {
+      const host = inner(ctx);
+      this.slideHost = host;
+      // the presenter uses the slide's own strip: the strip flies, the demonstration lets go
+      const touched = (e: Event) => {
+        if ((e.target as HTMLElement | null)?.closest?.(".sl-strip"))
+          this.demo.stripTouched();
+      };
+      host.el.addEventListener("pointerdown", touched, true);
+      host.el.addEventListener("keydown", touched, true);
+      // the instruments register while the slide is built: the card follows once it is on the page
+      requestAnimationFrame(() => {
+        if (this.slideHost === host && this.ready) this.demo.render();
+      });
+      return host;
+    };
     this.player = playCourse(main, {
       course: o.course,
       store: o.store,
       lang: this.lang,
       stepId: o.stepId,
       mode: this.lang === "fr" ? "présentation" : "presenting",
-      ...(o.renderSlide ? { renderSlide: o.renderSlide } : {}),
+      renderSlide,
       onExit: () => o.onExit(),
       onLang: (l) => this.setLang(l),
       onStep: (id) => o.onStep?.(id),
@@ -164,7 +210,12 @@ export class Presenter {
     });
     this.ready = true;
     document.addEventListener("keydown", this.onKey);
+    // the deck's keys go before the player's (arrows fly the aircraft instead of turning the page)
+    window.addEventListener("keydown", this.onDemoKey, true);
     this.timer = window.setInterval(() => this.tick(), 250);
+    this.demoT = window.setInterval(() => this.demo.tick(), 50);
+    // back from the simulator (or reopened): the projector takes up this step at once
+    this.sync();
     this.renderHead();
     this.renderSide();
     this.renderStrip();
@@ -189,7 +240,10 @@ export class Presenter {
   }
   destroy() {
     window.clearInterval(this.timer);
+    window.clearInterval(this.demoT);
     document.removeEventListener("keydown", this.onKey);
+    window.removeEventListener("keydown", this.onDemoKey, true);
+    this.demo.destroy();
     this.link.post({ t: "bye" });
     this.link.close();
     this.thumbDestroy?.();
@@ -258,6 +312,11 @@ export class Presenter {
       }
     }, 1000);
   }
+  private onDemoKey = (e: KeyboardEvent) => {
+    if (!this.demo.key(e)) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  };
   private onKey = (e: KeyboardEvent) => {
     const t = e.target as HTMLElement | null;
     if (
@@ -276,10 +335,11 @@ export class Presenter {
       this.openProjector();
       e.preventDefault();
     } else if (k === "Escape") {
-      // Esc lifts a black screen first, then leaves the presentation (back to where it was opened)
+      // Esc lifts a black screen first, closes the demonstration, then leaves the presentation
       if (e.defaultPrevented) return;
       e.preventDefault();
       if (this.black) this.setBlack(false);
+      else if (this.demo.open) this.demo.close();
       else this.o.onExit();
     }
   };
@@ -308,8 +368,11 @@ export class Presenter {
     this.projBtn.textContent = open
       ? st("projectorOn", lang)
       : st("projector", lang);
-    // one primary: « Ouvrir l’écran de projection » until it is open, then « Suivant » leads
+    // one primary: « Ouvrir l’écran de projection » until it is open, then « Piloter la démonstration » (on a
+    // slide with instruments) or « Suivant » leads
     this.projBtn.classList.toggle("primary", !open);
+    if (this.ready && open !== this.el.classList.contains("proj-on"))
+      queueMicrotask(() => this.demo.render());
     this.el.classList.toggle("proj-on", open || !this.link.ok);
     this.projBtn.disabled = !this.link.ok;
     // the same EN / FR segment as the player and the library (a white pill on grey)
@@ -465,14 +528,17 @@ export class Presenter {
           )
         : h("p", { class: "pr-muted" }, st("noNotes", lang)),
     );
-    const parts: (HTMLElement | null)[] = [nextCard, notesCard];
+    this.demo.render();
+    const parts: (HTMLElement | null)[] = [this.demo.el, nextCard, notesCard];
     if (!this.link.ok)
       parts.push(h("p", { class: "pr-warn" }, st("noChannel", lang)));
     else
       parts.push(
         h("p", { class: "pr-muted pr-small" }, st("projectorHint", lang)),
       );
-    parts.push(h("p", { class: "pr-keys" }, st("keys", lang)));
+    parts.push(
+      h("p", { class: "pr-keys" }, st(this.demo.open ? "keysDemo" : "keys", lang)),
+    );
     this.side.replaceChildren(...parts.filter((x): x is HTMLElement => !!x));
   }
 }

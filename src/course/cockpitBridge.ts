@@ -235,6 +235,20 @@ export class CourseBridge {
       this.host.toast(tx("flyMissing", lang), "warn", 9000);
       return false;
     }
+    // a designed slide's « À vous » in the simulator (or the presenter's « Ouvrir le simulateur »): the step has no
+    // Fly it of its own, the handoff carries the flight (its target, criteria and brief)
+    if (!r.step.flyIt)
+      r.step = {
+        ...r.step,
+        flyIt: {
+          target: structuredClone(r.handoff.target),
+          options: [...(r.handoff.options ?? [])],
+          defaultsOn: [],
+          criteria: structuredClone(r.handoff.criteria ?? []),
+          returnTo: "thisStep",
+          ...(r.handoff.brief ? { brief: r.handoff.brief } : {}),
+        },
+      };
     if (r.state === "consumed")
       this.host.toast(tx("flyConsumed", lang), "info");
     if (r.courseChanged) this.host.toast(tx("courseChanged", lang), "info");

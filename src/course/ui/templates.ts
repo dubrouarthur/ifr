@@ -620,7 +620,7 @@ export function titleOfSlide(c: SlideCanvas): L10n | null {
 export function linearText(c: SlideCanvas): ReaderBlock[] {
   const out: ReaderBlock[] = [];
   for (const b of [...c.blocks].sort(byReadingOrder)) {
-    if (b.presenterOnly) continue;
+    if (b.presenterOnly || b.editorOnly) continue;
     if (b.kind === "text" && b.text.en.trim()) {
       if (["label", "caption", "eyebrow", "small", "foot"].includes(b.style)) continue;
       out.push(

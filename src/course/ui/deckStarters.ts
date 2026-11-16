@@ -18,6 +18,9 @@ import { layoutCanvas } from "../canvas/layouts";
 import { renderThumb, type SlideView } from "../canvas/render";
 import { insertStep, linearText, makeStep } from "./templates";
 import { AIRSPACE_DIAGRAM, AIRSPACE_SLIDES, CG_DIAGRAM, WB_SLIDES } from "./deckVfr";
+import type { SimScene } from "../types";
+import type { ProgramId } from "../../library/programs";
+import { FORMATION_DECKS, noteBlock } from "../samples/starterDecks";
 
 const L = (en: string, fr: string): L10n => ({ en, fr });
 
@@ -35,6 +38,12 @@ export interface DeckStarter {
   make?: Partial<Record<number, (theme?: ThemeId) => SlideCanvas>>;
   /** the cover's words and its hero (the deck's signature diagram or instrument, from one of its archetypes) */
   cover?: DeckCover;
+  /** the formations it is the starting template of (else read from its level line) */
+  formations?: ProgramId[];
+  /** a note to the author per slide index, shown only while editing (« Remplacez ce texte par… ») */
+  notes?: Partial<Record<number, L10n>>;
+  /** the situations its slides show (added to the course with the slides) */
+  scenes?: () => Record<string, SimScene>;
 }
 
 export interface DeckCover {
@@ -48,6 +57,8 @@ export interface DeckCover {
 }
 
 export const DECK_STARTERS: readonly DeckStarter[] = [
+  // the starting template of each formation first (samples/starterDecks.ts), then the subject decks
+  ...FORMATION_DECKS,
   {
     id: "hold-briefing",
     title: L("Hold briefing", "Briefing d’attente"),
@@ -165,8 +176,11 @@ export const DECK_STARTERS: readonly DeckStarter[] = [
 /** Start from scratch: one truly blank slide (no sample words, no diagram). */
 export const BLANK_STARTER: DeckStarter = {
   id: "blank",
-  title: L("Start from scratch", "Partir de zéro"),
-  pitch: L("One blank slide: you compose it", "Une diapo vierge, à composer vous-même"),
+  title: L("Blank slide", "Diapo vierge"),
+  pitch: L(
+    "One empty slide that offers the ready slides first",
+    "Une diapo vide qui vous propose d’abord les diapos prêtes",
+  ),
   theme: "classroom",
   slides: ["blank"],
 };
@@ -240,6 +254,20 @@ function withCover(step: Step, d: DeckStarter): Step {
   const title = deckTitle(d) ?? step.title;
   return { ...step, title, slide, reader: linearText(slide) };
 }
+/** The first slide shows the course's own title: its display line (else its title) takes the words typed. */
+export function titleOnCover(step: Step, title: L10n): Step {
+  if (!step.slide) return step;
+  const blocks = step.slide.blocks.map((b) => ({ ...b }));
+  const at =
+    blocks.findIndex((b) => b.kind === "text" && b.style === "display") >= 0
+      ? blocks.findIndex((b) => b.kind === "text" && b.style === "display")
+      : blocks.findIndex((b) => b.kind === "text" && b.style === "title");
+  const b = blocks[at];
+  if (!b || b.kind !== "text") return { ...step, title: { ...title } };
+  blocks[at] = { ...b, text: { ...title } };
+  const slide = { ...step.slide, blocks };
+  return { ...step, title: { ...title }, slide, reader: linearText(slide) };
+}
 /** The slide a deck card shows: the deck's cover, then its archetypes. */
 export function starterSlide(d: DeckStarter, i: number, theme: ThemeId): SlideCanvas {
   const id = d.slides[i];
@@ -261,23 +289,31 @@ export function addStarterDeck(
   let c: Course = course;
   const fresh = !course.steps.length;
   if (fresh || o.theme) c = { ...c, theme: o.theme ?? starter.theme };
+  // the situations the deck's slides show, when the course has not got them yet
+  const sc = starter.scenes?.() ?? {};
+  const add = Object.fromEntries(Object.entries(sc).filter(([id]) => !c.scenes[id]));
+  if (Object.keys(add).length) c = { ...c, scenes: { ...c.scenes, ...add } };
   let at = o.at ?? c.steps.length;
   let first: string | null = null;
   for (const [i, id] of starter.slides.entries()) {
-    const r = makeStep(c, "slide", {
-      layout: id,
-      ...(id === "cover" && o.title ? { title: o.title } : {}),
-    });
+    const r = makeStep(c, "slide", { layout: id });
     let step = r.step;
-    if (id === "cover" && starter.cover && !o.title) step = withCover(step, starter);
+    if (id === "cover" && starter.cover) step = withCover(step, starter);
     const made = starter.make?.[i];
     if (made) {
       const slide: SlideCanvas = { ...made(), layout: id };
-      // the step is titled by the slide's own title
-      const t = slide.blocks.find((b) => b.kind === "text" && b.style === "title");
+      // the step is titled by the slide's own title (a cover: its display line)
+      const t =
+        slide.blocks.find((b) => b.kind === "text" && b.style === "title") ??
+        slide.blocks.find((b) => b.kind === "text" && b.style === "display");
       const title = t && t.kind === "text" ? { ...t.text } : step.title;
       step = { ...step, title, slide, reader: linearText(slide) };
     }
+    // the typed title goes on the cover (its display line, else its title)
+    if (i === 0 && o.title && step.slide) step = titleOnCover(step, o.title);
+    const note = starter.notes?.[i];
+    if (note && step.slide)
+      step = { ...step, slide: { ...step.slide, blocks: [...step.slide.blocks, noteBlock(note, `${step.id}.note`)] } };
     c = insertStep(r.course, step, at++);
     first ??= step.id;
   }

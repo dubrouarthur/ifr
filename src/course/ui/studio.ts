@@ -18,6 +18,7 @@ import { h } from "../../ui/dom";
 import { LAYOUTS, layoutCanvas } from "../canvas/layouts";
 import { renderThumb, type SlideView } from "../canvas/render";
 import { exampleSlides, exampleScenes } from "../canvas/examples";
+import { GALLERY_GROUPS, galleryScenes, gallerySlides } from "../samples/exampleSlides";
 import { LibraryPanel } from "../canvas/libraryPanel";
 import type { BlockDraft, LibraryTab } from "../canvas/factory";
 import { baseThemeId } from "../canvas/themes";
@@ -779,6 +780,7 @@ export class StudioPanel {
       make: () => SlideCanvas,
       onPick: () => void,
       cls = "",
+      thumbOpts: typeof opts = opts,
     ) => {
       const th = h("div", { class: "ce-tpl-th" });
       const b = h(
@@ -795,7 +797,7 @@ export class StudioPanel {
       b.addEventListener("click", onPick);
       lazy(th, () => {
         try {
-          this.views.push(renderThumb(make(), th, opts));
+          this.views.push(renderThumb(make(), th, thumbOpts));
         } catch {
           /* a thumbnail is decoration */
         }
@@ -808,6 +810,32 @@ export class StudioPanel {
       if (replace) host.replaceLayout(id);
       else host.addTemplate("slide", { layout: id });
     };
+    // the ready slides first, by what the creator wants to show (each one moves: canvas/motion.ts)
+    const gScenes = galleryScenes();
+    const gOpts = { ...opts, scenes: { ...gScenes, ...course.scenes } };
+    const gallery = gallerySlides();
+    for (const grp of GALLERY_GROUPS) {
+      const grid = h("div", { class: "ce-tpl-grid" });
+      for (const ex of gallery.filter((g) => g.group === grp.id))
+        grid.append(
+          card(
+            tr(ex.title, lang),
+            tr(ex.what, lang),
+            () => ex.slide,
+            () => host.addSlide(ex.slide, ex.title, gScenes),
+            "is-ready",
+            gOpts,
+          ),
+        );
+      parts.push(h("h3", { class: "ce-panel-h is-group" }, tr(grp.title, lang)), grid);
+    }
+    parts.push(
+      h(
+        "p",
+        { class: "ce-panel-sub" },
+        t2(lang, "Or start from an empty layout:", "Ou partez d’une mise en page vide :"),
+      ),
+    );
     for (const sec of SECTIONS) {
       const grid = h("div", { class: "ce-tpl-grid" });
       for (const id of sec.ids) {
@@ -832,7 +860,7 @@ export class StudioPanel {
           ),
         );
       }
-      parts.push(h("h3", { class: "ce-panel-h" }, sec.title[fr ? 1 : 0]), grid);
+      parts.push(h("h4", { class: "ce-panel-h is-sub" }, sec.title[fr ? 1 : 0]), grid);
     }
     // composed example slides (the six-pack, reading the HSI, hold entries, ILS minimums, 60:1…)
     const exGrid = h("div", { class: "ce-tpl-grid" });
@@ -862,7 +890,7 @@ export class StudioPanel {
       h(
         "h3",
         { class: "ce-panel-h" },
-        t2(lang, "Ready-made slides", "Diapos prêtes à l’emploi"),
+        t2(lang, "More examples", "Plus d’exemples"),
       ),
       exGrid,
     );
@@ -1156,7 +1184,19 @@ export interface EmptyStarts {
   blank(): void;
   /** the whole template gallery (the « Modèles » panel) */
   more?(): void;
+  /** the empty slide becomes this ready slide of the gallery (samples/exampleSlides.ts); when given, the card
+   *  offers the gallery's most useful slides instead of the bare layouts */
+  example?(id: string): void;
 }
+/** The ready slides an empty slide offers first, in the order a lesson uses them. */
+export const EMPTY_STARTS: readonly string[] = [
+  "gx-cover",
+  "gx-turn-std",
+  "gx-asi-arcs",
+  "gx-hold-heading",
+  "gx-quiz",
+  "gx-flight",
+];
 /** the keyboard hints are shown once on this device */
 const KEYS_SEEN = "ifr.studio.keys.v1";
 const STARTS: { id: SlideLayoutId | "flight"; t: [string, string]; s: [string, string] }[] = [
@@ -1191,7 +1231,38 @@ export function emptySlideCard(
   const fr = lang === "fr";
   const views: SlideView[] = [];
   const grid = h("div", { class: "ce-fr-grid", role: "list" });
-  for (const st of STARTS) {
+  if (on.example) {
+    const pick = on.example;
+    const all = gallerySlides();
+    const sc = { ...galleryScenes(), ...(thumbs?.scenes ?? {}) };
+    for (const id of EMPTY_STARTS) {
+      const ex = all.find((g) => g.id === id);
+      if (!ex) continue;
+      const th = h("span", { class: "ce-fr-th", "aria-hidden": "true" });
+      if (thumbs)
+        requestAnimationFrame(() => {
+          if (!th.isConnected) return;
+          try {
+            views.push(renderThumb(ex.slide, th, { lang, ...thumbs, scenes: sc }));
+          } catch {
+            /* a thumbnail is decoration */
+          }
+        });
+      const b = h(
+        "button",
+        { type: "button", class: "ce-fr", role: "listitem" },
+        th,
+        h("span", { class: "ce-fr-l" }, h("b", {}, tr(ex.title, lang)), h("small", {}, tr(ex.what, lang))),
+      );
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        pick(ex.id);
+      });
+      b.addEventListener("pointerdown", (e) => e.stopPropagation());
+      grid.append(b);
+    }
+  }
+  for (const st of on.example ? [] : STARTS) {
     const th = h("span", { class: "ce-fr-th", "aria-hidden": "true" });
     if (st.id === "flight") {
       th.classList.add("art");

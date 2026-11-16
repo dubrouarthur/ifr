@@ -1,17 +1,40 @@
 // Presenter ↔ projector sync (package G, SPEC §6.3): one laptop, two windows, no network. The console posts on the
 // BroadcastChannel 'ifr-course-present'; the projector follows (step, reveal, black screen, the stage pose at
 // ≤10 Hz while the stage is live). The projector never simulates alone, so it cannot drift from the console.
-import type { Lang, PresentMsg } from "./types";
+import type { Lang, PresentMsg, StagePose } from "./types";
 
 export const PRESENT_CHANNEL = "ifr-course-present";
 /** the stage pose is mirrored at most this often (ms) */
 export const STAGE_PERIOD_MS = 100;
+/** the slide's aircraft while it flies (the presenter's demonstration, a strip in use): 20 Hz, smooth needles */
+export const SIMS_PERIOD_MS = 50;
+/** the slide's aircraft at rest (a knob turned on a frozen instrument): 4 Hz is enough */
+export const SIMS_IDLE_MS = 250;
+
+/** The aircraft of one situation of the slide, as the projector needs it to draw the same instruments. */
+export interface SimMirrorWire {
+  id: string;
+  pose: StagePose;
+  av: Record<string, unknown>;
+  ap: { hdgBug: number; altSel: number };
+  rpm: number;
+  thr: number;
+  fail: string[];
+}
+/** who flies the slide's aircraft (the projector's badge): the instructor's demonstration, or a student */
+export type DemoWhoWire = "instructor" | "student" | null;
 
 /** PresentMsg plus the two handshake messages of the wire (additive, local to the two windows). */
 export type PresentWire =
   | PresentMsg
   | { t: "hello"; courseId: string }
-  | { t: "lang"; lang: Lang };
+  | { t: "lang"; lang: Lang }
+  /** the slide's instruments: the console's aircraft (the projector draws it, never flies it) */
+  | { t: "sims"; stepId: string; who: DemoWhoWire; list: SimMirrorWire[] }
+  /** an animation of the slide replayed / paused / resumed by the presenter (the projector plays its own copy) */
+  | { t: "anim"; stepId: string; id: string; op: "replay" | "pause" | "resume" }
+  /** the presenter went into the simulator (the projector says the course resumes here) */
+  | { t: "away"; on: boolean };
 
 export interface PresentLink {
   post(m: PresentWire): void;
@@ -35,7 +58,10 @@ export function isPresentWire(x: unknown): x is PresentWire {
     t === "calc" ||
     t === "bye" ||
     t === "hello" ||
-    t === "lang"
+    t === "lang" ||
+    t === "sims" ||
+    t === "anim" ||
+    t === "away"
   );
 }
 

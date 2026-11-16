@@ -104,17 +104,19 @@ describe("Nouveau cours (#new)", () => {
       "#new&p=ir&s=ir.hold&from=lib",
     );
   });
-  it("shows the chosen formation's templates first and the empty course last", () => {
+  it("shows only the chosen formation's templates, its own first, and the blank slide last", () => {
     for (const p of NEW_COURSE_FORMATIONS) {
       const list = startersFor(p);
       expect(list.at(-1)?.id).toBe(BLANK_STARTER.id);
-      expect(list).toHaveLength(DECK_STARTERS.length + 1);
+      // only the formation's own templates (its starting template first), then the blank slide
       const mine = DECK_STARTERS.filter((d) =>
         starterFormations(d).includes(p),
       );
-      expect(list.slice(0, mine.length).map((d) => d.id)).toEqual(
-        mine.map((d) => d.id),
+      expect(list).toHaveLength(mine.length + 1);
+      expect(new Set(list.slice(0, -1).map((d) => d.id))).toEqual(
+        new Set(mine.map((d) => d.id)),
       );
+      expect(list[0].formations).toContain(p);
     }
     expect(starterFormations(startersFor("ppl")[0])).toContain("ppl");
     expect(starterFormations(startersFor("ir")[0])).toContain("ir");
