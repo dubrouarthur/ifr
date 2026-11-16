@@ -29,7 +29,7 @@ import {
   whyStep,
   yourTurnStep,
 } from "./kit";
-import { QUIZ, slideStep } from "../kit";
+import { G as GOAL, INST, QUIZ, T, slideStep } from "../kit";
 
 export const HOLD_DIRECT_BRIEFING_ID = "sample-briefing-hold-direct";
 export const HOLD_TEARDROP_BRIEFING_ID = "sample-briefing-hold-teardrop";
@@ -57,6 +57,12 @@ const ENTRY_ROW: Record<HoldEntry, L10n> = {
   PARALLEL: L("Parallel · 110° sector", "Parallèle · secteur de 110°"),
 };
 const ENTRIES: HoldEntry[] = ["DIRECT", "TEARDROP", "PARALLEL"];
+/** The courses to the fix each sector takes (inbound 270, right turns): the feedback of a wrong answer. */
+const SECTOR: Record<HoldEntry, L10n> = {
+  DIRECT: L("courses 200 to 020", "routes 200 à 020"),
+  TEARDROP: L("courses 020 to 090", "routes 020 à 090"),
+  PARALLEL: L("courses 090 to 200", "routes 090 à 200"),
+};
 
 interface EntryPlan {
   id: string;
@@ -176,12 +182,12 @@ const PLANS: Record<HoldEntry, EntryPlan> = {
     mistake: {
       error: L("Flying 270, not the course", "Voler 270, pas l’axe"),
       why: L(
-        "After the turn the needle is off: a heading misses the course.",
-        "Après le virage, l’aiguille est décalée : un cap rate l’axe.",
+        "After the turn the bar is off centre: a heading misses the course.",
+        "Après le virage, la barre est décalée : un cap rate l’axe.",
       ),
       fix: L(
-        "Intercept, centre the needle.",
-        "Interceptez, centrez l’aiguille.",
+        "Intercept, centre the bar.",
+        "Interceptez, centrez la barre.",
       ),
     },
     tip: L(
@@ -268,13 +274,40 @@ function holdScenes(p: EntryPlan): Record<string, SimScene> {
     [`${p.prefix}.fix`]: scene(
       `${p.prefix}.fix`,
       {
-        pos: { fix: H.fix, radial: (p.crs + 180) % 360, distNm: 0.3 },
+        // 0.9 NM before the fix: the student crosses it (the flag flips), then turns
+        pos: { fix: H.fix, radial: (p.crs + 180) % 360, distNm: 0.9 },
         altFt: H.alt,
         hdg: p.crs,
         iasKt: 90,
         radios,
       },
-      { label: `Over ARD · heading ${pad3(p.crs)} · 3,000 ft` },
+      { label: `0.9 NM before ARD · heading ${pad3(p.crs)} · 3,000 ft` },
+    ),
+    // the moment the clock starts, flown live on the question: abeam ARD on the outbound leg (direct), or over
+    // ARD on the arrival course (teardrop, parallel). Either way the flag flips from FROM to TO with 270 set.
+    [`${p.prefix}.clock`]: scene(
+      `${p.prefix}.clock`,
+      p.prefix === "hd"
+        ? {
+            pos: { fix: H.fix, radial: 332, distNm: 1.1 },
+            altFt: H.alt,
+            hdg: 90,
+            iasKt: 90,
+            radios,
+          }
+        : {
+            pos: { fix: H.fix, radial: (p.crs + 180) % 360, distNm: 0.5 },
+            altFt: H.alt,
+            hdg: p.crs,
+            iasKt: 90,
+            radios,
+          },
+      {
+        label:
+          p.prefix === "hd"
+            ? "Outbound · heading 090 · ARD coming abeam"
+            : `0.5 NM before ARD · heading ${pad3(p.crs)}`,
+      },
     ),
   };
 }
@@ -304,12 +337,12 @@ function holdBriefingFor(entry: HoldEntry): Briefing {
         ),
         sub: p.sub,
         lead: L(
-          "Read the clearance, find your sector, fly the entry, then time the legs.",
-          "Lisez la clairance, trouvez votre secteur, volez l’entrée, puis chronométrez.",
+          `You reach ARD on course ${crs} with no time to think. Which way do you turn, and to what heading? Decide it now.`,
+          `Vous arrivez sur ARD au ${crs}, sans temps pour réfléchir. De quel côté virer, et vers quel cap ? Décidez-le maintenant.`,
         ),
         meta: L(
-          "About 12 min · ARD 114.20 · FAA AIM 5-3-8",
-          "Environ 12 min · ARD 114,20 · FAA AIM 5-3-8",
+          "About 12 min · 3 questions, 1 turn on the HSI · FAA AIM 5-3-8",
+          "Environ 12 min · 3 questions, 1 virage au HSI · FAA AIM 5-3-8",
         ),
         hero: [
           DIAGRAM(
@@ -353,17 +386,17 @@ function holdBriefingFor(entry: HoldEntry): Briefing {
           color: "nav",
         },
         {
-          n: L("200 kt", "200 kt"),
-          text: L(
-            "FAA maximum, up to 6,000 ft",
-            "maximum FAA, jusqu’à 6 000 ft",
-          ),
-        },
-        {
           n: L("230 kt", "230 kt"),
           text: L(
             "ICAO maximum, up to 14,000 ft",
             "maximum OACI, jusqu’à 14 000 ft",
+          ),
+        },
+        {
+          n: L("200 kt", "200 kt"),
+          text: L(
+            "FAA maximum, up to 6,000 ft",
+            "maximum FAA, jusqu’à 6 000 ft",
           ),
         },
       ],
@@ -372,8 +405,8 @@ function holdBriefingFor(entry: HoldEntry): Briefing {
         "FAA AIM 5-3-8 · OACI Doc 8168 · ces limites valent pour tous les avions",
       ),
       reader: L(
-        "The inbound leg of a hold lasts one minute at or below 14,000 ft MSL (1½ minutes above). Start slowing 3 minutes before the fix. Maximum holding speeds are airspace limits for every aircraft: 200 KIAS up to 6,000 ft (FAA), 230 kt up to 14,000 ft (ICAO). This lesson holds at 90 KIAS (FAA AIM 5-3-8; ICAO Doc 8168).",
-        "La branche de rapprochement dure une minute jusqu’à 14 000 ft MSL (1 min 30 au-dessus). Commencez à ralentir 3 minutes avant le repère. Les vitesses d’attente maximales valent pour tous les avions : 200 KIAS jusqu’à 6 000 ft (FAA), 230 kt jusqu’à 14 000 ft (OACI). Cette leçon attend à 90 KIAS (FAA AIM 5-3-8 ; OACI Doc 8168).",
+        "The inbound leg of a hold lasts one minute at or below 14,000 ft MSL (1½ minutes above). Start slowing 3 minutes before the fix. Maximum holding speeds are airspace limits for every aircraft: 230 kt up to 14,000 ft (ICAO), 200 KIAS up to 6,000 ft (FAA). This lesson holds at 90 KIAS (FAA AIM 5-3-8; ICAO Doc 8168).",
+        "La branche de rapprochement dure une minute jusqu’à 14 000 ft MSL (1 min 30 au-dessus). Commencez à ralentir 3 minutes avant le repère. Les vitesses d’attente maximales valent pour tous les avions : 230 kt jusqu’à 14 000 ft (OACI), 200 KIAS jusqu’à 6 000 ft (FAA). Cette leçon attend à 90 KIAS (FAA AIM 5-3-8 ; OACI Doc 8168).",
       ),
     }),
     quizStep(`${x}-clearance`, {
@@ -384,7 +417,7 @@ function holdBriefingFor(entry: HoldEntry): Briefing {
       ),
       quote: L(
         "“Hold east of ARD on the 090 radial, maintain 3,000, expect further clearance at 1435Z.”",
-        "« Attendez à l’est d’ARD sur le radial 090, maintenez 3 000 ft, autorisation ultérieure prévue à 1435Z. »",
+        "« Attendez à l’est d’ARD sur le radial 090, maintenez 3 000 pieds, autorisation ultérieure prévue à 1435Z. »",
       ),
       quiz: mcq(
         L("So the inbound course is…", "La route de rapprochement est donc…"),
@@ -480,14 +513,16 @@ function holdBriefingFor(entry: HoldEntry): Briefing {
             ),
             ENTRIES.map((k) => ({
               text: ENTRY_ROW[k],
-              ...(k === e
-                ? {
-                    why: L(
+              why:
+                k === e
+                  ? L(
                       `Right: ${p.turnAtFix.en} at ARD.`,
                       `Juste : ${p.turnAtFix.fr} à ARD.`,
+                    )
+                  : L(
+                      `No: that sector takes ${SECTOR[k].en}. ${crs} is in ${SECTOR[e].en}.`,
+                      `Non : ce secteur reçoit les ${SECTOR[k].fr}. Le ${crs} est dans les ${SECTOR[e].fr}.`,
                     ),
-                  }
-                : {}),
             })),
             ENTRIES.indexOf(e),
             L(
@@ -553,6 +588,8 @@ function holdBriefingFor(entry: HoldEntry): Briefing {
               windDir: 90,
               windKt: 15,
               tasKt: 90,
+              // the outbound time derived on the right (1:15)
+              outboundS: 75,
             },
           },
           L(
@@ -639,17 +676,18 @@ function holdBriefingFor(entry: HoldEntry): Briefing {
       ],
       view: GAUGE("hsi"),
       alt: L(
-        `HSI over ARD, heading ${crs}`,
-        `HSI à la verticale d’ARD, cap ${crs}`,
+        `HSI just before ARD, heading ${crs}`,
+        `HSI juste avant ARD, cap ${crs}`,
       ),
       scene: `${x}.fix`,
       prompt: L(
-        `Your turn: over ARD, ${p.turnAtFix.en}`,
-        `À vous : à la verticale d’ARD, ${p.turnAtFix.fr}`,
+        `Your turn: cross ARD (the flag flips), then ${p.turnAtFix.en}`,
+        `À vous : passez ARD (le drapeau bascule), puis ${p.turnAtFix.fr}`,
       ),
       controls: ["bank"],
       goal: {
-        all: [{ id: "heading", p: { value: p.fixHdg, tol: 10 } }],
+        // the fix first, then the turn: the heading alone could be met without ever crossing ARD
+        all: [GOAL.passed(H.fix), GOAL.heading(p.fixHdg, 5)],
         holdS: 3,
         graded: false,
         success: L(
@@ -659,23 +697,132 @@ function holdBriefingFor(entry: HoldEntry): Briefing {
       },
       hint: L(
         entry === "PARALLEL"
-          ? "Hold the L side of the bank pad."
-          : "Hold the R side of the bank pad.",
+          ? "Keep the wings level for about 35 s, until the flag flips. Then hold the L side of the bank pad."
+          : "Keep the wings level for about 35 s, until the flag flips. Then hold the R side of the bank pad.",
         entry === "PARALLEL"
-          ? "Maintenez le côté L des boutons d’inclinaison."
-          : "Maintenez le côté R des boutons d’inclinaison.",
+          ? "Gardez les ailes à plat environ 35 s, jusqu’à la bascule du drapeau. Puis maintenez le côté L des boutons d’inclinaison."
+          : "Gardez les ailes à plat environ 35 s, jusqu’à la bascule du drapeau. Puis maintenez le côté R des boutons d’inclinaison.",
       ),
       foot: L(
         "An instructors’ memory aid · some add a sixth: Track",
         "Un aide-mémoire d’instructeur · certains ajoutent la route",
       ),
       reader: L(
-        `At the fix: Turn (${p.turnAtFix.en}), Time, Twist (the OBS to 270), Throttle (90 KIAS), Talk. Your turn: over ARD, ${p.turnAtFix.en} with the bank pad.`,
-        `Au repère : Virer (${p.turnAtFix.fr}), Chrono, Tourner (l’OBS sur 270), Puissance (90 KIAS), Parler. À vous : à la verticale d’ARD, ${p.turnAtFix.fr} avec les boutons d’inclinaison.`,
+        `At the fix: Turn (${p.turnAtFix.en}), Time, Twist (the OBS to 270), Throttle (90 KIAS), Talk. Your turn: cross ARD (the TO / FROM flag flips), then ${p.turnAtFix.en} with the bank pad.`,
+        `Au repère : Virer (${p.turnAtFix.fr}), Chrono, Tourner (l’OBS sur 270), Puissance (90 KIAS), Parler. À vous : passez ARD (le drapeau TO / FROM bascule), puis ${p.turnAtFix.fr} avec les boutons d’inclinaison.`,
+      ),
+    }),
+    quizStep(`${x}-clock`, {
+      eyebrow: L("Check", "Vérification"),
+      title: L("When do you start the clock?", "Quand lancez-vous le chrono ?"),
+      // the cue itself, flown live: the TO / FROM flag flips at the moment the clock starts
+      visual: [
+        INST(
+          GAUGE("hsi"),
+          entry === "DIRECT"
+            ? L(
+                "HSI flown live outbound on heading 090 with course 270 set: the flag flips from FROM to TO abeam ARD",
+                "HSI en direct en éloignement au cap 090, route 270 affichée : le drapeau passe de FROM à TO au travers d’ARD",
+              )
+            : L(
+                `HSI flown live to ARD on heading ${crs} with course 270 set: the flag flips from FROM to TO over ARD`,
+                `HSI en direct vers ARD au cap ${crs}, route 270 affichée : le drapeau passe de FROM à TO à la verticale d’ARD`,
+              ),
+          216,
+          312,
+          576,
+          576,
+          { id: `${x}-clock.hsi`, scene: `${x}.clock`, mode: "live" },
+        ),
+        T(
+          "small",
+          entry === "DIRECT"
+            ? L(
+                "● Flown live: outbound, heading 090, OBS 270",
+                "● En direct : éloignement, cap 090, OBS 270",
+              )
+            : L(
+                `● Flown live: to ARD, heading ${crs}, OBS 270`,
+                `● En direct : vers ARD, cap ${crs}, OBS 270`,
+              ),
+          G.left,
+          904,
+          768,
+          48,
+          { align: "center", color: "nav" },
+        ),
+      ],
+      scene: `${x}.clock`,
+      quiz: mcq(
+        entry === "DIRECT"
+          ? L(
+              "Direct entry, outbound on 090. The time starts…",
+              "Entrée directe, en éloignement au 090. Le chrono part…",
+            )
+          : L(
+              `${name.en} entry from course ${crs}. The entry minute starts…`,
+              `Entrée ${name.fr!.toLowerCase()} depuis la route ${crs}. La minute d’entrée part…`,
+            ),
+        [
+          {
+            text: L("over ARD", "à la verticale d’ARD"),
+            why:
+              entry === "DIRECT"
+                ? L(
+                    "Too early: the outbound leg is timed from abeam the fix.",
+                    "Trop tôt : l’éloignement se chronomètre depuis le travers du repère.",
+                  )
+                : L(
+                    "Right: the entry leg lasts 1:00 from the fix.",
+                    "Juste : la branche d’entrée dure 1:00 depuis le repère.",
+                  ),
+          },
+          {
+            text: L("abeam ARD, outbound", "au travers d’ARD, en éloignement"),
+            why:
+              entry === "DIRECT"
+                ? L(
+                    "Right: abeam the fix, or wings level if that comes later.",
+                    "Juste : au travers du repère, ou ailes à plat si c’est plus tard.",
+                  )
+                : L(
+                    "That is for the laps that follow. The entry leg is timed from the fix.",
+                    "C’est pour les tours suivants. La branche d’entrée se chronomètre depuis le repère.",
+                  ),
+          },
+          {
+            text: L(
+              "when established inbound on 270",
+              "une fois établi au 270 en rapprochement",
+            ),
+            why: L(
+              "That time only measures the inbound leg, to correct the next lap.",
+              "Ce temps-là mesure seulement le rapprochement, pour corriger le tour suivant.",
+            ),
+          },
+        ],
+        entry === "DIRECT" ? 1 : 0,
+        entry === "DIRECT"
+          ? L(
+              "Abeam ARD the flag flips to TO: start the clock. The inbound leg is measured, not flown to the clock.",
+              "Au travers d’ARD le drapeau passe à TO : top chrono. Le rapprochement se mesure, il ne se vole pas au chrono.",
+            )
+          : L(
+              "Over ARD the flag flips: start 1:00. On the laps after it, time the outbound from abeam ARD.",
+              "À la verticale d’ARD le drapeau bascule : top, 1:00. Aux tours suivants, l’éloignement part du travers.",
+            ),
+      ),
+      foot: L(
+        "FAA AIM 5-3-8 · over or abeam the fix, whichever is later",
+        "FAA AIM 5-3-8 · verticale ou travers du repère, le plus tardif",
+      ),
+      reader: L(
+        "Outbound timing begins over or abeam the fix, whichever occurs later; on a teardrop or a parallel entry the one-minute entry leg is timed from the fix (FAA AIM 5-3-8). With the inbound course 270 left on the OBS, the HSI gives both cues: the TO / FROM flag flips over ARD and again abeam it. On the slide the HSI flies through that moment: watch the flag.",
+        "Le chrono d’éloignement part à la verticale ou au travers du repère, le plus tardif des deux ; en entrée décalée ou parallèle, la minute de la branche d’entrée se compte depuis le repère (FAA AIM 5-3-8). Avec la route de rapprochement 270 laissée à l’OBS, le HSI donne les deux repères : le drapeau TO / FROM bascule à la verticale d’ARD, puis de nouveau à son travers. Sur la diapo, le HSI vole ce moment : regardez le drapeau.",
       ),
     }),
     mistakesStep(`${x}-errors`, {
-      title: L("What the grader catches", "Ce que l’évaluation détecte"),
+      title: L("Three classic mistakes", "Trois erreurs classiques"),
       rows: [
         {
           error: L("The wrong entry", "La mauvaise entrée"),
@@ -774,8 +921,8 @@ function holdBriefingFor(entry: HoldEntry): Briefing {
         `Briefing : attente, entrée ${name.fr!.toLowerCase()}`,
       ),
       summary: L(
-        `The briefing of the ${name.en.toLowerCase()}-entry lesson: the clearance, your sector, the entry step by step, timing, the five Ts, then fly it.`,
-        `Le briefing de la leçon entrée ${name.fr!.toLowerCase()} : la clairance, votre secteur, l’entrée pas à pas, le chronométrage, les cinq T, puis le vol.`,
+        `The briefing of the ${name.en.toLowerCase()}-entry lesson: the clearance, your sector, the entry step by step, timing, the turn at the fix on a live HSI, then fly it.`,
+        `Le briefing de la leçon entrée ${name.fr!.toLowerCase()} : la clairance, votre secteur, l’entrée pas à pas, le chronométrage, le virage au repère sur un HSI en direct, puis le vol.`,
       ),
       tags: ["ifr", "holding", entry.toLowerCase()],
       minutes: 12,

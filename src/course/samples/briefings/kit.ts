@@ -11,10 +11,13 @@ import type {
   ColorToken,
   InstrumentView,
   L10n,
+  PaneView,
   Quiz,
   ReaderBlock,
+  ReadoutId,
   SimScene,
   SlideBlock,
+  StageCue,
   Step,
   StepGoal,
   StageControl,
@@ -49,6 +52,7 @@ import {
   STEAM_GAUGE_LAYOUT,
   type SteamGaugeKind,
 } from "../../../avionics/steam";
+import type { Failures } from "../../../sim/sim";
 
 export { DIAGRAM, G, INST, L, MARK, QUIZ, T, foot, head, lead, rule, slide };
 
@@ -456,20 +460,23 @@ export interface YourTurnOpts {
   /** instrument frame (default: a 720 square at 1080,264) */
   frame?: [number, number, number, number];
   /** the autopilot-like helpers while the student flies (default: hold altitude and speed) */
-  assist?: { holdAlt?: boolean; holdIas?: boolean };
+  assist?: { holdAlt?: boolean; holdIas?: boolean; timeScale?: 1 | 2 | 4 };
   covers?: ("ai" | "dg")[];
+  /** width of the step rows (default 840); a wide instrument frame takes a narrower list */
+  rowsW?: number;
 }
 export function yourTurnStep(id: string, o: YourTurnOpts): Step {
   const [x, y, w, h] = o.frame ?? [1080, 264, 720, 720];
   const pitch = o.rows.length > 4 ? 132 : 152;
+  const rowsW = o.rowsW ?? 840;
   return slideStep(
     id,
     o.title,
     slide(
       "stepByStep",
       [
-        ...head(o.eyebrow, o.title, 960),
-        ...stepRows(o.rows, { y: 312, pitch, w: 840 }),
+        ...head(o.eyebrow, o.title, x < 1000 ? x - G.left - 48 : 960),
+        ...stepRows(o.rows, { y: 312, pitch, w: rowsW }),
         INST(o.view, o.alt, x, y, w, h, {
           id: `${id}.inst`,
           scene: o.scene,
@@ -485,7 +492,7 @@ export function yourTurnStep(id: string, o: YourTurnOpts): Step {
             hint: o.hint,
           },
         }),
-        foot(o.foot, 840),
+        foot(o.foot, rowsW),
       ],
       { scene: o.scene },
     ),
@@ -538,6 +545,8 @@ export interface CompareHalf {
   alt: L10n;
   scene: string;
   covers?: ("ai" | "dg")[];
+  /** a failure shown on this instrument (its flag, its frozen card) */
+  failures?: Partial<Failures>;
   /** ≤ 3 ordered rows beside the instrument */
   rows: { heading: L10n; small: L10n }[];
   body: L10n;
@@ -562,6 +571,7 @@ export function compareStep(
         id: `${id}.inst${k + 1}`,
         scene: h.scene,
         ...(h.covers ? { covers: h.covers } : {}),
+        ...(h.failures ? { failures: h.failures } : {}),
         reveal: { order: k + 1 },
         group: g.group,
       }),
@@ -657,4 +667,268 @@ export function briefing(
     scenes,
   );
   return c as Briefing;
+}
+
+// ------------------------------------------------------------------ the goals: a real situation, then what you will be able to do
+export interface GoalsOpts {
+  eyebrow?: L10n;
+  title: L10n;
+  /** the situation that opens the lesson, said as in the aircraft (≤ 3 lines of lead) */
+  hook: L10n;
+  /** ≤ 3 measurable objectives: a verb, a figure (≤ 2 lines of body each) */
+  objectives: L10n[];
+  /** the question the situation asks, answered on the slide (the briefing then explains the answer) */
+  quiz: Quiz;
+  foot: L10n;
+  scene?: string;
+  reader: L10n;
+}
+export function goalsStep(id: string, o: GoalsOpts): Step {
+  const w = 816;
+  return slideStep(
+    id,
+    o.title,
+    slide(
+      "quiz",
+      [
+        ...head(o.eyebrow ?? L("The situation", "La situation"), o.title, 1392),
+        T("lead", o.hook, G.left, 312, w, 168, { color: "text" }),
+        rule(G.left, 512, w),
+        T(
+          "eyebrow",
+          L("After this briefing, you can", "Après ce briefing, vous savez"),
+          G.left,
+          536,
+          w,
+          32,
+          { color: "muted" },
+        ),
+        ...o.objectives.slice(0, 3).flatMap((t, i): SlideBlock[] => [
+          MARK(i + 1, G.left + 28, 636 + i * 112, { size: 56, group: `g${i}` }),
+          T("body", t, 200, 588 + i * 112, w - 80, 96, {
+            valign: "middle",
+            group: `g${i}`,
+          }),
+        ]),
+        QUIZ(`${id}.q`, o.quiz, 984, 312, 816, 672),
+        foot(o.foot, 768),
+      ],
+      o.scene ? { scene: o.scene } : {},
+    ),
+    [text(o.reader)],
+    { kind: "quiz", section: "overview", minutes: 1 },
+  );
+}
+
+// ------------------------------------------------------------------ several gauges of one situation + ordered rows
+export interface PanelOpts {
+  eyebrow: L10n;
+  title: L10n;
+  lead: L10n;
+  /** two gauges of the same scene, side by side (464 each); `marks` put numbered markers on a gauge, in radii from its centre */
+  gauges: {
+    gauge: SteamGaugeKind;
+    alt: L10n;
+    marks?: { n: number; at: [number, number] }[];
+  }[];
+  scene: string;
+  mode?: "frozen" | "live";
+  /** ≤ 3 ordered rows, numbered like the markers */
+  rows: { heading: L10n; body: L10n; readout?: ReadoutId }[];
+  foot: L10n;
+  reader: L10n;
+}
+export function panelStep(id: string, o: PanelOpts): Step {
+  const s = 464;
+  const y = 408;
+  return slideStep(
+    id,
+    o.title,
+    slide(
+      "instrumentNotes",
+      [
+        ...head(o.eyebrow, o.title, 1680),
+        T("body", o.lead, G.left, 296, 960, 56, { color: "ink2" }),
+        ...o.gauges.slice(0, 2).flatMap((g, k): SlideBlock[] => {
+          const x = G.left + k * (s + 32);
+          return [
+            INST(GAUGE(g.gauge), g.alt, x, y, s, s, {
+              id: `${id}.g${k + 1}`,
+              scene: o.scene,
+              group: "inst",
+              ...(o.mode ? { mode: o.mode } : {}),
+            }),
+            ...(g.marks ?? []).map((m) => {
+              const p = gaugePoint(g.gauge, x, y, s, m.at[0], m.at[1]);
+              return MARK(m.n, p[0], p[1], {
+                size: 56,
+                reveal: m.n,
+                group: "inst",
+              });
+            }),
+          ];
+        }),
+        ...calloutRows(
+          o.rows.slice(0, 3).map((r) => ({
+            ...r,
+            ...(r.readout ? { scene: o.scene } : {}),
+          })),
+          { y: 376, pitch: 184 },
+        ),
+        foot(o.foot, 960),
+      ],
+      { scene: o.scene },
+    ),
+    [text(o.reader)],
+    { kind: "explain", section: "picture", minutes: 2 },
+  );
+}
+
+// ------------------------------------------------------------------ any instrument view + numbered callouts
+export interface ViewOpts {
+  eyebrow: L10n;
+  title: L10n;
+  lead: L10n;
+  /** a whole display or a crop of it (a PFD region, the lower row of the six-pack) */
+  view: InstrumentView;
+  cockpit?: "steam" | "g1000";
+  alt: L10n;
+  scene: string;
+  mode?: "frozen" | "live";
+  covers?: ("ai" | "dg")[];
+  failures?: Partial<Failures>;
+  /** the instrument frame (default: the left 960 columns under the top margin) */
+  frame?: [number, number, number, number];
+  /** numbered markers, in the instrument's own logical coordinates (1024 × 768), beside what each row explains */
+  marks: [number, number][];
+  /** ≤ 3 rows, numbered like the markers */
+  rows: { heading: L10n; body: L10n; readout?: ReadoutId }[];
+  foot: L10n;
+  reader: L10n;
+}
+export function viewStep(id: string, o: ViewOpts): Step {
+  const [x, y, w, h] = o.frame ?? [G.left, 132, 960, 836];
+  return slideStep(
+    id,
+    o.title,
+    slide(
+      "instrumentNotes",
+      [
+        INST(o.view, o.alt, x, y, w, h, {
+          id: `${id}.inst`,
+          scene: o.scene,
+          group: "inst",
+          ...(o.mode ? { mode: o.mode } : {}),
+          ...(o.covers ? { covers: o.covers } : {}),
+          ...(o.failures ? { failures: o.failures } : {}),
+        }),
+        ...o.marks.map((m, i) => {
+          const p = onInstrument(o.view, x, y, w, h, m, o.cockpit ?? "steam");
+          return MARK(i + 1, p[0], p[1], { size: 56, reveal: i + 1, group: "inst" });
+        }),
+        T("eyebrow", o.eyebrow, 1128, 120, 672, 32),
+        T("title", o.title, 1128, 160, 672, 160),
+        T("body", o.lead, 1128, 336, 672, 56, { color: "ink2" }),
+        ...calloutRows(
+          o.rows.slice(0, 3).map((r) => ({ ...r, ...(r.readout ? { scene: o.scene } : {}) })),
+          { y: 432, pitch: 184 },
+        ),
+        foot(o.foot, 672, 1128),
+      ],
+      { scene: o.scene },
+    ),
+    [text(o.reader)],
+    { kind: "explain", section: "picture", minutes: 2 },
+  );
+}
+
+// ------------------------------------------------------------------ practice on the stage (reader + live instrument)
+export interface PracticeOpts {
+  title: L10n;
+  /** the situation and the task, in two or three short sentences */
+  intro: L10n;
+  /** "Do this" rows, ticked live: `check` is the index of a goal check */
+  rows: { text: L10n; check: number; readout?: ReadoutId }[];
+  /** shown once the goal is met: what the student just saw, in words */
+  after: L10n;
+  takeaway: L10n;
+  panes: [PaneView] | [PaneView, PaneView];
+  scene: string;
+  controls: StageControl[];
+  assist?: StageCue["assist"];
+  covers?: ("ai" | "dg")[];
+  /** the map inset: what the aircraft does over the ground while the instrument moves */
+  inset?: "plan" | null;
+  goal: StepGoal;
+  hint: L10n;
+  minutes?: number;
+}
+/** A Try it on the stage: the instrument live at full size, the checks ticked as the student flies. */
+export function practiceStep(id: string, o: PracticeOpts): Step {
+  return step(
+    id,
+    "try",
+    o.title,
+    [
+      text(o.intro),
+      { t: "doThis", rows: o.rows },
+      { t: "reveal", when: "goalMet", blocks: [text(o.after)] },
+      { t: "takeaway", text: o.takeaway },
+    ],
+    {
+      section: "technique",
+      minutes: o.minutes ?? 2,
+      stage: {
+        panes: o.panes,
+        mode: "live",
+        scene: o.scene,
+        inset: o.inset ?? null,
+        controls: o.controls,
+        ...(o.assist ? { assist: o.assist } : {}),
+        ...(o.covers ? { covers: o.covers } : {}),
+      },
+      goal: o.goal,
+      hint: o.hint,
+    },
+  );
+}
+
+// ------------------------------------------------------------------ the recap: what to keep, then retrieval questions
+/** One retrieval question as its own step (no slide): the answer explains every wrong option. */
+export function checkStep(
+  id: string,
+  title: L10n,
+  o: {
+    lead: L10n;
+    keys?: L10n[];
+    quiz: Quiz;
+    /** the instrument the question is read on: posed, not flown */
+    stage?: { panes: [PaneView] | [PaneView, PaneView]; scene: string; covers?: ("ai" | "dg")[] };
+  },
+): Step {
+  return step(
+    id,
+    "quiz",
+    title,
+    [
+      text(o.lead),
+      ...(o.keys ? [{ t: "keys" as const, items: o.keys }] : []),
+    ],
+    {
+      section: "check",
+      minutes: 1,
+      quiz: o.quiz,
+      ...(o.stage
+        ? {
+            stage: {
+              panes: o.stage.panes,
+              mode: "frozen" as const,
+              scene: o.stage.scene,
+              inset: null,
+              ...(o.stage.covers ? { covers: o.stage.covers } : {}),
+            },
+          }
+        : {}),
+    },
+  );
 }

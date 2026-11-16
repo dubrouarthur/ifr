@@ -8,10 +8,10 @@
 // or abeam the fix, whichever occurs later"), FAA-H-8083-15B IFH ch. 9 (ADF and RMI: MB = MH + RB, homing versus
 // tracking) and ch. 10 (holding, drift correction tripled outbound), FAA JO 7110.65 4-6-4 (EFC as a clock time),
 // ICAO Doc 8168 PANS-OPS (5° entry tolerance).
-import type { Briefing, L10n, SimScene, Step } from "../../types";
+import type { Briefing, L10n, SimScene, Step, YourTurn } from "../../types";
 import { holdEntry, type HoldEntry } from "../../../nav/holding";
 import { defaultAloft } from "../../../sim/wind";
-import { scene } from "../kit";
+import { G as GOAL, scene } from "../kit";
 import {
   DIAGRAM,
   G,
@@ -84,6 +84,12 @@ const ENTRY_ROW: Record<HoldEntry, L10n> = {
   PARALLEL: L("Parallel · 110° sector", "Parallèle · secteur de 110°"),
 };
 const ENTRIES: HoldEntry[] = ["DIRECT", "TEARDROP", "PARALLEL"];
+/** The courses to the fix each sector takes (inbound 270, right turns): the feedback of a wrong answer. */
+const SECTOR: Record<HoldEntry, L10n> = {
+  DIRECT: L("courses 200 to 020", "routes 200 à 020"),
+  TEARDROP: L("courses 020 to 090", "routes 020 à 090"),
+  PARALLEL: L("courses 090 to 200", "routes 090 à 200"),
+};
 const holdD = (crs?: number, quiet?: boolean) => ({
   kind: "hold" as const,
   inbound: H.inbound,
@@ -130,18 +136,41 @@ function ndbScenes(): Record<string, SimScene> {
       },
       { label: `PA 1 NM east · inbound · heading ${pad3(IN_HDG)}`, ...o },
     ),
+    // 3 NM east on the inbound course, no correction yet: the student finds the heading that keeps the head on 270
+    "hn.track": scene(
+      "hn.track",
+      {
+        pos: { fix: H.fix, radial: OUTBOUND, distNm: 3 },
+        altFt: H.alt,
+        hdg: H.inbound,
+        iasKt: 90,
+        radios,
+      },
+      { label: "PA 3 NM east · inbound · heading 270, no correction", ...o },
+    ),
+    // just before abeam, flown live: the head of the pointer sweeps through 180
     "hn.abeam": scene(
       "hn.abeam",
       {
-        pos: { fix: H.fix, radial: 360, distNm: 1 },
+        pos: { fix: H.fix, radial: 345, distNm: 1.05 },
         altFt: H.alt,
         hdg: OUT_HDG,
         iasKt: 90,
         radios,
       },
-      { label: `Abeam PA · outbound · heading ${pad3(OUT_HDG)}`, ...o },
+      { label: `Outbound · heading ${pad3(OUT_HDG)} · PA coming abeam`, ...o },
     ),
   };
+}
+
+/** Hand the instrument of a built slide to the student (the archetype builders pose it frozen). */
+function handOver(st: Step, yt: YourTurn): Step {
+  const b = st.slide?.blocks.find((x) => x.kind === "instrument");
+  if (b?.kind === "instrument") {
+    b.controls = yt.controls;
+    b.yourTurn = yt;
+  }
+  return st;
 }
 
 export function holdNdbBriefing(): Briefing {
@@ -195,7 +224,7 @@ export function holdNdbBriefing(): Briefing {
       title: L("You arrive on course 045", "Vous arrivez au 045"),
       quote: L(
         "“Hold east of PADDY NDB on the 270 course inbound, maintain 3,000, expect further clearance at 1435Z.”",
-        "« Attendez à l’est du NDB PADDY sur la route 270 en rapprochement, maintenez 3 000 ft, autorisation ultérieure prévue à 1435Z. »",
+        "« Attendez à l’est du NDB PADDY sur la route 270 en rapprochement, maintenez 3 000 pieds, autorisation ultérieure prévue à 1435Z. »",
       ),
       quiz: mcq(
         L(
@@ -204,14 +233,16 @@ export function holdNdbBriefing(): Briefing {
         ),
         ENTRIES.map((k) => ({
           text: ENTRY_ROW[k],
-          ...(k === e
-            ? {
-                why: L(
+          why:
+            k === e
+              ? L(
                   `Right: at PA, right to ${pad3(TEARDROP_HDG)} for 1:00.`,
                   `Juste : à PA, à droite au ${pad3(TEARDROP_HDG)} pendant 1:00.`,
+                )
+              : L(
+                  `No: that sector takes ${SECTOR[k].en}. 045 is in ${SECTOR[e].en}.`,
+                  `Non : ce secteur reçoit les ${SECTOR[k].fr}. Le 045 est dans les ${SECTOR[e].fr}.`,
                 ),
-              }
-            : {}),
         })),
         ENTRIES.indexOf(e),
         L(
@@ -259,7 +290,7 @@ export function holdNdbBriefing(): Briefing {
           heading: L("The pointer swings", "L’aiguille bascule"),
           body: L(
             "head to tail: you are over PA",
-            "de la tête à la queue : vous êtes sur PA",
+            "de la tête à la queue : verticale de PA",
           ),
           color: "nav",
         },
@@ -288,63 +319,88 @@ export function holdNdbBriefing(): Briefing {
       ],
       foot: L(
         "FAA AIM 5-3-8 · ICAO calls it the offset entry",
-        "FAA AIM 5-3-8 · l’OACI parle d’entrée décalée",
+        "FAA AIM 5-3-8 · la FAA parle de « teardrop »",
       ),
       reader: L(
         `Station passage: the pointer swings from the nose to the tail. Turn right to ${pad3(TEARDROP_HDG)} (30° off the outbound course, on the holding side), fly one minute, then turn right, in the direction of the hold, to intercept the 270 inbound: the head of the pointer on 270 (FAA AIM 5-3-8).`,
         `Passage de la balise : l’aiguille bascule du nez vers la queue. Virez à droite au ${pad3(TEARDROP_HDG)} (30° de l’axe d’éloignement, côté attente), volez une minute, puis virez à droite, dans le sens de l’attente, pour intercepter le 270 en rapprochement : la tête de l’aiguille sur 270 (FAA AIM 5-3-8).`,
       ),
     }),
-    instrumentStep("n-rmi", {
-      eyebrow: L("Inbound · the RMI", "Rapprochement · le RMI"),
-      title: L("Head on 270: on course", "Tête sur 270 : sur l’axe"),
-      lead: L(
-        `1 NM east of PA, heading ${pad3(IN_HDG)}.`,
-        `À 1 NM à l’est de PA, cap ${pad3(IN_HDG)}.`,
-      ),
-      gauge: "rmi",
-      alt: L(
-        `RMI inbound to PA: heading ${pad3(IN_HDG)}, the head of the pointer on 270`,
-        `RMI en rapprochement vers PA : cap ${pad3(IN_HDG)}, la tête de l’aiguille sur 270`,
-      ),
-      scene: "hn.inbound",
-      marks: [
-        [0.3, -0.5],
-        [-0.24, -0.9],
-        [-0.3, 0.6],
-      ],
-      rows: [
-        {
-          heading: L("Head · bearing to PA", "Tête · QDM"),
-          body: L(
-            "270 = the inbound course: you are on it",
-            "270 = l’axe de rapprochement : vous y êtes",
+    handOver(
+      instrumentStep("n-rmi", {
+        eyebrow: L("Inbound · the RMI", "Rapprochement · le RMI"),
+        title: L("Head on 270: on course", "Tête sur 270 : sur l’axe"),
+        lead: L(
+          `1 NM east of PA, heading ${pad3(IN_HDG)}.`,
+          `À 1 NM à l’est de PA, cap ${pad3(IN_HDG)}.`,
+        ),
+        gauge: "rmi",
+        alt: L(
+          `RMI inbound to PA: heading ${pad3(IN_HDG)}, the head of the pointer on 270`,
+          `RMI en rapprochement vers PA : cap ${pad3(IN_HDG)}, la tête de l’aiguille sur 270`,
+        ),
+        scene: "hn.inbound",
+        marks: [
+          [0.3, -0.5],
+          [-0.24, -0.9],
+          [-0.3, 0.6],
+        ],
+        rows: [
+          {
+            heading: L("Head · bearing to PA", "Tête · QDM"),
+            body: L(
+              "270 = the inbound course: you are on it",
+              "270 = l’axe de rapprochement : vous y êtes",
+            ),
+          },
+          {
+            heading: L(`Heading ${pad3(IN_HDG)}`, `Cap ${pad3(IN_HDG)}`),
+            body: L(
+              `${WCA}° left, into the wind: head ${WCA}° right of the nose`,
+              `${WCA}° à gauche, face au vent : tête à ${WCA}° à droite du nez`,
+            ),
+          },
+          {
+            heading: L("Tail · bearing from PA", "Queue · QDR"),
+            body: L(
+              "090: where you are, east of the station",
+              "090 : où vous êtes, à l’est de la balise",
+            ),
+          },
+        ],
+        foot: L(
+          "Fixed-card ADF: MB = MH + RB · FAA IFH ch. 9",
+          "ADF à carte fixe : QDM = Cm + gisement · FAA IFH ch. 9",
+        ),
+        reader: L(
+          `The RMI does the sum a fixed-card ADF leaves to you (magnetic bearing = magnetic heading + relative bearing): its head reads the bearing to the station, its tail the bearing from it. Inbound on 270 in today’s wind, heading ${pad3(IN_HDG)}: the head sits on 270, ${WCA}° right of the nose (FAA IFH ch. 9).`,
+          `Le RMI fait l’addition qu’un ADF à carte fixe vous laisse (QDM = cap magnétique + gisement) : la tête lit le relèvement vers la balise, la queue le relèvement depuis la balise. En rapprochement au 270 dans le vent du jour, cap ${pad3(IN_HDG)} : la tête est sur 270, ${WCA}° à droite du nez (FAA IFH ch. 9).`,
+        ),
+      }),
+      {
+        where: "slide",
+        scene: "hn.track",
+        prompt: L(
+          "Your turn: find the heading that keeps the head of the pointer on 270",
+          "À vous : trouvez le cap qui garde la tête de l’aiguille sur 270",
+        ),
+        controls: ["bank"],
+        assist: { holdAlt: true, holdIas: true },
+        goal: {
+          all: [GOAL.track(H.inbound, 3)],
+          holdS: 15,
+          graded: false,
+          success: L(
+            `The head stays on 270 with about ${WCA}° into the wind: heading ${pad3(IN_HDG)}.`,
+            `La tête reste sur 270 avec environ ${WCA}° face au vent : cap ${pad3(IN_HDG)}.`,
           ),
         },
-        {
-          heading: L(`Heading ${pad3(IN_HDG)}`, `Cap ${pad3(IN_HDG)}`),
-          body: L(
-            `${WCA}° left, into the wind: head ${WCA}° right of the nose`,
-            `${WCA}° à gauche, face au vent : tête à ${WCA}° à droite du nez`,
-          ),
-        },
-        {
-          heading: L("Tail · bearing from PA", "Queue · QDR"),
-          body: L(
-            "090: where you are, east of the station",
-            "090 : où vous êtes, à l’est de la balise",
-          ),
-        },
-      ],
-      foot: L(
-        "Fixed-card ADF: MB = MH + RB · FAA IFH ch. 9",
-        "ADF à carte fixe : QDM = Cm + gisement · FAA IFH ch. 9",
-      ),
-      reader: L(
-        `The RMI does the sum a fixed-card ADF leaves to you (magnetic bearing = magnetic heading + relative bearing): its head reads the bearing to the station, its tail the bearing from it. Inbound on 270 in today’s wind, heading ${pad3(IN_HDG)}: the head sits on 270, ${WCA}° right of the nose (FAA IFH ch. 9).`,
-        `Le RMI fait l’addition qu’un ADF à carte fixe vous laisse (QDM = cap magnétique + gisement) : la tête lit le relèvement vers la balise, la queue le relèvement depuis la balise. En rapprochement au 270 dans le vent du jour, cap ${pad3(IN_HDG)} : la tête est sur 270, ${WCA}° à droite du nez (FAA IFH ch. 9).`,
-      ),
-    }),
+        hint: L(
+          `On heading 270 the head creeps left of 270: the wind pushes you right. Turn a few degrees left, to about ${pad3(IN_HDG)}.`,
+          `Au cap 270, la tête glisse à gauche du 270 : le vent vous pousse à droite. Virez de quelques degrés à gauche, vers ${pad3(IN_HDG)}.`,
+        ),
+      },
+    ),
     quizStep("n-abeam", {
       eyebrow: L("Outbound · abeam", "Éloignement · le travers"),
       title: L("When are you abeam PA?", "Quand êtes-vous au travers de PA ?"),
@@ -352,14 +408,14 @@ export function holdNdbBriefing(): Briefing {
         INST(
           GAUGE("rmi"),
           L(
-            `RMI abeam PA outbound: heading ${pad3(OUT_HDG)}, the head of the pointer on 180`,
-            `RMI au travers de PA en éloignement : cap ${pad3(OUT_HDG)}, la tête de l’aiguille sur 180`,
+            `RMI flown live outbound on heading ${pad3(OUT_HDG)}: the head of the pointer moves through 180 as PA passes abeam`,
+            `RMI en direct en éloignement au cap ${pad3(OUT_HDG)} : la tête de l’aiguille passe par 180 quand PA défile au travers`,
           ),
           G.left + 72,
           288,
           696,
           696,
-          { id: "n-abeam.rmi", scene: "hn.abeam" },
+          { id: "n-abeam.rmi", scene: "hn.abeam", mode: "live" },
         ),
       ],
       quiz: mcq(
@@ -373,7 +429,7 @@ export function holdNdbBriefing(): Briefing {
             text: L("the pointer is on the right wingtip", "l’aiguille est sur le bout d’aile droit"),
             why: L(
               `With ${CRAB}° of crab the wingtip points to ${pad3(180 + CRAB)}: late.`,
-              `Avec ${CRAB}° de dérive, le bout d’aile montre ${pad3(180 + CRAB)} : trop tard.`,
+              `Avec ${CRAB}° de correction de dérive, le bout d’aile montre ${pad3(180 + CRAB)} : trop tard.`,
             ),
           },
           {
@@ -388,10 +444,13 @@ export function holdNdbBriefing(): Briefing {
         ),
       ),
       scene: "hn.abeam",
-      foot: L("FAA AIM 5-3-8 · over or abeam, whichever is later", "FAA AIM 5-3-8 · verticale ou travers, le plus tardif"),
+      foot: L(
+        "● Live · FAA AIM 5-3-8 · over or abeam, the later one",
+        "● En direct · FAA AIM 5-3-8 · verticale ou travers, le plus tardif",
+      ),
       reader: L(
         `Abeam the station is a bearing, not a wingtip: abeam PA when the head of the pointer reads 180, square to the 090 outbound course. Crabbing ${CRAB}° right, the right wingtip points to ${pad3(180 + CRAB)}, so it passes PA late. Start the outbound time over or abeam the fix, whichever occurs later; if you cannot tell, when the turn outbound is complete (FAA AIM 5-3-8). In today’s wind the turn ends past abeam.`,
-        `Le travers de la balise est un relèvement, pas un bout d’aile : au travers de PA quand la tête de l’aiguille lit 180, perpendiculaire à l’éloignement 090. Avec ${CRAB}° de dérive à droite, le bout d’aile droit montre ${pad3(180 + CRAB)} : il passe PA trop tard. Le chrono d’éloignement démarre à la verticale ou au travers du repère, le plus tardif des deux ; à défaut, en fin de virage d’éloignement (FAA AIM 5-3-8). Dans le vent du jour, le virage se termine après le travers.`,
+        `Le travers de la balise est un relèvement, pas un bout d’aile : au travers de PA quand la tête de l’aiguille lit 180, perpendiculaire à l’éloignement 090. Avec ${CRAB}° de correction de dérive à droite, le bout d’aile droit montre ${pad3(180 + CRAB)} : il passe PA trop tard. Le chrono d’éloignement démarre à la verticale ou au travers du repère, le plus tardif des deux ; à défaut, en fin de virage d’éloignement (FAA AIM 5-3-8). Dans le vent du jour, le virage se termine après le travers.`,
       ),
     }),
     formulaStep("n-wind", {

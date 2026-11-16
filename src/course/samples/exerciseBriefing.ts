@@ -3,6 +3,7 @@
 // lesson/briefingDeck.ts (buildBriefingDeck), which places them between the key concept and the steps, and an
 // authored deck (a sample course with briefingFor) wins over both (course/ui/briefingDeck.ts). Pure: no DOM.
 import { G, L, MARK, SHAPE, T } from "../canvas/layouts";
+import { holdEntry, type HoldEntry } from "../../nav/holding";
 import type { L10n, SlideBlock, SlideCanvas } from "../types";
 
 /** What the deck is built from: the exercise and the runtime of the attempt being briefed (train/engine.ts). */
@@ -36,6 +37,8 @@ export interface BriefingSource {
     options: readonly string[];
     answer: number;
     explain: string;
+    /** the same check in French, when the exercise has one (else the English words are shown in both languages) */
+    fr?: { question: string; options: readonly string[]; explain: string };
   };
   hold?: {
     inbound: number;
@@ -43,6 +46,8 @@ export interface BriefingSource {
     fix: string;
     legMin: number;
     altFt: number;
+    /** the course the aircraft arrives on at the fix: the diagram then tints "your entry" and a row names it */
+    crs?: number;
   };
   steps: readonly string[];
 }
@@ -59,6 +64,13 @@ export interface BriefingSlide {
 export const plateAsset = (approachId: string): string => `plate:${approachId}`;
 /** exercise text is authored in English: the same words in both languages (no machine translation) */
 const E = (s: string): L10n => ({ en: s, fr: s });
+/** English words with their French version when the exercise has one */
+const EF = (en: string, fr?: string): L10n => ({ en, fr: fr ?? en });
+const ENTRY: Record<HoldEntry, [en: string, fr: string]> = {
+  DIRECT: ["Direct entry", "Entrée directe"],
+  TEARDROP: ["Teardrop entry", "Entrée décalée"],
+  PARALLEL: ["Parallel entry", "Entrée parallèle"],
+};
 const canvas = (
   blocks: SlideBlock[],
   layout: SlideCanvas["layout"],
@@ -88,11 +100,12 @@ export function exerciseDataSlides(src: BriefingSource): BriefingSlide[] {
   // ---------------------------------------------------------------- A9 clearance and the knowledge check
   if (src.clearance || src.quiz) {
     // a question that quotes the clearance ("ATC: "…" — You are proceeding…") keeps only its own words
-    const question = src.quiz ? src.quiz.question.replace(/^\s*ATC:\s*["“][^"”]*["”]\s*[—–-]\s*/, "").trim() || src.quiz.question : "";
+    const own = (q: string) => q.replace(/^\s*ATC:\s*["“][^"”]*["”]\s*[—–-]\s*/, "").trim() || q;
+    const question = src.quiz ? EF(own(src.quiz.question), src.quiz.fr ? own(src.quiz.fr.question) : undefined) : E("");
     const blocks: SlideBlock[] = [
       ...header(
         src.clearance ? L("ATC clearance", "Clairance ATC") : L("Knowledge check", "Vérification des connaissances"),
-        src.clearance ? L("Read the clearance", "Lire la clairance") : E(question),
+        src.clearance ? L("Read the clearance", "Lire la clairance") : question,
       ),
     ];
     let y = src.clearance ? 312 : 336;
@@ -102,8 +115,12 @@ export function exerciseDataSlides(src: BriefingSource): BriefingSlide[] {
         T("quote", E(`“${src.clearance}”`), G.left + 40, y, 1560, 176, {
           valign: "middle",
         }),
+        // radio phraseology stays in English: say so, so a French reader does not take it for a missing translation
+        T("small", L("As you will hear it on the radio", "En anglais, comme à la radio"), G.left + 40, y + 184, 1560, 40, {
+          color: "muted",
+        }),
       );
-      y += 224;
+      y += 240;
     }
     if (src.quiz) {
       blocks.push({
@@ -112,10 +129,10 @@ export function exerciseDataSlides(src: BriefingSource): BriefingSlide[] {
         kind: "quiz",
         quiz: {
           kind: "mcq",
-          prompt: E(question),
-          options: src.quiz.options.map((o) => ({ text: E(o) })),
+          prompt: question,
+          options: src.quiz.options.map((o, i) => ({ text: EF(o, src.quiz!.fr?.options[i]) })),
           answer: src.quiz.answer,
-          explain: E(src.quiz.explain),
+          explain: EF(src.quiz.explain, src.quiz.fr?.explain),
         },
       });
     }
@@ -161,15 +178,31 @@ export function exerciseDataSlides(src: BriefingSource): BriefingSlide[] {
         L("Hold it within 100 ft", "À tenir à 100 ft près"),
       ],
     ];
+    if (hd.crs !== undefined) {
+      const [en, fr] = ENTRY[holdEntry(hd.inbound, hd.turn, hd.crs)];
+      rows.unshift([
+        L(en, fr),
+        { en: `You arrive on course ${pad3(hd.crs)}°`, fr: `Vous arrivez sur la route ${pad3(hd.crs)}°` },
+      ]);
+    }
+    // four rows (with the entry) take a tighter pitch, so the last one stays above the bottom margin
+    const pitch = rows.length > 3 ? 144 : 176;
     const blocks: SlideBlock[] = [
       {
         id: "d",
         frame: { x: G.left, y: 96, w: 912, h: 888, z: 1 },
         kind: "diagram",
-        d: { kind: "hold", inbound: hd.inbound, turn: hd.turn, fix: hd.fix },
-        alt: E(
-          `Holding pattern at ${hd.fix}: inbound ${pad3(hd.inbound)}, ${hd.turn === "R" ? "right" : "left"} turns, entry sectors`,
-        ),
+        d: {
+          kind: "hold",
+          inbound: hd.inbound,
+          turn: hd.turn,
+          fix: hd.fix,
+          ...(hd.crs !== undefined ? { crs: hd.crs } : {}),
+        },
+        alt: {
+          en: `Holding pattern at ${hd.fix}: inbound ${pad3(hd.inbound)}, ${hd.turn === "R" ? "right" : "left"} turns, entry sectors`,
+          fr: `Circuit d’attente à ${hd.fix} : rapprochement ${pad3(hd.inbound)}, virages à ${hd.turn === "R" ? "droite" : "gauche"}, secteurs d’entrée`,
+        },
       },
       T("eyebrow", L("The hold", "L’attente"), 1128, 120, 672, 32),
       T(
@@ -181,13 +214,13 @@ export function exerciseDataSlides(src: BriefingSource): BriefingSlide[] {
         168,
       ),
       ...rows.flatMap(([a, b], i): SlideBlock[] => {
-        const y = 392 + i * 176;
+        const y = 392 + i * pitch;
         return [
           rule(1128, y, 672),
           T("heading", a, 1128, y + 24, 672, 56, {
             color: i === 0 ? "nav" : "text",
           }),
-          T("body", b, 1128, y + 88, 672, 80, { color: "ink2" }),
+          T("body", b, 1128, y + 88, 672, pitch - 96, { color: "ink2" }),
         ];
       }),
     ];
@@ -216,7 +249,10 @@ export function exerciseDataSlides(src: BriefingSource): BriefingSlide[] {
         kind: "diagram",
         d: { kind: "plate", approachId: src.plate },
               asset: plateAsset(src.plate),
-        alt: E(`Approach plate ${src.plateName ?? src.plate}`),
+        alt: {
+          en: `Approach plate ${src.plateName ?? src.plate}`,
+          fr: `Carte d’approche ${src.plateName ?? src.plate}`,
+        },
       },
       T(
         "eyebrow",

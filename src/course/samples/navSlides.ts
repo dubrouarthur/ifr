@@ -184,7 +184,8 @@ export function pointRows(
   });
 }
 
-/** A5 callout rows beside an instrument: marker, 40 heading, 34 body with the live value (3 × 176 from y 400). */
+/** A5 callout rows beside an instrument: marker, 40 heading, 34 body with the live value (3 × 184 from y 400).
+ *  The body frame holds two full lines of body text (2 × 34 × 1.42 = 97): a two-line row is never shrunk. */
 export function calloutRows(
   rows: { heading: L10n; body: L10n; readout?: ReadoutId; scene?: string }[],
   o: { x?: number; y?: number; w?: number; pitch?: number } = {},
@@ -192,18 +193,18 @@ export function calloutRows(
   const x = o.x ?? 1128;
   const y0 = o.y ?? 400;
   const w = o.w ?? 672;
-  const pitch = o.pitch ?? 176;
+  const pitch = o.pitch ?? 184;
   return rows.flatMap((r, i): SlideBlock[] => {
     const y = y0 + i * pitch;
     const g = `row${i + 1}`;
     return [
       rule(x, y, w, { reveal: i + 1, group: g }),
       MARK(i + 1, x + 28, y + 52, { size: 56, reveal: i + 1, group: g }),
-      T("heading", r.heading, x + 80, y + 24, w - 80, 56, {
+      T("heading", r.heading, x + 80, y + 20, w - 80, 56, {
         reveal: i + 1,
         group: g,
       }),
-      T("body", r.body, x + 80, y + 88, w - 80, 80, {
+      T("body", r.body, x + 80, y + 80, w - 80, pitch - 80, {
         reveal: i + 1,
         group: g,
         ...(r.readout

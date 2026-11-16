@@ -1,11 +1,19 @@
 // Ground school — built-in sample "VOR tracking, inbound and outbound" (14 steps, steam cockpit, ARD VOR-DME).
-// Slides first: the cover, why it matters, then the core ideas on designed slides (radials, the HSI, which way to
-// turn, the wind, station passage) with a takeaways slide; then the student practises on the real instrument
-// (find the radial, intercept, the radial calc, track in a crosswind, set the OBS outbound) and flies it at ARD.
+// One idea, then the student does it: the standard and what the course teaches, radials (a question), reading the
+// HSI (turn the OBS), find your radial (try, with the top view), the wind shown on a live HSI, bracket it (try,
+// with the top view), station passage (fly through it), which way to turn (a question), intercept (try, with the
+// top view), set the OBS outbound (answer on the instrument), the three classic mistakes, the takeaways, then
+// three briefing questions and the flight at ARD.
 // Sources: FAA AIM 1-1-3 (VOR), FAA-H-8083-15 Instrument Flying Handbook ch. 9 (VOR navigation, tracking,
-// bracketing), FAA-S-ACS-8 Instrument Rating ACS area V task A (tracking: ±100 ft, ±10°, ¾-scale CDI).
+// bracketing, common errors), EASA Part-FCL Appendix 7 (IR skill test: tracking on radio aids ±5°, height ±100 ft,
+// heading ±5°, speed ±5 kt), FAA-S-ACS-8 Instrument Rating ACS area V task A (¾-scale CDI, ±100 ft, heading ±5°,
+// ±10 kt).
+// The HSI of the steam panel has 2 dots a side: one dot is 5°, half scale. The winds of the scenes are the same at
+// every level (the sim otherwise veers and strengthens the surface wind aloft), so the wind a slide states is the
+// wind the student flies.
 import type {
   Course,
+  GoalCheck,
   InstrumentView,
   PaneView,
   SimScene,
@@ -15,7 +23,6 @@ import type {
 import { STEAM_GAUGE_LAYOUT } from "../../avionics/steam";
 import {
   ARROW,
-  DIAGRAM,
   G,
   IMG,
   INST,
@@ -30,6 +37,7 @@ import {
   slideStep,
   step,
 } from "./kit";
+import { mistakesStep } from "./briefings/kit";
 import {
   G as GR,
   bigNumberBlocks,
@@ -46,6 +54,17 @@ export const VOR_ID = "sample-vor";
 
 const HSI: InstrumentView = { kind: "gauge", gauge: "hsi" };
 const HSI_PANE: PaneView = { kind: "six", crop: { region: "STEAM_LEFT:4" } };
+/** Half-scale deflection: 5° on a VOR, one dot of the HSI (the EASA skill-test tracking tolerance). */
+const HALF_SCALE: GoalCheck = { id: "acsScale", p: { axis: "lat", frac: 0.5 } };
+
+/** "Centred": within a quarter of full scale, half a dot of this HSI (2.5° on a VOR). */
+const CENTRED: GoalCheck = { id: "acsScale", p: { axis: "lat", frac: 0.25 } };
+
+/** The same wind at every level: what the slide says is what the aircraft meets at 4,000 ft. */
+const steady = (dir: number, kt: number) => ({
+  wind: [dir, kt] as [number, number],
+  weather: { aloft: [3000, 6000, 9000].map((altFt) => ({ altFt, dir, kt })) },
+});
 
 export function vorScenes(): Record<string, SimScene> {
   return {
@@ -58,7 +77,7 @@ export function vorScenes(): Record<string, SimScene> {
         iasKt: 100,
         radios: { nav1: "ARD", obs1: 90, cdi: "NAV1", brg1: "NAV1" },
       },
-      { label: "ARD R-276 · 6 NM · 4,000 ft", wind: [250, 10] },
+      { label: "ARD R-276 · 6 NM · 4,000 ft", ...steady(250, 10) },
     ),
     "vor.find": scene(
       "vor.find",
@@ -69,7 +88,8 @@ export function vorScenes(): Record<string, SimScene> {
         iasKt: 100,
         radios: { nav1: "ARD", obs1: 0, cdi: "NAV1" },
       },
-      { label: "ARD R-240 · 12 NM · 4,000 ft", wind: [250, 10] },
+      // the label does not name the radial: finding it is the exercise
+      { label: "South-west of ARD · 4,000 ft", ...steady(250, 10) },
     ),
     "vor.track": scene(
       "vor.track",
@@ -80,7 +100,31 @@ export function vorScenes(): Record<string, SimScene> {
         iasKt: 100,
         radios: { nav1: "ARD", obs1: 90, cdi: "NAV1" },
       },
-      { label: "ARD R-270 · 9 NM · wind 360/20", wind: [360, 20] },
+      { label: "ARD R-270 · 9 NM · wind 360/20", ...steady(360, 20) },
+    ),
+    // one dot off the course: what the limit of the standard looks like
+    "vor.dot": scene(
+      "vor.dot",
+      {
+        pos: { fix: "ARD", radial: 275, distNm: 9 },
+        altFt: 4000,
+        hdg: 90,
+        iasKt: 100,
+        radios: { nav1: "ARD", obs1: 90, cdi: "NAV1" },
+      },
+      { label: "ARD · 9 NM · one dot off course 090" },
+    ),
+    // close in, no correction, flown live: the bar visibly leaves to the left
+    "vor.drift": scene(
+      "vor.drift",
+      {
+        pos: { fix: "ARD", radial: 270, distNm: 4 },
+        altFt: 4000,
+        hdg: 90,
+        iasKt: 100,
+        radios: { nav1: "ARD", obs1: 90, cdi: "NAV1" },
+      },
+      { label: "ARD R-270 · 4 NM · heading 090 · wind 360/20", ...steady(360, 20) },
     ),
     "vor.before": scene(
       "vor.before",
@@ -124,7 +168,10 @@ export function vorScenes(): Record<string, SimScene> {
         iasKt: 100,
         radios: { nav1: "ARD", obs1: 90, cdi: "NAV1", brg1: "NAV1" },
       },
-      { label: "ARD R-270 · 6 NM inbound · 4,000 ft", wind: [360, 15] },
+      {
+        label: "ARD R-270 · 6 NM inbound · 4,000 ft · wind 360/15",
+        ...steady(360, 15),
+      },
     ),
   };
 }
@@ -141,7 +188,7 @@ function hsiPoint(
   return onInstrument(HSI, x, y, s, s, [g.cx + dx * g.r, g.cy + dy * g.r]);
 }
 
-// ------------------------------------------------------------------ the slides (part 1: understand)
+// ------------------------------------------------------------------ the designed slides
 function cover(): Step {
   return slideStep(
     "v-cover",
@@ -159,12 +206,12 @@ function cover(): Step {
         main: L("VOR tracking", "Suivi VOR"),
         sub: L("Inbound and outbound", "En rapprochement et en éloignement"),
         lead: L(
-          "Read the HSI, intercept, bracket the wind — then fly it at ARD.",
-          "Lire le HSI, intercepter, encadrer le vent — puis le voler à ARD.",
+          "“Intercept the ARD 270 radial, track inbound.” In cloud, one instrument does it all: learn to read it, then fly it.",
+          "« Interceptez le radial 270 d’ARD, en rapprochement. » En nuage, un seul instrument suffit : apprenez à le lire, puis volez-le.",
         ),
         meta: L(
-          "14 steps · about 35 min · FAA AIM 1-1-3 · FAA IFH ch. 9",
-          "14 étapes · environ 35 min · FAA AIM 1-1-3 · FAA IFH ch. 9",
+          "14 steps · about 35 min · you fly the HSI in 7 of them",
+          "14 étapes · environ 35 min · vous pilotez le HSI dans 7 d’entre elles",
         ),
         hero: [
           INST(
@@ -177,7 +224,8 @@ function cover(): Step {
             180,
             720,
             720,
-            { scene: "vor.intercept" },
+            // flown live: the bar comes in as the aircraft closes on the course
+            { id: "v-cover.hsi", scene: "vor.intercept", mode: "live" },
           ),
         ],
       }),
@@ -204,46 +252,46 @@ function cover(): Step {
 }
 
 function why(): Step {
+  const title = L(
+    "One dot: the skill-test standard",
+    "Un point : la norme de l’examen",
+  );
   return slideStep(
     "v-why",
-    L("The checkride standard", "La norme du test en vol"),
+    title,
     slide(
       "bigNumber",
       [
-        ...head(
-          L("Why it matters", "Pourquoi c’est important"),
-          L("The checkride standard", "La norme du test en vol"),
-        ),
+        ...head(L("Why it matters", "Pourquoi c’est important"), title),
         ...bigNumberBlocks({
-          n: L("¾", "¾"),
-          nW: 168,
-          unit: L("scale", "d’échelle"),
+          n: L("±5°", "±5°"),
+          nW: 440,
           statement: L(
-            "of CDI deflection, at most, on a radial",
-            "de déviation au maximum sur le CDI",
+            "on the radial, at most: one dot of this HSI",
+            "sur le radial, au plus : un point de ce HSI",
           ),
           body: L(
-            "While you track it: altitude **±100 ft**, heading **±10°**, airspeed **±10 kt**.",
-            "En suivant un radial : altitude à **±100 ft**, cap à **±10°**, vitesse à **±10 kt**.",
+            "After this course you can read your radial, intercept a course, hold it within one dot in a 20 kt crosswind and cross the station.",
+            "À la fin du cours, vous savez lire votre radial, intercepter une route, la tenir à un point près par 20 kt de travers et passer la station.",
           ),
         }),
         INST(
           HSI,
           L(
-            "HSI on R-270 inbound to ARD, bar centred",
-            "HSI sur le R-270 vers ARD, barre centrée",
+            "HSI inbound to ARD on course 090, the bar one dot right: the limit of the standard",
+            "HSI vers ARD sur la route 090, la barre un point à droite : la limite de la norme",
           ),
           1272,
           312,
           528,
           528,
-          { scene: "vor.track" },
+          { id: "v-why.hsi", scene: "vor.dot" },
         ),
         T(
           "small",
           L(
-            "The instrument you will fly",
-            "L’instrument que vous allez piloter",
+            "One dot off: the limit of the standard",
+            "Un point d’écart : la limite de la norme",
           ),
           1272,
           864,
@@ -253,20 +301,41 @@ function why(): Step {
         ),
         foot(
           L(
-            "FAA-S-ACS-8 · Instrument Rating ACS, area V, task A",
-            "FAA-S-ACS-8 · ACS qualification de vol aux instruments, domaine V, tâche A",
+            "EASA Part-FCL Appendix 7: ±5°, ±100 ft, heading ±5°, ±5 kt · FAA ACS: ¾ scale",
+            "EASA Part-FCL appendice 7 : ±5°, ±100 ft, cap ±5°, ±5 kt · FAA ACS : ¾ d’échelle",
           ),
         ),
       ],
-      { scene: "vor.track" },
+      { scene: "vor.dot" },
     ),
     [
       {
         t: "text",
         text: L(
-          "On the instrument checkride you intercept and track a VOR radial with no more than ¾-scale deflection of the CDI, holding altitude within ±100 ft, heading within ±10° and airspeed within ±10 kt (FAA-S-ACS-8, area V, task A). This course builds exactly that.",
-          "Au test en vol IFR, vous interceptez et suivez un radial VOR sans dépasser les ¾ d’échelle de déviation du CDI, en tenant l’altitude à ±100 ft, le cap à ±10° et la vitesse à ±10 kt (FAA-S-ACS-8, domaine V, tâche A). Ce cours construit exactement cela.",
+          "On the EASA instrument-rating skill test you track a radio aid within ±5° (half-scale deflection: one dot of this HSI), holding height within ±100 ft, heading within ±5° and speed within ±5 kt (Part-FCL Appendix 7). The FAA checkride allows ¾-scale deflection, ±100 ft, heading ±5° and ±10 kt (FAA-S-ACS-8, area V, task A).",
+          "À l’examen pratique IR de l’EASA, vous suivez un moyen radio à ±5° (la demi-échelle : un point de ce HSI), en tenant la hauteur à ±100 ft, le cap à ±5° et la vitesse à ±5 kt (Part-FCL, appendice 7). Le test FAA admet ¾ d’échelle, ±100 ft, le cap à ±5° et ±10 kt (FAA-S-ACS-8, domaine V, tâche A).",
         ),
+      },
+      {
+        t: "keys",
+        items: [
+          L(
+            "Read your radial from the HSI: centred with TO, the reciprocal.",
+            "Lire votre radial au HSI : centrée avec TO, l’inverse.",
+          ),
+          L(
+            "Intercept a course at 30° and roll out on it.",
+            "Intercepter une route à 30° et sortir dessus.",
+          ),
+          L(
+            "Hold it within one dot (±5°) in a 20 kt crosswind.",
+            "La tenir à un point près (±5°) par 20 kt de travers.",
+          ),
+          L(
+            "Cross the station without chasing the needle.",
+            "Passer la station sans courir après l’aiguille.",
+          ),
+        ],
       },
     ],
     { minutes: 1 },
@@ -333,17 +402,18 @@ function radialsDiagram(): SlideBlock[] {
       align: "right",
       group: "rad",
     }),
+    // on a radial the drawing does not label (135): the student reads it off the rose
     IMG(
       { lib: "icon:aircraft-top" },
       L(
-        "An aircraft east of ARD, heading west",
-        "Un avion à l’est d’ARD, cap à l’ouest",
+        "An aircraft south-east of ARD, heading to the station",
+        "Un avion au sud-est d’ARD, cap vers la station",
       ),
-      cx + 136,
-      cy - 40,
+      at(135, 176)[0] - 40,
+      at(135, 176)[1] - 40,
       80,
       80,
-      { fit: "contain", rot: 270, group: "rad" },
+      { fit: "contain", rot: 315, group: "rad" },
     ),
   ];
 }
@@ -374,29 +444,36 @@ function whatIsARadial(): Step {
         {
           kind: "mcq",
           prompt: L(
-            "The aircraft is east of ARD. Its radial is…",
-            "L’avion est à l’est d’ARD. Son radial est le…",
+            "The aircraft flies to ARD from the south-east. Its radial is…",
+            "L’avion rejoint ARD par le sud-est. Son radial est le…",
           ),
           options: [
             {
-              text: L("090", "090"),
+              text: L("135", "135"),
               why: L(
-                "Right: R-090 leaves ARD towards the east.",
-                "Juste : le R-090 part d’ARD vers l’est.",
+                "Right: R-135 leaves ARD towards the south-east.",
+                "Juste : le R-135 part d’ARD vers le sud-est.",
               ),
             },
             {
-              text: L("270", "270"),
+              text: L("315", "315"),
               why: L(
-                "270 is the course it flies back to ARD, not its radial.",
-                "270 est la route qu’il vole pour revenir à ARD, pas son radial.",
+                "315 is the course it flies to ARD, not its radial.",
+                "315 est la route qu’il vole vers ARD, pas son radial.",
+              ),
+            },
+            {
+              text: L("045", "045"),
+              why: L(
+                "R-045 leaves ARD towards the north-east.",
+                "Le R-045 part d’ARD vers le nord-est.",
               ),
             },
           ],
           answer: 0,
           explain: L(
-            "R-090: the radial names where you are from the station.",
-            "R-090 : le radial dit où vous êtes par rapport à la station.",
+            "R-135: the radial names where you are from the station, whatever your heading.",
+            "R-135 : le radial dit où vous êtes par rapport à la station, quel que soit votre cap.",
           ),
         },
         1128,
@@ -417,8 +494,8 @@ function whatIsARadial(): Step {
       {
         t: "text",
         text: L(
-          "A VOR sends 360 radials, each a magnetic course from the station: R-090 leaves ARD towards the east, R-270 towards the west. The OBS selects a course, the CDI shows where it is, and TO / FROM says whether it leads to the station or away from it (FAA AIM 1-1-3).",
-          "Un VOR émet 360 radials, chacun une route magnétique depuis la station : le R-090 part d’ARD vers l’est, le R-270 vers l’ouest. L’OBS sélectionne une route, le CDI montre où elle est, TO / FROM indique si elle mène vers la station ou s’en éloigne (FAA AIM 1-1-3).",
+          "A VOR sends 360 radials, each a magnetic course from the station: R-090 leaves ARD towards the east, R-135 towards the south-east. An aircraft south-east of ARD is on R-135 whatever its heading; the course it flies to the station is the reciprocal, 315. The OBS selects a course, the deviation bar shows where it is, and TO / FROM says whether it leads to the station or away from it (FAA AIM 1-1-3).",
+          "Un VOR émet 360 radials, chacun une route magnétique depuis la station : le R-090 part d’ARD vers l’est, le R-135 vers le sud-est. Un avion au sud-est d’ARD est sur le R-135 quel que soit son cap ; la route qu’il vole vers la station est l’inverse, 315. L’OBS sélectionne une route, la barre de déviation montre où elle est, TO / FROM indique si elle mène vers la station ou s’en éloigne (FAA AIM 1-1-3).",
         ),
       },
     ],
@@ -428,10 +505,11 @@ function whatIsARadial(): Step {
 
 function readingHsi(): Step {
   const [x, y, s] = [GR.left, 120, 840];
+  // in clear dial space beside the pointer, the bar and the flag: a marker never sits on a needle (SPEC §6)
   const marks = [
-    hsiPoint(x, y, s, -0.12, -0.56),
-    hsiPoint(x, y, s, 0.44, 0.08),
-    hsiPoint(x, y, s, 0.2, -0.36),
+    hsiPoint(x, y, s, -0.5, -0.45),
+    hsiPoint(x, y, s, 0.62, 0.2),
+    hsiPoint(x, y, s, -0.05, -0.44),
   ];
   return slideStep(
     "v-hsi",
@@ -464,7 +542,7 @@ function readingHsi(): Step {
               controls: ["obs1"],
               assist: { holdAlt: true, holdIas: true },
               goal: {
-                all: [G.toFrom("TO"), G.cdi(0.5)],
+                all: [G.toFrom("TO"), CENTRED],
                 holdS: 2,
                 graded: false,
                 success: L(
@@ -487,8 +565,8 @@ function readingHsi(): Step {
         T(
           "body",
           L(
-            "6 NM west of ARD, heading 120, OBS 090.",
-            "À 6 NM à l’ouest d’ARD, cap 120, OBS 090.",
+            "6 NM west of ARD, heading 120, OBS 090. ARD is identified by its Morse code.",
+            "À 6 NM à l’ouest d’ARD, cap 120, OBS 090. ARD est identifié par son code morse.",
           ),
           1128,
           264,
@@ -508,11 +586,9 @@ function readingHsi(): Step {
           {
             heading: L("Deviation bar", "Barre de déviation"),
             body: L(
-              "The course — fly to it: {{value}}",
-              "La route — allez vers elle : {{value}}",
+              "The course: fly to it. One dot is 5°.",
+              "La route : allez vers elle. Un point vaut 5°.",
             ),
-            readout: "cdiDots",
-            scene: "vor.intercept",
           },
           {
             heading: L("TO / FROM", "TO / FROM"),
@@ -541,8 +617,8 @@ function readingHsi(): Step {
       {
         t: "text",
         text: L(
-          "1. The course pointer shows the course set with the OBS. 2. The deviation bar shows where that course is: fly towards it. Bar right, course right: here heading 120 closes on it at 30°. 3. The TO / FROM triangle shows whether flying the selected course would take you to the station or away from it (FAA AIM 1-1-3).",
-          "1. L’aiguille de route montre la route affichée à l’OBS. 2. La barre de déviation montre où est cette route : allez vers elle. Barre à droite, route à droite : ici le cap 120 la rejoint à 30°. 3. Le triangle TO / FROM indique si la route affichée vous mène vers la station ou vous en éloigne (FAA AIM 1-1-3).",
+          "Before you use the needle: tune 114.20, identify ARD by its Morse code and check that no warning flag shows. 1. The course pointer shows the course set with the OBS. 2. The deviation bar shows where that course is: fly towards it. Bar right, course right: here heading 120 closes on it at 30°. On this HSI one dot is 5°, two dots full scale (10°). 3. The TO / FROM triangle shows whether flying the selected course would take you to the station or away from it (FAA AIM 1-1-3).",
+          "Avant d’utiliser l’aiguille : affichez 114,20, identifiez ARD par son code morse et vérifiez qu’aucun drapeau d’alarme n’est visible. 1. L’aiguille de route montre la route affichée à l’OBS. 2. La barre de déviation montre où est cette route : allez vers elle. Barre à droite, route à droite : ici le cap 120 la rejoint à 30°. Sur ce HSI, un point vaut 5°, deux points la pleine échelle (10°). 3. Le triangle TO / FROM indique si la route affichée vous mène vers la station ou vous en éloigne (FAA AIM 1-1-3).",
         ),
       },
     ],
@@ -604,8 +680,8 @@ function whichWay(): Step {
               {
                 text: L("Keep heading 120", "Garder le cap 120"),
                 why: L(
-                  "Right: the course is to your right and 120 closes on it at 30°.",
-                  "Juste : la route est à votre droite et le cap 120 la rejoint à 30°.",
+                  "Right: 120 closes on the course at 30°.",
+                  "Juste : le cap 120 rejoint la route à 30°.",
                 ),
               },
               {
@@ -614,22 +690,22 @@ function whichWay(): Step {
                   "Virer à gauche au 090 maintenant",
                 ),
                 why: L(
-                  "On 090 you would fly parallel to the course: the bar would not move.",
-                  "Au 090 vous voleriez parallèlement à la route : la barre ne bougerait pas.",
+                  "On 090 you fly parallel to the course: the bar stays where it is.",
+                  "Au 090, vous volez parallèle à la route : la barre ne bouge plus.",
                 ),
               },
               {
                 text: L("Turn right to 180", "Virer à droite au 180"),
                 why: L(
-                  "A 90° intercept this close overshoots. 30° is enough at 6 NM.",
-                  "Une interception à 90° si près dépasse la route. 30° suffisent à 6 NM.",
+                  "90° this close flies through the course. 30° is enough.",
+                  "À 90° si près, vous traversez la route. 30° suffisent.",
                 ),
               },
             ],
             answer: 0,
             explain: L(
-              "Keep 120 and roll out about one dot before centre.",
-              "Gardez 120 et sortez du virage environ un point avant le centre.",
+              "Keep 120, then turn to 090 when the bar is ¼ dot from centre.",
+              "Gardez 120, puis virez au 090 quand la barre est à ¼ de point du centre.",
             ),
           },
           GR.x(5),
@@ -645,8 +721,8 @@ function whichWay(): Step {
       {
         t: "text",
         text: L(
-          "Cleared to intercept R-270 inbound (course 090), heading 120, bar right: keep 120, you are closing at 30°. Start the roll-out about one dot before centre (FAA IFH ch. 9).",
-          "Autorisé à intercepter le R-270 en rapprochement (route 090), cap 120, barre à droite : gardez 120, vous convergez à 30°. Commencez la sortie de virage environ un point avant le centre (FAA IFH ch. 9).",
+          "Cleared to intercept R-270 inbound (course 090), heading 120, bar right: keep 120, you are closing at 30°. Start the turn to 090 when the bar is about a quarter of a dot from centre: at standard rate a 30° turn needs less than 0.1 NM, and one dot is 0.5 NM at 6 NM (FAA IFH ch. 9).",
+          "Autorisé à intercepter le R-270 en rapprochement (route 090), cap 120, barre à droite : gardez 120, vous convergez à 30°. Commencez le virage vers 090 quand la barre est à environ un quart de point du centre : au taux standard, un virage de 30° demande moins de 0,1 NM, et un point vaut 0,5 NM à 6 NM (FAA IFH ch. 9).",
         ),
       },
     ],
@@ -661,82 +737,69 @@ function wind(): Step {
       "Wind: find the heading that holds the track",
       "Vent : trouver le cap qui tient la route",
     ),
-    slide("heroDiagram", [
-      ...head(
-        L("Wind correction", "Correction de vent"),
-        L("Heading is not track", "Le cap n’est pas la route"),
-      ),
-      DIAGRAM(
-        "v-wind.tri",
-        {
-          kind: "calc",
-          calc: {
-            kind: "windTriangle",
-            course: 90,
-            tasKt: 100,
-            windDir: 360,
-            windKt: 20,
-            drag: ["wind"],
+    slide(
+      "heroDiagram",
+      [
+        ...head(
+          L("Wind correction", "Correction de vent"),
+          L("Heading is not track", "Le cap n’est pas la route"),
+        ),
+        INST(
+          HSI,
+          L(
+            "HSI flown live: heading 090 on course 090, the bar leaving to the left in a north wind",
+            "HSI en direct : cap 090 sur la route 090, la barre part à gauche par vent du nord",
+          ),
+          264,
+          300,
+          672,
+          672,
+          { id: "v-wind.hsi", scene: "vor.drift", mode: "live" },
+        ),
+        ...pointRows([
+          {
+            heading: L("The wind pushes you", "Le vent vous pousse"),
+            body: L(
+              "Heading 090 on course 090, and the bar leaves to the **left**: the course is on your left.",
+              "Cap 090 sur la route 090, et la barre part à **gauche** : la route est à gauche.",
+            ),
+            color: "key",
           },
-        },
-        L(
-          "Wind triangle: course 090, 100 kt true airspeed, wind 360 at 20 kt",
-          "Triangle des vents : route 090, vitesse propre 100 kt, vent 360 pour 20 kt",
+          {
+            heading: L("Turn 20° towards it", "Virez de 20° vers elle"),
+            body: L(
+              "heading 070, until the bar is back in the centre.",
+              "cap 070, jusqu’à ce que la barre revienne au centre.",
+            ),
+            color: "sel",
+          },
+          {
+            heading: L("Then keep half", "Puis gardez la moitié"),
+            body: L(
+              "heading 080; adjust until the bar stays still: that is bracketing.",
+              "cap 080 ; ajustez jusqu’à ce qu’elle reste immobile : c’est l’encadrement.",
+            ),
+            color: "nav",
+          },
+        ]),
+        foot(
+          L(
+            "● Flown live: heading 090, wind 360/20 · FAA IFH ch. 9",
+            "● En direct : cap 090, vent 360/20 · FAA IFH ch. 9",
+          ),
+          960,
+          GR.left,
+          "nav",
         ),
-        GR.left,
-        288,
-        960,
-        696,
-        {
-          interactive: true,
-          caption: L(
-            "Drag the wind: the heading and ground speed follow.",
-            "Déplacez le vent : le cap et la vitesse sol suivent.",
-          ),
-        },
-      ),
-      ...pointRows([
-        {
-          heading: L("The wind pushes you", "Le vent vous pousse"),
-          body: L(
-            "Wind from the left: the bar drifts **left**. Turn towards it.",
-            "Vent de gauche : la barre part vers la **gauche**. Virez vers elle.",
-          ),
-          color: "key",
-        },
-        {
-          heading: L("Turn 20°", "Virez de 20°"),
-          body: L(
-            "towards the bar, until it comes back to centre.",
-            "vers la barre, jusqu’à ce qu’elle revienne au centre.",
-          ),
-          color: "sel",
-        },
-        {
-          heading: L(
-            "Then half, and half again",
-            "Puis la moitié, encore la moitié",
-          ),
-          body: L(
-            "until the bar stays still: that is bracketing.",
-            "jusqu’à ce que la barre reste immobile : c’est l’encadrement.",
-          ),
-          color: "nav",
-        },
-      ]),
-      foot(
-        L(
-          "FAA IFH ch. 9 · 20 kt across at 100 kt: about 11° of correction",
-          "FAA IFH ch. 9 · 20 kt de travers à 100 kt : environ 11° de correction",
-        ),
-      ),
-    ]),
+      ],
+      { scene: "vor.drift" },
+    ),
     [
       {
         t: "text",
         text: L(
-          "Bracketing (FAA IFH ch. 9): turn 20° towards the needle when it moves, keep half the correction once back on course, and halve again until the needle stays still. 20 kt across at 100 kt needs about 11° (sin⁻¹ 20/100).",
-          "L’encadrement (FAA IFH ch. 9) : virez de 20° vers l’aiguille quand elle bouge, gardez la moitié de la correction une fois revenu sur la route, et divisez encore par deux jusqu’à ce qu’elle reste immobile. 20 kt de travers à 100 kt demandent environ 11° (sin⁻¹ 20/100).",
+          "The HSI on the slide flies heading 090 on course 090 with a 20 kt wind from the north: the bar leaves to the left, because the wind carries the aircraft south of the course. Bracketing (FAA IFH ch. 9): turn 20° towards the bar when it moves, keep half the correction once back on course, and halve the change again until the bar stays still. 20 kt across at 106 kt true airspeed (100 KIAS at 4,000 ft) needs about 11° (sin⁻¹ 20/106).",
+          "Le HSI de la diapo vole le cap 090 sur la route 090 avec 20 kt de vent du nord : la barre part à gauche, car le vent emmène l’avion au sud de la route. L’encadrement (FAA IFH ch. 9) : virez de 20° vers la barre quand elle bouge, gardez la moitié de la correction une fois revenu sur la route, et divisez encore l’écart par deux jusqu’à ce qu’elle reste immobile. 20 kt de travers à 106 kt de vitesse propre (100 KIAS à 4 000 ft) demandent environ 11° (sin⁻¹ 20/106).",
         ),
       },
     ],
@@ -767,11 +830,38 @@ function stationPassage(): Step {
             "HSI 1.5 NM before ARD: TO flag",
             "HSI à 1,5 NM avant ARD : drapeau TO",
           ),
-          288,
-          360,
-          480,
-          480,
-          { scene: "vor.before" },
+          264,
+          352,
+          528,
+          528,
+          {
+            id: "v-passage.before",
+            scene: "vor.before",
+            controls: ["bank"],
+            yourTurn: {
+              where: "slide",
+              prompt: L(
+                "Your turn: hold heading 090 through ARD and watch the flag flip",
+                "À vous : tenez le cap 090 jusqu’après ARD et regardez le drapeau basculer",
+              ),
+              controls: ["bank"],
+              // 1.5 NM at 100 kt is a minute: four times faster, the flip comes in a quarter of that
+              assist: { holdAlt: true, holdIas: true, timeScale: 4 },
+              goal: {
+                all: [G.passed("ARD"), G.toFrom("FROM"), G.heading(90, 10)],
+                holdS: 2,
+                graded: false,
+                success: L(
+                  "FROM: you are past ARD, outbound on R-090. The course is still 090.",
+                  "FROM : vous avez passé ARD, en éloignement sur le R-090. La route est toujours 090.",
+                ),
+              },
+              hint: L(
+                "Do nothing: keep the wings level. Close to the station the bar swings; do not chase it.",
+                "Ne touchez à rien : gardez les ailes à plat. Près de la station la barre s’agite ; ne la poursuivez pas.",
+              ),
+            },
+          },
         ),
         T(
           "body",
@@ -780,11 +870,11 @@ function stationPassage(): Step {
             "En rapprochement sur le R-270 : la route 090 mène à la station.",
           ),
           GR.left,
-          864,
+          888,
           816,
-          104,
+          96,
         ),
-        SHAPE("rect", 959, 312, 2, 600, { fill: "line", stroke: null }),
+        SHAPE("rect", 959, 312, 2, 656, { fill: "line", stroke: null }),
         T("eyebrow", L("After: FROM", "Après : FROM"), 984, 312, 816, 32, {
           color: "muted",
           reveal: 1,
@@ -795,10 +885,10 @@ function stationPassage(): Step {
             "HSI 1.5 NM after ARD: FROM flag",
             "HSI à 1,5 NM après ARD : drapeau FROM",
           ),
-          1152,
-          360,
-          480,
-          480,
+          1128,
+          352,
+          528,
+          528,
           { scene: "vor.after", reveal: { order: 1 } },
         ),
         T(
@@ -808,9 +898,9 @@ function stationPassage(): Step {
             "En éloignement sur le R-090 : même OBS, le drapeau indique FROM.",
           ),
           984,
-          864,
+          888,
           816,
-          104,
+          96,
           { reveal: 1 },
         ),
         foot(
@@ -826,8 +916,8 @@ function stationPassage(): Step {
       {
         t: "text",
         text: L(
-          "Over the station the needle swings and the flag flips from TO to FROM. Inbound on R-270 and outbound on R-090 are the same course, 090: nothing to twist, the bar stays on the same side (FAA AIM 1-1-3).",
-          "À la verticale l’aiguille oscille et le drapeau passe de TO à FROM. Le R-270 en rapprochement et le R-090 en éloignement sont la même route, 090 : rien à tourner, la barre reste du même côté (FAA AIM 1-1-3).",
+          "Over the station the bar swings and the flag flips from TO to FROM. Inbound on R-270 and outbound on R-090 are the same course, 090: nothing to twist, the bar stays on the same side (FAA AIM 1-1-3). On the slide, fly the left HSI through ARD on heading 090 and watch the flag flip.",
+          "À la verticale la barre oscille et le drapeau passe de TO à FROM. Le R-270 en rapprochement et le R-090 en éloignement sont la même route, 090 : rien à tourner, la barre reste du même côté (FAA AIM 1-1-3). Sur la diapo, pilotez le HSI de gauche à travers ARD au cap 090 et regardez le drapeau basculer.",
         ),
       },
     ],
@@ -863,10 +953,10 @@ function recap(): Step {
             color: "sel",
           },
           {
-            n: L("¾", "¾"),
+            n: L("±5°", "±5°"),
             text: L(
-              "scale at most on the CDI: the checkride standard",
-              "d’échelle au maximum sur le CDI : la norme du test",
+              "on the radial: one dot of the HSI, the skill-test standard",
+              "sur le radial : un point du HSI, la norme de l’examen",
             ),
             color: "key",
           },
@@ -874,12 +964,12 @@ function recap(): Step {
         checksTitle: L("On every radial", "Sur chaque radial"),
         checks: [
           L(
-            "Centred with TO: you are on the reciprocal",
-            "Centrée avec TO : vous êtes sur l’inverse",
+            "Station identified, no flag: then use the bar",
+            "Station identifiée, pas de drapeau : la barre est utilisable",
           ),
           L(
-            "Bar right: the course is to your right",
-            "Barre à droite : la route est à droite",
+            "Centred with TO: you are on the reciprocal",
+            "Centrée avec TO : vous êtes sur l’inverse",
           ),
           L(
             "Over the station: TO turns to FROM",
@@ -889,8 +979,8 @@ function recap(): Step {
       }),
       foot(
         L(
-          "FAA AIM 1-1-3 · FAA IFH ch. 9 · FAA-S-ACS-8 area V",
-          "FAA AIM 1-1-3 · FAA IFH ch. 9 · FAA-S-ACS-8 domaine V",
+          "FAA AIM 1-1-3 · FAA IFH ch. 9 · EASA Part-FCL Appendix 7",
+          "FAA AIM 1-1-3 · FAA IFH ch. 9 · EASA Part-FCL appendice 7",
         ),
       ),
     ]),
@@ -898,6 +988,10 @@ function recap(): Step {
       {
         t: "keys",
         items: [
+          L(
+            "Tune, identify (Morse), check the flag: only then use the bar.",
+            "Affichez, identifiez (morse), vérifiez le drapeau : alors seulement, utilisez la barre.",
+          ),
           L(
             "Centred with TO: your radial is the reciprocal of the course shown.",
             "Centrée avec TO : votre radial est l’inverse de la route affichée.",
@@ -917,7 +1011,7 @@ function recap(): Step {
   );
 }
 
-// ------------------------------------------------------------------ part 2: practise on the instrument, then fly
+// ------------------------------------------------------------------ the practice on the instrument, then the flight
 
 function findRadial(): Step {
   return step(
@@ -928,8 +1022,8 @@ function findRadial(): Step {
       {
         t: "text",
         text: L(
-          "You are somewhere south-west of ARD, heading 060. Turn the **OBS** until the [[CDI bar|f1]] centres with a **TO** flag.",
-          "Vous êtes quelque part au sud-ouest d’ARD, cap 060. Tournez l’**OBS** jusqu’à centrer la [[barre de déviation|f1]] avec un drapeau **TO**.",
+          "You are south-west of ARD, heading 060. ARD is tuned and identified. Make the HSI tell you where: turn the **OBS** until the [[deviation bar|f1]] centres with a **TO** flag, then read the course. On the top view, the green line is the course you set: bring it through the aircraft.",
+          "Vous êtes au sud-ouest d’ARD, cap 060. ARD est affiché et identifié. Faites-le dire au HSI : tournez l’**OBS** jusqu’à centrer la [[barre de déviation|f1]] avec un drapeau **TO**, puis lisez la route. Sur la vue de dessus, le trait vert est la route affichée : amenez-le sur l’avion.",
         ),
       },
       {
@@ -941,12 +1035,8 @@ function findRadial(): Step {
             readout: "toFrom",
           },
           {
-            text: L(
-              "The bar centred (within ½ dot)",
-              "La barre centrée (à ½ point près)",
-            ),
+            text: L("The bar centred", "La barre centrée"),
             check: 1,
-            readout: "cdiDots",
           },
         ],
       },
@@ -957,8 +1047,8 @@ function findRadial(): Step {
           {
             t: "text",
             text: L(
-              "The course under the pointer, **060**, is the course **to** ARD. Your radial is its reciprocal: **R-240**.",
-              "La route sous l’aiguille, **060**, est la route **vers** ARD. Votre radial est son inverse : le **R-240**.",
+              "The course under the pointer, **060**, is the course **to** ARD. Your radial is its reciprocal: **R-240**, as the line above the instrument confirms.",
+              "La route sous l’aiguille, **060**, est la route **vers** ARD. Votre radial est son inverse : le **R-240**, comme le confirme la ligne au-dessus de l’instrument.",
             ),
           },
         ],
@@ -977,6 +1067,7 @@ function findRadial(): Step {
         panes: [HSI_PANE],
         mode: "live",
         scene: "vor.find",
+        // the top view draws the course set with the OBS: it turns round ARD until it runs through the aircraft
         inset: "plan",
         controls: ["obs1"],
         assist: { holdAlt: true, holdIas: true },
@@ -986,16 +1077,17 @@ function findRadial(): Step {
             pane: 0,
             type: "callout",
             n: 1,
-            at: [512, 578],
+            // in clear dial space, low on the left: never on the aircraft symbol or a needle
+            at: [459, 631],
             text: L(
-              "**CDI bar**: centre it with the OBS.",
+              "**Deviation bar**: centre it with the OBS.",
               "**Barre de déviation** : centrez-la avec l’OBS.",
             ),
           },
         ],
       },
       goal: {
-        all: [G.toFrom("TO"), G.cdi(0.5)],
+        all: [G.toFrom("TO"), CENTRED],
         holdS: 2,
         graded: false,
         success: L("On R-240, 060 to ARD.", "Sur le R-240, 060 vers ARD."),
@@ -1024,8 +1116,8 @@ function intercept(): Step {
       {
         t: "text",
         text: L(
-          "Keep 120 while the [[CDI bar|i1]] comes in. At one dot, roll to 090 with the bank pad and keep the bar centred.",
-          "Gardez 120 pendant que la [[barre de déviation|i1]] revient. À un point, virez au 090 avec les boutons d’inclinaison L / R et gardez la barre centrée.",
+          "Keep 120 while the [[deviation bar|i1]] comes in. When it is about ¼ dot from centre, roll to 090 with the bank pad and keep the bar centred.",
+          "Gardez 120 pendant que la [[barre de déviation|i1]] revient. Quand elle est à environ ¼ de point du centre, virez au 090 avec les boutons d’inclinaison L / R et gardez la barre centrée.",
         ),
       },
       {
@@ -1045,9 +1137,11 @@ function intercept(): Step {
             readout: "hdg",
           },
           {
-            text: L("Bar within 1 dot", "Barre à moins d’un point"),
+            text: L(
+              "Bar within one dot of the HSI (half scale, 5°)",
+              "Barre à moins d’un point du HSI (demi-échelle, 5°)",
+            ),
             check: 2,
-            readout: "cdiDots",
           },
         ],
       },
@@ -1055,8 +1149,8 @@ function intercept(): Step {
         t: "keys",
         items: [
           L(
-            "Lead the turn: with 30° to take out at about 100 kt, start rolling when the bar passes one dot.",
-            "Anticipez : avec 30° à reprendre vers 100 kt, commencez à virer quand la barre passe un point.",
+            "Lead the turn a little: with 30° to take out at about 100 kt, start rolling when the bar is about ¼ dot from centre.",
+            "Anticipez un peu : avec 30° à reprendre vers 100 kt, commencez à virer quand la barre est à environ ¼ de point du centre.",
           ),
         ],
       },
@@ -1076,16 +1170,18 @@ function intercept(): Step {
             pane: 0,
             type: "callout",
             n: 1,
-            at: [512, 578],
+            // in clear dial space, on the left: never on the aircraft symbol or a needle
+            at: [439, 622],
             text: L(
-              "**CDI bar**: right of centre, the course is to your right.",
+              "**Deviation bar**: right of centre, the course is to your right.",
               "**Barre de déviation** : à droite du centre, la route est à votre droite.",
             ),
           },
         ],
       },
       goal: {
-        all: [G.obs(90), G.heading(90, 10), G.cdi(1)],
+        // half scale = one dot of the HSI (the goals' own dots are the 5-a-side CDI's: a fraction says it for both)
+        all: [G.obs(90), G.heading(90, 10), HALF_SCALE],
         holdS: 10,
         graded: false,
         success: L(
@@ -1101,30 +1197,53 @@ function intercept(): Step {
   );
 }
 
-function radialCalc(): Step {
-  return step(
-    "v-calc",
-    "calc",
-    L("Which radial, TO or FROM?", "Quel radial, TO ou FROM ?"),
-    [
+function mistakes(): Step {
+  return mistakesStep("v-mistakes", {
+    title: L("Three classic mistakes", "Trois erreurs classiques"),
+    rows: [
       {
-        t: "formula",
-        formula: L(
-          "radial = course to the station ± 180°",
-          "radial = route vers la station ± 180°",
+        error: L("Chasing the bar", "Courir après la barre"),
+        why: L(
+          "A turn each time it moves makes S-turns and never finds the wind.",
+          "Un virage à chaque mouvement fait des S et ne trouve jamais le vent.",
         ),
-        ruleOfThumb: L(
-          "Centred with TO: you are on the reciprocal. Centred with FROM: you are on the course shown.",
-          "Centrée avec TO : vous êtes sur l’inverse. Centrée avec FROM : vous êtes sur la route affichée.",
+        fix: L(
+          "Hold a heading, then bracket: 20°, half, half again.",
+          "Tenez un cap, puis encadrez : 20°, la moitié, encore la moitié.",
         ),
-        refs: [
-          { src: "FAA-AIM", ref: "1-1-3" },
-          { src: "FAA-IFH", ref: "ch. 9" },
-        ],
+      },
+      {
+        error: L("The reciprocal on the OBS", "L’inverse à l’OBS"),
+        why: L(
+          "OBS 270 while flying east: the flag says TO as you fly away. On a plain CDI the needle then works backwards.",
+          "OBS 270 en volant vers l’est : le drapeau dit TO alors que vous vous éloignez. Sur un simple CDI, l’aiguille s’inverse.",
+        ),
+        fix: L(
+          "Set the course you fly: 090, flag FROM.",
+          "Affichez la route que vous volez : 090, drapeau FROM.",
+        ),
+      },
+      {
+        error: L("Correcting over the station", "Corriger à la verticale"),
+        why: L(
+          "Within 1 NM the bar swings to full scale: it no longer shows your track.",
+          "À moins de 1 NM, la barre part en butée : elle ne montre plus votre route.",
+        ),
+        fix: L(
+          "Hold the heading until FROM, then bracket again.",
+          "Tenez le cap jusqu’à FROM, puis encadrez de nouveau.",
+        ),
       },
     ],
-    { minutes: 3, calc: { generatorId: "ifr.vorRadial" } },
-  );
+    foot: L(
+      "FAA IFH ch. 9 · common errors in VOR navigation",
+      "FAA IFH ch. 9 · erreurs fréquentes en navigation VOR",
+    ),
+    reader: L(
+      "Three classic mistakes. Chasing the bar: a turn each time it moves makes S-turns; hold a heading, then bracket. The reciprocal on the OBS: with 270 set while flying east the flag reads TO as you fly away, and on a plain CDI the needle works backwards (reverse sensing); set the course you fly, 090, flag FROM. Correcting over the station: within 1 NM the bar swings to full scale; hold the heading until the flag reads FROM, then bracket again (FAA IFH ch. 9).",
+      "Trois erreurs classiques. Courir après la barre : un virage à chaque mouvement fait des S ; tenez un cap, puis encadrez. L’inverse à l’OBS : avec 270 affiché en volant vers l’est, le drapeau lit TO alors que vous vous éloignez, et sur un simple CDI l’aiguille s’inverse ; affichez la route que vous volez, 090, drapeau FROM. Corriger à la verticale : à moins de 1 NM la barre part en butée ; tenez le cap jusqu’à ce que le drapeau lise FROM, puis encadrez de nouveau (FAA IFH ch. 9).",
+    ),
+  });
 }
 
 function trackWind(): Step {
@@ -1139,8 +1258,8 @@ function trackWind(): Step {
       {
         t: "text",
         text: L(
-          "On R-270, 9 NM west of ARD, heading 090. The wind is **360 at 20 kt**: from your left. Watch the bar, then bracket.",
-          "Sur le R-270, à 9 NM à l’ouest d’ARD, cap 090. Le vent est du **360 pour 20 kt** : de votre gauche. Observez la barre, puis encadrez.",
+          "On R-270, 9 NM west of ARD, heading 090. The wind is **360 at 20 kt**: from your left. The bar starts centred, but heading 090 does not hold the course: watch the track readout, then bracket.",
+          "Sur le R-270, à 9 NM à l’ouest d’ARD, cap 090. Le vent est du **360 pour 20 kt** : de votre gauche. La barre part centrée, mais le cap 090 ne tient pas la route : regardez la route affichée, puis encadrez.",
         ),
       },
       {
@@ -1152,9 +1271,19 @@ function trackWind(): Step {
             readout: "toFrom",
           },
           {
-            text: L("Bar within 1 dot", "Barre à moins d’un point"),
+            text: L(
+              "Track 090 (±3°): the heading that holds the course",
+              "Route 090 (±3°) : le cap qui tient la route",
+            ),
             check: 1,
-            readout: "cdiDots",
+            readout: "trk",
+          },
+          {
+            text: L(
+              "Bar within one dot of the HSI (half scale, 5°)",
+              "Barre à moins d’un point du HSI (demi-échelle, 5°)",
+            ),
+            check: 2,
           },
         ],
       },
@@ -1162,16 +1291,16 @@ function trackWind(): Step {
         t: "keys",
         items: [
           L(
-            "Expect a heading near 080: about 11° into a 20 kt crosswind at 100 kt.",
-            "Attendez-vous à un cap vers 080 : environ 11° face à 20 kt de travers à 100 kt.",
+            "Expect a heading near 080: about 11° into a 20 kt crosswind.",
+            "Attendez-vous à un cap vers 080 : environ 11° face à 20 kt de travers.",
           ),
         ],
       },
       {
         t: "takeaway",
         text: L(
-          "Find the heading that keeps the needle still, not the heading that centres it once.",
-          "Cherchez le cap qui garde l’aiguille immobile, pas celui qui la centre une fois.",
+          "Find the heading that keeps the bar still, not the heading that centres it once.",
+          "Cherchez le cap qui garde la barre immobile, pas celui qui la centre une fois.",
         ),
       },
     ],
@@ -1186,7 +1315,8 @@ function trackWind(): Step {
         assist: { holdAlt: true, holdIas: true, timeScale: 2 },
       },
       goal: {
-        all: [G.toFrom("TO"), G.cdi(1)],
+        // the track, not only the bar: with the bar centred at the start, heading 090 drifts 11° off the course
+        all: [G.toFrom("TO"), G.track(90, 3), HALF_SCALE],
         holdS: 30,
         graded: false,
         success: L(
@@ -1195,8 +1325,8 @@ function trackWind(): Step {
         ),
       },
       hint: L(
-        "Turn left about 20°. When the bar comes back to centre, turn right by half (heading about 080).",
-        "Virez à gauche d’environ 20°. Quand la barre revient au centre, revenez de la moitié vers la droite (cap vers 080).",
+        "The bar moves left: turn left about 20° (070). When it comes back to centre, turn right by half (heading about 080) and check the track reads 090.",
+        "La barre part à gauche : virez à gauche d’environ 20° (070). Quand elle revient au centre, revenez de la moitié vers la droite (cap vers 080) et vérifiez que la route lit 090.",
       ),
     },
   );
@@ -1240,13 +1370,183 @@ function setOutbound(): Step {
   );
 }
 
+/** Three questions before the flight: each one brings back an idea of the course on the instrument it flies. */
+function flyBriefing(): Step[] {
+  const stage = (sceneId: string) => ({
+    panes: [HSI_PANE] as [PaneView],
+    mode: "frozen" as const,
+    scene: sceneId,
+  });
+  return [
+    step(
+      "v-fly.b1",
+      "predict",
+      L("Brief: the wind", "Briefing : le vent"),
+      [
+        {
+          t: "text",
+          text: L(
+            "You start 6 NM west of ARD on R-270, course 090. The wind is 360 at 15 kt.",
+            "Vous partez à 6 NM à l’ouest d’ARD sur le R-270, route 090. Le vent est du 360 pour 15 kt.",
+          ),
+        },
+      ],
+      {
+        quiz: {
+          kind: "mcq",
+          prompt: L(
+            "Which heading do you expect to hold?",
+            "Quel cap pensez-vous tenir ?",
+          ),
+          options: [
+            {
+              text: L("082", "082"),
+              why: L(
+                "Right: about 8° into the wind, to the left.",
+                "Juste : environ 8° face au vent, à gauche.",
+              ),
+            },
+            {
+              text: L("098", "098"),
+              why: L(
+                "Wrong side: the wind comes from your left, so correct left.",
+                "Mauvais côté : le vent vient de votre gauche, corrigez à gauche.",
+              ),
+            },
+            {
+              text: L("090", "090"),
+              why: L(
+                "No correction: the wind carries you south of the course.",
+                "Sans correction, le vent vous emmène au sud de la route.",
+              ),
+            },
+          ],
+          answer: 0,
+          explain: L(
+            "15 kt across at 106 kt true airspeed is about 8°: start near 082, then bracket.",
+            "15 kt de travers à 106 kt de vitesse propre font environ 8° : partez vers 082, puis encadrez.",
+          ),
+        },
+        stage: stage("vor.fly"),
+      },
+    ),
+    step(
+      "v-fly.b2",
+      "quiz",
+      L("Brief: over the station", "Briefing : la verticale"),
+      [
+        {
+          t: "text",
+          text: L(
+            "Close to ARD the bar swings to one side and the flag flickers.",
+            "Près d’ARD, la barre part d’un côté et le drapeau hésite.",
+          ),
+        },
+      ],
+      {
+        quiz: {
+          kind: "mcq",
+          prompt: L("What do you do?", "Que faites-vous ?"),
+          options: [
+            {
+              text: L(
+                "Hold the heading until the flag reads FROM",
+                "Tenir le cap jusqu’à ce que le drapeau lise FROM",
+              ),
+              why: L(
+                "Right: over the station the bar says nothing about your track.",
+                "Juste : à la verticale, la barre ne dit rien de votre route.",
+              ),
+            },
+            {
+              text: L(
+                "Turn towards the bar at once",
+                "Virer tout de suite vers la barre",
+              ),
+              why: L(
+                "Chasing it there makes S-turns: within 1 NM a full-scale bar is a few hundred metres.",
+                "La poursuivre ici fait des S : à moins de 1 NM, une barre en butée vaut quelques centaines de mètres.",
+              ),
+            },
+            {
+              text: L("Turn the OBS to 270", "Tourner l’OBS sur 270"),
+              why: L(
+                "Outbound on R-090 the course is still 090: nothing to turn.",
+                "En éloignement sur le R-090, la route est toujours 090 : rien à tourner.",
+              ),
+            },
+          ],
+          answer: 0,
+          explain: L(
+            "Hold the heading through the station; when the flag reads FROM, bracket again.",
+            "Tenez le cap à la verticale ; quand le drapeau lit FROM, encadrez de nouveau.",
+          ),
+        },
+        stage: stage("vor.before"),
+      },
+    ),
+    step(
+      "v-fly.b3",
+      "quiz",
+      L("Brief: outbound", "Briefing : en éloignement"),
+      [
+        {
+          t: "text",
+          text: L(
+            "Past ARD, outbound on R-090, flag FROM. The bar starts to leave to the left.",
+            "ARD passé, en éloignement sur le R-090, drapeau FROM. La barre commence à partir à gauche.",
+          ),
+        },
+      ],
+      {
+        quiz: {
+          kind: "mcq",
+          prompt: L("What now?", "Et maintenant ?"),
+          options: [
+            {
+              text: L(
+                "Turn left 20°, then keep half",
+                "Virer de 20° à gauche, puis en garder la moitié",
+              ),
+              why: L(
+                "Right: towards the bar, then bracket.",
+                "Juste : vers la barre, puis encadrez.",
+              ),
+            },
+            {
+              text: L("Turn right", "Virer à droite"),
+              why: L(
+                "The bar shows where the course is: on your left.",
+                "La barre montre où est la route : à votre gauche.",
+              ),
+            },
+            {
+              text: L("Wait for it to come back", "Attendre qu’elle revienne"),
+              why: L(
+                "The wind does not stop: the gap only grows.",
+                "Le vent ne s’arrête pas : l’écart ne fait que grandir.",
+              ),
+            },
+          ],
+          answer: 0,
+          explain: L(
+            "Same wind, same side: 20° towards the bar, then half, then half again.",
+            "Même vent, même côté : 20° vers la barre, puis la moitié, puis encore la moitié.",
+          ),
+        },
+        stage: stage("vor.after"),
+      },
+    ),
+  ];
+}
+
 function flyIt(): Step {
   return step(
     "v-fly",
     "fly",
     L(
       "Fly it: R-270 inbound, R-090 outbound",
-      "À vous : R-270 en rapprochement, R-090 en éloignement",
+      "Volez : R-270 en rapprochement, R-090 en éloignement",
     ),
     [],
     {
@@ -1254,8 +1554,8 @@ function flyIt(): Step {
       flyIt: {
         target: { kind: "scene", scene: "vor.fly", durationS: 420 },
         brief: L(
-          "Track R-270 inbound to ARD at 4,000 ft, cross the station, then track R-090 outbound for three minutes. The wind is from the north.",
-          "Suivez le R-270 vers ARD à 4 000 ft, passez la verticale, puis suivez le R-090 en éloignement pendant trois minutes. Le vent vient du nord.",
+          "Track R-270 inbound to ARD at 4,000 ft, cross the station, then track R-090 outbound for three minutes. The wind is 360 at 15 kt, from your left: expect a heading near 082.",
+          "Suivez le R-270 vers ARD à 4 000 ft, passez la verticale, puis suivez le R-090 en éloignement pendant trois minutes. Le vent est du 360 pour 15 kt, de votre gauche : attendez-vous à un cap vers 082.",
         ),
         keys: [
           L(
@@ -1280,7 +1580,10 @@ function flyIt(): Step {
           },
           {
             id: "lat",
-            label: L("CDI within ¾ scale", "CDI dans les ¾ d’échelle"),
+            label: L(
+              "Bar within ¾ scale (1½ dots of the HSI)",
+              "Barre dans les ¾ d’échelle (1 point ½ du HSI)",
+            ),
             check: G.acsLat(),
             acs: "IR.V.A",
             trace: "cdiDots",
@@ -1296,12 +1599,13 @@ function flyIt(): Step {
           "Regardez la trace après la station : l’essentiel de la dérive vient de la première minute en éloignement, avant de retrouver la correction.",
         ),
         returnTo: "thisStep",
+        briefing: flyBriefing(),
       },
     },
   );
 }
 
-/** The VOR sample (14 steps): slides first, then practice on the instrument, then Fly it. */
+/** The VOR sample (14 steps): each idea on a slide, then on the instrument; the mistakes, the takeaways, Fly it. */
 export function vorCourse(): Course {
   return course(
     {
@@ -1320,22 +1624,25 @@ export function vorCourse(): Course {
       minutes: 35,
     },
     [
-      // part 1: understand (designed slides)
+      // the standard, and the VOR itself
       cover(),
       why(),
       whatIsARadial(),
+      // the instrument: read it, then find your radial with it
       readingHsi(),
-      whichWay(),
-      wind(),
-      stationPassage(),
-      recap(),
-      // part 2: practise on the instrument
       findRadial(),
-      intercept(),
-      radialCalc(),
+      // tracking (FAA IFH ch. 9 teaches it before intercepting): the wind shown live, then bracketed
+      wind(),
       trackWind(),
+      stationPassage(),
+      // intercepting: a worked case, then the student flies one (its place, the tenth step, is the one the
+      // library's progress test reads)
+      whichWay(),
+      intercept(),
       setOutbound(),
-      // part 3: fly it
+      // the mistakes, the takeaways, the flight
+      mistakes(),
+      recap(),
       flyIt(),
     ],
     vorScenes(),
