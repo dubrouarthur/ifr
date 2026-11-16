@@ -19,9 +19,11 @@
     "vitest": "^5.1.0"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
     "navigraph": "^1.4.7",
     "peerjs": "^1.5.5",
     "qrcode-generator": "^2.0.4",
-    "three": "^0.187.0"
+    "three": "^0.187.0",
+    "zod": "^4.6.7"
   }
 }

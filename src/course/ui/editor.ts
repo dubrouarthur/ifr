@@ -122,6 +122,7 @@ import {
   railLabel,
   type RailTab,
 } from "./studio";
+import { AI_SPARK, openAiAdd } from "../ai/entry";
 import {
   addStarterDeck,
   BLANK_STARTER,
@@ -1067,7 +1068,33 @@ export class CourseEditor implements InspectorHost {
         });
         return b;
       }),
+      this.aiRailButton(),
     );
+  }
+  /** « Générer des diapos avec l’IA » (src/course/ai): the deck goes in after this slide like a template, one undo. */
+  private aiRailButton(): HTMLElement {
+    const fr = this.lang === "fr";
+    const b = h(
+      "button",
+      {
+        type: "button",
+        class: "ce-rail-b",
+        "data-rail": "ai",
+        title: fr ? "Générer des diapos avec l’IA" : "Generate slides with AI",
+        "aria-label": fr ? "Générer des diapos avec l’IA" : "Generate slides with AI",
+      },
+      railIcon("ai", AI_SPARK),
+      h("span", {}, fr ? "IA" : "AI"),
+    );
+    b.addEventListener("click", () => {
+      const prog = this.course.program;
+      openAiAdd({
+        lang: this.lang,
+        program: Array.isArray(prog) ? prog[0] : prog,
+        onAdd: (d) => this.addDeck(d, this.course.theme ?? d.theme),
+      });
+    });
+    return b;
   }
   /** a panel of the rail, from the inspector's next steps (an empty course gets its first slide) */
   openRail(t: string) {
