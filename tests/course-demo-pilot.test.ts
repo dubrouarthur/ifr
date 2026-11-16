@@ -91,7 +91,7 @@ describe("demo deck model", () => {
   it("says every word in both languages", () => {
     expect(dw("climb", "fr", { a: "4 000 ft" })).toBe("Monter à 4 000 ft");
     expect(dw("climb", "en", { a: "4,000 ft" })).toBe("Climb to 4,000 ft");
-    expect(dw("give", "fr")).toBe("Donner les commandes à un élève");
+    expect(dw("give", "fr")).toBe("Faire piloter un élève ici");
     expect(dw("takeBack", "fr")).toBe("Reprendre les commandes");
   });
   it("shows the first-time hint once", () => {

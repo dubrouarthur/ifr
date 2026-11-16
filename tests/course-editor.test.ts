@@ -499,11 +499,11 @@ describe("step facts", () => {
   it("writes the step bar in both languages", () => {
     const c = course({ steps: [page("a"), { ...page("b"), minutes: 1.5 }] });
     expect(stepBarText(c, 1, "en")).toEqual({
-      head: "Step 2 of 2",
+      head: "Slide 2 of 2",
       tail: "about 1.5 min",
     });
     expect(stepBarText(c, 1, "fr")).toEqual({
-      head: "Étape 2 sur 2",
+      head: "Diapo 2 sur 2",
       tail: "environ 1,5 min",
     });
     expect(minutesOf(page("a"))).toBe(1);

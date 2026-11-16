@@ -201,8 +201,8 @@ function defaultNotes(s: SlideCanvas): { en: string; fr: string } {
     fr.push("« Piloter la démonstration » : cap, altitude et puissance à la main, la projection suit (essayez un virage standard).");
   }
   if (yt) {
-    en.push("“Give the controls to a student”: the goal on the slide says when it is done.");
-    fr.push("« Donner les commandes à un élève » : l’objectif de la diapo dit quand c’est réussi.");
+    en.push("“Let a student fly here”: the goal on the slide says when it is done.");
+    fr.push("« Faire piloter un élève ici » : l’objectif de la diapo dit quand c’est réussi.");
   }
   if (!en.length) {
     en.push("Say it in your words; the slide keeps the numbers.");
@@ -319,6 +319,7 @@ export class CourseEditor implements InspectorHost {
   >();
   private thumbQueue: (() => void)[] = [];
   private thumbTimer = 0;
+  private stripRedraw = false;
   private urls = new Map<string, string>();
   private checks: EditorCheck[] = [];
   private checksTimer = 0;
@@ -936,7 +937,7 @@ export class CourseEditor implements InspectorHost {
     this.titleBtn.addEventListener("click", () => this.courseSettings());
     this.subEl = h("span", { class: "ce-sub-l" });
     this.statusEl = h("span", { class: "ce-status" });
-    // « Plus » holds the rest, each with its word: Relecture (« 2 points à revoir »), Capturer depuis le simulateur,
+    // « Plus » holds the rest, each with its word: Vérifications (« 2 points à revoir »),
     // Exporter (UX logic §6: three actions on the bar, one primary)
     this.checksBtn = btn(fr ? "Plus" : "More", () => this.openMore(), {
       cls: "sm ce-checks-b ce-more-b",
@@ -1024,7 +1025,7 @@ export class CourseEditor implements InspectorHost {
       role: "listbox",
       tabindex: "0",
       "aria-orientation": "horizontal",
-      "aria-label": fr ? "Étapes du cours" : "Course steps",
+      "aria-label": fr ? "Diapos du cours" : "Course slides",
     });
     this.stepsEl.addEventListener("keydown", (e) => {
       const fwd = e.key === "ArrowDown" || e.key === "ArrowRight";
@@ -1045,7 +1046,7 @@ export class CourseEditor implements InspectorHost {
       "section",
       {
         class: "ce-strip",
-        "aria-label": fr ? "Diapos et étapes" : "Slides and steps",
+        "aria-label": fr ? "Diapos" : "Slides",
       },
       this.stepBar,
       h("div", { class: "ce-strip-row" }, this.stepsEl, this.adviceEl),
@@ -1188,8 +1189,8 @@ export class CourseEditor implements InspectorHost {
             "data-rail": t,
             title: off
               ? fr
-                ? "Choisissez une diapositive pour ajouter des éléments"
-                : "Pick a designed slide to add elements"
+                ? "Choisissez une diapo pour y ajouter du contenu"
+                : "Pick a slide to add to it"
               : railLabel(t, this.lang),
           },
           railIcon(t),
@@ -1342,7 +1343,7 @@ export class CourseEditor implements InspectorHost {
     const j = r.firstStepId
       ? this.course.steps.findIndex((s) => s.id === r.firstStepId)
       : -1;
-    this.thumbs.clear();
+    this.clearThumbs();
     this.select(Math.max(0, j));
     this.renderCentre();
     this.afterPanelAdd();
@@ -1354,7 +1355,7 @@ export class CourseEditor implements InspectorHost {
       ),
       () => {
         this.apply(before, undefined, { inspector: true });
-        this.thumbs.clear();
+        this.clearThumbs();
         this.select(
           Math.min(this.i, Math.max(0, this.course.steps.length - 1)),
         );
@@ -1452,8 +1453,8 @@ export class CourseEditor implements InspectorHost {
       b.classList.toggle("is-off", empty);
       if (empty)
         b.title = fr
-          ? "Ajoutez une étape pour présenter"
-          : "Add a step to present";
+          ? "Ajoutez une diapo pour présenter"
+          : "Add a slide to present";
     }
     if (!empty && this.needSteps.length === 3) {
       this.needSteps[0].title = fr
@@ -1466,8 +1467,8 @@ export class CourseEditor implements InspectorHost {
     }
     // an empty course says what to do in the status line too (the disabled buttons say it in their tooltip)
     this.subEl.textContent = empty
-      ? `${fr ? "Ajoutez une étape pour présenter" : "Add a step to present"} · `
-      : `${n} ${fr ? (n > 1 ? "étapes" : "étape") : n === 1 ? "step" : "steps"} · ${fr ? "environ" : "about"} ${courseMinutes(c)} min · ${langs} · `;
+      ? `${fr ? "Ajoutez une diapo pour présenter" : "Add a slide to present"} · `
+      : `${n} ${fr ? (n > 1 ? "diapos" : "diapo") : n === 1 ? "slide" : "slides"} · ${fr ? "environ" : "about"} ${courseMinutes(c)} min · ${langs} · `;
     const dev = isIpad()
       ? fr
         ? "cet iPad"
@@ -1628,13 +1629,13 @@ export class CourseEditor implements InspectorHost {
             class: "ce-addtile",
             title: t2(
               lang,
-              "New slide or step (N)",
-              "Nouvelle diapo ou étape (N)",
+              "New slide (N)",
+              "Nouvelle diapo (N)",
             ),
             "aria-label": t2(
               lang,
-              "New slide or step",
-              "Nouvelle diapo ou étape",
+              "New slide",
+              "Nouvelle diapo",
             ),
           },
           railIcon("plus", "M12 5v14 M5 12h14"),
@@ -1763,15 +1764,24 @@ export class CourseEditor implements InspectorHost {
     svg.innerHTML = body;
     return svg;
   }
+  /** forget every thumbnail (theme, deck added): their live views stop with them */
+  private clearThumbs() {
+    for (const t of this.thumbs.values()) t.view?.destroy();
+    this.thumbs.clear();
+  }
   private pumpThumbs() {
     if (this.thumbTimer || !this.thumbQueue.length) return;
+    // a few thumbnails per tick (about 12 ms of work), so the last ones of a deck never wait long on a slow machine
     const run = () => {
       this.thumbTimer = 0;
-      const job = this.thumbQueue.shift();
-      if (job && !this.destroyed) job();
+      const t0 = performance.now();
+      do {
+        const job = this.thumbQueue.shift();
+        if (job && !this.destroyed) job();
+      } while (this.thumbQueue.length && performance.now() - t0 < 12);
       if (this.thumbQueue.length) this.thumbTimer = window.setTimeout(run, 16);
     };
-    this.thumbTimer = window.setTimeout(run, 60);
+    this.thumbTimer = window.setTimeout(run, 30);
   }
   /** changes when a scene's content changes (a situation edited in place keeps its length and its id) */
   private scenesKey(): string {
@@ -1792,6 +1802,15 @@ export class CourseEditor implements InspectorHost {
     if (k !== this.simsKey) {
       this.sims.destroy();
       this.sims = this.makeSims();
+      // the strip's thumbnails drew from the Sims just destroyed (a live readout, the view from the cockpit):
+      // redraw them from the new ones, or they stay blank
+      if (!this.stripRedraw && this.stepsEl) {
+        this.stripRedraw = true;
+        queueMicrotask(() => {
+          this.stripRedraw = false;
+          if (!this.destroyed) this.renderSteps();
+        });
+      }
     }
   }
 
@@ -1902,7 +1921,7 @@ export class CourseEditor implements InspectorHost {
                 inspector: true,
               });
               this.canvasFor = "";
-              this.thumbs.clear();
+              this.clearThumbs();
               this.renderSteps();
               this.renderCentre();
               if (this.studio.open) this.studio.refresh();
@@ -2126,15 +2145,15 @@ export class CourseEditor implements InspectorHost {
               "h2",
               {},
               fr
-                ? "Ce cours n’a pas encore d’étape"
-                : "This course has no step yet",
+                ? "Ce cours n’a pas encore de diapo"
+                : "This course has no slide yet",
             ),
             h(
               "p",
               {},
               fr
-                ? "Ajoutez une première étape : choisissez un modèle à gauche, ou une diapo vierge."
-                : "Add a first step: choose a template on the left, or a blank slide.",
+                ? "Ajoutez une première diapo : choisissez un modèle à gauche, ou une diapo vierge."
+                : "Add a first slide: choose a template on the left, or a blank slide.",
             ),
             h("div", { class: "ce-start-act" }, pick, blank),
           ),
@@ -2185,6 +2204,8 @@ export class CourseEditor implements InspectorHost {
         onSelect: (_ids, blocks) => {
           const was = this.simSelectionId();
           this.sel = blocks;
+          // with a rail panel open, the properties show over the slide's edge only while something is selected
+          this.bodyEl.classList.toggle("has-sel", blocks.length > 0);
           if (this.studio.tab === "cockpit" && was !== this.simSelectionId()) this.studio.refresh();
           if (
             this.inspector.currentTab !== "block" &&
@@ -2311,6 +2332,7 @@ export class CourseEditor implements InspectorHost {
     this.canvasEd = null;
     this.canvasFor = "";
     this.sel = [];
+    this.bodyEl?.classList.remove("has-sel");
     this.screen = null;
     this.deviceEl = null;
   }
@@ -2383,8 +2405,8 @@ export class CourseEditor implements InspectorHost {
             {},
             t2(
               this.lang,
-              "This step cannot be previewed yet: see Checks.",
-              "Cette étape ne peut pas encore être prévisualisée : voir Plus › Relecture.",
+              "This slide cannot be previewed yet: see More › Checks.",
+              "Cette diapo ne peut pas encore être prévisualisée : voir Plus › Vérifications.",
             ),
           ),
         ),
@@ -2450,7 +2472,7 @@ export class CourseEditor implements InspectorHost {
     const more = btn(fr ? "Plus" : "More", () => this.moreMenu(more), {
       cls: "sm ghost",
       icon: "dots",
-      title: fr ? "Plus d’actions sur l’étape" : "More step actions",
+      title: fr ? "Plus d’actions sur la diapo" : "More slide actions",
     });
     this.stepBar.replaceChildren(
       this.kindChip(s),
@@ -2508,7 +2530,7 @@ export class CourseEditor implements InspectorHost {
             }
           : {
               label: fr
-                ? "Convertir en diapositive libre"
+                ? "Convertir en diapo libre"
                 : "Convert to a designed slide",
               sub: fr
                 ? "Scène, légendes et texte placés sur la diapo"
@@ -2525,7 +2547,7 @@ export class CourseEditor implements InspectorHost {
           onClick: () => this.changeKindMenu(anchor),
         },
         {
-          label: fr ? "Supprimer l’étape" : "Delete the step",
+          label: fr ? "Supprimer la diapo" : "Delete the slide",
           icon: "trash",
           danger: true,
           onClick: () => this.deleteStep(),
@@ -2578,7 +2600,7 @@ export class CourseEditor implements InspectorHost {
         : t2(
             this.lang,
             "Converted to a designed slide",
-            "Converti en diapositive libre",
+            "Converti en diapo libre",
           ),
       () => {
         this.apply(before, undefined, { inspector: true });
@@ -2697,7 +2719,7 @@ export class CourseEditor implements InspectorHost {
     if (!r) return;
     this.apply(r.course, undefined, { centre: false });
     this.select(this.i + 1);
-    this.toast(t2(this.lang, "Step duplicated", "Étape dupliquée"));
+    this.toast(t2(this.lang, "Slide duplicated", "Diapo dupliquée"));
   }
   private move(d: number) {
     const to = this.i + d;
@@ -2858,34 +2880,39 @@ export class CourseEditor implements InspectorHost {
       ? `${n} ${n > 1 ? "points" : "point"} à revoir`
       : `${n} ${n > 1 ? "points" : "point"} to review`;
   }
-  /** « Plus »: Relecture, Capturer depuis le simulateur, Exporter */
+  /** « Plus »: Vérifications, Exporter */
   private openMore() {
     const fr = this.lang === "fr";
     const items: MenuItem[] = [
       {
-        label: fr ? "Relecture" : "Review",
+        label: fr ? "Vérifications" : "Checks",
         sub: this.reviewSub(),
         icon: "checks",
         onClick: () => this.openChecks(),
       },
     ];
-    if (this.captureReady)
-      items.push({
-        label: fr
-          ? "Capturer depuis le simulateur"
-          : "Capture from the simulator",
-        sub: fr
-          ? "Le cockpit s’ouvre sur la situation de la diapo ; capturez un moment, il revient ici"
-          : "The cockpit opens on the slide’s situation; capture a moment, it comes back here",
-        icon: "pulse",
-        // the selected instrument's situation, else the slide's: the cockpit opens there, not on a default flight
-        onClick: () => {
-          const slide = this.step?.slide;
-          const id = slide ? blockSceneId(slide, this.sel[0]?.id).id : this.step?.stage?.scene;
-          void this.flyFrom(id ? this.course.scenes[id] : undefined);
+    // « Voler et capturer » lives in the Simulateur panel only (one place, one step)
+    // on a phone the bar keeps « ‹ · titre · Présenter · ⋯ »: Aperçu élève and Partager come here
+    const phone = typeof matchMedia === "function" && matchMedia("(max-width: 600px)").matches;
+    if (phone)
+      items.unshift(
+        {
+          label: fr ? "Aperçu élève" : "Student preview",
+          sub: fr ? "Le cours comme l’élève le voit, depuis cette diapo" : "The course as the student sees it, from this slide",
+          icon: "play",
+          disabled: !this.course.steps.length,
+          onClick: () => this.testAsStudent(this.i),
         },
-      });
-    items.push({
+        {
+          label: fr ? "Partager" : "Share",
+          sub: fr ? "Un lien ou un fichier du cours" : "A link or a course file",
+          icon: "share",
+          disabled: !this.course.steps.length,
+          onClick: () => this.share(this.checksBtn),
+        },
+      );
+    if (!phone)
+      items.push({
       label: fr ? "Exporter" : "Export",
       sub: fr ? "Un fichier de cours, un lien" : "A course file, a link",
       icon: "share",
@@ -2968,8 +2995,8 @@ export class CourseEditor implements InspectorHost {
     this.toast(
       t2(
         this.lang,
-        "Add a step first: pick a template on the left, or a blank slide.",
-        "Ajoutez une étape d’abord : choisissez un modèle à gauche, ou une diapo vierge.",
+        "Add a slide first: pick a template on the left, or a blank slide.",
+        "Ajoutez une diapo d’abord : choisissez un modèle à gauche, ou une diapo vierge.",
       ),
     );
   }
@@ -3055,100 +3082,146 @@ export class CourseEditor implements InspectorHost {
         );
     });
   }
+  /** Partager: the popover knows first whether the course fits in a link. When it does, the link is the primary
+   *  action (shown in a read-only field); the file is the secondary one. When it does not, it says why first and the
+   *  file is the only primary action. */
   private share(anchor: HTMLElement) {
+    void this.shareOpen(anchor);
+  }
+  private async shareOpen(anchor: HTMLElement) {
     const fr = this.lang === "fr";
     const c = this.course;
-    const body = h("div", { class: "ce-popbody ce-share" });
-    const status = h("p", { class: "ce-note muted" });
     const images = courseHasImages(c);
+    const r = await encodeCourseShare(c).catch(() => null);
+    if (this.course !== c || !anchor.isConnected) return;
+    const fits = !!r?.fits;
+    const url = r?.fits ? new URL(courseShareLink(r.code), location.href).href : "";
+    const body = h("div", { class: "ce-popbody ce-share" });
+    const status = h("p", { class: "ce-note muted", role: "status" });
     const exp = btn(
-      fr
-        ? "Exporter un fichier de cours Wingdeck"
-        : "Export a Wingdeck course file",
+      fits
+        ? fr
+          ? "Fichier : garde aussi les images"
+          : "File: also keeps the images"
+        : fr
+          ? "Exporter le fichier du cours"
+          : "Export the course file",
       async () => {
         if (!this.store) return;
         status.textContent = fr ? "Export…" : "Exporting…";
         await this.saveNow();
-        const r = await exportCourse(this.store, c.id);
-        if (!r) {
+        const x = await exportCourse(this.store, c.id, this.lang);
+        if (!x) {
           status.textContent = fr ? "Export impossible." : "Could not export.";
           return;
         }
         const a = h("a", {
-          href: URL.createObjectURL(r.blob),
-          download: r.filename,
+          href: URL.createObjectURL(x.blob),
+          download: x.filename,
         });
         document.body.append(a);
         a.click();
         a.remove();
         this.unexported = false;
         this.renderTop();
-        status.textContent = `${r.filename} · ${Math.max(1, Math.round(r.bytes / 1024))} ${fr ? "Ko" : "KB"}${r.missing.length ? (fr ? ` · ${r.missing.length} image(s) absente(s)` : ` · ${r.missing.length} image(s) missing`) : ""}`;
+        status.textContent = `${x.filename} · ${Math.max(1, Math.round(x.bytes / 1024))} ${fr ? "Ko" : "KB"}${x.missing.length ? (fr ? ` · ${x.missing.length} image(s) absente(s)` : ` · ${x.missing.length} image(s) missing`) : ""}`;
       },
       {
-        cls: "primary",
-        icon: "share",
+        cls: fits ? "" : "primary",
+        icon: fits ? "download" : "share",
         disabled: !this.store || (images && !c.shareConfirmed),
       },
     );
-    const link = btn(
-      fr ? "Copier un lien" : "Copy a link",
-      async () => {
-        const r = await encodeCourseShare(this.course);
-        if (!r.fits) {
-          status.textContent =
-            r.reason === "images"
-              ? fr
-                ? "Le cours a des images : exportez un fichier."
-                : "The course has images: export a file instead."
-              : fr
-                ? "Trop long pour un lien : exportez un fichier."
-                : "Too long for a link: export a file instead.";
-          return;
-        }
-        const url = new URL(courseShareLink(r.code), location.href).href;
-        try {
-          await navigator.clipboard.writeText(url);
-          status.textContent = fr ? "Lien copié." : "Link copied.";
-        } catch {
-          status.replaceChildren(textIn(url, () => {}, { mono: true }));
-        }
-      },
-      { icon: "copy" },
-    );
-    body.append(
-      h(
-        "p",
-        { class: "ce-note" },
-        fr
-          ? "Un fichier garde tout : texte, scènes, séquences et images. Un lien suffit pour un cours sans image."
-          : "A file keeps everything: text, scenes, clips and images. A link is enough for a course without images.",
-      ),
-      ...(images
-        ? [
-            sw(
-              !!c.shareConfirmed,
-              (on) => {
-                this.apply({ ...this.course, shareConfirmed: on || undefined });
-                closePop();
-                this.share(anchor);
-              },
-              fr
-                ? "J’ai le droit de partager ces images"
-                : "I may share these images",
-              {
-                sub: fr
-                  ? "Photos importées : vérifiez leurs droits"
-                  : "Imported photos: check you hold the rights",
-              },
-            ),
-          ]
-        : []),
-      h("div", { class: "ce-row" }, exp, link),
-      status,
-    );
+    const parts: Node[] = [];
+    if (fits) {
+      const field = h("input", {
+        type: "text",
+        class: "ce-in mono ce-share-url",
+        readonly: true,
+        value: url,
+        "aria-label": fr ? "Lien du cours" : "Course link",
+      }) as HTMLInputElement;
+      field.addEventListener("focus", () => field.select());
+      const copy = btn(
+        fr ? "Copier le lien" : "Copy the link",
+        async () => {
+          try {
+            await navigator.clipboard.writeText(url);
+            status.textContent = fr ? "Lien copié." : "Link copied.";
+          } catch {
+            field.focus();
+            field.select();
+            status.textContent = fr
+              ? "Copie bloquée par le navigateur : le lien est sélectionné, copiez-le (Ctrl+C)."
+              : "The browser blocked the copy: the link is selected, copy it (Ctrl+C).";
+          }
+        },
+        { cls: "primary", icon: "copy" },
+      );
+      parts.push(
+        h(
+          "p",
+          { class: "ce-note" },
+          fr
+            ? "L’élève ouvre le lien sur son appareil : le cours s’ouvre, prêt à suivre."
+            : "The student opens the link on their own device: the course opens, ready to follow.",
+        ),
+        field,
+        h("div", { class: "ce-row" }, copy),
+        h(
+          "p",
+          { class: "ce-note muted ce-share-or" },
+          fr
+            ? "Ou un fichier, pour un cours avec des images ou à archiver."
+            : "Or a file, for a course with images or to keep.",
+        ),
+      );
+    } else {
+      parts.push(
+        h(
+          "p",
+          { class: "ce-note warn" },
+          images
+            ? fr
+              ? "Ce cours a des images : un lien ne peut pas les porter. Partagez le fichier du cours."
+              : "This course has images: a link cannot carry them. Share the course file."
+            : fr
+              ? "Ce cours est trop long pour un lien. Partagez le fichier du cours."
+              : "This course is too long for a link. Share the course file.",
+        ),
+      );
+    }
+    if (images)
+      parts.push(
+        sw(
+          !!c.shareConfirmed,
+          (on) => {
+            this.apply({ ...this.course, shareConfirmed: on || undefined });
+            closePop();
+            this.share(anchor);
+          },
+          fr ? "J’ai le droit de partager ces images" : "I may share these images",
+          {
+            sub: fr
+              ? "Photos importées : vérifiez leurs droits"
+              : "Imported photos: check you hold the rights",
+          },
+        ),
+      );
+    parts.push(h("div", { class: "ce-row" }, exp));
+    if (!fits)
+      parts.push(
+        h(
+          "p",
+          { class: "ce-note muted" },
+          fr
+            ? "L’élève ouvre le fichier dans la Bibliothèque, avec « Importer »."
+            : "The student opens the file in the Library, with “Import”.",
+        ),
+      );
+    body.append(...parts, status);
     popover(anchor, body, {
-      width: 380,
+      width: 400,
       align: "end",
       title: fr ? "Partager le cours" : "Share the course",
     });
@@ -3236,7 +3309,7 @@ export class CourseEditor implements InspectorHost {
         },
       ),
       field(
-        fr ? "Thème des diapositives" : "Slide theme",
+        fr ? "Thème des diapos" : "Slide theme",
         themePicker(this.lang, c.theme ?? "classroom", (id) =>
           set((x) => (x.theme = id)),
         ),
@@ -3270,8 +3343,8 @@ export class CourseEditor implements InspectorHost {
     const input = h("input", {
       type: "search",
       class: "ce-in",
-      placeholder: fr ? "Titre ou type d’étape" : "Step title or kind",
-      "aria-label": fr ? "Chercher une étape" : "Find a step",
+      placeholder: fr ? "Titre ou type de diapo" : "Slide title or kind",
+      "aria-label": fr ? "Chercher une diapo" : "Find a slide",
     });
     const list = h("div", { class: "ce-found" });
     const fold = (x: string) =>
@@ -3329,7 +3402,7 @@ export class CourseEditor implements InspectorHost {
       h("div", { class: "ce-popbody" }, input, list),
       {
         width: 340,
-        title: fr ? "Aller à l’étape" : "Go to step",
+        title: fr ? "Aller à la diapo" : "Go to slide",
         cls: "scroll",
       },
     );

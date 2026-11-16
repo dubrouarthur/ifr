@@ -154,6 +154,7 @@ const ICONS: Record<string, string> = {
     "M12 3a9 9 0 1 0 0 18c1 0 1.5-.8 1.5-1.5 0-1.2-1-1.5-1-2.5 0-.8.7-1.5 1.5-1.5H16a5 5 0 0 0 5-5c0-4-4-7.5-9-7.5z M7.5 11h.01 M10 7.5h.01 M14 7.5h.01",
   library: "M4 4h5v16H4z M10 4h4v16h-4z M15 5l4 1-3 14-4-1z",
   share: "M12 3v12 M7 8l5-5 5 5 M5 14v6h14v-6",
+  download: "M12 4v11 M7 10l5 5 5-5 M5 20h14",
   undo: "M9 14L4 9l5-5 M4 9h10a6 6 0 0 1 0 12h-3",
   redo: "M15 14l5-5-5-5 M20 9H10a6 6 0 0 0 0 12h3",
   trash: "M5 7h14 M10 7V4.5h4V7 M7 7l1 13h8l1-13",
@@ -465,6 +466,8 @@ export interface MenuItem {
   danger?: boolean;
   on?: boolean;
 }
+/** the event a popover sends when it opens (coach marks close on it) */
+export const POP_OPEN = "ce-popopen";
 export function popover(
   anchor: HTMLElement,
   content: HTMLElement | MenuItem[],
@@ -476,6 +479,8 @@ export function popover(
   } = {},
 ): () => void {
   closePop();
+  // a coach mark (simTip) gives way to any popover the author opens
+  document.dispatchEvent(new Event(POP_OPEN));
   const pop = h("div", {
     class: `ce-pop ${o.cls ?? ""}`.trim(),
     role: Array.isArray(content) ? "menu" : "dialog",
@@ -1047,6 +1052,13 @@ export class Inspector {
   private wentLive = "";
   /** the instrument whose author picked « À vous » and has not chosen the goal yet */
   private askFor = "";
+  /** « À vous » was just chosen on this element: its first suggested goal is set once (situationGroups autoPick) */
+  private autoGoal = "";
+  private takeAutoGoal(id: string): boolean {
+    if (this.autoGoal !== id) return false;
+    this.autoGoal = "";
+    return true;
+  }
   /** the instrument shown in the inspector, and whether its controls are being tried on the slide */
   private trialBlock = "";
   private trialDirty = false;
@@ -1283,7 +1295,7 @@ export class Inspector {
   private readerTab(): Kid[] {
     const s = this.host.step;
     const out: Kid[] = [
-      this.l10n(this.t("Step title", "Titre de l’étape"), s.title, (v) =>
+      this.l10n(this.t("Slide title", "Titre de la diapo"), s.title, (v) =>
         this.edit("title", (x) => (x.title = v)),
       ),
     ];
@@ -2157,8 +2169,8 @@ export class Inspector {
         assisted
           ? note(
               this.t(
-                "Steps with an assist are practice: never ACS-graded.",
-                "Avec une aide, l’étape est un entraînement : jamais noté ACS.",
+                "Slides with an assist are practice: never ACS-graded.",
+                "Avec une aide, la diapo est un entraînement : jamais noté ACS.",
               ),
               "warn",
             )
@@ -2748,8 +2760,8 @@ export class Inspector {
       return [
         note(
           this.t(
-            "This slide only presents. A goal needs an instrument or a sim view on the slide: add one from Instruments or Interactive, then the sim can tick “Do this” rows live.",
-            "Cette diapo présente seulement. Un objectif demande un instrument ou une fenêtre simulateur sur la diapo : ajoutez-en un depuis Instruments ou Interactif, et le simulateur pourra cocher les lignes « À faire ».",
+            "This slide only presents. A goal needs an instrument or a sim view on the slide: add one from Instruments or Simulator, then the sim can tick “Do this” rows live.",
+            "Cette diapo présente seulement. Un objectif demande un instrument ou une vue simulateur sur la diapo : ajoutez-en un depuis Instruments ou Simulateur, et le simulateur pourra cocher les lignes « À faire ».",
           ),
           "",
         ),
@@ -2821,7 +2833,7 @@ export class Inspector {
               { value: "stay" as const, label: this.t("Stay", "Rester") },
               {
                 value: "autoNext" as const,
-                label: this.t("Next step", "Étape suivante"),
+                label: this.t("Next slide", "Diapo suivante"),
               },
             ],
             goal.onMet ?? "stay",
@@ -3067,8 +3079,8 @@ export class Inspector {
           multi: true,
           rows: 6,
           ph: this.t(
-            "What you say while this step is on screen",
-            "Ce que vous dites pendant cette étape",
+            "What you say while this slide is on screen",
+            "Ce que vous dites pendant cette diapo",
           ),
         },
       ),
@@ -3528,7 +3540,7 @@ export class Inspector {
     const s = this.host.step;
     const spec = s.calc ?? defaultCalc();
     return [
-      this.l10n(this.t("Step title", "Titre de l’étape"), s.title, (v) =>
+      this.l10n(this.t("Slide title", "Titre de la diapo"), s.title, (v) =>
         this.edit("title", (x) => (x.title = v)),
       ),
       ...this.calcEditor(spec, (c, render = true, key) =>
@@ -3564,7 +3576,7 @@ export class Inspector {
     const lang = this.lang;
     const timer = d.timer?.mode ?? "none";
     return [
-      this.l10n(this.t("Step title", "Titre de l’étape"), s.title, (v) =>
+      this.l10n(this.t("Slide title", "Titre de la diapo"), s.title, (v) =>
         this.edit("title", (x) => (x.title = v)),
       ),
       ...(["ifr", "vfr"] as const).map((cat) =>
@@ -3800,7 +3812,7 @@ export class Inspector {
     const offered = new Set(fly.options);
     const on = new Set(fly.defaultsOn ?? []);
     return [
-      this.l10n(this.t("Step title", "Titre de l’étape"), s.title, (v) =>
+      this.l10n(this.t("Slide title", "Titre de la diapo"), s.title, (v) =>
         this.edit("title", (x) => (x.title = v)),
       ),
       group(this.t("What they fly", "Ce qui est volé"), [
@@ -3935,7 +3947,7 @@ export class Inspector {
         ),
         s.goal?.all.length
           ? linkBtn(
-              this.t("Use the step’s goal", "Reprendre l’objectif de l’étape"),
+              this.t("Use the slide’s goal", "Reprendre l’objectif de la diapo"),
               () => set((x) => (x.criteria = criteriaOf(s.goal!.all))),
             )
           : null,
@@ -3957,13 +3969,13 @@ export class Inspector {
               {
                 value: "thisStep" as const,
                 label: this.t(
-                  "This step (debrief)",
-                  "Cette étape (débriefing)",
+                  "This slide (debrief)",
+                  "Cette diapo (débriefing)",
                 ),
               },
               {
                 value: "nextStep" as const,
-                label: this.t("Next step", "Étape suivante"),
+                label: this.t("Next slide", "Diapo suivante"),
               },
             ],
             fly.returnTo,
@@ -4322,7 +4334,7 @@ export class Inspector {
         H.openRail ? btn(T("Add an instrument", "Ajouter un instrument"), () => H.openRail?.("instruments"), { cls: "ce-act", icon: "gauge" }) : null,
         H.openRail ? btn(T("Add text", "Ajouter du texte"), () => H.openRail?.("text"), { cls: "ce-act", icon: "text" }) : null,
         H.openRail && !H.slideCrowded
-          ? btn(T("Give the student the controls", "Donner les commandes à l’élève"), () => H.openRail?.("cockpit"), { cls: "ce-act", icon: "play" })
+          ? btn(T("Add a “Your turn”", "Ajouter un « À vous »"), () => H.openRail?.("cockpit"), { cls: "ce-act", icon: "play" })
           : null,
       ];
       return [
@@ -5655,6 +5667,7 @@ export class Inspector {
             yt: b.yourTurn,
             nav,
             scene: b.scene,
+            autoPick: !b.yourTurn && this.takeAutoGoal(b.id),
             apply: (yt, controls, render) =>
               setFresh((x) => {
                 if (yt) x.yourTurn = yt;
@@ -5741,6 +5754,7 @@ export class Inspector {
         });
       } else {
         this.askFor = b.id;
+        this.autoGoal = b.id;
         this.render();
       }
     };
@@ -6136,7 +6150,7 @@ export class Inspector {
       this.render();
     };
     return [
-      this.l10n(this.t("Step title", "Titre de l’étape"), s.title, (v) =>
+      this.l10n(this.t("Slide title", "Titre de la diapo"), s.title, (v) =>
         this.edit("title", (x) => (x.title = v)),
       ),
       // the layout is changed in one place: the canvas toolbar's Layout (no second grid here)
@@ -6243,16 +6257,44 @@ export class Inspector {
             "Masquer le logo de l’école sur cette diapo",
           ),
         ),
-        field(
-          this.t("Snap grid", "Grille"),
-          seg(
-            [12, 24, 48].map((g) => ({ value: g, label: `${g}` })),
-            c.grid ?? 24,
-            (g) => setC((x) => (x.grid = g)),
+      ]),
+      // « Avancé »: the snap grid and the linear text (screen readers, handout, phones), folded (glossary, item 41)
+      h(
+        "details",
+        { class: "ce-more-fold" },
+        h(
+          "summary",
+          {},
+          h("span", { class: "ce-mf-t" }, this.t("Advanced", "Avancé")),
+          h(
+            "span",
+            { class: "ce-mf-l" },
+            this.t(
+              "Snap grid, text for screen readers and phones",
+              "Grille d’alignement, texte pour lecteurs d’écran et téléphones",
+            ),
           ),
         ),
-      ]),
-      group(this.t("Linear text", "Texte linéaire"), [
+        h(
+          "div",
+          { class: "ce-mf-b" },
+          field(
+            this.t("Snap grid", "Grille d’alignement"),
+            seg(
+              [12, 24, 48].map((g) => ({ value: g, label: `${g}` })),
+              c.grid ?? 24,
+              (g) => setC((x) => (x.grid = g)),
+            ),
+          ),
+          this.linearGroup(),
+        ),
+      ),
+    ];
+  }
+  /** the slide's linear text (screen readers, the handout, phones): under « Avancé » */
+  private linearGroup(): HTMLElement {
+    const s = this.host.step;
+    return group(this.t("Linear text", "Texte linéaire"), [
         note(
           this.t(
             `${s.reader.length} block${s.reader.length > 1 ? "s" : ""} for screen readers, the handout and phones.`,
@@ -6270,8 +6312,7 @@ export class Inspector {
             ),
           { cls: "sm" },
         ),
-      ]),
-    ];
+      ]);
   }
   private brandFields(): HTMLElement {
     const c = this.host.course;

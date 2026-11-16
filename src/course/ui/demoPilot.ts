@@ -58,7 +58,7 @@ const S = {
   replay: ["Replay the animation", "Rejouer l’animation"],
   pause: ["Pause", "Pause"],
   resume: ["Resume the animation", "Reprendre l’animation"],
-  give: ["Give the controls to a student", "Donner les commandes à un élève"],
+  give: ["Let a student fly here", "Faire piloter un élève ici"],
   takeBack: ["Take the controls back", "Reprendre les commandes"],
   yourTurnOpen: ["Open « Your turn »", "Ouvrir « À vous »"],
   studentLine: [
@@ -1048,7 +1048,7 @@ const P = {
   ],
   simFail: ["The simulator could not open. Try again.", "Le simulateur n’a pas pu s’ouvrir. Réessayez."],
   simOpening: ["Opening the simulator…", "Ouverture du simulateur…"],
-  give: ["Give the controls to a student", "Donner les commandes à un élève"],
+  give: ["Let a student fly here", "Faire piloter un élève ici"],
   giveSub: ["The student flies here, the projector says so", "L’élève pilote ici, la projection l’affiche"],
   hintTitle: ["Three ways to show the aircraft", "Trois façons de montrer l’avion"],
   hint1: [
@@ -1060,8 +1060,8 @@ const P = {
     "Ouvrir le simulateur : le poste de pilotage sur cette situation ; « Reprendre le cours » vous ramène ici.",
   ],
   hint3: [
-    "Give the controls to a student: « Your turn », the student flies at this device.",
-    "Donner les commandes à un élève : « À vous », l’élève pilote sur cet appareil.",
+    "Let a student fly here: « Your turn », the student flies at this device.",
+    "Faire piloter un élève ici : « À vous », l’élève pilote sur cet appareil.",
   ],
   gotIt: ["Got it", "Compris"],
   demoBrief: [

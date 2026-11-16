@@ -215,12 +215,12 @@ export interface StudioHost {
   newSlide?(): void;
 }
 
-/** the way to get a situation the author used last in the Simulateur panel */
-let SIM_WAY: "set" | "ready" | "fly" = "set";
-/** the three ways are folded until asked for (back from the cockpit they open on « Voler et capturer ») */
+/** the way to set a situation the author used last in the Simulateur panel (« Voler et capturer » is its own tile) */
+let SIM_WAY: "set" | "ready" = "set";
+/** the two ways are folded until asked for */
 let SIM_OPEN = false;
-/** Open the Simulateur panel on one of its three ways (back from the cockpit: on « Voler et capturer »). */
-export function setSimWay(w: "set" | "ready" | "fly") {
+/** Open the Simulateur panel on one of its two ways of setting the situation. */
+export function setSimWay(w: "set" | "ready") {
   SIM_WAY = w;
   SIM_OPEN = true;
 }
@@ -393,6 +393,38 @@ export class StudioPanel {
     const T = (en: string, fr: string) => t2(lang, en, fr);
     const S = host.situations;
     const out: Node[] = [];
+    // ---- « Voler et capturer » first: the cockpit in one step, from the slide's situation
+    const canFly = !!host.onSlide && !!S?.canFly;
+    let flyNow = () => {};
+    // ---- « Voler et capturer »: one step from the panel, never folded (the cockpit's capture band says the rest)
+    const flyArt = h("span", { class: "sim-add-art", "aria-hidden": "true" });
+    flyArt.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 64" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${SIM_ART.moment}</svg>`;
+    const fly = h(
+      "button",
+      { type: "button", class: "sim-add-b sim-capture", "data-sim": "capture" },
+      flyArt,
+      h(
+        "span",
+        { class: "sim-add-t" },
+        h("b", {}, T("Fly and capture", "Voler et capturer")),
+        h(
+          "span",
+          {},
+          canFly
+            ? T(
+                "The simulator opens in this situation: capture the moment you want, it comes back onto the slide.",
+                "Le simulateur s’ouvre dans cette situation : capturez le moment voulu, il revient sur la diapo.",
+              )
+            : T(
+                "The simulator cannot open from this window: set the situation below instead.",
+                "Le simulateur ne peut pas s’ouvrir depuis cette fenêtre : réglez plutôt la situation ci-dessous.",
+              ),
+        ),
+      ),
+    );
+    fly.disabled = !canFly;
+    fly.addEventListener("click", () => flyNow());
+    if (host.onSlide && S) out.push(fly);
     // ---- add
     const cards = h("div", { class: "sim-add", role: "list" });
     for (const c of SIM_CONTENTS) {
@@ -425,7 +457,7 @@ export class StudioPanel {
             {},
             T(
               "These go on a slide. Pick a slide in the strip below, or start a new one.",
-              "Ces éléments vont sur une diapo. Choisissez une diapo dans la bande du bas, ou commencez-en une.",
+              "Ces contenus vont sur une diapo. Choisissez une diapo dans la bande du bas, ou commencez-en une.",
             ),
           ),
           host.newSlide ? add : null,
@@ -447,6 +479,7 @@ export class StudioPanel {
       return r.own && id ? { kind: "block", id, from: "panel" } : { kind: "slide", from: "panel" };
     };
     let sit = situationOfScene(read.scene);
+    flyNow = () => S.fly(sceneOfSituation(sit, { base: read.scene }));
     const headName = h("b", {}, sitLabel(sit));
     const headPos = h("span", {}, posLine(sit.pos, lang));
     const paint = () => {
@@ -479,16 +512,11 @@ export class StudioPanel {
         label: T("Start from a ready situation", "Partir d’une situation prête"),
         line: T("Steady flights with a name, to adjust.", "Des vols stables qui ont un nom, à ajuster."),
       },
-      {
-        id: "fly",
-        label: T("Fly and capture", "Voler et capturer"),
-        line: T("In the simulator from this situation, then back here.", "Dans le simulateur depuis cette situation, puis retour ici."),
-      },
     ];
     const tabs = h("div", {
       class: "sim-ways",
       role: "tablist",
-      "aria-label": T("Three ways to get a situation", "Trois façons d’obtenir une situation"),
+      "aria-label": T("Two ways to set the situation", "Deux façons de régler la situation"),
     });
     const pane = h("div", { class: "sim-way", role: "tabpanel" });
     const showWay = (w: typeof SIM_WAY) => {
@@ -548,36 +576,6 @@ export class StudioPanel {
           ),
           grid.el,
         );
-      } else {
-        const go = h(
-          "button",
-          { type: "button", class: "ce-btn sim-fly" },
-          railIcon("fly", "M5 4l14 8-14 8z"),
-          h("span", {}, T("Open the simulator from this situation", "Ouvrir le simulateur depuis cette situation")),
-        );
-        go.disabled = !S.canFly;
-        go.addEventListener("click", () => S.fly(sceneOfSituation(sit, { base: read.scene })));
-        const kids: (Node | null)[] = [
-          h(
-            "ol",
-            { class: "sim-steps" },
-            h("li", {}, T("The course is saved, then the simulator opens with the aircraft in this situation.", "Le cours est enregistré, puis le simulateur s’ouvre avec l’avion dans cette situation.")),
-            h("li", {}, T("Fly to the right moment, then « Capture this moment » (key C). « Record the last 60 seconds » (Shift + C) keeps the minute just flown.", "Volez jusqu’au bon moment, puis « Capturer ce moment » (touche C). « Enregistrer les 60 dernières secondes » (Maj + C) garde la minute qui vient de passer.")),
-            h("li", {}, T("« Go back to the slide » brings you back here: your captures wait at the top of this panel, under « Your captures ».", "« Revenir à la diapo » vous ramène ici : vos captures vous attendent en haut de ce panneau, sous « Vos captures ».")),
-          ),
-          go,
-          S.canFly
-            ? null
-            : h(
-                "p",
-                { class: "ce-panel-note" },
-                T(
-                  "The simulator cannot be opened from this window. Set the situation here instead.",
-                  "Le simulateur ne peut pas s’ouvrir depuis cette fenêtre. Réglez plutôt la situation ici.",
-                ),
-              ),
-        ];
-        pane.replaceChildren(...kids.filter((k): k is Node => !!k));
       }
     };
     for (const w of ways) {
@@ -594,7 +592,7 @@ export class StudioPanel {
       });
       tabs.append(b);
     }
-    // the three ways, folded: a creator first adds, then changes the situation when needed
+    // the two ways, folded: a creator first adds, then changes the situation when needed
     const fold = h(
       "details",
       { class: "sit-fold sim-ways-fold" },
@@ -636,7 +634,7 @@ export class StudioPanel {
             t2(
               lang,
               "These go on a designed slide. Pick a slide in the strip below, or add one from Templates.",
-              "Ces éléments vont sur une diapositive. Choisissez une diapo dans la bande du bas, ou ajoutez-en une depuis Modèles.",
+              "Ces contenus vont sur une diapo. Choisissez une diapo dans la bande du bas, ou ajoutez-en une depuis Modèles.",
             ),
           ),
         ),
@@ -730,14 +728,14 @@ export class StudioPanel {
       h(
         "details",
         { class: "ce-adv ce-kinds-fold" },
-        h("summary", { class: "ce-adv-b" }, t2(lang, "More step types", "Plus de types d’étape")),
+        h("summary", { class: "ce-adv-b" }, t2(lang, "More slide types", "Plus de types de diapo")),
         h(
           "p",
           { class: "ce-panel-note" },
           t2(
             lang,
-            "A whole step after this slide, full screen for the student: a question then the instruments answer, a timed series, a flight…",
-            "Une étape entière après cette diapo, en plein écran chez l’élève : une question puis les instruments répondent, une série chronométrée, un vol…",
+            "A full-screen slide after this one, for the student: a question then the instruments answer, a timed series, a flight…",
+            "Une diapo plein écran après celle-ci, chez l’élève : une question puis les instruments répondent, une série chronométrée, un vol…",
           ),
         ),
         kinds,

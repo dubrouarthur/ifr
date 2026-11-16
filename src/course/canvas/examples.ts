@@ -848,7 +848,7 @@ export function exampleCourse(
     id: "canvas-examples",
     rev: 1,
     updated: "2026-11-06T00:00:00.000Z",
-    title: L("Designed slides: examples", "Diapositives : exemples"),
+    title: L("Designed slides: examples", "Diapos : exemples"),
     author: { name: BRAND.name, club: "Ground school" },
     langs: ["en", "fr"],
     cockpit: "steam",

@@ -57,9 +57,20 @@ export const EXAMPLE_PROMPTS: { en: string; fr: string }[] = [
     en: "ILS briefing for IR students",
   },
 ];
+/** The animation at least two slides share, the most common one (said once above the outline, not on every row). */
+export function commonAnimation<A extends string>(
+  items: readonly { animation?: A | null }[],
+): A | undefined {
+  const n = new Map<A, number>();
+  for (const it of items)
+    if (it.animation) n.set(it.animation, (n.get(it.animation) ?? 0) + 1);
+  let best: A | undefined;
+  for (const [a, c] of n) if (c >= 2 && c > (best ? n.get(best)! : 0)) best = a;
+  return best;
+}
 const FORMATION_SHORT: Record<AiFormation, { en: string; fr: string }> = {
-  "lapl-ppl": { en: "LAPL / PPL", fr: "LAPL / PPL" },
-  night: { en: "Night", fr: "Nuit" },
+  "lapl-ppl": { en: "LAPL · PPL", fr: "LAPL · PPL" },
+  night: { en: "Night flying", fr: "Vol de nuit" },
   ir: { en: "IR", fr: "IR" },
   atpl: { en: "ATPL", fr: "ATPL" },
 };
@@ -332,37 +343,32 @@ export function openAiAssistant(o: AiAssistantOptions): AiAssistant {
       h(
         "div",
         { class: "ai-body" },
+        // three steps, in order: get a key, copy it, paste it (audit item 42)
         h(
-          "label",
-          { for: "ai-key", class: "ai-label" },
-          T(lang, "Your Claude API key", "Votre clé API Claude"),
-        ),
-        h("div", { class: "ai-row" }, input, check),
-        st,
-        h(
-          "ul",
-          { id: "ai-key-help", class: "ai-help" },
+          "ol",
+          { id: "ai-key-help", class: "ai-steps" },
           h(
             "li",
             {},
-            T(
-              lang,
-              "Create one in the Claude Console: ",
-              "Créez-la dans la Claude Console : ",
+            h(
+              "span",
+              {},
+              T(
+                lang,
+                "Open the Claude Console and sign in. Usage is paid, billed to your Anthropic account.",
+                "Ouvrez la Console Claude et connectez-vous. L’usage est payant, facturé sur votre compte Anthropic.",
+              ),
             ),
             h(
               "a",
               {
+                class: "ai-btn ai-console",
                 href: "https://platform.claude.com/",
                 target: "_blank",
                 rel: "noopener noreferrer",
               },
-              "platform.claude.com",
-            ),
-            T(
-              lang,
-              ", « API keys ». Usage is billed to your Anthropic account.",
-              ", « API keys ». L’utilisation est facturée sur votre compte Anthropic.",
+              T(lang, "Open the Console", "Ouvrir la Console"),
+              h("span", { class: "ai-ext", "aria-hidden": "true" }, "↗"),
             ),
           ),
           h(
@@ -370,9 +376,29 @@ export function openAiAssistant(o: AiAssistantOptions): AiAssistant {
             {},
             T(
               lang,
-              "The key is sent only to Anthropic’s API, from your browser. It is kept for this session only, unless you tick the box below.",
-              "La clé est envoyée uniquement à l’API d’Anthropic, depuis votre navigateur. Elle n’est gardée que pour cette session, sauf si vous cochez la case ci-dessous.",
+              "In « API keys », create a key and copy it (it starts with sk-ant-).",
+              "Dans « API keys », créez une clé et copiez-la (elle commence par sk-ant-).",
             ),
+          ),
+          h(
+            "li",
+            {},
+            h(
+              "label",
+              { for: "ai-key", class: "ai-label" },
+              T(lang, "Paste it here", "Collez-la ici"),
+            ),
+            h("div", { class: "ai-row" }, input, check),
+            st,
+          ),
+        ),
+        h(
+          "p",
+          { class: "ai-note" },
+          T(
+            lang,
+            "The key is sent only to Anthropic’s API, from your browser. It is kept for this session only, unless you tick the box below.",
+            "La clé est envoyée uniquement à l’API d’Anthropic, depuis votre navigateur. Elle n’est gardée que pour cette session, sauf si vous cochez la case ci-dessous.",
           ),
         ),
         h(
@@ -710,6 +736,8 @@ export function openAiAssistant(o: AiAssistantOptions): AiAssistant {
       mapped = null;
     }
     const scenes: Record<string, SimScene> = mapped?.scenes ?? {};
+    // the animation most slides share (said once in the header)
+    const common = commonAnimation(items);
     const list = h("ol", {
       class: "ai-outline",
       "aria-label": T(lang, "Outline", "Plan du cours"),
@@ -757,7 +785,7 @@ export function openAiAssistant(o: AiAssistantOptions): AiAssistant {
           })()
         : h("b", { class: "ai-title-ro" }, loc(it.title, courseLang));
       const inst = instrumentOf(src);
-      const viewSel = inst
+      const viewSel: HTMLElement | null = inst
         ? (() => {
             const s = h("select", {
               class: "ai-input ai-view",
@@ -788,6 +816,11 @@ export function openAiAssistant(o: AiAssistantOptions): AiAssistant {
               { class: "ai-tag" },
               viewName(it.view, lang),
             )
+          : null;
+      // the animation the whole deck shares is said once, above the list: a row names only a different one
+      const anim =
+        it.animation && it.animation !== common
+          ? h("span", { class: "ai-tag" }, animationName(it.animation, lang))
           : null;
       const move = (d: -1 | 1) => {
         const k = j + d;
@@ -842,25 +875,28 @@ export function openAiAssistant(o: AiAssistantOptions): AiAssistant {
             class: `ai-o${isActionKind(it.kind) ? " act" : ""}`,
             "data-row": String(idx),
           },
-          h("span", { class: "ai-o-n" }, String(j + 1)),
-          th,
+          h(
+            "div",
+            { class: "ai-thw" },
+            th,
+            h("span", { class: "ai-o-n" }, String(j + 1)),
+          ),
           h(
             "div",
             { class: "ai-o-b" },
             h(
               "div",
-              { class: "ai-o-meta" },
+              { class: "ai-o-tl" },
               h(
                 "span",
                 { class: `ai-kind k-${it.kind}` },
                 kindName(it.kind, lang),
               ),
-              viewSel,
-              it.animation
-                ? h("span", { class: "ai-tag" }, animationName(it.animation, lang))
-                : null,
+              title,
             ),
-            title,
+            viewSel || anim
+              ? h("div", { class: "ai-o-meta" }, viewSel, anim)
+              : null,
           ),
           h("div", { class: "ai-o-act" }, up, down, del),
         ),
@@ -906,6 +942,28 @@ export function openAiAssistant(o: AiAssistantOptions): AiAssistant {
             `${n} slides. Rename, reorder or remove them, then create. Everything stays editable in the editor.`,
             `${n} diapos. Renommez, réordonnez ou retirez-les, puis créez. Tout reste modifiable dans l’éditeur.`,
           ),
+        ),
+        h(
+          "p",
+          { class: "ai-legend" },
+          ...(items.some((x) => isActionKind(x.kind))
+            ? [
+                h("span", { class: "ai-legend-bar", "aria-hidden": "true" }),
+                T(
+                  lang,
+                  "Blue edge: the student acts on this slide (Your turn, question, flight).",
+                  "Bord bleu : l’élève agit sur cette diapo (À vous, question, vol).",
+                ),
+              ]
+            : []),
+          common
+            ? h(
+                "span",
+                { class: "ai-legend-anim" },
+                T(lang, " Animation: ", " Animation : "),
+                h("b", {}, animationName(common, lang)),
+              )
+            : null,
         ),
         notes.length
           ? h(

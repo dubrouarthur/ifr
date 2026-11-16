@@ -31,7 +31,8 @@ import {
 } from "./validate";
 import { isReservedId, type CourseStore } from "./store";
 
-export const FILE_EXT = ".ifrcourse";
+/** the course file a CFI exports (import also reads the older « .ifrcourse ») */
+export const FILE_EXT = ".wingdeck";
 export const FILE_MIME = "application/x-ifrcourse";
 /** share links: text-only courses up to about 8 KB deflated (SPEC §9.7) */
 export const SHARE_MAX_BYTES = 8 * 1024;
@@ -130,9 +131,9 @@ const isGzip = (b: Uint8Array) =>
   b.length > 2 && b[0] === 0x1f && b[1] === 0x8b;
 
 // ------------------------------------------------------------------ .ifrcourse export
-/** The file name a CFI sees: "holding-entries-timing-wind.ifrcourse" */
-export function courseFileName(c: Course): string {
-  const base = c.title.en
+/** The file name a CFI sees, in the language of the app: "attentes-entrees-chronometrage-vent.wingdeck" */
+export function courseFileName(c: Course, lang: Lang = "en"): string {
+  const base = tr(c.title, lang)
     .toLowerCase()
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
@@ -188,13 +189,14 @@ export interface ExportResult {
 export async function exportCourse(
   store: CourseStore,
   id: string,
+  lang: Lang = "en",
 ): Promise<ExportResult | null> {
   const c = await store.get(id);
   if (!c) return null;
   const { file, missing } = await buildCourseFile(c, (a) => store.getAsset(a));
   const blob = await encodeCourseFile(file);
   store.markExported(id);
-  return { blob, filename: courseFileName(c), bytes: blob.size, missing };
+  return { blob, filename: courseFileName(c, lang), bytes: blob.size, missing };
 }
 /** the size meter: course text + images (bytes, before gzip; images barely compress) */
 export function fileSizeEstimate(course: Course, assetBytes?: number): number {
@@ -620,9 +622,70 @@ export interface CourseShare {
   /** why it does not fit */
   reason?: "images" | "size";
 }
-/** C1 share code of a text-only course (thumbs and stills of scenes are dropped: they are images) */
+/** the payload key naming the built-in situations a link refers to instead of carrying them */
+const SCENE_REFS = "sceneRefs";
+/** Every situation the app ships (the templates', the examples'), by id: a link names them instead of carrying
+ *  them. Loaded on demand so the share code stays out of the editor's first load. */
+async function builtInScenes(): Promise<Record<string, SimScene>> {
+  const [{ DECK_STARTERS }, { exampleScenes }] = await Promise.all([
+    import("./ui/deckStarters"),
+    import("./canvas/examples"),
+  ]);
+  const out: Record<string, SimScene> = { ...exampleScenes() };
+  for (const d of DECK_STARTERS) Object.assign(out, d.scenes?.() ?? {});
+  return out;
+}
+/** the scene ids the course actually uses: every string of the course outside its scene table that names a scene */
+export function usedSceneIds(c: Course): Set<string> {
+  const ids = new Set(Object.keys(c.scenes));
+  const used = new Set<string>();
+  const walk = (v: unknown): void => {
+    if (typeof v === "string") {
+      if (ids.has(v)) used.add(v);
+    } else if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === "object")
+      for (const [k, x] of Object.entries(v)) {
+        if (ids.has(k)) used.add(k);
+        walk(x);
+      }
+  };
+  const { scenes: _s, ...rest } = c;
+  walk(rest);
+  // a scene can name another (its start / its continuation)
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const id of [...used]) {
+      const before = used.size;
+      const { id: _own, ...body } = c.scenes[id] ?? {};
+      walk(body);
+      if (used.size > before) grew = true;
+    }
+  }
+  return used;
+}
+/** C1 share code of a text-only course (thumbs and stills of scenes are dropped: they are images). Situations the
+ *  course does not use are left out, and built-in ones it uses unchanged travel as their id alone. */
 export async function encodeCourseShare(course: Course): Promise<CourseShare> {
   const c = structuredClone(course);
+  const used = usedSceneIds(c);
+  const builtIn = await builtInScenes().catch(() => ({}) as Record<string, SimScene>);
+  const refs: string[] = [];
+  const scenes: Course["scenes"] = {};
+  for (const [id, s] of Object.entries(c.scenes)) {
+    if (!used.has(id)) continue;
+    const b = builtIn[id];
+    const plain = (x: SimScene) => {
+      const y = structuredClone(x);
+      if (y.captured) {
+        delete y.captured.thumb;
+        delete y.captured.still;
+      }
+      return JSON.stringify(y);
+    };
+    if (b && plain(b) === plain(s)) refs.push(id);
+    else scenes[id] = s;
+  }
+  c.scenes = scenes;
   const assets: Course["assets"] = {};
   for (const [id, a] of Object.entries(c.assets))
     if (a.role !== "thumb" && a.role !== "still") assets[id] = a;
@@ -633,7 +696,9 @@ export async function encodeCourseShare(course: Course): Promise<CourseShare> {
       delete s.captured.still;
     }
   delete c.hash;
-  const code = await packCode("C", c);
+  const { slimForLink } = await import("./shareSlim");
+  const slim = await slimForLink(c).catch(() => c);
+  const code = await packCode("C", refs.length ? { ...slim, [SCENE_REFS]: refs } : slim);
   const images = courseHasImages(c);
   const fits = !images && code.length <= SHARE_MAX_BYTES;
   return {
@@ -648,8 +713,22 @@ export async function decodeCourseShare(
   codeOrUrl: string,
 ): Promise<Course | null> {
   const code = shareCodeFromUrl(codeOrUrl)?.code ?? codeOrUrl.trim();
-  const v = await unpackCode("C", code);
+  const raw = await unpackCode("C", code);
+  if (!raw) return null;
+  const { fattenFromLink } = await import("./shareSlim");
+  const v = await fattenFromLink(raw).catch(() => null);
   if (!v) return null;
+  // the built-in situations the link names by id come back from the app's own copy
+  const refs = (v as Record<string, unknown>)[SCENE_REFS];
+  if (v && typeof v === "object" && Array.isArray(refs)) {
+    const o = v as Record<string, unknown> & { scenes?: Record<string, unknown> };
+    delete o[SCENE_REFS];
+    const builtIn = await builtInScenes().catch(() => ({}) as Record<string, SimScene>);
+    const scenes = { ...(o.scenes ?? {}) };
+    for (const id of refs)
+      if (typeof id === "string" && builtIn[id] && !scenes[id]) scenes[id] = structuredClone(builtIn[id]);
+    o.scenes = scenes;
+  }
   const m = migrate(v);
   if (!m.value || !isStructurallyValid(validateCourse(m.value))) return null;
   return m.value;

@@ -375,7 +375,7 @@ export class ChecksPanel {
             h(
               "span",
               { class: "ce-check-code" },
-              `${tr(CODE_LABEL[c.code] ?? L(c.code, c.code), lang)}${where ? ` · ${fr ? "étape" : "step"} ${where}` : ""}`,
+              `${tr(CODE_LABEL[c.code] ?? L(c.code, c.code), lang)}${where ? ` · ${fr ? "diapo" : "slide"} ${where}` : ""}`,
             ),
             h("span", {}, tr(c.message, lang)),
           ),

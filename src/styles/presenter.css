@@ -1,0 +1,41 @@
+/* The presenter's own overrides (Lane B, audit item 40): « Suivant » is the one filled button; the projector
+   button is outlined while closed and becomes the chip « Projection ouverte ● » once the screen is open. */
+
+/* « Suivant » stays filled whether or not the projector screen is open (course.css made it white while closed) */
+.pr-app.pr-app:not(.proj-on) .cp-foot .cp-btn.primary {
+  background: var(--gl-accent, #0b63ce);
+  border-color: var(--gl-accent, #0b63ce);
+  color: #fff;
+  box-shadow: none;
+}
+
+.pr-head .cp-btn.pr-projchip {
+  min-height: 44px;
+  padding: 0 14px 0 16px;
+  border-radius: 999px;
+  border-color: #b9dcc6;
+  background: #eef8f1;
+  color: #135c33;
+  font-weight: 600;
+}
+.pr-head .cp-btn.pr-projchip:hover {
+  background: #e2f3e8;
+}
+.pr-projdot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #1f8a4c;
+  box-shadow: 0 0 0 3px rgb(31 138 76 / 0.18);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pr-projdot {
+    animation: pr-projdot 2.4s ease-in-out infinite;
+  }
+}
+@keyframes pr-projdot {
+  50% {
+    box-shadow: 0 0 0 5px rgb(31 138 76 / 0.08);
+  }
+}

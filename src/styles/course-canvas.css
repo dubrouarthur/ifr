@@ -1171,12 +1171,30 @@ button.sl-q-opt.is-right:hover {
 }
 /* « Pause » / « Reprendre » / « Rejouer » of an animation (canvas/motion.ts): quiet, the filled one is « À vous » */
 .sl-motion-btn {
+  width: 44px;
+  height: 44px;
   min-height: 44px;
-  padding: 0 16px 0 14px;
-  gap: 8px;
+  padding: 0;
+  gap: 0;
+  justify-content: center;
+  border-radius: 50%;
   font-size: 14px;
   background: rgba(5, 8, 11, 0.72);
   border: 1px solid rgba(255, 255, 255, 0.55);
+}
+/* the word is the button's name (and its tooltip), not drawn over the instrument */
+.sl-motion-btn .sl-motion-w {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* the projector shows the slide to the room: nobody pauses the animation there */
+.cp-projector .sl-motion-btn {
+  display: none;
 }
 .sl-motion-btn:hover {
   background: rgba(5, 8, 11, 0.88);

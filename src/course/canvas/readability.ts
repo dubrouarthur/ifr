@@ -563,7 +563,7 @@ export function readIssueText(i: ReadIssue, lang: Lang): L10n {
     case "offCanvas":
       return {
         en: "A block goes off the slide",
-        fr: "Un bloc sort de la diapositive",
+        fr: "Un bloc sort de la diapo",
       };
     case "overlap":
       return { en: "Two blocks overlap", fr: "Deux blocs se chevauchent" };

@@ -245,6 +245,8 @@ export interface AskOptions {
   /** the detailed editor (task text, checks, hold time, hint), folded */
   detail?: () => HTMLElement;
   scene?: string;
+  /** the author just chose « À vous »: the first suggested goal is set (and saved) at once, the list stays to change it */
+  autoPick?: boolean;
 }
 
 /** « Ce qu’on lui demande »: nothing, or a goal picked from sentences written with the situation's numbers. */
@@ -262,6 +264,11 @@ export function askGroup(
   const draw = () => {
     const sit = live.sit;
     const list = sentencesFor(o.where, sit, !!o.nav);
+    if (!yt && o.autoPick && list.length) {
+      const g = list[0];
+      // after the panel is drawn: the goal is stored like a click on the first sentence
+      queueMicrotask(() => o.apply(yourTurnFor(g, sit, o.where, o.scene), g.controls, true));
+    }
     if (!yt) {
       body.replaceChildren(
         note(

@@ -950,13 +950,15 @@ function motionButton(
   btn.type = "button";
   const ic = mk("span", "sl-hud-ic");
   ic.setAttribute("aria-hidden", "true");
-  const word = mk("span", "");
+  // a small round button in the corner of the instrument (its word is its name and tooltip): it never covers a face
+  const word = mk("span", "sl-motion-w");
   btn.append(ic, word);
   const sync = () => {
     const s = run.state;
     const k = s === "playing" ? "pause" : s === "paused" ? "resume" : "replay";
     btn.dataset.state = k;
     word.textContent = MOTION_WORDS[k][env.lang === "fr" ? 1 : 0];
+    btn.title = word.textContent;
     btn.classList.toggle("is-gone", s === "handed");
     btn.disabled = s === "handed";
   };

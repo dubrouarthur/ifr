@@ -1,30 +1,73 @@
-// The first tip after « Créer le cours » (academy.html#new → #edit=<id>): one small card beside the editor's
-// « Simulateur » tab that says what is in it, with « Voir le panneau Simulateur » and « Plus tard ». It waits for the
-// editor to draw its rail (it never imports the editor), shows once per browser, and goes away on Escape,
-// on either button, on any other tab of the rail, or when the page leaves the editor.
+// The first tips after « Créer le cours » (academy.html#new → #edit=<id>), in two quiet steps:
+//   1. on entry, one small line over the slide's top margin: « Double-cliquez un texte pour l’écrire » (the first thing
+//      to do is write the course, not explore the panels);
+//   2. after the author's first edit, one small card beside the rail's « Simulateur » tab, placed where it covers no
+//      text of the slide: « Vos diapos volent » with a text link « Essayer » (opens the panel) and a close button.
+// Each goes away on Escape, on its close button, on the first click on the slide, on any other tab of the rail,
+// when another popover opens (inspector.ts POP_OPEN) or when the page leaves the editor. Shown once per browser; it
+// waits for the editor to draw (it never imports the editor).
 import type { Lang } from "../types";
 import { h } from "../../ui/dom";
 import "../../styles/newcourse.css";
 
 const T = (lang: Lang, en: string, fr: string) => (lang === "fr" ? fr : en);
 const RAIL = '[data-rail="cockpit"]';
+const SLIDE = ".ce-canvaswrap";
 /** shown once on this browser, not on every new course */
 const SEEN = "ifr.simTip.v2";
+/** the event the editor's popovers send when they open (inspector.ts POP_OPEN) */
+const POP_OPEN = "ce-popopen";
 
-/** Arm the tip: it shows when the editor's « Simulateur » tab appears (within 20 s), then never again for it. */
+type Box = { left: number; top: number; right: number; bottom: number };
+const hits = (a: Box, b: Box) =>
+  a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+
+/**
+ * Where a w × h card beside the rail tab goes: its left edge at `left`, its top as near the tab's centre as it can be
+ * while covering none of `avoid` (the slide's words). Tries every 8 px, nearest first; null when no place is clear.
+ */
+export function clearTop(
+  tab: { top: number; bottom: number },
+  w: number,
+  hgt: number,
+  left: number,
+  avoid: Box[],
+  bounds: { top: number; bottom: number },
+): number | null {
+  const want = Math.round((tab.top + tab.bottom) / 2 - hgt / 2);
+  const ok = (top: number) =>
+    top >= bounds.top &&
+    top + hgt <= bounds.bottom &&
+    !avoid.some((b) =>
+      hits({ left, top, right: left + w, bottom: top + hgt }, b),
+    );
+  for (let d = 0; d < 1200; d += 8) {
+    if (ok(want + d)) return want + d;
+    if (d && ok(want - d)) return want - d;
+  }
+  return null;
+}
+
+/** Arm the tips: they show when the editor's slide and « Simulateur » tab appear (within 20 s), then never again. */
 export function armSimTip(lang: Lang): void {
   if (typeof document === "undefined") return;
   try {
     if (localStorage.getItem(SEEN) === "1") return;
     localStorage.setItem(SEEN, "1");
   } catch {
-    /* private window: the tip shows */
+    /* private window: the tips show */
   }
   const t0 = Date.now();
   const look = () => {
     const tab = document.querySelector<HTMLElement>(RAIL);
-    if (tab && tab.getBoundingClientRect().width > 0) {
-      showSimTip(tab, lang);
+    const slide = document.querySelector<HTMLElement>(SLIDE);
+    if (
+      tab &&
+      slide &&
+      tab.getBoundingClientRect().width > 0 &&
+      slide.getBoundingClientRect().width > 0
+    ) {
+      start(lang);
       return;
     }
     if (Date.now() - t0 < 20000) setTimeout(look, 250);
@@ -32,17 +75,158 @@ export function armSimTip(lang: Lang): void {
   setTimeout(look, 400);
 }
 
-function showSimTip(tab: HTMLElement, lang: Lang) {
-  document.querySelector(".nc-simtip")?.remove();
-  const open = h(
-    "button",
-    { type: "button", class: "nc-btn nc-primary nc-simtip-go" },
-    T(lang, "Show the Simulator panel", "Voir le panneau Simulateur"),
+/** a field the author is typing in (the slide's inline text is a textarea over the canvas) */
+export function writing(t: EventTarget | Element | null): boolean {
+  const e = t as HTMLElement | null;
+  if (!e || !e.tagName) return false;
+  return (
+    e.tagName === "TEXTAREA" ||
+    (e.tagName === "INPUT" &&
+      !/^(button|checkbox|radio|range|submit)$/.test(
+        (e as HTMLInputElement).type,
+      )) ||
+    e.isContentEditable === true
   );
-  const later = h(
+}
+
+/** the shared ways a tip goes away; returns its close */
+function dismissible(
+  el: HTMLElement,
+  place: () => void,
+  onClose?: () => void,
+): () => void {
+  const hash = location.hash;
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    el.remove();
+    removeEventListener("resize", place);
+    removeEventListener("hashchange", onHash);
+    document.removeEventListener("keydown", onKey, true);
+    document.removeEventListener("pointerdown", onDown, true);
+    document.removeEventListener(POP_OPEN, close);
+    onClose?.();
+  };
+  const onHash = () => {
+    if (location.hash.split("&")[0] !== hash.split("&")[0]) close();
+  };
+  // Escape inside a text being written belongs to that text (it ends the writing), not to the tip
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape" && !writing(e.target)) close();
+  };
+  // the first click on the slide, or on another tab of the rail: the author is at work, the tip is not needed
+  const onDown = (e: PointerEvent) => {
+    const t = e.target as HTMLElement | null;
+    if (!t || el.contains(t)) return;
+    if (t.closest?.(SLIDE) || t.closest?.("[data-rail]")) close();
+  };
+  addEventListener("resize", place);
+  addEventListener("hashchange", onHash);
+  document.addEventListener("keydown", onKey, true);
+  document.addEventListener("pointerdown", onDown, true);
+  document.addEventListener(POP_OPEN, close);
+  return close;
+}
+
+function closeButton(lang: Lang, onClick: () => void): HTMLButtonElement {
+  const x = h(
     "button",
-    { type: "button", class: "nc-btn nc-simtip-later" },
-    T(lang, "Later", "Plus tard"),
+    {
+      type: "button",
+      class: "nc-tip-x",
+      "aria-label": T(lang, "Close the tip", "Fermer le conseil"),
+    },
+    "×",
+  ) as HTMLButtonElement;
+  x.addEventListener("click", onClick);
+  return x;
+}
+
+function start(lang: Lang) {
+  document.querySelector(".nc-edithint")?.remove();
+  document.querySelector(".nc-simtip")?.remove();
+  // ---- 1. how to write: over the slide's top margin (the layouts keep it empty)
+  const touch =
+    typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+  const hint = h(
+    "div",
+    { class: "nc-edithint", role: "status" },
+    h(
+      "span",
+      {},
+      touch
+        ? T(
+            lang,
+            "Double-tap a text to write it",
+            "Touchez deux fois un texte pour l’écrire",
+          )
+        : T(
+            lang,
+            "Double-click a text to write it",
+            "Double-cliquez un texte pour l’écrire",
+          ),
+    ),
+  );
+  const placeHint = () => {
+    const s = document.querySelector(SLIDE)?.getBoundingClientRect();
+    if (!s || !s.width) return closeHint();
+    hint.style.left = `${Math.round(s.left + s.width / 2)}px`;
+    hint.style.top = `${Math.round(Math.max(64, s.top + 6))}px`;
+  };
+  const closeHint = dismissible(hint, placeHint);
+  hint.append(closeButton(lang, closeHint));
+  document.body.append(hint);
+  placeHint();
+  // ---- 2. the Simulateur panel, once the author has made a first change
+  let armed = true;
+  const onEdit = (e: Event) => {
+    const t = e.target as HTMLElement | null;
+    // any typing in the editor (the slide's inline text is a textarea over the canvas, outside .ce-app)
+    if (!armed || !t || t.closest?.(".nc-simtip, .nc-edithint")) return;
+    armed = false;
+    document.removeEventListener("input", onEdit, true);
+    // when the author has finished writing (the text closed) and paused, not under their fingers
+    let idle = 0;
+    const wait = () => {
+      clearTimeout(idle);
+      idle = window.setTimeout(() => {
+        if (writing(document.activeElement)) return wait();
+        document.removeEventListener("input", wait, true);
+        if (location.hash.split("&")[0] === hash.split("&")[0])
+          showSimTip(lang);
+      }, 1200);
+    };
+    document.addEventListener("input", wait, true);
+    wait();
+  };
+  document.addEventListener("input", onEdit, true);
+  // leaving the editor before any edit: nothing more
+  const hash = location.hash;
+  const off = () => {
+    if (location.hash.split("&")[0] === hash.split("&")[0]) return;
+    armed = false;
+    document.removeEventListener("input", onEdit, true);
+    removeEventListener("hashchange", off);
+  };
+  addEventListener("hashchange", off);
+}
+
+function showSimTip(lang: Lang) {
+  const tab = document.querySelector<HTMLElement>(RAIL);
+  if (!tab || !tab.getBoundingClientRect().width) return;
+  // the panel is already open: the tip has nothing to show
+  if (
+    tab.classList.contains("on") ||
+    tab.getAttribute("aria-pressed") === "true"
+  )
+    return;
+  document.querySelector(".nc-simtip")?.remove();
+  const go = h(
+    "button",
+    { type: "button", class: "nc-tip-link" },
+    T(lang, "Try it", "Essayer"),
+    h("span", { "aria-hidden": "true" }, " ›"),
   );
   const tip = h(
     "div",
@@ -63,61 +247,54 @@ function showSimTip(tab: HTMLElement, lang: Lang) {
       {},
       T(
         lang,
-        "In the “Simulator” panel: a live instrument, a “Your turn” with a goal, the view from the cockpit or a whole flight.",
-        "Dans le panneau « Simulateur » : un instrument vivant, un « À vous » avec un objectif, la vue du cockpit ou un vol complet.",
+        "In “Simulator”: a live instrument, a “Your turn”, the view from the cockpit.",
+        "Dans « Simulateur » : un instrument vivant, un « À vous », la vue du cockpit.",
       ),
     ),
-    h("div", { class: "nc-simtip-acts" }, later, open),
+    go,
   );
-  // low on the slide, in the margin of its words: never over the slide's title (top third); the arrow points at
-  // the tab when it can, else the tab's own highlight shows where the panel is
   const arrow = tip.querySelector<HTMLElement>(".nc-simtip-arrow");
   const place = () => {
     const r = tab.getBoundingClientRect();
     if (!r.width) return close();
-    const slide = document.querySelector(".ce-canvaswrap")?.getBoundingClientRect();
-    const th = tip.offsetHeight || 190;
-    const want = Math.round(r.top + r.height / 2 - 44);
-    const low = slide && slide.height > 0 ? Math.round(slide.bottom - th - 16) : want;
-    const top = Math.max(8, Math.min(innerHeight - th - 8, Math.max(want, low)));
+    const w = tip.offsetWidth || 260;
+    const th = tip.offsetHeight || 110;
+    const left = Math.round(r.right + 12);
+    // the slide's words, as drawn: the card never covers one
+    const words = [
+      ...document.querySelectorAll<HTMLElement>(
+        `${SLIDE} .sl-text, ${SLIDE} .sl-callout, ${SLIDE} .sl-quiz, ${SLIDE} .sl-checklist`,
+      ),
+    ]
+      .map((e) => e.getBoundingClientRect())
+      .filter((b) => b.width > 0 && b.height > 0);
+    const top =
+      clearTop(r, w, th, left, words, { top: 64, bottom: innerHeight - 8 }) ??
+      Math.max(
+        8,
+        Math.min(
+          innerHeight - th - 8,
+          Math.round(r.top + r.height / 2 - th / 2),
+        ),
+      );
     tip.style.top = `${top}px`;
-    tip.style.left = `${Math.round(r.right + 12)}px`;
+    tip.style.left = `${left}px`;
     const at = r.top + r.height / 2 - top - 6;
     if (arrow) {
       arrow.hidden = at < 12 || at > th - 20;
       arrow.style.top = `${Math.round(at)}px`;
     }
   };
-  const hash = location.hash;
-  const close = () => {
-    tip.remove();
-    removeEventListener("resize", place);
-    removeEventListener("hashchange", onHash);
-    document.removeEventListener("keydown", onKey, true);
-    document.removeEventListener("click", onRail, true);
-  };
-  const onHash = () => {
-    if (location.hash.split("&")[0] !== hash.split("&")[0]) close();
-  };
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape") close();
-  };
-  // another tab of the rail: the author went elsewhere, the tip is not needed any more
-  const onRail = (e: MouseEvent) => {
-    const t = (e.target as HTMLElement | null)?.closest?.("[data-rail]");
-    if (t) close();
-  };
-  open.addEventListener("click", () => {
+  const close = dismissible(tip, place, () =>
+    tab.classList.remove("nc-simtip-for"),
+  );
+  tip.append(closeButton(lang, close));
+  go.addEventListener("click", () => {
     close();
     tab.click();
   });
-  later.addEventListener("click", close);
   document.body.append(tip);
   place();
-  addEventListener("resize", place);
-  addEventListener("hashchange", onHash);
-  document.addEventListener("keydown", onKey, true);
-  document.addEventListener("click", onRail, true);
   tab.classList.add("nc-simtip-for");
   setTimeout(() => tab.classList.remove("nc-simtip-for"), 2400);
 }

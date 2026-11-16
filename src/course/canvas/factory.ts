@@ -195,7 +195,7 @@ const TEXT_ITEMS: [TextStyle, L10n, L10n, number][] = [
   [
     "title",
     L("Title", "Titre"),
-    L("Your slide title", "Titre de la diapositive"),
+    L("Your slide title", "Titre de la diapo"),
     1344,
   ],
   ["heading", L("Heading", "Intertitre"), L("A heading", "Un intertitre"), 816],
@@ -204,7 +204,7 @@ const TEXT_ITEMS: [TextStyle, L10n, L10n, number][] = [
     L("Body text", "Texte"),
     L(
       "Say one thing per slide. **Bold** the key word.",
-      "Une idée par diapositive. Mettez le mot clé en **gras**.",
+      "Une idée par diapo. Mettez le mot clé en **gras**.",
     ),
     816,
   ],
@@ -596,22 +596,13 @@ const INTERACTIVE_ITEMS: LibraryItem[] = [
     preview: { k: "glyph", glyph: "quiz" },
     make: () => ({
       kind: "quiz",
+      // a new question starts neutral: the author writes their own question, answers and explanation
       quiz: {
         kind: "mcq",
-        prompt: L(
-          "The CDI is one dot right with a TO flag. Where is the course?",
-          "Le CDI est à un point à droite, indicateur TO. Où est la route ?",
-        ),
-        options: [
-          { text: L("To my right", "À ma droite") },
-          { text: L("To my left", "À ma gauche") },
-          { text: L("Behind me", "Derrière moi") },
-        ],
+        prompt: L("Your question?", "Votre question ?"),
+        options: [{ text: L("Answer A", "Réponse A") }, { text: L("Answer B", "Réponse B") }],
         answer: 0,
-        explain: L(
-          "Fly towards the needle: the course is on the side the bar is.",
-          "Volez vers l’aiguille : la route est du côté de la barre.",
-        ),
+        explain: L("", ""),
       },
       frame: { w: 816, h: 480 },
     }),

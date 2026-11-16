@@ -161,7 +161,7 @@ describe("Nouveau cours (#new)", () => {
     expect(blank.steps).toHaveLength(1);
     expect(blank.program).toBeUndefined();
   });
-  it("a card's « N étapes · environ M min » is what the editor will say", () => {
+  it("a card's « N diapos · environ M min » is what the editor will say (glossary: diapos)", () => {
     for (const d of DECK_STARTERS) {
       const c = buildNewCourse({
         id: "x",
@@ -172,10 +172,11 @@ describe("Nouveau cours (#new)", () => {
         starter: d,
       });
       expect(starterMeta(d, "fr")).toBe(
-        `${d.slides.length} étapes · environ ${Math.max(1, courseMinutes(c))} min`,
+        `${d.slides.length} diapos · environ ${Math.max(1, courseMinutes(c))} min`,
       );
     }
-    expect(starterMeta(BLANK_STARTER, "fr")).toBe("1 étape");
+    expect(starterMeta(BLANK_STARTER, "fr")).toBe("1 diapo");
+    expect(starterMeta(BLANK_STARTER, "en")).toBe("1 slide");
   });
   it("the library and the router no longer save a draft on « Nouveau cours »", () => {
     const lib = code("src/course/ui/library.ts");
@@ -203,7 +204,7 @@ describe("plain words in the editor and the presenter", () => {
       /Voler pour capturer|Tester comme élève|Calques|"Marque"|"Multiple"|Salle de cours|belle présentation|pour la nuit ou l’IMC/,
     );
     expect(src).toMatch(/Aperçu élève/);
-    expect(src).toMatch(/Capturer depuis le simulateur/);
+    expect(src).toMatch(/Voler et capturer/);
     expect(src).toMatch(/Éléments de la diapo/);
     expect(src).toMatch(/Logo du club/);
   });

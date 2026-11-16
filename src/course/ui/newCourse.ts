@@ -89,8 +89,8 @@ export function starterMeta(d: DeckStarter, lang: Lang): string {
   const n = d.slides.length;
   const fr = lang === "fr";
   const steps = fr
-    ? `${n} ${n > 1 ? "étapes" : "étape"}`
-    : `${n} ${n > 1 ? "steps" : "step"}`;
+    ? `${n} ${n > 1 ? "diapos" : "diapo"}`
+    : `${n} ${n > 1 ? "slides" : "slide"}`;
   if (d.id === BLANK_STARTER.id) return steps;
   return `${steps} · ${fr ? "environ" : "about"} ${Math.max(1, starterMinutes(d))} min`;
 }
@@ -580,7 +580,7 @@ export function mountNewCourse(
             T(
               lang,
               "Already have your slides?",
-              "Vous avez déjà vos diapositives ?",
+              "Vous avez déjà vos diapos ?",
             ),
           ),
           h(
@@ -659,7 +659,21 @@ export function mountNewCourse(
             "Partez d’un modèle déjà mis en page : vous changez les mots, les instruments restent vivants. Tout se modifie ensuite.",
           ),
         ),
-        aiCreateButton({ lang, store: o.store, program, onCreated: o.onCreated }),
+        // « Créer avec l’IA » says what it needs before the click: a paid key, about a minute (audit item 42)
+        h(
+          "div",
+          { class: "nc-ai-row" },
+          aiCreateButton({ lang, store: o.store, program, onCreated: o.onCreated }),
+          h(
+            "span",
+            { class: "nc-ai-note" },
+            T(
+              lang,
+              "With your Claude key (paid) · about 1 minute",
+              "Avec votre clé Claude (payante) · environ 1 minute",
+            ),
+          ),
+        ),
         fields,
         h(
           "div",

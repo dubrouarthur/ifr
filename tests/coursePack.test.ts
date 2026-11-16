@@ -674,7 +674,7 @@ describe(".ifrcourse files", () => {
     });
     await s.save(course({ assets: { [ref.id]: ref } }));
     const ex = (await exportCourse(s, "vor-tracking"))!;
-    expect(ex.filename).toBe("vor-tracking-inbound-and-outbound.ifrcourse");
+    expect(ex.filename).toBe("vor-tracking-inbound-and-outbound.wingdeck");
     expect(ex.missing).toEqual([]);
     const head = new Uint8Array(await ex.blob.slice(0, 2).arrayBuffer());
     expect([head[0], head[1]]).toEqual([0x1f, 0x8b]);

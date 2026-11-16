@@ -170,14 +170,14 @@ export const TEMPLATES: TemplateDef[] = [
     title: L("Page", "Page"),
     intent: L(
       "An imported slide or image, with optional reveal text",
-      "Une diapositive ou une image importée, avec texte à révéler",
+      "Une diapo ou une image importée, avec texte à révéler",
     ),
     usesScene: false,
   },
   {
     id: "slide",
     kind: "slide",
-    title: L("Designed slide", "Diapositive libre"),
+    title: L("Designed slide", "Diapo libre"),
     intent: L(
       "Free layout: text, photos, live instruments, diagrams",
       "Mise en page libre : texte, photos, instruments en direct, schémas",
@@ -352,7 +352,7 @@ const T_TITLE: Record<TemplateId, L10n> = {
   drill: L("Drill: ten in a row", "Série : dix d’affilée"),
   fly: L("Fly it", "En vol"),
   page: L("Page", "Page"),
-  slide: L("New slide", "Nouvelle diapositive"),
+  slide: L("New slide", "Nouvelle diapo"),
 };
 
 /**
@@ -1170,7 +1170,7 @@ export function courseMissingFr(course: Course): number {
     steps: course.steps,
   });
 }
-/** "Step 4 of 12 · 3 reveals · about 1.5 min" */
+/** "Slide 4 of 12 · 3 reveals · about 1.5 min" */
 export function stepBarText(
   course: Course,
   i: number,
@@ -1179,8 +1179,8 @@ export function stepBarText(
   const s = course.steps[i];
   const fr = lang === "fr";
   const head = fr
-    ? `Étape ${i + 1} sur ${course.steps.length}`
-    : `Step ${i + 1} of ${course.steps.length}`;
+    ? `Diapo ${i + 1} sur ${course.steps.length}`
+    : `Slide ${i + 1} of ${course.steps.length}`;
   if (!s) return { head, tail: "" };
   const r = revealsOf(s);
   const parts: string[] = [];

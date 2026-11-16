@@ -15,6 +15,7 @@ import {
   type SlideRenderer,
 } from "./player";
 import { DemoPanel } from "./demoPilot";
+import "../../styles/presenter.css";
 import { btn, L, taskChip } from "./reader";
 import { courseMinutes } from "./outline";
 import { stagePoseOf } from "../scene";
@@ -29,24 +30,28 @@ import { academyHref } from "./library";
 
 const S = {
   presenter: ["Presenter", "Présentateur"],
-  step: ["Step {n} of {t}", "Étape {n} sur {t}"],
-  next: ["Next step", "Étape suivante"],
+  step: ["Slide {n} of {t}", "Diapo {n} sur {t}"],
+  next: ["Next slide", "Diapo suivante"],
   end: ["End of the course", "Fin du cours"],
   notes: ["Notes", "Notes"],
   noNotes: [
-    "No presenter notes for this step.",
-    "Pas de notes pour cette étape.",
+    "No presenter notes for this slide.",
+    "Pas de notes pour cette diapo.",
   ],
   reveal: ["Reveal {r} of {n}", "Affichage {r} sur {n}"],
   projector: ["Open the projector screen", "Ouvrir l’écran de projection"],
-  projectorOn: ["Projector screen open ✓", "Écran de projection ouvert ✓"],
+  projectorOn: ["Projector open", "Projection ouverte"],
+  projectorOnTip: [
+    "The projector screen is open: a click brings it to the front",
+    "L’écran de projection est ouvert : un clic le ramène devant",
+  ],
   projectorHint: [
     "Drag the projector screen to the second display, then press F11 (or ⌃⌘F) for full screen. The class sees only that screen.",
     "Glissez l’écran de projection sur le second écran, puis F11 (ou ⌃⌘F) pour le plein écran. La classe ne voit que cet écran.",
   ],
   strip: [
-    "Every step: a click shows it on the projector",
-    "Toutes les étapes : un clic l’affiche sur la projection",
+    "Every slide: a click shows it on the projector",
+    "Toutes les diapos : un clic l’affiche sur la projection",
   ],
   noChannel: [
     "This browser cannot link two windows: present from this window.",
@@ -126,7 +131,8 @@ export class Presenter {
       this.setBlack(!this.black),
     );
     this.blackBtn.setAttribute("aria-pressed", "false");
-    this.projBtn = btn(st("projector", this.lang), "primary", () =>
+    // secondary: « Suivant » is the one filled button of the presenter (audit item 40)
+    this.projBtn = btn(st("projector", this.lang), "pr-projb", () =>
       this.openProjector(),
     );
     this.head = h("header", { class: "pr-head" });
@@ -162,8 +168,8 @@ export class Presenter {
       step: () => this.player.step,
       slide: () => this.slideHost,
       post: (m) => this.link.post(m),
-      primary: () =>
-        !this.link.ok || (!!this.projector && !this.projector.closed),
+      // « Suivant » is the presenter's one filled button: the demonstration's launchers stay outlined
+      primary: () => false,
       changed: () => {
         if (this.ready) this.renderSide();
       },
@@ -289,6 +295,15 @@ export class Presenter {
       : st("black", this.lang);
   }
   private openProjector() {
+    // already open (the chip): bring it to the front, never reload it under the class's eyes
+    if (this.projector && !this.projector.closed) {
+      try {
+        this.projector.focus();
+      } catch {
+        /* another window may refuse the focus */
+      }
+      return;
+    }
     const url = academyHref(
       { k: "project", id: this.o.course.id },
       this.o.page,
@@ -381,12 +396,17 @@ export class Presenter {
     });
     this.renderClock();
     const open = !!this.projector && !this.projector.closed;
-    this.projBtn.textContent = open
-      ? st("projectorOn", lang)
-      : st("projector", lang);
-    // one primary: « Ouvrir l’écran de projection » until it is open, then « Piloter la démonstration » (on a
-    // slide with instruments) or « Suivant » leads
-    this.projBtn.classList.toggle("primary", !open);
+    // closed: an outlined button « Ouvrir l’écran de projection »; open: the chip « Projection ouverte ● »
+    // (a click brings the projector window to the front). « Suivant » stays the one filled button.
+    if (open)
+      this.projBtn.replaceChildren(
+        h("span", {}, st("projectorOn", lang)),
+        h("i", { class: "pr-projdot", "aria-hidden": "true" }),
+      );
+    else this.projBtn.textContent = st("projector", lang);
+    this.projBtn.classList.remove("primary");
+    this.projBtn.classList.toggle("pr-projchip", open);
+    this.projBtn.title = open ? st("projectorOnTip", lang) : "";
     if (this.ready && open !== this.el.classList.contains("proj-on"))
       queueMicrotask(() => this.demo.render());
     this.el.classList.toggle("proj-on", open || !this.link.ok);
@@ -444,7 +464,7 @@ export class Presenter {
             class: "pr-st",
             "data-i": String(i),
             title: `${i + 1}. ${L(s.title, lang)}`,
-            "aria-label": `${lang === "fr" ? "Étape" : "Step"} ${i + 1} : ${L(s.title, lang)}`,
+            "aria-label": `${lang === "fr" ? "Diapo" : "Slide"} ${i + 1} : ${L(s.title, lang)}`,
           },
           pic,
           h("span", { class: "pr-st-n num" }, String(i + 1)),
