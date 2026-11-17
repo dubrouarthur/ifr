@@ -98,6 +98,9 @@ export interface CockpitHost {
   lang(): Lang;
   cockpit(): Cockpit;
   world?(): World;
+  /** load the real-world region a course situation stands on (« Adapter à mon terrain »: a takeoff from the
+   *  instructor's field) before it is posed; false: it could not be loaded */
+  loadWorld?(w: World): Promise<boolean>;
   airac?(): string;
   toast(
     text: string,
@@ -161,6 +164,10 @@ const T = {
     "Ce lien de scène est inutilisable : {r}",
   ],
   sceneOk: ["Scene loaded", "Scène chargée"],
+  regionFail: [
+    "The field {r} could not be loaded for this flight. Check the connection and open the course again.",
+    "Le terrain {r} n’a pas pu être chargé pour ce vol. Vérifiez la connexion et rouvrez le cours.",
+  ],
   captured: ["Moment captured: {t}", "Moment capturé : {t}"],
   clipped: [
     "The last {n} s are recorded for the slide",
@@ -288,6 +295,16 @@ export class CourseBridge {
           r.handoff.calc.params,
         )
       : undefined;
+    // a situation at a real field: its region first (the nav database, the terrain), then the flight
+    const tgt = r.handoff.target;
+    const tScene = tgt.kind === "scene" ? r.course.scenes[tgt.scene] : undefined;
+    if (tScene?.world?.kind === "real" && this.host.loadWorld) {
+      const ok = await this.host.loadWorld(tScene.world).catch(() => false);
+      if (!ok) {
+        this.host.toast(tx("regionFail", lang, { r: tScene.world.region }), "warn", 9000);
+        return false;
+      }
+    }
     const options: FlyOption[] = r.handoff.options ?? [];
     this.plan = flyItPlan(r.step, r.course, {
       applyScene: (sim, scene) => applyScene(sim, scene),

@@ -552,18 +552,20 @@ const setup = new FlightSetup({
   flyGraded: (c, st) => { applySetupPrefs(st); if (c.cockpit && c.cockpit !== cockpitType) setCockpit(c.cockpit); startExerciseNow(circuitToExercise(c)); },
   flyFree: (sc, st) => { applySetupPrefs(st); startScenario(sc, { id: 'custom', name: 'Custom', desc: '', wx: st.weather }, { mode: 'training', student: launcher.assess.student, handFlown: false, randomFailure: false }); },
   openChart: (id) => { charts.toggle(true); charts.show(id); },
-  regionChanged: () => {
-    // the previous flight refers to the old nav database: stop it cleanly (no result, no debrief) before
-    // anything else reads its route, approach or lesson steps
-    lesson = null;
-    hideCrash();
-    sim.paused = true;
-    sim.fp = new FlightPlan();
-    atc.clear();
-    rebuildOutside();
-    charts.refresh?.();
-  },
+  regionChanged: () => regionChanged(),
 });
+/** the nav database / terrain changed (a real-world region loaded or left) */
+function regionChanged() {
+  // the previous flight refers to the old nav database: stop it cleanly (no result, no debrief) before
+  // anything else reads its route, approach or lesson steps
+  lesson = null;
+  hideCrash();
+  sim.paused = true;
+  sim.fp = new FlightPlan();
+  atc.clear();
+  rebuildOutside();
+  charts.refresh?.();
+}
 setup.toast = (m) => toast(m, 'good');
 /** full-screen start page at launch: its one action opens the Flight Center, the single place every flight starts */
 const intro = new Intro({
@@ -1652,6 +1654,20 @@ const courseHost: CockpitHost = {
   world: () => {
     const r = currentRegion();
     return r ? { kind: 'real', region: `${r.center.lat.toFixed(2)},${r.center.lon.toFixed(2)}` } : { kind: 'training' };
+  },
+  // a course situation at a real field (« Adapter à mon terrain »): the field's region, as « Préparer un vol » loads it
+  loadWorld: async (w) => {
+    if (w.kind !== 'real') return true;
+    const icaos = (w.icaos?.length ? w.icaos : [w.region]).filter((c) => /^[A-Z][A-Z0-9]{3}$/.test(c));
+    if (!icaos.length) return false;
+    try {
+      const { loadRegion } = await import('./nav/world');
+      await loadRegion(icaos);
+      regionChanged();
+      return true;
+    } catch {
+      return false;
+    }
   },
   toast: (t, k, ms) => {
     if (bridgeBuffer) bridgeBuffer.push({ text: t, kind: k ?? 'info', ...(ms ? { ms } : {}) });

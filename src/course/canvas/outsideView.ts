@@ -5,7 +5,7 @@
 // approach lights). It follows the aircraft while the slide shows: an animation or a student at the controls moves
 // the view with the instruments. A thumbnail draws it once.
 import type { Sim } from "../../sim/sim";
-import { AIRPORTS } from "../../nav/data";
+import { AIRPORTS, slideAirports } from "../../nav/data";
 import { DEG, FT_PER_NM, toLocal, type LatLon } from "../../nav/geo";
 
 export interface OutsideOpts {
@@ -116,7 +116,7 @@ export function drawOutsideView(
   ctx.restore();
   // ---- the runways within reach
   const here: LatLon = { lat: p.lat, lon: p.lon };
-  for (const ap of AIRPORTS) {
+  for (const ap of [...AIRPORTS, ...slideAirports()]) {
     const d = toLocal(here, ap);
     if (Math.hypot(d.x, d.y) > REACH_NM) continue;
     for (const rw of ap.runways)

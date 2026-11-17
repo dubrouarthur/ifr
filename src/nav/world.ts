@@ -469,6 +469,183 @@ function missedText(m: ProcLeg[]): string {
   return parts.join(", ").replace(/^./, (c) => c.toUpperCase()) + ".";
 }
 
+/** The runway ends of a navdata airport, in the frame `S` maps real coordinates into (loadRegion's, or one field's
+ *  own for the « Adapter à mon terrain » slides): CIFP thresholds when there are some, else the physical ends moved by
+ *  their displacement; headings are grid bearings of that frame (magnetic once the frame is rotated). */
+function tileRunways(a: TileAirport, S: (lat: number, lon: number) => LatLon): Runway[] {
+  const rws: Runway[] = [];
+  for (const r of a.runways) {
+    const ends = [r.le, r.he];
+    for (let e = 0; e < 2; e++) {
+      const me = ends[e],
+        other = ends[1 - e];
+      const id = /^\d[LRC]?$/.test(r.ids[e]) ? `0${r.ids[e]}` : r.ids[e];
+      const c = a.rwCifp?.[id] ?? a.rwCifp?.[r.ids[e]];
+      const phys = S(me[0], me[1]);
+      const far = S(other[0], other[1]);
+      const disp = c?.disp ?? me[3] ?? 0;
+      const thr = c
+        ? S(c.lat, c.lon)
+        : disp > 0
+          ? destination(phys, bearingDeg(phys, far), disp / FT_PER_NM)
+          : phys;
+      rws.push({
+        id,
+        heading: Math.round(bearingDeg(phys, far) * 10) / 10,
+        threshold: thr,
+        end: far,
+        lengthFt: r.len,
+        widthFt: c?.wid ?? r.wid ?? 100,
+        elevFt: c?.elev ?? me[2] ?? a.elev,
+        lights: r.lit,
+      });
+    }
+  }
+  return rws;
+}
+
+/** The tiles loadRegion reads for these index rows, the box around them and its centre. */
+function regionBox(pick: IndexRow[], marginDeg: number) {
+  const lats = pick.map((r) => r[4]),
+    lons = pick.map((r) => r[5]);
+  const minLat = Math.min(...lats) - marginDeg,
+    maxLat = Math.max(...lats) + marginDeg;
+  const k = Math.cos(((minLat + maxLat) / 2) * DEG);
+  const minLon = Math.min(...lons) - marginDeg / k,
+    maxLon = Math.max(...lons) + marginDeg / k;
+  const center: LatLon = {
+    lat: (minLat + maxLat) / 2,
+    lon: (minLon + maxLon) / 2,
+  };
+  const keys = new Set<string>();
+  for (let la = Math.floor(minLat / 5) * 5; la <= maxLat; la += 5)
+    for (let lo = Math.floor(minLon / 5) * 5; lo <= maxLon; lo += 5)
+      keys.add(tileKey(la, lo));
+  return { minLat, maxLat, minLon, maxLon, k, center, keys };
+}
+/** Magnetic variation of a region: the departure's (CIFP), else the declination of the navaid nearest the centre. */
+function regionMagVar(tiles: Tile[], depIcao: string, center: LatLon): number {
+  const dep = tiles.map((t) => t.airports[depIcao]).find(Boolean);
+  let magVar = dep?.magVar ?? null;
+  if (magVar === null) {
+    let best = Infinity;
+    for (const t of tiles)
+      for (const n of t.navaids)
+        if (n.mv !== null && n.mv !== undefined) {
+          const d = distanceNm(n, center);
+          if (d < best) {
+            best = d;
+            magVar = n.mv;
+          }
+        }
+  }
+  return magVar ?? 0;
+}
+
+/** A navaid near a field, as a briefing lists it: what, where from the field (magnetic), how far. */
+export interface NearbyNavaid {
+  ident: string;
+  name: string;
+  type: "VOR" | "VORDME" | "NDB" | "ILS" | "LOC";
+  /** MHz (kHz for an NDB) */
+  freq: number;
+  distNm: number;
+  /** from the field to the navaid, magnetic */
+  brgMag: number;
+  /** a localizer: the runway it serves and its course */
+  runway?: string;
+  course?: number;
+}
+/** One field of the shipped navdata, read without loading a region (« Adapter à mon terrain »). */
+export interface RealAirfield {
+  /** in the frame loadRegion([icao]) builds (rotated about the field: grid north is magnetic north), so a situation
+   *  placed on it starts at the same spot once the cockpit loads the region */
+  airport: Airport;
+  country: string;
+  /** OurAirports type: large_airport, medium_airport, small_airport… */
+  kind: string;
+  /** one row per physical runway (both ends), as published */
+  strips: { ids: [string, string]; lengthFt: number; widthFt: number; surface: string; lit: boolean }[];
+  navaids: NearbyNavaid[];
+  magVar: number;
+}
+/** Read one field (ICAO) from the navdata: null when the code is not in it or the field has no runway. */
+export async function realAirfield(icao: string, rangeNm = 40): Promise<RealAirfield | null> {
+  const row = await airportRow(icao);
+  if (!row) return null;
+  // the very box, tiles, centre and variation loadRegion([icao]) would use: the same frame
+  const box = regionBox([row], 1.2);
+  const tiles = (await Promise.all([...box.keys].map(getTile))).filter(Boolean) as Tile[];
+  const a = tiles.map((t) => t.airports[row[0]]).find(Boolean);
+  if (!a || !a.runways.length) return null;
+  const magVar = regionMagVar(tiles, row[0], box.center);
+  const S = (lat: number, lon: number) => rot({ lat, lon }, box.center, magVar);
+  const rws = tileRunways(a, S);
+  const here: LatLon = { lat: a.lat, lon: a.lon };
+  const brgMag = (p: LatLon) => Math.round((((bearingDeg(here, p) - magVar) % 360) + 360) % 360);
+  const seen = new Map<string, NearbyNavaid & { cifp: boolean }>();
+  for (const t of tiles)
+    for (const n of t.navaids) {
+      const d = distanceNm(here, n);
+      if (d > rangeNm) continue;
+      const key = `${n.id}|${n.t === "NDB" ? "N" : "V"}`;
+      const old = seen.get(key);
+      if (old && (old.cifp || n.src !== "cifp")) continue;
+      seen.set(key, {
+        ident: n.id,
+        name: n.name,
+        type: n.t,
+        freq: n.f,
+        distNm: Math.round(d * 10) / 10,
+        brgMag: brgMag(n),
+        cifp: n.src === "cifp",
+      });
+    }
+  const navaids: NearbyNavaid[] = [...seen.values()]
+    .map(({ cifp: _c, ...n }) => n)
+    .sort((x, y) => x.distNm - y.distNm);
+  const ils: NearbyNavaid[] = (a.ils ?? []).map((L) => ({
+    ident: L.id,
+    name: `I-${L.id.replace(/^I/, "")}`,
+    type: L.gs ? "ILS" : "LOC",
+    freq: L.f,
+    distNm: Math.round(distanceNm(here, { lat: L.lat, lon: L.lon }) * 10) / 10,
+    brgMag: brgMag({ lat: L.lat, lon: L.lon }),
+    runway: L.rwy,
+    course: L.crs,
+  }));
+  return {
+    airport: {
+      icao: row[0],
+      name: a.name,
+      city: a.city || a.country,
+      elevFt: a.elev,
+      runways: rws,
+      freqs: {
+        atis: a.freqs.atis,
+        approach: a.freqs.approach,
+        tower: a.freqs.tower,
+        ground: a.freqs.ground,
+        ctaf: a.freqs.ctaf,
+        unicom: a.freqs.unicom,
+      },
+      magVar,
+      ...S(a.lat, a.lon),
+    },
+    country: a.country,
+    kind: a.type,
+    strips: a.runways.map((r) => ({
+      ids: [r.ids[0], r.ids[1]].map((x) => (/^\d[LRC]?$/.test(x) ? `0${x}` : x)) as [string, string],
+      lengthFt: r.len,
+      widthFt: r.wid,
+      surface: r.surf,
+      lit: r.lit,
+    })),
+    navaids: [...ils, ...navaids],
+    magVar,
+  };
+}
+
 export interface LoadedRegion {
   /** false while terrain tiles are still streaming in the background */
   terrainComplete?: boolean;
@@ -496,22 +673,7 @@ export async function loadRegion(
   if (!pick.length) throw new Error("Unknown airport");
   if (pick.length > 1 && rowDistanceNm(pick[0], pick[pick.length - 1]) > MAX_REGION_NM)
     throw new Error(`${pick[0][0]} → ${pick[pick.length - 1][0]} is ${Math.round(rowDistanceNm(pick[0], pick[pick.length - 1]))} NM: one flight is limited to ${MAX_REGION_NM} NM`);
-  const lats = pick.map((r) => r[4]),
-    lons = pick.map((r) => r[5]);
-  const minLat = Math.min(...lats) - marginDeg,
-    maxLat = Math.max(...lats) + marginDeg;
-  const k = Math.cos(((minLat + maxLat) / 2) * DEG);
-  const minLon = Math.min(...lons) - marginDeg / k,
-    maxLon = Math.max(...lons) + marginDeg / k;
-  const center: LatLon = {
-    lat: (minLat + maxLat) / 2,
-    lon: (minLon + maxLon) / 2,
-  };
-  // tiles
-  const keys = new Set<string>();
-  for (let la = Math.floor(minLat / 5) * 5; la <= maxLat; la += 5)
-    for (let lo = Math.floor(minLon / 5) * 5; lo <= maxLon; lo += 5)
-      keys.add(tileKey(la, lo));
+  const { minLat, maxLat, minLon, maxLon, k, center, keys } = regionBox(pick, marginDeg);
   onProgress?.({ step: "navdata" });
   const tiles = (await Promise.all([...keys].map(getTile))).filter(
     Boolean,
@@ -519,21 +681,8 @@ export async function loadRegion(
   const inBox = (lat: number, lon: number) =>
     lat >= minLat && lat <= maxLat && lon >= minLon && lon <= maxLon;
   // magnetic variation: departure (CIFP) → nearest navaid declination → 0
-  const dep = tiles.map((t) => t.airports[pick[0][0]]).find(Boolean);
-  let magVar = dep?.magVar ?? null;
-  if (magVar === null) {
-    let best = Infinity;
-    for (const t of tiles)
-      for (const n of t.navaids)
-        if (n.mv !== null && n.mv !== undefined) {
-          const d = distanceNm(n, center);
-          if (d < best) {
-            best = d;
-            magVar = n.mv;
-          }
-        }
-  }
-  frame = { center, magVar: magVar ?? 0 };
+  const magVar = regionMagVar(tiles, pick[0][0], center);
+  frame = { center, magVar };
   const S = (lat: number, lon: number) => toSim({ lat, lon });
 
   const airports: Airport[] = [];
@@ -582,34 +731,7 @@ export async function loadRegion(
   for (const t of tiles)
     for (const [icao, a] of Object.entries(t.airports)) {
       if (!inBox(a.lat, a.lon)) continue;
-      const rws: Runway[] = [];
-      for (const r of a.runways) {
-        const ends = [r.le, r.he];
-        for (let e = 0; e < 2; e++) {
-          const me = ends[e],
-            other = ends[1 - e];
-          const id = /^\d[LRC]?$/.test(r.ids[e]) ? `0${r.ids[e]}` : r.ids[e];
-          const c = a.rwCifp?.[id] ?? a.rwCifp?.[r.ids[e]];
-          const phys = S(me[0], me[1]);
-          const far = S(other[0], other[1]);
-          const disp = c?.disp ?? me[3] ?? 0;
-          const thr = c
-            ? S(c.lat, c.lon)
-            : disp > 0
-              ? destination(phys, bearingDeg(phys, far), disp / FT_PER_NM)
-              : phys;
-          rws.push({
-            id,
-            heading: Math.round(bearingDeg(phys, far) * 10) / 10,
-            threshold: thr,
-            end: far,
-            lengthFt: r.len,
-            widthFt: c?.wid ?? r.wid ?? 100,
-            elevFt: c?.elev ?? me[2] ?? a.elev,
-            lights: r.lit,
-          });
-        }
-      }
+      const rws = tileRunways(a, S);
       if (!rws.length) continue;
       const pos = S(a.lat, a.lon);
       const apt: Airport = {

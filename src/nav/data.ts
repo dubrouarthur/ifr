@@ -36,6 +36,9 @@ const pardRwy = [
 const MSVL_REF: LatLon = destination(PARD_REF, 45, 26);
 const msvlRwy = makeRunwayPair(MSVL_REF, 30, 5500, 100, 1150, ['03', '21']);
 
+/** real fields shown on slides (see registerSlideAirport below) */
+const SLIDE_FIELDS = new Map<string, Airport>();
+
 export const AIRPORTS: Airport[] = [
   {
     icao: 'PARD',
@@ -60,7 +63,7 @@ export const AIRPORTS: Airport[] = [
 ];
 
 export function airport(icao: string): Airport {
-  const a = AIRPORTS.find((x) => x.icao === icao) ?? TRAIN?.airports.find((x) => x.icao === icao);
+  const a = AIRPORTS.find((x) => x.icao === icao) ?? TRAIN?.airports.find((x) => x.icao === icao) ?? SLIDE_FIELDS.get(icao);
   if (!a) throw new Error(`Unknown airport ${icao}`);
   return a;
 }
@@ -496,6 +499,22 @@ function smooth(e0: number, e1: number, x: number) {
   return t * t * (3 - 2 * t);
 }
 
+// ---------------------------------------------------------------- real fields shown on slides
+/** The real fields a course's slides show while no region is loaded (academy.html: « Adapter à mon terrain »), in
+ *  the frame loadRegion([icao]) would build (nav/world.ts realAirfield): a situation on one of their runways is found
+ *  (airport(), runway()), the slide's outside view draws them, and the ground is flat at their elevation. The loaded
+ *  region's own copy (AIRPORTS) always wins. */
+export function registerSlideAirport(a: Airport): void {
+  SLIDE_FIELDS.set(a.icao, a);
+}
+export function slideAirportKnown(icao: string): boolean {
+  return SLIDE_FIELDS.has(icao) || AIRPORTS.some((a) => a.icao === icao);
+}
+/** the fields of slides that the loaded nav database does not hold */
+export function slideAirports(): Airport[] {
+  return [...SLIDE_FIELDS.values()].filter((a) => !AIRPORTS.some((x) => x.icao === a.icao));
+}
+
 // ---------------------------------------------------------------- real-world region hook
 /** When a real-world region is loaded, terrain comes from a DEM provider instead of the island model. */
 export interface TerrainProvider {
@@ -548,6 +567,9 @@ export function landMask(p: LatLon): number {
 /** Ground elevation in ft MSL. Flat near airports, hills and a ridge elsewhere, sea beyond the coast. */
 export function groundElevation(p: LatLon): number {
   if (provider) return provider.elev(p);
+  // a real field a slide shows (no region loaded): its surface is flat at its elevation, as the region would have it
+  for (const a of SLIDE_FIELDS.values())
+    if (Math.abs(p.lat - a.lat) < 0.06 && Math.abs(p.lon - a.lon) < 0.09) return a.elevFt;
   let wSum = 0;
   let eSum = 0;
   let nearest = Infinity;

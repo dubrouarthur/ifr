@@ -23,6 +23,7 @@ import type {
 import type { CourseStore } from "../course/store";
 import { courseStore, storageNotice } from "../course/store";
 import { h } from "../ui/dom";
+import { prepareCourseAirfields } from "../course/airfields";
 import { markTeaching } from "../library/role";
 import {
   ct,
@@ -361,6 +362,8 @@ async function loadCourse(
     course = null;
   }
   if (!course && isSampleId(id)) course = sampleCourse(id);
+  // a course at the instructor's own field: its slides need the field's runways before they are drawn
+  if (course) await prepareCourseAirfields(course.scenes).catch(() => undefined);
   return { course, store };
 }
 /** A course with no step yet: nothing to present or play, one way back to the editor (never a blank page). */
@@ -595,6 +598,7 @@ async function openShare(code: string) {
     notFound(ct("shareBad", lang));
     return;
   }
+  await prepareCourseAirfields(course.scenes).catch(() => undefined);
   if (store) {
     const rep = await pack.importCourseShare(store, code, "newer", { lang });
     const { markImported } = await import("../course/ui/library");
@@ -717,7 +721,10 @@ async function showEditor(id: string) {
   }
   if (!course) return notFound(id);
   // the course editor (package F): one builder for courses, briefings and designed slides (a lazy chunk)
-  const editor = await import("../course/ui/editor");
+  const [editor] = await Promise.all([
+    import("../course/ui/editor"),
+    prepareCourseAirfields(course.scenes).catch(() => undefined),
+  ]);
   if (key !== routeKey && routeKey !== routeKeyOf({ k: "edit", id: course.id }))
     return;
   root.replaceChildren();

@@ -42,6 +42,8 @@ export interface DeckStarter {
   formations?: ProgramId[];
   /** a note to the author per slide index, shown only while editing (« Remplacez ce texte par… ») */
   notes?: Partial<Record<number, L10n>>;
+  /** what the presenter says, per slide index (the step's presenter notes) */
+  presenter?: Partial<Record<number, L10n>>;
   /** the situations its slides show (added to the course with the slides) */
   scenes?: () => Record<string, SimScene>;
   /** the capability its card names (samples/showcaseDecks.ts CAPABILITY) and the slide its card plays */
@@ -319,6 +321,8 @@ export function addStarterDeck(
     }
     // the typed title goes on the cover (its display line, else its title)
     if (i === 0 && o.title && step.slide) step = titleOnCover(step, o.title);
+    const said = starter.presenter?.[i];
+    if (said) step = { ...step, notes: { ...said } };
     const note = starter.notes?.[i];
     if (note && step.slide)
       step = { ...step, slide: { ...step.slide, blocks: [...step.slide.blocks, noteBlock(note, `${step.id}.note`)] } };
