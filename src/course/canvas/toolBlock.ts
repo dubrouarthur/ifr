@@ -467,8 +467,85 @@ export function toolBlock(b: Of, env: BlockEnv): BlockView {
   });
 
   // ---------------------------------------------------------------- size
+  // ---------------------------------------------------------------- a small screen: the tool opens full screen
+  // Under this scale the panel cannot keep 44 px targets inside the frame (a phone, a tablet held upright): the
+  // slide shows the drawing and its values, and « Manipuler » opens the tool over the whole screen, in CSS pixels.
+  let compact = false;
+  let sheet: HTMLElement | null = null;
+  let hudBtn: HTMLButtonElement | null = null;
+  const hud: {
+    el: HTMLElement;
+    at: [number, number];
+    origin: [number, number];
+  }[] = [];
+  if (play && (keys.length || b.task)) {
+    hudBtn = mk("button", "sl-hud-btn sl-tool-open is-off");
+    hudBtn.type = "button";
+    hudBtn.append(
+      icon(ICON.play, true),
+      mk("span", "", t2(lang, "Try it", "Manipuler")),
+    );
+    hudBtn.setAttribute(
+      "aria-label",
+      `${t2(lang, "Try it", "Manipuler")} : ${tr(D.title, lang)}`,
+    );
+    hudBtn.addEventListener("click", () => openSheet());
+    hud.push({ el: hudBtn, at: [1, 1], origin: [1, 1] });
+  }
+  const onSheetKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      closeSheet();
+    }
+  };
+  function openSheet() {
+    if (sheet) return;
+    const view = el.closest(".sl-view") as HTMLElement | null;
+    sheet = mk("div", "sl-tool-sheet");
+    sheet.setAttribute("role", "dialog");
+    sheet.setAttribute("aria-modal", "true");
+    sheet.setAttribute("aria-label", tr(D.title, lang));
+    // the slide theme's colours (the sheet lives outside the scaled slide)
+    if (view)
+      for (let i = 0; i < view.style.length; i++) {
+        const k = view.style[i];
+        if (k.startsWith("--"))
+          sheet.style.setProperty(k, view.style.getPropertyValue(k));
+      }
+    const close = mk("button", "sl-tool-sheet-x");
+    close.type = "button";
+    close.setAttribute(
+      "aria-label",
+      t2(lang, "Back to the slide", "Revenir à la diapo"),
+    );
+    close.append(icon("M6 6l12 12M18 6L6 18"));
+    close.addEventListener("click", () => closeSheet());
+    const hd = mk("div", "sl-tool-sheet-hd");
+    hd.append(mk("h2", "", tr(D.title, lang)), close);
+    art.style.aspectRatio = `${D.view.w} / ${D.view.h}`;
+    sheet.append(hd, fig, panel);
+    sheet.addEventListener("keydown", onSheetKey);
+    document.body.append(sheet);
+    (panel.querySelector("button, input") as HTMLElement | null)?.focus();
+  }
+  function closeSheet() {
+    if (!sheet) return;
+    art.style.aspectRatio = "";
+    el.prepend(fig);
+    el.append(panel);
+    sheet.remove();
+    sheet = null;
+    if (hudBtn?.isConnected) hudBtn.focus();
+  }
+
+  // ---------------------------------------------------------------- size
   const layout = () => {
-    const z = play ? toolZoom(env.scale()) : 1;
+    const k = env.scale();
+    compact = play && k > 0 && k < 0.42 && !!hudBtn;
+    el.classList.toggle("is-compact", compact);
+    hudBtn?.classList.toggle("is-off", !compact);
+    if (!compact && sheet) closeSheet();
+    const z = play ? toolZoom(k) : 1;
     const W = b.frame.w;
     const H = b.frame.h;
     panel.style.setProperty("zoom", String(z));
@@ -488,8 +565,11 @@ export function toolBlock(b: Of, env: BlockEnv): BlockView {
   return {
     el,
     block: b,
+    ...(hud.length ? { hud } : {}),
     layout,
     destroy: () => {
+      closeSheet();
+      hudBtn?.remove();
       unhub?.();
       if (loop !== null) cancelAnimationFrame(loop);
       stopSweep();

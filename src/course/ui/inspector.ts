@@ -5168,13 +5168,16 @@ export class Inspector {
                 }),
               { label: T("Student's controls", "Commandes de l’élève") },
             ),
-            seg(
-              [
-                { value: "right" as const, label: T("Controls on the right", "Commandes à droite") },
-                { value: "below" as const, label: T("Controls below", "Commandes dessous") },
-              ],
-              toolSide(b),
-              (v) => setB((x) => ((x as typeof b).panel = v)),
+            field(
+              T("Controls", "Commandes"),
+              seg(
+                [
+                  { value: "right" as const, label: T("On the right", "À droite") },
+                  { value: "below" as const, label: T("Below", "Dessous") },
+                ],
+                toolSide(b),
+                (v) => setB((x) => ((x as typeof b).panel = v)),
+              ),
             ),
           ]),
           group(

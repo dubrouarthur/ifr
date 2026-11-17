@@ -300,3 +300,83 @@
     border-color: var(--sl-accent);
   }
 }
+
+/* ---------------------------------------------------------------- a small screen: the tool over the whole screen */
+.sl-tool.is-compact .sl-tool-panel {
+  display: none;
+}
+.sl-hud-btn.sl-tool-open.is-off {
+  display: none;
+}
+.sl-tool-open .sl-tc-ic {
+  width: 18px;
+  height: 18px;
+}
+.sl-tool-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--sl-bg, #fff);
+  color: var(--sl-text, #111);
+  font-family: var(--sl-font-body, "Inter", system-ui, sans-serif);
+}
+.sl-tool-sheet-hd {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px 6px 16px;
+  background: var(--sl-bg, #fff);
+  border-bottom: 1px solid var(--sl-rule, #ccc);
+}
+.sl-tool-sheet-hd h2 {
+  margin: 0;
+  font: 600 17px/1.3 var(--sl-font-body, "Inter", system-ui, sans-serif);
+}
+.sl-tool-sheet-x {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--sl-text, #111);
+  cursor: pointer;
+}
+.sl-tool-sheet-x .sl-tc-ic {
+  width: 24px;
+  height: 24px;
+}
+.sl-tool-sheet-x:focus-visible {
+  outline: 3px solid var(--sl-accent);
+  outline-offset: 2px;
+}
+.sl-tool-sheet .sl-tool-fig {
+  flex: none;
+  padding: 12px 12px 0;
+  gap: 10px;
+}
+.sl-tool-sheet .sl-tool-art {
+  flex: none;
+  width: 100%;
+}
+.sl-tool-sheet .sl-tool-ro {
+  zoom: 0.55;
+}
+.sl-tool-sheet .sl-tool-panel {
+  width: auto !important;
+  height: auto !important;
+  max-height: none !important;
+  margin: 12px 12px 24px;
+  zoom: 0.62 !important;
+  overflow: visible;
+}
