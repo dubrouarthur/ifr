@@ -104,8 +104,8 @@ describe("the tool block", () => {
     expect(toolZoom(1)).toBe(1);
     expect(toolZoom(0.3) * 72 * 0.3).toBeGreaterThanOrEqual(44 - 1e-9);
     expect(toolZoom(0.05)).toBeLessThanOrEqual(2.2);
-    expect(toolSide({ frame: { x: 0, y: 0, w: 1680, h: 736 } })).toBe("right");
-    expect(toolSide({ frame: { x: 0, y: 0, w: 900, h: 900 } })).toBe("below");
+    expect(toolSide({ frame: { x: 0, y: 0, w: 1680, h: 736, z: 1 } })).toBe("right");
+    expect(toolSide({ frame: { x: 0, y: 0, w: 900, h: 900, z: 1 } })).toBe("below");
   });
   it("a tool with a task is the student's action, a tool without one is not", () => {
     const step = (task: boolean): Step =>
