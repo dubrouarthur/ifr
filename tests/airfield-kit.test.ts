@@ -42,7 +42,8 @@ describe("airfieldKit", () => {
     const k = await airfieldKit("lfpn", "fr");
     if (!k.ok) throw new Error(k.message);
     expect(k.icao).toBe("LFPN");
-    expect(k.name).toBe("Toussus-le-Noble");
+    // the AIP name (tools/navdata/aip-corrections.json), the old one after it
+    expect(k.name).toBe("Paris Saclay Versailles – Toussus-le-Noble");
     expect(k.field.airport.elevFt).toBe(538);
     const pairs = k.field.strips.map((s) => s.ids.join("/"));
     expect(pairs).toEqual(expect.arrayContaining(["07L/25R", "07R/25L"]));
@@ -79,9 +80,16 @@ describe("airfieldKit", () => {
     // the figures stand (never padded to look like a chart's channel)
     const rt = texts(radio.slide.blocks, "fr");
     expect(rt).toMatch(/Fréquences · à vérifier sur la carte VAC/);
-    expect(rt).toMatch(/120,75 MHz/);
-    expect(rt).not.toMatch(/120,750/);
-    expect(rt).toMatch(/Espace 8,33 kHz/);
+    // the tower as the AIP correction gives it (tools/navdata/aip-corrections.json), the ATIS as the data holds it
+    expect(rt).toMatch(/120,755 MHz/);
+    expect(rt).toMatch(/127,48 MHz/);
+    expect(rt).not.toMatch(/127,480/);
+    // LFPN's figures are the AIP's 8.33 kHz channels now: no « may differ » line; a field whose data holds 25 kHz
+    // values in an 8.33 kHz country still carries it
+    expect(rt).not.toMatch(/Espace 8,33 kHz/);
+    const g = await airfieldKit("LFPG", "fr");
+    if (!g.ok) throw new Error(g.message);
+    expect(texts(g.slides[2].slide.blocks, "fr")).toMatch(/Espace 8,33 kHz/);
     expect(rt).toMatch(/TSU/);
     // the house « À vous » on the slide: a live HSI on TSU, the OBS on the slide, the goal checked there
     const inst = hsi.slide.blocks.find((b) => b.kind === "instrument");
@@ -258,7 +266,7 @@ describe("airfieldKit", () => {
       starter: k.starter,
     });
     expect(c.steps).toHaveLength(7);
-    expect(c.title.fr).toBe("Toussus-le-Noble (LFPN)");
+    expect(c.title.fr).toBe("Paris Saclay Versailles – Toussus-le-Noble (LFPN)");
     expect(c.steps.every((s) => !!s.notes?.fr)).toBe(true);
     // each step is named by its slide, the cover by the field (never by a key figure)
     expect(c.steps.map((s) => s.title.fr)).toEqual(k.slides.map((s) => s.title.fr));
@@ -277,7 +285,7 @@ describe("airfieldKit", () => {
     const r = addStarterDeck(base, k.starter, { at: 1 });
     const added = r.course.steps.slice(1);
     expect(added.map((s) => s.title.en)).toEqual(k.slides.map((s) => s.title.en));
-    expect(added[0].title.en).toBe("Toussus-le-Noble (LFPN)");
+    expect(added[0].title.en).toBe("Paris Saclay Versailles – Toussus-le-Noble (LFPN)");
     expect(added.every((s) => !!s.notes?.en)).toBe(true);
   });
 

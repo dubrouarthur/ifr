@@ -103,15 +103,21 @@ export async function airfieldKit(
     return fail("offline", code, lang);
   }
   if (!field) return fail("unknown", code, lang);
+  // the QFU from the runway's own ends, not from a heading already rounded to 0.1° (69.49° would print 070°)
+  for (const r of field.airport.runways)
+    r.heading = Math.round(bearingDeg(r.threshold, r.end) * 100) / 100;
   registerSlideField(field);
   return airfieldKitFrom(field);
 }
 
 // ------------------------------------------------------------------ words and numbers
-/** « Toussus-le-Noble Airport » → « Toussus-le-Noble » (the data set's names are in English) */
+/** « Toussus-le-Noble Airport » → « Toussus-le-Noble » (the data set's names are in English); « A (B) » → « A – B » */
 export function fieldName(raw: string): string {
   const s = raw
     .replace(/\s+(Airport|Airfield|Aerodrome|Air Field)$/i, "")
+    // « Paris Saclay Versailles (Toussus-le-Noble) » (the AIP's name, the old one after it): no second pair of
+    // brackets once the code follows it
+    .replace(/^(.+?)\s+\(([^()]+)\)$/, "$1 – $2")
     .trim();
   return s || raw;
 }
