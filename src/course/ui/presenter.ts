@@ -18,6 +18,7 @@ import { DemoPanel } from "./demoPilot";
 import "../../styles/presenter.css";
 import { btn, L, ps, taskChip } from "./reader";
 import { toDesignedSlide } from "./templates";
+import { fallbackNotes } from "./presenterNotes";
 import { courseMinutes } from "./outline";
 import { stagePoseOf } from "../scene";
 import { renderThumb } from "../canvas/render";
@@ -38,6 +39,10 @@ const S = {
   noNotes: [
     "No presenter notes for this slide.",
     "Pas de notes pour cette diapo.",
+  ],
+  suggested: [
+    "No notes written for this slide. Built from the slide:",
+    "Pas de notes écrites pour cette diapo. D’après la diapo :",
   ],
   reveal: ["Reveal {r} of {n}", "Affichage {r} sur {n}"],
   projector: ["Open the projector screen", "Ouvrir l’écran de projection"],
@@ -591,6 +596,17 @@ export class Presenter {
     });
     this.stripFade();
   }
+  /** no notes written: lines built from the slide's objective and question answers (presenterNotes.ts) */
+  private suggestedNotes(cur: Step, lang: Lang): HTMLElement {
+    const lines = fallbackNotes(cur, lang);
+    if (!lines.length) return h("p", { class: "pr-muted" }, st("noNotes", lang));
+    return h(
+      "div",
+      { class: "pr-notes-t pr-notes-auto" },
+      h("p", { class: "pr-muted pr-small" }, st("suggested", lang)),
+      h("ul", {}, ...lines.map((l) => h("li", {}, l))),
+    );
+  }
   private renderSide() {
     const lang = this.lang;
     const steps = this.player.steps;
@@ -638,7 +654,7 @@ export class Presenter {
           { class: "pr-notes-t" },
           ...notes.split(/\n+/).map((p) => h("p", {}, p)),
         )
-      : h("p", { class: "pr-muted" }, st("noNotes", lang));
+      : this.suggestedNotes(cur, lang);
     this.demo.render();
     const driving = this.demo.open;
     // driving the demonstration keeps the notes in sight, right under its controls, and they fold away

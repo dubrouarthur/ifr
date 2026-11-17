@@ -146,3 +146,17 @@
 .pr-app.pr-demo-on .sl-motion-btn {
   display: none;
 }
+/* no notes written: suggestions built from the slide (objective, answers), as a quiet list */
+.pr-notes-auto ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 15px;
+  line-height: 1.5;
+}
+.pr-notes-auto li + li {
+  margin-top: 6px;
+}
+.pr-notes-auto > p.pr-small {
+  font-size: 13px;
+  margin-bottom: 6px;
+}
