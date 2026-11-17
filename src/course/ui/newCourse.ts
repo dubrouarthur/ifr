@@ -64,12 +64,10 @@ export function startersFor(p: ProgramId | null): DeckStarter[] {
 /** « Votre terrain »: the card whose slides are made from the ICAO code typed (course/airfieldKit.ts). */
 export const AIRFIELD = "airfield";
 export type StartingPoint = DeckStarter | typeof AIRFIELD;
-/** The cards of the gallery, in order: the blank slide, the formation's starting templates, « Votre terrain »,
- *  then the other templates. */
+/** The cards of the gallery, in order: the blank slide, the templates (startersFor), then « Votre terrain », the one
+ *  made from a code typed: a template among the others, never in the first row. */
 export function startingPoints(p: ProgramId | null): StartingPoint[] {
-  const [blank, ...decks] = startersFor(p);
-  const lead = decks.filter((d) => (p ? d.formations?.includes(p) : !!d.formations?.length));
-  return [blank, ...lead, AIRFIELD, ...decks.filter((d) => !lead.includes(d))];
+  return [...startersFor(p), AIRFIELD];
 }
 /** The card chosen when the page opens: « Votre terrain » when the link brings a code, the formation's starting
  *  template when the page is opened from a formation (its page said a template exists), else the blank slide. */
@@ -315,15 +313,20 @@ export function mountNewCourse(
   let airfieldCover: HTMLElement | null = null;
   let airfieldMeta: HTMLElement | null = null;
   let airfieldView: SlideView | null = null;
+  /** « Exemple · LFPN » over the airfield card's cover, until the slides of a code typed replace the example */
+  let airfieldTag: HTMLElement | null = null;
+  /** the example's navigation data is only read once the airfield card comes near the screen */
+  let airfieldIO: IntersectionObserver | null = null;
   let syncFoot = () => {};
 
   const kitLine = (k: AirfieldKit) =>
     T(lang, `${k.name} (${k.icao}) · ${k.slides.length} slides`, `${k.name} (${k.icao}) · ${k.slides.length} diapos`);
-  const say = (text: string, bad = false) => {
+  /** the line under the code: « code » blames the code typed (the field is marked invalid), « save » does not */
+  const say = (text: string, bad: "" | "code" | "save" = "") => {
     if (!kitMsg) return;
     kitMsg.textContent = text;
-    kitMsg.classList.toggle("is-bad", bad);
-    kitIn?.toggleAttribute("aria-invalid", bad);
+    kitMsg.classList.toggle("is-bad", !!bad);
+    kitIn?.toggleAttribute("aria-invalid", bad === "code");
   };
   /** the airfield card's cover and line: the field typed once its slides are ready, else the example field */
   const drawAirfield = () => {
@@ -331,8 +334,26 @@ export function mountNewCourse(
       airfieldMeta.textContent = kit
         ? kitLine(kit)
         : T(lang, "ICAO code · 6 or 7 slides", "Code OACI · 6 ou 7 diapos");
+    if (airfieldTag) airfieldTag.hidden = !!kit;
     const cover = airfieldCover;
     if (!cover) return;
+    airfieldIO?.disconnect();
+    airfieldIO = null;
+    if (!kit && typeof IntersectionObserver !== "undefined") {
+      const io = new IntersectionObserver(
+        (ents) => {
+          if (!ents.some((e) => e.isIntersecting)) return;
+          io.disconnect();
+          if (airfieldIO === io) airfieldIO = null;
+          drawCover(cover);
+        },
+        { rootMargin: "300px" },
+      );
+      airfieldIO = io;
+      io.observe(cover);
+    } else drawCover(cover);
+  };
+  const drawCover = (cover: HTMLElement) => {
     void (kit ? Promise.resolve(kit) : exampleKit(lang)).then((k) => {
       if (!k || !cover.isConnected || cover !== airfieldCover) return;
       airfieldView?.destroy();
@@ -360,7 +381,7 @@ export function mountNewCourse(
       say(
         r?.message ??
           T(lang, "The slides could not be prepared. Try again.", "Les diapos n’ont pas pu être préparées. Réessayez."),
-        true,
+        "code",
       );
       return null;
     }
@@ -377,7 +398,17 @@ export function mountNewCourse(
     airfieldView?.destroy();
     airfieldView = null;
     covers.clear();
-    const keepFocus = document.activeElement?.id;
+    // the focus stays where it was across a redraw (FR | EN, the formation): by id, by card, by language button
+    const a = document.activeElement instanceof HTMLElement && el.contains(document.activeElement) ? document.activeElement : null;
+    const keepFocus = !a
+      ? ""
+      : a.id
+        ? `#${CSS.escape(a.id)}`
+        : a.dataset.deck
+          ? `[data-deck="${CSS.escape(a.dataset.deck)}"]`
+          : a.closest(".nc-lang") && a.lang
+            ? `.nc-lang [lang="${CSS.escape(a.lang)}"]`
+            : "";
     // ---- focus bar: the labelled way back, where you are, FR | EN
     const back = h(
       "button",
@@ -427,8 +458,8 @@ export function mountNewCourse(
       autocomplete: "off",
       placeholder: T(
         lang,
-        "For example: The circuit at Lognes",
-        "Par exemple : Le tour de piste à Lognes",
+        "For example: The circuit at Toussus",
+        "Par exemple : Le tour de piste à Toussus",
       ),
     }) as HTMLInputElement;
     tIn.value = title;
@@ -529,9 +560,12 @@ export function mountNewCourse(
     };
     const card = (
       id: string,
-      info: { name: string; pitch: string; meta: HTMLElement; badge?: Capability; cls?: string },
+      info: { name: string; pitch: string; meta: HTMLElement; badge?: Capability; cls?: string; tag?: HTMLElement },
     ) => {
       const cover = h("div", { class: "nc-cover", "aria-hidden": "true" });
+      // the radio is named by its title alone; the badge, the pitch and the line below describe it
+      const key = `nc-c-${id}`;
+      info.meta.id = `${key}-m`;
       const c = h(
         "div",
         {
@@ -539,9 +573,12 @@ export function mountNewCourse(
           role: "radio",
           tabindex: "-1",
           "aria-checked": "false",
+          "aria-labelledby": `${key}-t`,
+          "aria-describedby": `${info.badge ? `${key}-b ` : ""}${key}-p ${key}-m`,
           "data-deck": id,
         },
         cover,
+        info.tag ?? null,
         h(
           "span",
           { class: "nc-tick", "aria-hidden": "true" },
@@ -553,13 +590,13 @@ export function mountNewCourse(
           info.badge
             ? h(
                 "span",
-                { class: `nc-badge is-${info.badge}` },
+                { id: `${key}-b`, class: `nc-badge is-${info.badge}` },
                 h("i", { "aria-hidden": "true" }),
                 loc(CAPABILITY[info.badge], lang),
               )
             : null,
-          h("b", { class: "nc-card-t" }, info.name),
-          h("span", { class: "nc-card-p" }, info.pitch),
+          h("b", { id: `${key}-t`, class: "nc-card-t" }, info.name),
+          h("span", { id: `${key}-p`, class: "nc-card-p" }, info.pitch),
           info.meta,
         ),
       );
@@ -581,6 +618,9 @@ export function mountNewCourse(
         } else if (k === "ArrowLeft" || k === "ArrowUp") {
           e.preventDefault();
           select(cards[(i - 1 + cards.length) % cards.length].dataset.deck ?? "", true);
+        } else if (k === "Home" || k === "End") {
+          e.preventDefault();
+          select(cards[k === "Home" ? 0 : cards.length - 1].dataset.deck ?? "", true);
         }
       });
       cards.push(c);
@@ -590,6 +630,7 @@ export function mountNewCourse(
     for (const p of points) {
       if (p === AIRFIELD) {
         airfieldMeta = h("span", { class: "nc-card-m" });
+        airfieldTag = h("span", { class: "nc-tag", "aria-hidden": "true" }, T(lang, "Example", "Exemple"), ` · ${EXAMPLE_ICAO}`);
         airfieldCover = card(AIRFIELD, {
           name: T(lang, "Your airfield", "Votre terrain"),
           pitch: T(
@@ -599,6 +640,7 @@ export function mountNewCourse(
           ),
           meta: airfieldMeta,
           badge: "flight",
+          tag: airfieldTag,
         });
         continue;
       }
@@ -756,8 +798,7 @@ export function mountNewCourse(
         { class: "nc-foot-in" },
         what,
         kitBox,
-        cancel,
-        go,
+        h("div", { class: "nc-acts" }, cancel, go),
       ),
     );
     syncFoot = () => {
@@ -822,8 +863,7 @@ export function mountNewCourse(
     el.replaceChildren(bar, main, foot);
     select(pick);
     if (focusTitle) tIn.focus();
-    else if (keepFocus)
-      el.querySelector<HTMLElement>(`#${CSS.escape(keepFocus)}`)?.focus();
+    else if (keepFocus) el.querySelector<HTMLElement>(keepFocus)?.focus();
   };
 
   async function create() {
@@ -860,7 +900,7 @@ export function mountNewCourse(
         `The course could not be saved on this device (${(e as Error).message}).`,
         `Le cours n’a pas pu être enregistré sur cet appareil (${(e as Error).message}).`,
       );
-      if (pick === AIRFIELD) say(msg, true);
+      if (pick === AIRFIELD) say(msg, "save");
       else el.querySelector<HTMLElement>(".nc-what")?.replaceChildren(msg);
     } finally {
       busy = false;
@@ -899,6 +939,7 @@ export function mountNewCourse(
       for (const v of views.splice(0)) v.destroy();
       views = [];
       airfieldView?.destroy();
+      airfieldIO?.disconnect();
       kitSeq++;
       clearTimeout(kitT);
       el.remove();

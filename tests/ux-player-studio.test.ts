@@ -127,18 +127,17 @@ describe("Nouveau cours (#new)", () => {
     expect(starterFormations(startersFor("ppl")[1])).toContain("ppl");
     expect(starterFormations(startersFor("ir")[1])).toContain("ir");
   });
-  it("puts « Votre terrain » among the templates: after the starting templates, never first", () => {
+  it("puts « Votre terrain » among the templates, after them all: never in the first row, whatever the formation", () => {
     for (const p of [null, ...NEW_COURSE_FORMATIONS]) {
       const cards = startingPoints(p);
       const ids = cards.map((c) => (c === AIRFIELD ? AIRFIELD : c.id));
       expect(ids[0]).toBe(BLANK_STARTER.id);
       expect(ids.filter((x) => x === AIRFIELD)).toHaveLength(1);
-      // every template is still there, once
+      // every template is still there, once, in the order of startersFor
       expect(ids.filter((x) => x !== AIRFIELD)).toEqual(startersFor(p).map((d) => d.id));
-      const at = ids.indexOf(AIRFIELD);
-      expect(at).toBeGreaterThan(1);
-      // only starting templates before it
-      for (const c of cards.slice(1, at)) expect(c !== AIRFIELD && !!c.formations?.length).toBe(true);
+      // .nc-grid fits at most 3 cards of 300 px a row in .nc-in: the airfield is never among the first
+      expect(ids.indexOf(AIRFIELD)).toBeGreaterThanOrEqual(3);
+      expect(ids.at(-1)).toBe(AIRFIELD);
     }
   });
   it("opens on the blank slide, on the formation's template from a formation, on « Votre terrain » with a code", () => {

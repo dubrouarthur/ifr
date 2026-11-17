@@ -25,6 +25,22 @@ describe("new course starting points", () => {
     expect(css).toMatch(/\.nc-card\.is-blank \.nc-cover > \* \{/);
     expect(css).not.toMatch(/is-feature|nc-radios|nc-sum|nc-afk|nc-ai-row/);
   });
+  it("each radio is named by its title, described by the rest; Home and End reach the ends", () => {
+    expect(nc).toMatch(/"aria-labelledby": `\$\{key\}-t`,/);
+    expect(nc).toMatch(/"aria-describedby": `\$\{info\.badge \? `\$\{key\}-b ` : ""\}\$\{key\}-p \$\{key\}-m`,/);
+    expect(nc).toMatch(/k === "Home" \|\| k === "End"/);
+  });
+  it("the bar keeps Annuler and Créer le cours together on the right; a save error does not blame the code", () => {
+    expect(nc).toMatch(/h\("div", \{ class: "nc-acts" \}, cancel, go\)/);
+    expect(css).toMatch(/\.nc-acts \{[^}]*flex: none;[^}]*margin-left: auto;/);
+    expect(css).toMatch(/\.nc-kit \{[^}]*flex: 1 1 0;[^}]*min-width: 0;/);
+    expect(nc).toMatch(/kitIn\?\.toggleAttribute\("aria-invalid", bad === "code"\)/);
+    expect(nc).toMatch(/say\(msg, "save"\)/);
+  });
+  it("the example field's navigation data is read only once its card comes near the screen", () => {
+    expect(nc).toMatch(/new IntersectionObserver\(/);
+    expect(nc).toMatch(/T\(lang, "Example", "Exemple"\), ` · \$\{EXAMPLE_ICAO\}`/);
+  });
   it("one rule per thing: no !important, no grid declared twice", () => {
     expect(css).not.toMatch(/!important/);
     expect(css.match(/^\.nc-grid \{/gm)).toHaveLength(1);
