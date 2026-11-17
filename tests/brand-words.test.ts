@@ -16,6 +16,10 @@ const FILES = [
   "src/course/airfieldKit.ts",
   "src/course/ui/airfieldKitPanel.ts",
   "src/library/programs.ts",
+  "src/course/canvas/layouts.ts",
+  "src/course/assets/photos.ts",
+  "src/course/canvas/controlStrip.ts",
+  "src/course/ui/clickerKeys.ts",
 ];
 const BRAND = /G1000|Garmin|Cessna|Jeppesen/;
 /** the string literals of a source file, comments dropped */

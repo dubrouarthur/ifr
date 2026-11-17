@@ -774,8 +774,9 @@ function abeam(): Step {
           576,
           { id: "h-abeam.hsi", scene: "hold.abeam", mode: "live" },
         ),
-        // the moment, replayed on demand: abeam ARD about 21 s in (0.5 NM at 90 kt)
-          flyOn(40, 24, 90),
+        // the moment, replayed on demand: abeam ARD about 19 s in (0.5 NM at about 95 kt true, 90 KIAS at the holding
+        // altitude); the still picture is a few seconds before the flip, so it asks the question
+          flyOn(40, 15, 90),
         ),
         T(
           "small",

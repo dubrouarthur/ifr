@@ -715,7 +715,7 @@ function holdBriefingFor(entry: HoldEntry): Briefing {
       ),
       reader: L(
         `At the fix: Turn (${p.turnAtFix.en}), Time, Twist (the OBS to 270), Throttle (90 KIAS), Talk. Your turn: cross ARD (the TO / FROM flag flips), then ${p.turnAtFix.en} with the bank pad.`,
-        `Au repère : Virer (${p.turnAtFix.fr}), Chrono, Tourner (l’OBS sur 270), Puissance (90 KIAS), Parler. À vous : passez ARD (le drapeau TO / FROM bascule), puis ${p.turnAtFix.fr} avec les boutons d’inclinaison.`,
+        `Au repère, les 5 T (en anglais) : Turn (${p.turnAtFix.fr}), Time (chrono), Twist (l’OBS sur 270), Throttle (90 KIAS), Talk (message). À vous : passez ARD (le drapeau TO / FROM bascule), puis ${p.turnAtFix.fr} avec les boutons d’inclinaison.`,
       ),
     }),
     quizStep(`${x}-clock`, {
@@ -741,8 +741,23 @@ function holdBriefingFor(entry: HoldEntry): Briefing {
           576,
           { id: `${x}-clock.hsi`, scene: `${x}.clock`, mode: "live" },
           ),
-          // the moment, replayed on demand: abeam (or over) ARD about 20 s in, 0.5 NM at 90 kt
-          flyOn(40, 24, 90),
+          // the moment, replayed on demand: abeam (or over) ARD about 19 s in (0.5 NM at about 95 kt true, 90 KIAS
+          // at 3,000 ft). The still picture (thumbnails, reduced motion) is a few seconds before the flip: it asks the
+          // question, it does not answer it. A teardrop or parallel entry turns at the fix to its entry heading.
+          flyOn(
+            40,
+            15,
+            90,
+            entry === "DIRECT"
+              ? undefined
+              : {
+                  atS: 19,
+                  deg:
+                    entry === "PARALLEL"
+                      ? -(((p.crs - p.fixHdg) % 360) + 360) % 360
+                      : (((p.fixHdg - p.crs) % 360) + 360) % 360,
+                },
+          ),
         ),
         T(
           "small",

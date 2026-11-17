@@ -259,7 +259,6 @@ export function stableIds(c: Course): void {
   each(c.steps);
 }
 
-/** The step ids where the student acts (used by the pacing test and the library's kind-mix bar). */
 // ------------------------------------------------------------------ the animations the sample slides play
 /**
  * The aircraft flies on as it is posed (heading, altitude and speed held) for `duration` seconds: a slide whose
@@ -267,12 +266,26 @@ export function stableIds(c: Course): void {
  * (« Rejouer l’animation ») or takes the aircraft (« Piloter la démonstration »). `telling` is the moment itself
  * (thumbnails, reduced motion). The simulator's own flight model and renderers draw it (canvas/motion.ts).
  */
-export function flyOn(duration: number, telling: number, iasKt: number): InstrumentMotion {
+export function flyOn(
+  duration: number,
+  telling: number,
+  iasKt: number,
+  /** at `atS` s, a standard-rate turn (3°/s, FAA IFH ch. 4) of `deg` degrees (+ right, − left): the entry turn at the fix */
+  turn?: { atS: number; deg: number },
+): InstrumentMotion {
+  const hdg: [number, number][] = turn
+    ? [
+        [0, 0],
+        [turn.atS, 0],
+        [turn.atS + Math.abs(turn.deg) / 3, turn.deg],
+      ]
+    : [[0, 0]];
+  const end = turn ? Math.max(duration, turn.atS + Math.abs(turn.deg) / 3 + 8) : duration;
   return {
     script: {
-      duration,
+      duration: end,
       telling,
-      tracks: { hdg: [[0, 0]], vs: [[0, 0]], ias: [[0, iasKt]] },
+      tracks: { hdg, vs: [[0, 0]], ias: [[0, iasKt]] },
     },
     loop: true,
   };
@@ -334,38 +347,41 @@ export function livenAll(
   if (left.size) throw new Error(`livenAll: no block ${[...left].join(", ")}`);
   return out;
 }
-/** A 30° intercept of a VOR course (FAA IFH ch. 9): the bar leaves the edge, the turn starts when it moves, it
- *  centres on the course (full scale 10°). The heading is measured from the course set on the OBS. */
+/** A 30° intercept of a VOR course (FAA IFH ch. 9), flown from the scene of the VOR course's cover: 6 NM from ARD,
+ *  where full scale (10°) is 6 · tan 10° ≈ 1.06 NM off. At 100 kt with a 30° cut the aircraft closes at 50 kt: the bar
+ *  comes off the stop at 8 s and reaches a quarter of a dot (0.125 of full scale, about 0.13 NM) some 67 s later. The
+ *  standard-rate turn starts there, as the course teaches (a 30° turn at standard rate needs less than 0.1 NM:
+ *  10 s at 3°/s), and rolls out centred. The heading is measured from the course set on the OBS. */
 export const VOR_CAPTURE: MotionScript = {
-  duration: 40,
+  duration: 100,
   hdgRef: "course",
   tracks: {
     cdi: [
       [0, 1],
       [8, 1],
-      [18, 0.55],
-      [28, 0.08],
-      [34, 0],
-      [40, 0],
+      [75, 0.125],
+      [85, 0.05],
+      [92, 0],
+      [100, 0],
     ],
     hdg: [
       [0, 30],
-      [16, 30],
-      [28, 6],
-      [34, 0],
-      [40, 0],
+      [75, 30],
+      [85, 3],
+      [92, 0],
+      [100, 0],
     ],
     alt: [[0, 0]],
     vs: [[0, 0]],
     ias: [[0, 100]],
   },
-  telling: 20,
+  telling: 60,
   marks: [
     {
       id: "move",
       channel: "cdi",
-      value: 0.6,
-      label: L("The bar moves: start the turn", "La barre bouge : on commence le virage"),
+      value: 0.125,
+      label: L("A quarter of a dot: start the turn", "Un quart de point : on commence le virage"),
     },
     {
       id: "on",
@@ -376,6 +392,7 @@ export const VOR_CAPTURE: MotionScript = {
   ],
 };
 
+/** The step ids where the student acts (used by the pacing test and the library's kind-mix bar). */
 export function isStudentAction(s: Step): boolean {
   if (
     ["try", "quiz", "predict", "tap", "calc", "drill", "fly"].includes(s.kind)

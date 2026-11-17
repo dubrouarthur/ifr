@@ -418,8 +418,9 @@ export function holdNdbBriefing(): Briefing {
           696,
           { id: "n-abeam.rmi", scene: "hn.abeam", mode: "live" },
           ),
-          // the moment, replayed on demand: PA abeam about 11 s in (0.27 NM at 90 kt)
-          flyOn(30, 14, 90),
+          // the moment, replayed on demand: PA abeam about 10 s in (0.27 NM at about 95 kt true, 90 KIAS at the
+          // holding altitude); the still picture is just before it, so it asks the question
+          flyOn(30, 8, 90),
         ),
       ],
       quiz: mcq(

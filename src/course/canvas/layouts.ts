@@ -641,7 +641,7 @@ function templateBlocks(id: SlideLayoutId, o: LayoutOptions): SlideBlock[] {
         T("display", title(o, "Holding patterns, flown and understood", "Les attentes, comprises et pilotées"), G.left, 288, 912, 360, { valign: "bottom" }),
         T("lead", o.subtitle ?? L("Entries, timing and wind correction — then fly one at ARD", "Entrées, chronométrage et correction de vent — puis une attente à ARD"), G.left, 680, 864, 112),
         T("foot", o.byline ?? L("Aéroclub Ardon · J. Martin, CFII", "Aéroclub Ardon · J. Martin, FI(A) IR"), G.left, 912, 864, 32),
-        IMG({ lib: "photo:in-cloud" }, L("A Cessna 172 flying in cloud", "Un Cessna 172 dans les nuages"), 1128, 0, 792, 1080, {
+        IMG({ lib: "photo:in-cloud" }, L("A training aircraft flying in cloud", "Un avion-école dans les nuages"), 1128, 0, 792, 1080, {
           attribution: "Photo: Matthias Wesselmann / Unsplash",
         }),
       ];
