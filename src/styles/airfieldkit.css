@@ -164,10 +164,6 @@
     transition: opacity 0.2s;
   }
 }
-/* « Nouveau cours »: between the heading of the starting points and the templates */
-.nc-afk {
-  margin: 4px 0 20px;
-}
 /* the studio's « Modèles » panel: narrow, the thumbnails two by two */
 .ce-panel-b > .afk {
   margin: 0 0 18px;

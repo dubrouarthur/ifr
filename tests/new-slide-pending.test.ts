@@ -47,20 +47,35 @@ describe("CourseHistory.discard: a slide left without a choice leaves nothing to
 describe("« Diapo vierge » comes first wherever a slide or a course starts (owner 2026-11-17)", () => {
   const st = readFileSync("src/course/ui/studio.ts", "utf8");
   const ed = readFileSync("src/course/ui/editor.ts", "utf8");
-  const ds = readFileSync("src/course/ui/deckStarters.ts", "utf8");
   it("the add-slide card opens on it, as a card, before the ready slides", () => {
     const card = st.slice(st.indexOf("export function emptySlideCard("));
     expect(card.indexOf("grid.append(blank);")).toBeGreaterThan(0);
     expect(card.indexOf("grid.append(blank);")).toBeLessThan(card.indexOf("if (on.example) {"));
-    expect(card).toMatch(/class: "ce-fr is-blank", role: "listitem"/);
-    expect(card).not.toMatch(/Partir d’une diapo vide/);
+    expect(card).toMatch(/\{ type: "button", class: "ce-fr is-blank" \}/);
+    // one wording for the blank slide everywhere (deckStarters.ts BLANK_STARTER), no listitem role over a button
+    expect(card).toMatch(/tr\(BLANK_STARTER\.title, lang\)\), h\("small", \{\}, tr\(BLANK_STARTER\.pitch, lang\)\)/);
+    expect(card).not.toMatch(/role: "listitem"|Partir d’une diapo vide/);
   });
   it("an empty course offers it as the filled button, before « Choisir un modèle »", () => {
     expect(ed).toMatch(/h\("div", \{ class: "ce-start-act" \}, blank, pick\)/);
     expect(ed).toMatch(/\{ type: "button", class: "ce-btn ce-start-b primary" \},\s+fr \? "Ajouter une diapo vierge"/);
   });
-  it("the « Modèles » gallery lists it first", () => {
-    expect(ds).toMatch(/for \(const d of \[BLANK_STARTER, \.\.\.DECK_STARTERS\]\)/);
+  it("the « Modèles » panel opens « Commencer » on it, and « Adapter à mon terrain » follows the ready slides", () => {
+    const tpl = st.slice(st.indexOf("private templates() {"), st.indexOf("private brand() {"));
+    const blank = tpl.indexOf("() => host.blankSlide(),");
+    expect(blank).toBeGreaterThan(0);
+    expect(blank).toBeLessThan(tpl.indexOf("for (const ex of gallery.filter("));
+    expect(tpl).toMatch(/if \(grp\.id === GALLERY_GROUPS\[0\]\.id\)/);
+    // the airfield panel is mounted after the loop of gallery groups, never at the top of the panel
+    const loopEnd = tpl.indexOf('parts.push(h("h3", { class: "ce-panel-h is-group" }');
+    expect(tpl.indexOf("parts.push(this.kitPanel.el);")).toBeGreaterThan(loopEnd);
+    // and the blank layout is not offered a second time under « Conclure »
+    expect(st).toMatch(/\{ title: \["Wrap up", "Conclure"\], ids: \["recap", "ready"\] \}/);
+  });
+  it("a blank slide chosen anywhere is not asked again: only « + Ajouter » asks « Que voulez-vous montrer ? »", () => {
+    const sync = ed.slice(ed.indexOf("private syncEmpty("), ed.indexOf("private blankSlide("));
+    expect(sync).toMatch(/const asking = this\.pendingNew\?\.id === id && !this\.emptyBlank\.has\(id\);/);
+    expect(sync).toMatch(/!slideIsBare\(c\) \? "" : asking \? "card" : "hints"/);
   });
 });
 
@@ -72,12 +87,14 @@ describe("the editor wires it (items 48, 49)", () => {
     expect(ed).toMatch(/e\.key === "Escape" &&\s+this\.pendingNew/);
     expect(ed).toMatch(/cancel: this\.pendingNew/);
   });
-  it("« Diapo vierge » opens no rail by itself, from the card and from an empty course", () => {
-    expect(ed).toMatch(/blank: \(\) => this\.keepBlank\(\),/);
-    const keep = ed.match(/private keepBlank\(\) \{[\s\S]*?\n {2}\}/)?.[0] ?? "";
+  it("« Diapo vierge » opens no rail by itself, from the card, an empty course and « Modèles »: one entry point", () => {
+    expect(ed).toMatch(/blank: \(\) => this\.blankSlide\(\),/);
+    expect(ed).toMatch(/blank\.addEventListener\("click", \(\) => this\.blankSlide\(\)\);/);
+    expect(ed).toMatch(/blankSlide: \(\) => \{\s+ed\.blankSlide\(\);/);
+    const keep = ed.match(/private blankSlide\(\) \{[\s\S]*?\n {2}\}/)?.[0] ?? "";
     expect(keep).toMatch(/this\.emptyBlank\.add/);
+    expect(keep).toMatch(/this\.addTemplate\("slide", \{ layout: "blank" \}\)/);
     expect(keep).not.toMatch(/openPanel/);
-    expect(ed).toMatch(/this\.addTemplate\("slide", \{ layout: "blank" \}\);\s+this\.keepBlank\(\);/);
     expect(ed).toMatch(/Cliquez pour ajouter un titre/);
     expect(ed).toMatch(/Click to add a title/);
   });

@@ -1137,6 +1137,10 @@ export class CourseEditor implements InspectorHost {
         ed.applyLayout(id);
         ed.afterPanelAdd();
       },
+      blankSlide: () => {
+        ed.blankSlide();
+        ed.afterPanelAdd();
+      },
       addSlide: (
         slide: SlideCanvas,
         title: { en: string; fr?: string },
@@ -2125,10 +2129,7 @@ export class CourseEditor implements InspectorHost {
         { type: "button", class: "ce-btn ce-start-b primary" },
         fr ? "Ajouter une diapo vierge" : "Add a blank slide",
       );
-      blank.addEventListener("click", () => {
-        this.addTemplate("slide", { layout: "blank" });
-        this.keepBlank();
-      });
+      blank.addEventListener("click", () => this.blankSlide());
       const pick = h(
         "button",
         { type: "button", class: "ce-btn ce-start-b" },
@@ -2251,14 +2252,15 @@ export class CourseEditor implements InspectorHost {
     this.fitDevice();
   }
   /**
-   * Over an empty slide: « Que voulez-vous montrer ? » (the first-run card); once « Diapo vierge » is
-   * chosen, light hints on the slide itself (« Cliquez pour ajouter un titre », + Instrument, + Texte, + Question),
-   * never a rail opened by itself. Both go as soon as the slide has a block.
+   * Over an empty slide: light hints on the slide itself (« Cliquez pour ajouter un titre », + Instrument, + Texte,
+   * + Question), never a rail opened by itself. Only the slide « + Ajouter » just made (pendingNew) asks first
+   * « Que voulez-vous montrer ? », until a choice is made: a blank slide chosen anywhere else is not asked again.
+   * Both go as soon as the slide has a block.
    */
   private syncEmpty(c: SlideCanvas) {
     const id = this.step?.id ?? "";
-    const bare = slideIsBare(c);
-    const want: "" | "card" | "hints" = !bare ? "" : this.emptyBlank.has(id) ? "hints" : "card";
+    const asking = this.pendingNew?.id === id && !this.emptyBlank.has(id);
+    const want: "" | "card" | "hints" = !slideIsBare(c) ? "" : asking ? "card" : "hints";
     // the « Nouvelle diapo » got its content (or « diapo vide »): it stays, and the toast says where it went
     if (this.pendingNew?.id === id && want !== "card") {
       this.pendingNew = null;
@@ -2298,7 +2300,7 @@ export class CourseEditor implements InspectorHost {
           }
           this.addComposedSlide(slide, ex.title, showcaseScenes());
         },
-        blank: () => this.keepBlank(),
+        blank: () => this.blankSlide(),
         cancel: this.pendingNew?.id === id ? () => this.dropPending() : undefined,
       },
       {
@@ -2313,9 +2315,17 @@ export class CourseEditor implements InspectorHost {
     this.emptyEl = h("div", { class: "ce-empty-wrap", "data-kind": "card" }, card.el);
     wrap.append(this.emptyEl);
   }
-  /** « Diapo vierge » chosen: the slide stays empty, with its own hints (no rail opened by itself). */
-  private keepBlank() {
-    this.emptyBlank.add(this.step?.id ?? "");
+  /**
+   * « Diapo vierge » (the « + Ajouter » card, an empty course, « Modèles »): the empty slide on screen stays, empty,
+   * with its own hints; otherwise a blank slide is added after it. No rail opens by itself.
+   */
+  private blankSlide() {
+    const s = this.step;
+    if (!s?.slide || !slideIsBare(s.slide)) {
+      this.addTemplate("slide", { layout: "blank" });
+      return;
+    }
+    this.emptyBlank.add(s.id);
     if (this.canvasEd) this.syncEmpty(this.canvasEd.canvas);
   }
   /** The empty slide's own hints: a title zone to click, then one button per kind of content. */

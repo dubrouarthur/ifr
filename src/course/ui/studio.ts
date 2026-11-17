@@ -29,7 +29,7 @@ import { toolColors } from "../tools/kit";
 import { baseThemeId } from "../canvas/themes";
 import { KINDS } from "./reader";
 import { TEMPLATES, titleOfSlide, tr, type TemplateId } from "./templates";
-import type { DeckStarter } from "./deckStarters";
+import { BLANK_STARTER, type DeckStarter } from "./deckStarters";
 import { airfieldKitPanel, type AirfieldKitPanel } from "./airfieldKitPanel";
 import { isExampleSituation } from "./exampleSituation";
 import {
@@ -213,6 +213,8 @@ export interface StudioHost {
   addTemplate(id: TemplateId, o?: { layout?: SlideLayoutId }): void;
   /** the current slide takes this layout (one undo step) */
   replaceLayout(id: SlideLayoutId): void;
+  /** « Diapo vierge »: the empty slide on screen stays empty, with its own hints; otherwise a blank slide after it */
+  blankSlide(): void;
   /** a composed example slide as a new step (its scenes join the course) */
   addSlide(
     slide: SlideCanvas,
@@ -278,7 +280,7 @@ const SECTIONS: { title: [string, string]; ids: SlideLayoutId[] }[] = [
   },
   { title: ["Work it out", "Calculer"], ids: ["formula", "bigNumber", "calc"] },
   { title: ["Check", "Vérifier"], ids: ["quiz", "checklist", "yourTurn"] },
-  { title: ["Wrap up", "Conclure"], ids: ["recap", "ready", "blank"] },
+  { title: ["Wrap up", "Conclure"], ids: ["recap", "ready"] },
 ];
 
 export class StudioPanel {
@@ -292,8 +294,7 @@ export class StudioPanel {
   private simParts: { destroy(): void }[] = [];
   private views: SlideView[] = [];
   private io: IntersectionObserver | null = null;
-  private decks: { destroy(): void } | null = null;
-  /** « Adapter à mon terrain » at the top of « Modèles » */
+  /** « Adapter à mon terrain » in « Modèles », after the ready slides */
   private kitPanel: AirfieldKitPanel | null = null;
   constructor(
     private host: StudioHost,
@@ -403,8 +404,6 @@ export class StudioPanel {
     for (const v of this.views.splice(0)) v.destroy();
     this.io?.disconnect();
     this.io = null;
-    this.decks?.destroy();
-    this.decks = null;
     this.kitPanel?.destroy();
     this.kitPanel = null;
     for (const p of this.simParts.splice(0)) p.destroy();
@@ -929,17 +928,6 @@ export class StudioPanel {
       });
       return b;
     };
-    // « Adapter à mon terrain »: an ICAO code, the slides of that field added after this one
-    this.kitPanel = airfieldKitPanel({
-      lang,
-      theme,
-      idPrefix: "ce-afk",
-      action: {
-        label: (n) => t2(lang, `Add these ${n} slides`, `Ajouter ces ${n} diapos`),
-        run: (k) => host.addDeck(k.starter, theme),
-      },
-    });
-    parts.push(this.kitPanel.el);
     const pickLayout = (id: SlideLayoutId) => {
       // Templates add a new slide; an empty slide takes it in place (the toolbar's Layout changes a slide)
       const replace = host.onSlide && host.slideEmpty;
@@ -952,6 +940,17 @@ export class StudioPanel {
     const gallery = gallerySlides();
     for (const grp of GALLERY_GROUPS) {
       const grid = h("div", { class: "ce-tpl-grid" });
+      // « Diapo vierge » opens « Commencer », a card like the others
+      if (grp.id === GALLERY_GROUPS[0].id)
+        grid.append(
+          card(
+            tr(BLANK_STARTER.title, lang),
+            tr(BLANK_STARTER.pitch, lang),
+            () => layoutCanvas("blank", { theme }),
+            () => host.blankSlide(),
+            "is-blank",
+          ),
+        );
       for (const ex of gallery.filter((g) => g.group === grp.id))
         grid.append(
           card(
@@ -965,6 +964,17 @@ export class StudioPanel {
         );
       parts.push(h("h3", { class: "ce-panel-h is-group" }, tr(grp.title, lang)), grid);
     }
+    // « Adapter à mon terrain »: one starting point among the others, its slides added after this one
+    this.kitPanel = airfieldKitPanel({
+      lang,
+      theme,
+      idPrefix: "ce-afk",
+      action: {
+        label: (n) => t2(lang, `Add these ${n} slides`, `Ajouter ces ${n} diapos`),
+        run: (k) => host.addDeck(k.starter, theme),
+      },
+    });
+    parts.push(this.kitPanel.el);
     parts.push(
       h(
         "p",
@@ -992,7 +1002,6 @@ export class StudioPanel {
               : tr(def.summary, lang),
             () => layoutCanvas(id),
             () => pickLayout(id),
-            id === "blank" ? "is-blank" : "",
           ),
         );
       }
@@ -1387,7 +1396,7 @@ export function emptySlideCard(
 ): { el: HTMLElement; destroy(): void } {
   const fr = lang === "fr";
   const views: SlideView[] = [];
-  const grid = h("div", { class: "ce-fr-grid", role: "list" });
+  const grid = h("div", { class: "ce-fr-grid" });
   // « Diapo vierge » first, the whole width: the empty slide as it is, its own hints on it
   const blankTh = h("span", { class: "ce-fr-th", "aria-hidden": "true" });
   if (thumbs)
@@ -1401,14 +1410,9 @@ export function emptySlideCard(
     });
   const blank = h(
     "button",
-    { type: "button", class: "ce-fr is-blank", role: "listitem" },
+    { type: "button", class: "ce-fr is-blank" },
     blankTh,
-    h(
-      "span",
-      { class: "ce-fr-l" },
-      h("b", {}, fr ? "Diapo vierge" : "Blank slide"),
-      h("small", {}, fr ? "Une page blanche : texte, instruments et simulateur en un clic" : "A clean page: text, instruments and the simulator in one click"),
-    ),
+    h("span", { class: "ce-fr-l" }, h("b", {}, tr(BLANK_STARTER.title, lang)), h("small", {}, tr(BLANK_STARTER.pitch, lang))),
   );
   blank.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -1435,7 +1439,7 @@ export function emptySlideCard(
         });
       const b = h(
         "button",
-        { type: "button", class: "ce-fr", role: "listitem" },
+        { type: "button", class: "ce-fr" },
         th,
         h("span", { class: "ce-fr-l" }, h("b", {}, tr(ex.title, lang)), h("small", {}, tr(ex.what, lang))),
       );
@@ -1465,7 +1469,7 @@ export function emptySlideCard(
     }
     const b = h(
       "button",
-      { type: "button", class: "ce-fr", role: "listitem" },
+      { type: "button", class: "ce-fr" },
       th,
       h("span", { class: "ce-fr-l" }, h("b", {}, st.t[fr ? 1 : 0]), h("small", {}, st.s[fr ? 1 : 0])),
     );

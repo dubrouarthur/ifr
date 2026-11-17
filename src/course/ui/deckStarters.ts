@@ -7,15 +7,12 @@ import type {
   Course,
   DiagramSpec,
   L10n,
-  Lang,
   SlideCanvas,
   SlideLayoutId,
   Step,
   ThemeId,
 } from "../types";
-import { h } from "../../ui/dom";
 import { layoutCanvas } from "../canvas/layouts";
-import { renderThumb, type SlideView } from "../canvas/render";
 import { insertStep, linearText, makeStep } from "./templates";
 import { AIRSPACE_DIAGRAM, AIRSPACE_SLIDES, CG_DIAGRAM, WB_SLIDES } from "./deckVfr";
 import type { SimScene } from "../types";
@@ -373,138 +370,4 @@ export function addStarterDeck(
     first ??= step.id;
   }
   return { course: c, firstStepId: first };
-}
-
-/**
- * The starter gallery: the blank slide first, then one card per deck, its cover drawn live by the renderer with the
- * next slides as a strip. `theme` re-draws the cards (the "light (recommended) / dark" switch).
- */
-export function deckStarterGallery(
-  lang: Lang,
-  course: Pick<Course, "brand" | "scenes" | "cockpit">,
-  onPick: (s: DeckStarter, theme: ThemeId) => void,
-  o: { theme?: "cockpit" | "classroom" | "auto"; compact?: boolean } = {},
-): { el: HTMLElement; destroy(): void } {
-  const fr = lang === "fr";
-  const views: SlideView[] = [];
-  const el = h("div", { class: `ce-decks${o.compact ? " compact" : ""}` });
-  let mode: "cockpit" | "classroom" | "auto" = o.theme ?? "auto";
-  const grid = h("div", { class: "ce-decks-grid" });
-  const draw = () => {
-    for (const v of views.splice(0)) v.destroy();
-    grid.replaceChildren();
-    for (const d of [BLANK_STARTER, ...DECK_STARTERS]) {
-      const theme: ThemeId = mode === "auto" ? d.theme : mode;
-      const cover = h("div", { class: "ce-deck-cover" });
-      const strip = h("div", { class: "ce-deck-strip" });
-      const card = h(
-        "button",
-        {
-          type: "button",
-          class: `ce-deck${d.id === "blank" ? " is-blank" : ""}`,
-          "data-deck": d.id,
-        },
-        cover,
-        h(
-          "span",
-          { class: "ce-deck-tx" },
-          h("b", {}, d.title[fr ? "fr" : "en"] ?? d.title.en),
-          h("small", {}, d.pitch[fr ? "fr" : "en"] ?? d.pitch.en),
-          h(
-            "span",
-            { class: "ce-deck-meta" },
-            d.id === "blank"
-              ? fr
-                ? "1 diapo vierge"
-                : "1 blank slide"
-              : [
-                  d.level ? (fr ? (d.level.fr ?? d.level.en) : d.level.en) : "",
-                  `${d.slides.length} ${fr ? (d.slides.length > 1 ? "diapos" : "diapo") : d.slides.length > 1 ? "slides" : "slide"}`,
-                  theme === "classroom" ? (fr ? "Clair" : "Light") : fr ? "Sombre" : "Dark",
-                ]
-                  .filter(Boolean)
-                  .join(" · "),
-          ),
-        ),
-        d.slides.length > 1 ? strip : null,
-      );
-      card.addEventListener("click", () => onPick(d, theme));
-      grid.append(card);
-      if (d.id === "blank") {
-        // a truly empty cover: the card says what you get
-        cover.append(
-          h(
-            "span",
-            { class: "ce-deck-empty", "aria-hidden": "true" },
-            h("i", {}, "+"),
-            h("span", {}, fr ? "Diapo vierge" : "Blank slide"),
-          ),
-        );
-        continue;
-      }
-      const opts = {
-        lang,
-        theme,
-        brand: course.brand,
-        scenes: course.scenes,
-        cockpit: course.cockpit,
-      };
-      const job = () => {
-        try {
-          views.push(
-            renderThumb(starterSlide(d, 0, theme), cover, opts),
-          );
-          d.slides.slice(1, 6).forEach((_, k) => {
-            const t = h("div", { class: "ce-deck-mini" });
-            strip.append(t);
-            views.push(renderThumb(starterSlide(d, k + 1, theme), t, opts));
-          });
-        } catch {
-          /* a thumbnail is decoration */
-        }
-      };
-      requestAnimationFrame(job);
-    }
-  };
-  const seg = h("div", {
-    class: "ce-seg ce-decks-theme",
-    role: "radiogroup",
-    "aria-label": fr ? "Thème" : "Theme",
-  });
-  const segOpts: [typeof mode, string][] = [
-    ["auto", fr ? "Clair (recommandé)" : "Light (recommended)"],
-    ["cockpit", fr ? "Sombre" : "Dark"],
-  ];
-  const drawSeg = () => {
-    seg.replaceChildren(
-      ...segOpts.map(([v, label]) => {
-        const b = h(
-          "button",
-          {
-            type: "button",
-            role: "radio",
-            class: mode === v ? "on" : "",
-            "aria-checked": mode === v ? "true" : "false",
-          },
-          label,
-        );
-        b.addEventListener("click", () => {
-          if (mode === v) return;
-          mode = v;
-          drawSeg();
-          draw();
-        });
-        return b;
-      }),
-    );
-  };
-  drawSeg();
-  el.append(seg, grid);
-  draw();
-  return {
-    el,
-    destroy() {
-      for (const v of views.splice(0)) v.destroy();
-    },
-  };
 }
