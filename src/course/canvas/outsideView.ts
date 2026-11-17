@@ -355,7 +355,10 @@ export function mountOutsideView(
   let raf = 0;
   let wasOn = false;
   let frames = 0;
-  const tick = () => {
+  // at most 25 redraws a second (the animations' own pace): the view is a full-canvas 2D drawing, and a classroom
+  // PC drawing it at 60 Hz beside live gauges dropped to some 18 fps (review P2)
+  let drawnAt = -Infinity;
+  const tick = (now: number = performance.now()) => {
     if (!on) return;
     // gone from the page (the slide changed): stop; never shown after a few seconds: stop too
     if (cv.isConnected) wasOn = true;
@@ -368,8 +371,9 @@ export function mountOutsideView(
       const sig = s
         ? `${s.lat.toFixed(6)},${s.lon.toFixed(6)},${s.altFt.toFixed(1)},${s.psi.toFixed(4)},${s.theta.toFixed(4)},${s.phi.toFixed(4)}`
         : "-";
-      if (sig !== last) {
+      if (sig !== last && now - drawnAt >= 40) {
         last = sig;
+        drawnAt = now;
         draw();
       }
     }
