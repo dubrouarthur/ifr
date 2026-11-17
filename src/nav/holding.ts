@@ -88,3 +88,39 @@ export function racetrack(h: HoldDef, gsKt = 90): LatLon[] {
   for (let k = 0; k <= 16; k++) pts.push(destination(destination(destination(h.fix, h.inbound + 180, L), h.inbound + 90 * s, R), h.inbound + s * (90 + (180 * k) / 16), R));
   return pts;
 }
+
+/** The entry sector a course to the fix falls in, and how far it is from the nearest sector boundary. */
+export interface EntrySector {
+  entry: HoldEntry;
+  /** course to the fix relative to the inbound course, −180..180 (+ = towards the holding side's turn) */
+  rel: number;
+  /** degrees to the nearest boundary (the 70° line, its extension or the inbound course's reciprocal) */
+  margin: number;
+  /** the boundary nearest the course, as a course to the fix */
+  boundary: number;
+  /** the entries a pilot may fly (the neighbour too within 5° of a boundary: AIM 5-3-8 j / ICAO Doc 8168) */
+  either: HoldEntry[];
+}
+/**
+ * The sector of a course to the fix (AIM FIG 5-3-8): direct 180°, teardrop 70°, parallel 110°. The three boundaries
+ * are courses to the fix of inbound + 110 (the 70° line, direct / teardrop), inbound − 70 (its extension, direct /
+ * parallel) and inbound + 180 (the outbound course, teardrop / parallel); mirrored for left turns. Pure.
+ */
+export function entrySector(inbound: number, turn: Turn, courseToFix: number): EntrySector {
+  const s = turn === 'L' ? -1 : 1;
+  const rel = wrap180(courseToFix - inbound) * s;
+  const bounds = [110, -70, 180];
+  let best = bounds[0];
+  let margin = Infinity;
+  for (const b of bounds) {
+    const d = Math.abs(wrap180(rel - b));
+    if (d < margin) [best, margin] = [b, d];
+  }
+  return {
+    entry: holdEntry(inbound, turn, courseToFix),
+    rel,
+    margin,
+    boundary: norm360(inbound + best * s),
+    either: acceptableEntries(inbound, turn, courseToFix),
+  };
+}

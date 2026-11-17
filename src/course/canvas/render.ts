@@ -37,6 +37,7 @@ import { DEMO_SCENE_ID, demoScene } from "./factory";
 import { revealSteps } from "./ops";
 import { sampleLogoSvg } from "../assets/photos";
 import { tx } from "./strings";
+import { DiagramHub } from "./diagramMirror";
 
 export type { SlideMode, SlideSlots } from "./blocks";
 
@@ -133,6 +134,8 @@ export class SlideView {
   readonly root: HTMLDivElement;
   readonly hud: HTMLDivElement;
   readonly sims: SceneSims;
+  /** the drawings the presenter works (the projector mirrors them, canvas/diagramMirror.ts) */
+  readonly diagrams = new DiagramHub();
   readonly mode: SlideMode;
   theme: SlideTheme;
   slide: SlideCanvas;
@@ -232,6 +235,7 @@ export class SlideView {
       onAction: this.o.onAction,
       onYourTurn: this.o.onYourTurn,
       motionOf: (id) => this.motionOf(id),
+      diagrams: this.diagrams,
     };
   }
   /** The animation of a situation on this slide: the first instrument showing it with one (canvas/motion.ts). */

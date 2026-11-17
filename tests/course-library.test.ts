@@ -196,7 +196,7 @@ describe("the Continue card", () => {
     expect(continueTarget(list, { id: VOR_ID })!.entry.id).toBe("hw");
   });
   it("then the last opened course, then any started one, then the first sample", () => {
-    const p = new Map([[HOLDING_ID, progress(HOLDING_ID, "h-drag")]]);
+    const p = new Map([[HOLDING_ID, progress(HOLDING_ID, "h-entry-try")]]);
     const list = libraryEntries({ samples, stored: [], progress: p });
     expect(continueTarget(list, { id: VOR_ID, stepId: "v-hsi" })).toMatchObject(
       { entry: { id: VOR_ID }, started: true },

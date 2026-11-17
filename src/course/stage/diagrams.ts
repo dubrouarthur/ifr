@@ -11,6 +11,7 @@ import { createProfile, createVdp } from "./diagramProfile";
 import { createCgEnvelope } from "./diagramCg";
 import { createTurn } from "./diagramTurn";
 import { createRunways } from "./diagramRunways";
+import { createHoldFly } from "./diagramHold";
 import { PALETTES, type DiagramOptions, type DiagramPalette, type DiagramTheme, type DiagramWidget } from "./svgkit";
 
 export type { DiagramOptions, DiagramPalette, DiagramTheme, DiagramWidget } from "./svgkit";
@@ -73,6 +74,8 @@ export function createCalcDiagram(
       return createTurn(d, opts) as DiagramWidget<CalcDiagram>;
     case "runways":
       return createRunways(d, opts) as DiagramWidget<CalcDiagram>;
+    case "holdFly":
+      return createHoldFly(d, opts) as DiagramWidget<CalcDiagram>;
     default:
       return null;
   }

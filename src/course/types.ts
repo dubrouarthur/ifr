@@ -111,6 +111,9 @@ export interface Course {
   shareConfirmed?: boolean;
   /** id of the built-in sample it was duplicated from */
   sample?: string;
+  /** additive: step ids an earlier version of the course had (old id → the step that took its place), so saved
+   *  progress, « Reprendre » and shared links (#play=…&s=…) still land on a step */
+  stepAliases?: Record<string, string>;
   /** library facets (e.g. 'maths', 'ifr', 'vfr', 'holding'); free text, lower case */
   tags?: string[];
   /** additive (unified library): the program(s) the course belongs to, first = its home shelf; a course without
@@ -1091,6 +1094,30 @@ export type CalcDiagram = { drag?: string[] } &
         windKt: number;
         tasKt: number;
         outboundS?: number;
+      }
+    /**
+     * a hold flown by an aircraft, north up (stage/diagramHold.ts): the arrival on `crs` and the entry of its
+     * sector, then the racetrack in the wind; named parts, sectors, the stopwatch from abeam, the headings. Drag:
+     * 'crs' (the student sets the arrival heading: the sector lights up and the entry is flown), 'wind' (dial).
+     * `goals`: arrival headings to set one after the other, each ticked once its entry has been flown.
+     */
+    | {
+        kind: "holdFly";
+        inbound: number;
+        turn: "L" | "R";
+        fix: string;
+        tasKt: number;
+        crs?: number;
+        windDir?: number;
+        windKt?: number;
+        /** the outbound correction as a multiple of the inbound drift (default 3) */
+        outFactor?: number;
+        /** outbound time from abeam, s, or "auto" (the time for a 1:00 inbound leg) */
+        outS?: number | "auto";
+        show?: ("parts" | "sectors" | "clock" | "headings")[];
+        goals?: number[];
+        /** animation speed, × real time (default 8) */
+        speed?: number;
       }
     /** TVMDC compass card: TC, WCA, variation, deviation as arrows on one rose */
     | {

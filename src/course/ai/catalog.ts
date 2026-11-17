@@ -52,9 +52,12 @@ export const CONTROL_IDS = ids(
   ),
 );
 /** Calc diagrams the stage really draws (others would show a placeholder); the CG envelope needs a loading table,
- *  the runways an aerodrome's published thresholds (never written by a plan). */
+ *  the runways an aerodrome's published thresholds (never written by a plan), the hold flown is the holding
+ *  course's own animated drawing. */
 export const CALC_IDS = ids(
-  STAGE_CALC_DIAGRAMS.filter((k) => k !== "cgEnvelope" && k !== "runways"),
+  STAGE_CALC_DIAGRAMS.filter(
+    (k) => k !== "cgEnvelope" && k !== "runways" && k !== "holdFly",
+  ),
 );
 
 /** What the student may drag on each calc diagram (the samples' own choices); [] = static. */
