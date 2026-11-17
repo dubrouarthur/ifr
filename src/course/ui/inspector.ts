@@ -3,6 +3,9 @@
 // Block | Slide | Goal | Notes for designed slides (the selected block's fields, the layout and theme pickers).
 // Author texts are edited in the language of the editor's EN / FR switch, with a "FR missing" badge.
 // Also the small DOM kit the editor and the tray share (segments, chips, switches, fields, popover menus).
+import { toolControls, toolDef, toolValues } from "../tools/index";
+import { snapParam } from "../tools/kit";
+import { toolSide } from "../canvas/toolBlock";
 import { blockKindLabel } from "../canvas/strings";
 import type {
   Annotation,
@@ -5144,6 +5147,85 @@ export class Inspector {
           ),
         );
         break;
+      case "tool": {
+        // the teaching tool (course/tools): which controls the student gets, the values it starts from, its task
+        const d = toolDef(b.tool);
+        if (!d) break;
+        const on = new Set(toolControls(d, b));
+        const start = toolValues(d, b.p);
+        out.push(
+          group(T("Student's controls", "Commandes de l’élève"), [
+            chips(
+              d.params.map((q) => ({ value: q.key, label: tr(q.label, this.lang), on: on.has(q.key) })),
+              (k, yes) =>
+                setB((x) => {
+                  const t = x as typeof b;
+                  const next = new Set(toolControls(d, t));
+                  if (yes) next.add(k);
+                  else next.delete(k);
+                  const list = d.params.filter((q) => next.has(q.key)).map((q) => q.key);
+                  t.controls = JSON.stringify(list) === JSON.stringify(d.controls) ? undefined : list;
+                }),
+              { label: T("Student's controls", "Commandes de l’élève") },
+            ),
+            seg(
+              [
+                { value: "right" as const, label: T("Controls on the right", "Commandes à droite") },
+                { value: "below" as const, label: T("Controls below", "Commandes dessous") },
+              ],
+              toolSide(b),
+              (v) => setB((x) => ((x as typeof b).panel = v)),
+            ),
+          ]),
+          group(
+            T("Starting values", "Valeurs de départ"),
+            d.params.map((q) =>
+              field(
+                tr(q.label, this.lang),
+                q.choices
+                  ? seg(
+                      q.choices.map((ch, i) => ({ value: i, label: tr(ch, this.lang) })),
+                      Math.round(start[q.key]),
+                      (v) => setB((x) => ((x as typeof b).p = { ...toolValues(d, (x as typeof b).p), [q.key]: v })),
+                    )
+                  : numIn(
+                      start[q.key],
+                      (v) =>
+                        v !== undefined &&
+                        setB(
+                          (x) =>
+                            ((x as typeof b).p = {
+                              ...toolValues(d, (x as typeof b).p),
+                              [q.key]: snapParam(q, v),
+                            }),
+                          `p.${q.key}`,
+                          false,
+                        ),
+                      { min: q.min, max: q.max, step: q.step, w: 110, unit: q.unit, label: tr(q.label, this.lang) },
+                    ),
+              ),
+            ),
+          ),
+          ...(d.task
+            ? [
+                group(T("Task", "Tâche"), [
+                  sw(
+                    !!b.task,
+                    (yes) =>
+                      setB((x) => {
+                        const t = x as typeof b;
+                        if (yes) t.task = JSON.parse(JSON.stringify(d.task)) as typeof d.task;
+                        else delete t.task;
+                      }),
+                    tr(d.task.prompt, this.lang),
+                    { sub: T("Checked live; it counts as the student's action", "Vérifiée en direct ; elle compte comme une action de l’élève") },
+                  ),
+                ]),
+              ]
+            : []),
+        );
+        break;
+      }
       case "marker":
         out.push(
           h(
