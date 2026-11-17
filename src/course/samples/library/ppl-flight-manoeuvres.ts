@@ -9,8 +9,10 @@
 // 75–85 KIAS) and section 5 (rate of climb, stall speeds 48 / 52 / 57 / 68 KIAS at 0 / 30 / 45 / 60° of bank,
 // flaps up, 2,550 lb); EASA Part-FCL AMC1 FCL.210.A (exercises 6 to 9) and AMC1 FCL.235 (PPL skill test
 // tolerances: height ±150 ft, heading ±10°, speed ±15 kt).
-import type { Course, SimScene, Step } from "../../types";
-import { DIAGRAM, G as GOAL, INST, L, course, step } from "../kit";
+import type { Course, SimScene, SlideCanvas, Step } from "../../types";
+import { DIAGRAM, G as GOAL, INST, L, course, livenAll, slideStep, step } from "../kit";
+import { toolSlides } from "../toolSlides";
+import { toolDef, toolTaskData } from "../../tools/index";
 import { G } from "../navSlides";
 import {
   GAUGE,
@@ -25,7 +27,6 @@ import {
 } from "../briefings/kit";
 import { SIX, panelNotesStep, recapStep, sceneA1, sixMark } from "./kit-a1";
 import {
-  bankLadderStep,
   finalQuizStep,
   flySceneStep,
   handsOnStep,
@@ -87,12 +88,6 @@ function scenes(): Record<string, SimScene> {
     "fm.bank30": sceneA1("fm.bank30", at(3000, 100, { bank: 30 }), {
       label: "Level turn · 30° of bank · 100 KIAS",
     }),
-    "fm.bank45": sceneA1("fm.bank45", at(3000, 100, { bank: 45 }), {
-      label: "Level turn · 45° of bank · 100 KIAS",
-    }),
-    "fm.bank60": sceneA1("fm.bank60", at(3000, 100, { bank: 60 }), {
-      label: "Level turn · 60° of bank · 100 KIAS",
-    }),
     "fm.fly": sceneA1("fm.fly", at(3000, 100), {
       label: "Straight and level in the cockpit · 3,000 ft · 270 · 100 KIAS",
     }),
@@ -107,6 +102,40 @@ function mark(
 ): [number, number] {
   const m = sixMark(1, gauge, F6, { corner });
   return [m.frame.x + 28, m.frame.y + 28];
+}
+
+/**
+ * The load-factor tool (course/tools/defs/turn.ts) with its own task: find the bank that doubles the apparent
+ * weight. n = 1 / cos φ, so 2 g at 60° whatever the speed and the weight (FAA PHAK ch. 5); the stall speed then
+ * grows by √2 (POH C172S sect. 5: 48 → 68 KIAS flaps up, 2,550 lb).
+ */
+function loadToolStep(id: string): Step {
+  const ready = toolSlides().find((t) => t.tool === "loadFactor");
+  const def = toolDef("loadFactor");
+  if (!ready || !def) throw new Error("the load-factor tool is missing");
+  const slide = JSON.parse(JSON.stringify(ready.slide)) as SlideCanvas;
+  const title = L("Your turn: find the bank of 2 g", "À vous : trouvez l’inclinaison de 2 g");
+  slide.blocks.forEach((b, i) => {
+    b.id = b.kind === "tool" ? `${id}.tool` : `${id}.b${i}`;
+    if (b.kind === "tool") b.task = toolTaskData(def);
+    if (b.kind === "text" && b.style === "eyebrow") b.text = L("Load factor", "Facteur de charge");
+    if (b.kind === "text" && b.style === "title") b.text = title;
+  });
+  return slideStep(
+    id,
+    title,
+    slide,
+    [
+      {
+        t: "text",
+        text: L(
+          "Your turn: move the bank until the load factor reads 2 g. In a level turn the load factor is 1 ÷ cos(bank) and the stall speed grows as its square root: wings level 1 g and 48 KIAS, 30° 1.15 g and 52 KIAS, 45° 1.41 g and 57 KIAS, 60° 2 g and 68 KIAS, flaps up at 2,550 lb, whatever the speed (FAA PHAK ch. 5; the training aircraft’s flight manual, section 5). Steep turns near the ground eat the margin.",
+          "À vous : inclinez jusqu’à lire un facteur de charge de 2 g. En virage en palier, le facteur de charge vaut 1 ÷ cos(inclinaison) et la vitesse de décrochage croît comme sa racine carrée : ailes à plat 1 g et 48 KIAS, 30° 1,15 g et 52 KIAS, 45° 1,41 g et 57 KIAS, 60° 2 g et 68 KIAS, volets rentrés à 2 550 lb, quelle que soit la vitesse (FAA PHAK ch. 5 ; manuel de vol de l’avion-école, section 5). Un virage serré près du sol mange la marge.",
+        ),
+      },
+    ],
+    { section: "picture", minutes: 2 },
+  );
 }
 
 /** The presenter's notes (audit §22): what to say, the question to ask the room, the usual mistake. */
@@ -188,8 +217,8 @@ const NOTES: Record<string, ReturnType<typeof L>> = {
     "Faites dire à l’élève quand relâcher : 15° avant le cap, la moitié de l’inclinaison. Erreur habituelle : relâcher sur le cap et le dépasser.",
   ),
   "fm-load": L(
-    "Go through the three banks and ask the room to guess each stall speed before it shows. The point: steep turns near the ground eat the margin.",
-    "Parcourez les trois inclinaisons et faites deviner chaque vitesse de décrochage avant qu’elle s’affiche. L’idée : un virage serré près du sol mange la marge.",
+    "Let the room call out a guess first (most say 45°). The student moves the bank until the readout says 2 g: 60°, whatever the speed or the weight. Then ask what that does to the stall speed (×1.41).",
+    "Faites d’abord annoncer un chiffre à la salle (la plupart disent 45°). L’élève incline jusqu’à lire 2 g : 60°, quelles que soient la vitesse et la masse. Demandez ensuite ce que cela fait à la vitesse de décrochage (×1,41).",
   ),
   "fm-turn-how": L(
     "Walk through the four steps with your hands. Ask what the turn coordinator shows (rate of turn, not bank).",
@@ -688,6 +717,8 @@ export function pplFlightManoeuvresCourse(): Course {
       controls: ["power"],
       goal: {
         all: [GOAL.alt(3300, 6000), GOAL.ias(85, 115)],
+        // the end: both rows true together for 3 s once 3,300 ft is passed (the climb is established)
+        holdS: 3,
         graded: false,
         success: L(
           "300 ft gained at about the same speed: the extra power became a climb.",
@@ -1140,64 +1171,9 @@ export function pplFlightManoeuvresCourse(): Course {
         "À vous. Commande : l’inclinaison, maintenez « À droite ▶ » (ou la touche →) pour incliner à 30°, relâchez pour remettre les ailes à plat. Du cap 270, maintenez et relâchez au 345, soit 15° avant le cap : la moitié de l’inclinaison. C’est réussi quand le cap 360 ±10° est tenu 5 secondes, en 25 secondes environ. En virage, la ligne Inclinaison affiche le facteur de charge et la vitesse de décrochage volets rentrés : 1,15 g et 52 kt à 30°. Altitude et vitesse sont tenues pour vous (FAA AFH ch. 3 ; POH C172S section 5).",
       ),
     }),
-    // 20 ----------------------------------------------------------------- load factor and stall speed with bank
-    bankLadderStep("fm-load", {
-      eyebrow: L("Load factor", "Facteur de charge"),
-      title: L(
-        "More bank, a higher stall speed",
-        "Plus on incline, plus on décroche tôt",
-      ),
-      cols: [
-        {
-          label: L("Wings level", "Ailes à plat"),
-          alt: L(
-            "Attitude indicator, wings level",
-            "Horizon artificiel, ailes à plat",
-          ),
-          scene: "fm.level",
-          color: "nav",
-        },
-        {
-          label: L("30° of bank", "30° d’inclinaison"),
-          alt: L(
-            "Attitude indicator, 30° of bank",
-            "Horizon artificiel, 30° d’inclinaison",
-          ),
-          scene: "fm.bank30",
-          color: "sel",
-        },
-        {
-          label: L("45° of bank", "45° d’inclinaison"),
-          alt: L(
-            "Attitude indicator, 45° of bank",
-            "Horizon artificiel, 45° d’inclinaison",
-          ),
-          scene: "fm.bank45",
-          color: "key",
-        },
-        {
-          label: L("60° of bank", "60° d’inclinaison"),
-          alt: L(
-            "Attitude indicator, 60° of bank",
-            "Horizon artificiel, 60° d’inclinaison",
-          ),
-          scene: "fm.bank60",
-          color: "stop",
-        },
-      ],
-      rule: L(
-        "In a level turn, load factor = 1 ÷ cos(bank), and the stall speed grows as its square root.",
-        "En virage en palier, facteur de charge = 1 ÷ cos(inclinaison), et la vitesse de décrochage croît comme sa racine carrée.",
-      ),
-      foot: L(
-        "C172S POH sect. 5 · stall speeds flaps up, 2,550 lb: 48, 52, 57, 68 KIAS · FAA-H-8083-25C PHAK ch. 5",
-        "POH C172S sect. 5 · décrochage volets rentrés, 2 550 lb : 48, 52, 57, 68 KIAS · FAA-H-8083-25C PHAK ch. 5",
-      ),
-      reader: L(
-        "Four attitude indicators, each with the load factor and the stall speed, flaps up, read from the flight state. Wings level: 1 g, 48 KIAS. 30° of bank: 1.15 g, 52 KIAS. 45°: 1.41 g, 57 KIAS. 60°: 2 g, 68 KIAS. In a level turn the load factor is 1 ÷ cos(bank) and the stall speed grows as its square root (FAA PHAK ch. 5); the values match the C172S POH section 5 table at 2,550 lb, flaps up.",
-        "Quatre horizons artificiels, chacun avec le facteur de charge et la vitesse de décrochage volets rentrés lus sur l’état de vol. Ailes à plat : 1 g, 48 KIAS. 30° d’inclinaison : 1,15 g, 52 KIAS. 45° : 1,41 g, 57 KIAS. 60° : 2 g, 68 KIAS. En virage en palier, le facteur de charge vaut 1 ÷ cos(inclinaison) et la vitesse de décrochage croît comme sa racine carrée (FAA PHAK ch. 5) ; ces valeurs sont celles du tableau du POH C172S section 5 à 2 550 lb, volets rentrés.",
-      ),
-    }),
+    // 20 ----------------------------------------------------------------- load factor and stall speed with bank: the student finds 2 g
+    // (was four attitude indicators side by side: the student now moves the bank on the load-factor tool)
+    loadToolStep("fm-load"),
     // 21 ----------------------------------------------------------------- the turn, step by step
     stepsStep("fm-turn-how", {
       eyebrow: L("The level turn", "Le virage en palier"),
@@ -1648,7 +1624,25 @@ export function pplFlightManoeuvresCourse(): Course {
         "turn",
       ],
     },
-    steps.map((st) => (st.notes || !NOTES[st.id] ? st : { ...st, notes: NOTES[st.id] })),
+    livenAll(steps, {
+      // the cover flies a standard-rate turn (canvas/motion.ts « turn-std », FAA AFH ch. 3)
+      "fm-cover.six": {
+        motion: "turn-std",
+        alt: L(
+          "The training aircraft’s six instruments at 3,000 ft and 100 KIAS: a standard-rate turn, 3° a second",
+          "Les six instruments de l’avion-école à 3 000 ft et 100 KIAS : un virage au taux standard, 3° par seconde",
+        ),
+      },
+      // attitude + power = performance: the power changes, the RPM first, then the speed (« power »: PHAK ch. 6,
+      // POH C172S section 5 cruise table)
+      "fm-apf.inst": {
+        motion: "power",
+        alt: L(
+          "The six instruments live, level at 3,000 ft: the power goes from 2,100 to 2,500 RPM, the RPM first, then the speed",
+          "Les six instruments en direct, en palier à 3 000 ft : la puissance passe de 2 100 à 2 500 tr/min, d’abord les tours, puis la vitesse",
+        ),
+      },
+    }).map((st) => (st.notes || !NOTES[st.id] ? st : { ...st, notes: NOTES[st.id] })),
     scenes(),
   );
 }

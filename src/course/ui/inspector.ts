@@ -3,6 +3,13 @@
 // Block | Slide | Goal | Notes for designed slides (the selected block's fields, the layout and theme pickers).
 // Author texts are edited in the language of the editor's EN / FR switch, with a "FR missing" badge.
 // Also the small DOM kit the editor and the tray share (segments, chips, switches, fields, popover menus).
+import { blockStart, toolControls, toolDef, toolTask, toolTaskData, toolValues } from "../tools/index";
+import { snapParam } from "../tools/kit";
+import { toolSide } from "../canvas/toolBlock";
+import { ENGINE_CONTROLS, ENGINE_KINDS, ENGINE_NAME, controlName, tl } from "../engines/sim";
+import { ENGINE_STAGES } from "../engines/stages";
+import { settingsOf } from "../engines/model";
+import type { EngineKind } from "../types";
 import { blockKindLabel } from "../canvas/strings";
 import type {
   Annotation,
@@ -5144,6 +5151,98 @@ export class Inspector {
           ),
         );
         break;
+      case "tool": {
+        // the teaching tool (course/tools): which controls the student gets, the values it starts from, its task
+        const d = toolDef(b.tool);
+        if (!d) break;
+        const on = new Set(toolControls(d, b));
+        const start = blockStart(d, b);
+        // the values the task's prompt states are set by the task: neither a control nor a starting value here
+        const givens = toolTask(d, b)?.givens ?? {};
+        const free = d.params.filter((q) => !(q.key in givens));
+        out.push(
+          group(T("Student's controls", "Commandes de l’élève"), [
+            chips(
+              free.map((q) => ({ value: q.key, label: tr(q.label, this.lang), on: on.has(q.key) })),
+              (k, yes) =>
+                setB((x) => {
+                  const t = x as typeof b;
+                  const next = new Set(toolControls(d, t));
+                  if (yes) next.add(k);
+                  else next.delete(k);
+                  const list = d.params.filter((q) => next.has(q.key)).map((q) => q.key);
+                  t.controls = JSON.stringify(list) === JSON.stringify(d.controls) ? undefined : list;
+                }),
+              { label: T("Student's controls", "Commandes de l’élève") },
+            ),
+            field(
+              T("Controls position", "Place des commandes"),
+              seg(
+                [
+                  { value: "right" as const, label: T("On the right", "À droite") },
+                  { value: "below" as const, label: T("Below", "Dessous") },
+                ],
+                toolSide(b),
+                (v) => setB((x) => ((x as typeof b).panel = v)),
+              ),
+            ),
+          ]),
+          group(
+            T("Starting values", "Valeurs de départ"),
+            free.map((q) =>
+              field(
+                tr(q.label, this.lang),
+                q.choices
+                  ? seg(
+                      q.choices.map((ch, i) => ({ value: i, label: tr(ch, this.lang) })),
+                      Math.round(start[q.key]),
+                      (v) => setB((x) => ((x as typeof b).p = { ...toolValues(d, (x as typeof b).p), [q.key]: v })),
+                    )
+                  : numIn(
+                      start[q.key],
+                      (v) =>
+                        v !== undefined &&
+                        setB(
+                          (x) =>
+                            ((x as typeof b).p = {
+                              ...toolValues(d, (x as typeof b).p),
+                              [q.key]: snapParam(q, v),
+                            }),
+                          `p.${q.key}`,
+                          false,
+                        ),
+                      { min: q.min, max: q.max, step: q.step, w: 110, unit: q.unit, label: tr(q.label, this.lang) },
+                    ),
+              ),
+            ),
+          ),
+          ...(d.task
+            ? [
+                group(T("Task", "Tâche"), [
+                  sw(
+                    !!b.task,
+                    (yes) =>
+                      setB((x) => {
+                        const t = x as typeof b;
+                        if (yes) t.task = toolTaskData(d);
+                        else delete t.task;
+                      }),
+                    tr(d.task.prompt, this.lang),
+                    {
+                      sub: Object.keys(d.task.givens ?? {}).length
+                        ? T(
+                            "Checked live; it counts as the student's action. It sets the values its question states.",
+                            "Vérifiée en direct ; elle compte comme une action de l’élève. Elle fixe les valeurs que son énoncé donne.",
+                          )
+                        : T("Checked live; it counts as the student's action", "Vérifiée en direct ; elle compte comme une action de l’élève"),
+                    },
+                  ),
+                ]),
+              ]
+            : []),
+        );
+        break;
+      }
       case "marker":
         out.push(
           h(
@@ -5350,6 +5449,63 @@ export class Inspector {
           ),
         );
         break;
+      case "engine3d": {
+        // the 3D engine (course/engines): which engine, the step it opens on, the levers the student may move
+        const L = this.lang;
+        const levers = ENGINE_CONTROLS[b.engine];
+        const on = new Set(b.controls ?? levers);
+        out.push(
+          group(T("3D engine", "Moteur 3D"), [
+            field(
+              T("Engine", "Moteur"),
+              selectIn<EngineKind>(
+                ENGINE_KINDS.map((k) => ({ value: k, label: tl(ENGINE_NAME[k], L) })),
+                b.engine,
+                (v) =>
+                  setB((x) => {
+                    const y = x as typeof b;
+                    y.engine = v;
+                    delete y.controls;
+                    delete y.stage;
+                    delete y.set;
+                  }),
+              ),
+            ),
+            field(
+              T("Opens on the step", "S’ouvre sur l’étape"),
+              selectIn<number>(
+                ENGINE_STAGES[b.engine].map((s, k) => ({ value: k, label: `${k + 1}. ${tl(s.name, L)}` })),
+                b.stage ?? 0,
+                (v) => setB((x) => (v ? ((x as typeof b).stage = v) : delete (x as typeof b).stage)),
+              ),
+            ),
+            field(
+              T("The student's controls", "Commandes de l’élève"),
+              chips(
+                levers.map((c) => ({ value: c, label: tl(controlName(c, b.engine), L), on: on.has(c) })),
+                (c, yes) =>
+                  setB((x) => {
+                    const y = x as typeof b;
+                    const next = levers.filter((k) => (k === c ? yes : on.has(k)));
+                    if (next.length === levers.length) delete y.controls;
+                    else y.controls = next;
+                  }),
+                { label: T("The student's controls", "Commandes de l’élève") },
+              ),
+            ),
+            sw(!!b.slow, (v) => setB((x) => (v ? ((x as typeof b).slow = true) : delete (x as typeof b).slow)), T("Start in slow motion", "Démarrer au ralenti")),
+            sw(!!b.labels, (v) => setB((x) => (v ? ((x as typeof b).labels = true) : delete (x as typeof b).labels)), T("Name every part", "Nommer toutes les pièces"), {
+              sub: T("Otherwise only the parts of the step shown", "Sinon seulement les pièces de l’étape affichée"),
+            }),
+          ]),
+          // where the levers start: a magneto check at the run-up rpm, a reverser slide at idle…
+          group(T("Starting position", "Position de départ"), this.engineStart(b, setB)),
+          this.l10n(T("Caption (phone)", "Légende (téléphone)"), b.caption, (v) =>
+            setB((x) => ((x as typeof b).caption = v), "caption", false),
+          ),
+        );
+        break;
+      }
       case "checklist": {
         const checks = this.host.step.goal?.all ?? [];
         out.push(
@@ -5419,6 +5575,67 @@ export class Inspector {
           ]),
         );
         break;
+      }
+    }
+    return out;
+  }
+
+  /** The engine block's starting lever positions (course/engines): each lever as the slide opens. */
+  private engineStart(
+    b: Extract<SlideBlock, { kind: "engine3d" }>,
+    setB: (f: (x: SlideBlock) => void, key?: string, render?: boolean) => void,
+  ): HTMLElement[] {
+    const T = (en: string, fr: string) => this.t(en, fr);
+    const cur = settingsOf(b.engine, b.set);
+    const put = (f: (s: NonNullable<typeof b.set>) => void, key?: string, render = true) =>
+      setB(
+        (x) => {
+          const y = x as typeof b;
+          const s = { ...(y.set ?? {}) };
+          f(s);
+          if (Object.keys(s).length) y.set = s;
+          else delete y.set;
+        },
+        key,
+        render,
+      );
+    const out: HTMLElement[] = [];
+    for (const c of ENGINE_CONTROLS[b.engine]) {
+      const name = tl(controlName(c, b.engine), this.lang);
+      if (c === "throttle" || c === "mixture" || c === "prop") {
+        out.push(
+          field(
+            name,
+            numIn(
+              b.set?.[c] === undefined ? undefined : Math.round(b.set[c]! * 100),
+              (v) =>
+                put(
+                  (s) => (v === undefined ? delete s[c] : (s[c] = Math.max(0, Math.min(100, v)) / 100)),
+                  `set.${c}`,
+                  false,
+                ),
+              { min: 0, max: 100, step: 1, unit: "%", label: name, ph: String(Math.round(cur[c] * 100)) },
+            ),
+          ),
+        );
+      } else if (c === "carbHeat" || c === "reverse") {
+        out.push(sw(cur[c], (v) => put((s) => (s[c] = v)), name));
+      } else if (c === "magnetos") {
+        out.push(
+          field(
+            name,
+            selectIn<"both" | "left" | "right" | "off">(
+              [
+                { value: "both", label: T("Both", "Les deux") },
+                { value: "left", label: T("Left only", "Gauche seule") },
+                { value: "right", label: T("Right only", "Droite seule") },
+                { value: "off", label: T("Off", "Arrêt") },
+              ],
+              cur.mags,
+              (v) => put((s) => (v === "both" ? delete s.mags : (s.mags = v))),
+            ),
+          ),
+        );
       }
     }
     return out;
@@ -6568,7 +6785,9 @@ function rank(b: SlideBlock): number {
     {
       instrument: 5,
       simViewport: 5,
+      engine3d: 5,
       diagram: 4,
+      tool: 4,
       image: 4,
       quiz: 3,
       calc: 3,

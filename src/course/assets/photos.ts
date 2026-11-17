@@ -35,8 +35,8 @@ export const PHOTOS: PhotoDef[] = [
   },
   {
     id: "g1000-panel",
-    en: "G1000 panel",
-    fr: "Tableau G1000",
+    en: "Glass cockpit panel",
+    fr: "Tableau à écrans",
     src: "img/glass.jpg",
     w: 1400,
     h: 920,
@@ -45,8 +45,8 @@ export const PHOTOS: PhotoDef[] = [
   },
   {
     id: "short-final",
-    en: "Cessna 172 on short final",
-    fr: "Cessna 172 en courte finale",
+    en: "Training aircraft on short final",
+    fr: "Avion-école en courte finale",
     src: "img/landing.jpg",
     w: 2400,
     h: 1600,
@@ -55,8 +55,8 @@ export const PHOTOS: PhotoDef[] = [
   },
   {
     id: "low-pass",
-    en: "Cessna 172 at sunset",
-    fr: "Cessna 172 au coucher du soleil",
+    en: "Training aircraft at sunset",
+    fr: "Avion-école au coucher du soleil",
     src: "img/departure.jpg",
     w: 2400,
     h: 1600,
@@ -65,8 +65,8 @@ export const PHOTOS: PhotoDef[] = [
   },
   {
     id: "in-cloud",
-    en: "Cessna 172 in the clouds",
-    fr: "Cessna 172 dans les nuages",
+    en: "Training aircraft in the clouds",
+    fr: "Avion-école dans les nuages",
     src: "img/sky.jpg",
     w: 2400,
     h: 1395,

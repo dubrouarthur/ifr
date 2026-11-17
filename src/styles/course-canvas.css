@@ -1212,6 +1212,12 @@ button.sl-q-opt.is-right:hover {
 .cp-projector .sl-diagram .sl-hint-ic {
   display: none;
 }
+/* a teaching tool there shows its values, not its buttons: the console moves them (canvas/toolBlock.ts) */
+.cp-projector .sl-tool .sl-tc-btn,
+.cp-projector .sl-tool .sl-tool-acts,
+.cp-projector .sl-tool-open {
+  visibility: hidden;
+}
 /* the trainer's three answers stay in view for the class, answered from the console */
 .cp-projector .cs-holdfly .cs-chip {
   pointer-events: none;
@@ -1950,6 +1956,10 @@ button.sl-q-opt.is-right:hover {
 .sl-strip.is-static {
   pointer-events: none;
 }
+/* the projector: the class sees the values the instructor sets, never a button it cannot press */
+.sl-strip.is-mirror .sl-sc-btn {
+  visibility: hidden;
+}
 .sl-strip-in {
   position: absolute;
   left: 0;
@@ -2374,4 +2384,34 @@ button.sl-q-opt.is-right:hover {
   .sl-inst-screen .cs-cnum {
     animation: none;
   }
+}
+
+/* ---------------------------------------------------------------- the 3D engine block (course/engines) */
+.sl-engine {
+  display: flex;
+}
+.sl-engine.thumb {
+  position: absolute;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--sl-surface);
+  border: 2px solid var(--sl-line);
+}
+.sl-engine-shot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.sl-engine-tag {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  background: var(--sl-bg);
+  color: var(--sl-text);
+  font-size: 26px;
+  font-weight: 600;
 }

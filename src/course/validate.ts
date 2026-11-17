@@ -10,7 +10,10 @@
 // Levels: 'error' = the course would play wrong or breaks a rule (a missing scene, an image without alt text, a
 // graded step with an assist); 'warn' = advisory. Errors whose code is STRUCTURAL mean the course cannot be stored
 // or opened at all (not a course, duplicate step ids…); the editor still saves drafts with content errors.
+import { taskCheck, toolDef, toolTask } from "./tools/index";
 import type {
+  EngineControl,
+  EngineKind,
   AssetRef,
   BlockAction,
   CalcGeneratorId,
@@ -131,6 +134,16 @@ export const STEP_KINDS = keys<StepKind>({
   compare: 1,
   decision: 1,
 });
+/** the engines a block can show, their levers and their number of steps (course/engines; kept here as data so
+ *  the validator does not load three.js) */
+const ENGINE_KIND_SET = new Set<string>(["piston", "prop", "turboprop", "turbofan"]);
+const ENGINE_LEVERS: Record<EngineKind, EngineControl[]> = {
+  piston: ["throttle", "mixture", "carbHeat", "magnetos"],
+  prop: ["throttle", "prop"],
+  turboprop: ["throttle", "prop"],
+  turbofan: ["throttle", "reverse"],
+};
+export const ENGINE_STAGE_COUNT: Record<EngineKind, number> = { piston: 7, prop: 5, turboprop: 6, turbofan: 6 };
 const BLOCK_KINDS = keys<SlideBlockKind>({
   text: 1,
   image: 1,
@@ -144,6 +157,8 @@ const BLOCK_KINDS = keys<SlideBlockKind>({
   quiz: 1,
   calc: 1,
   checklist: 1,
+  tool: 1,
+  engine3d: 1,
 });
 const TEXT_STYLES = keys<TextStyle>({
   display: 1,
@@ -3151,6 +3166,37 @@ function slide(cx: Ctx, s: Step, c: SlideCanvas, path: string) {
       case "calc":
         calcSpec(cx, b.calc, `${p}.calc`, ids);
         break;
+      case "tool": {
+        const def = toolDef(b.tool);
+        if (!def) {
+          push(cx, "error", "slide", `${p}.tool`, L("Unknown tool", "Outil inconnu"), ids);
+          break;
+        }
+        const keys = new Set(def.params.map((q) => q.key));
+        for (const [k, v] of Object.entries(b.p ?? {}))
+          if (!keys.has(k) || typeof v !== "number" || !Number.isFinite(v))
+            push(cx, "error", "slide", `${p}.p.${k}`, L("Unknown or invalid tool value", "Valeur d’outil inconnue ou invalide"), ids);
+        for (const k of b.controls ?? [])
+          if (!keys.has(k))
+            push(cx, "error", "slide", `${p}.controls`, L("Unknown tool control", "Commande d’outil inconnue"), ids);
+        if (b.task) {
+          // the tool's own task is checked over all its values (tools/index.ts); any other needs a target ± tol
+          const own = toolTask(def, b);
+          if (!keys.has(b.task.key) || (!own && (!Number.isFinite(b.task.target) || !((b.task.tol ?? -1) >= 0))))
+            push(cx, "error", "slide", `${p}.task`, L("The tool's task names an unknown value", "La tâche de l’outil vise une valeur inconnue"), ids);
+          else {
+            // run the task from the block's own starting values and the controls the student gets
+            const chk = taskCheck(def, b);
+            if (chk === "impossible")
+              push(cx, "error", "slide", `${p}.task`, L("The tool's task cannot be met from these starting values", "La tâche de l’outil est impossible avec ces valeurs de départ"), ids);
+            else if (chk === "met")
+              push(cx, "warn", "slide", `${p}.task`, L("The tool's task is already met at the start: change a starting value", "La tâche de l’outil est déjà réussie au départ : changez une valeur de départ"), ids);
+            else if (chk === "noControl")
+              push(cx, "warn", "slide", `${p}.controls`, L("The student does not get the control the task needs", "L’élève n’a pas la commande dont la tâche a besoin"), ids);
+          }
+        }
+        break;
+      }
       case "checklist": {
         // rows tick from the step goal, or from the slide's YourTurn goal when the step has none
         const yt = ytBlocks[0] as { yourTurn?: YourTurn } | undefined;
@@ -3180,6 +3226,35 @@ function slide(cx: Ctx, s: Step, c: SlideCanvas, path: string) {
           });
         break;
       }
+      case "engine3d": {
+        // a live 3D engine (course/engines): a known engine, its own levers, lever positions 0..1
+        if (!ENGINE_KIND_SET.has(b.engine))
+          push(cx, "error", "slide", `${p}.engine`, L("Unknown engine", "Moteur inconnu"), ids);
+        else {
+          (b.controls ?? []).forEach(
+            (x, j) =>
+              !ENGINE_LEVERS[b.engine].includes(x) &&
+              push(
+                cx,
+                "error",
+                "slide",
+                `${p}.controls[${j}]`,
+                L(`This engine has no '${x}' control`, `Ce moteur n’a pas de commande « ${x} »`),
+                ids,
+              ),
+          );
+          if (b.stage !== undefined && (!Number.isInteger(b.stage) || b.stage < 0 || b.stage >= ENGINE_STAGE_COUNT[b.engine]))
+            push(cx, "error", "slide", `${p}.stage`, L("Unknown step of this engine", "Étape inconnue pour ce moteur"), ids);
+        }
+        for (const k of ["throttle", "mixture", "prop"] as const) {
+          const v = b.set?.[k];
+          if (v !== undefined && !(typeof v === "number" && v >= 0 && v <= 1))
+            push(cx, "error", "slide", `${p}.set.${k}`, L("A lever position is between 0 and 1", "La position d’une manette est comprise entre 0 et 1"), ids);
+        }
+        if (b.set?.mags !== undefined && !["both", "left", "right", "off"].includes(b.set.mags))
+          push(cx, "error", "slide", `${p}.set.mags`, L("Unknown magneto position", "Position de magnétos inconnue"), ids);
+        break;
+      }
     }
   });
 }
@@ -3196,7 +3271,11 @@ export function hasStudentAction(s: Step): boolean {
       b.kind === "quiz" ||
       b.kind === "calc" ||
       ((b.kind === "instrument" || b.kind === "simViewport") && !!b.yourTurn) ||
-      (b.kind === "instrument" && !!b.controls?.length),
+      (b.kind === "instrument" && !!b.controls?.length) ||
+      // a teaching tool with a value to find: the student works the controls to a target
+      (b.kind === "tool" && !!b.task && (b.controls === undefined || b.controls.includes(b.task.key))) ||
+      // a 3D engine with levers: the student moves them (absent = every lever of that engine)
+      (b.kind === "engine3d" && (b.controls === undefined || b.controls.length > 0)),
   );
 }
 

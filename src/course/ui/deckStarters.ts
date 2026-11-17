@@ -75,7 +75,14 @@ export const DECK_STARTERS: readonly DeckStarter[] = [
     ),
     theme: "classroom",
     level: L("IR", "IR"),
-    slides: ["cover", "heroDiagram", "stepByStep", "quiz", "ready"],
+    // the question right after the picture: the students act on the third slide (interactivity guard)
+    slides: ["cover", "heroDiagram", "quiz", "stepByStep", "ready"],
+    presenter: {
+      3: L(
+        "Have a student recite the five Ts in order while the others check: Turn, Time, Twist, Throttle, Talk (an instructors' memory aid).",
+        "Faites réciter les 5 T dans l’ordre par un élève, les autres vérifient. Le moyen mnémotechnique se dit en anglais : Turn (virer), Time (chrono), Twist (OBS), Throttle (puissance), Talk (message).",
+      ),
+    },
     cover: {
       eyebrow: L("Ground school · Holding", "Théorie · Attentes"),
       title: L("Holding", "L’attente"),
@@ -168,7 +175,10 @@ export const DECK_STARTERS: readonly DeckStarter[] = [
     theme: "classroom",
     level: L("IR", "IR"),
     badge: "sim",
-    slides: ["cover", "instrumentNotes", "compare", "checklist", "recap"],
+    // « À vous » third: the students turn the OBS and the heading bug before the before / after picture
+    slides: ["cover", "instrumentNotes", "checklist", "compare", "recap"],
+    // its own takeaways (the recap archetype's sample is the hold's)
+    make: { 4: (theme) => hsiRecap(theme) },
     cover: {
       eyebrow: L("Instruments · HSI", "Instruments · HSI"),
       title: L("Reading the HSI", "Lire le HSI"),
@@ -182,6 +192,36 @@ export const DECK_STARTERS: readonly DeckStarter[] = [
     },
   },
 ];
+
+/**
+ * The HSI deck's takeaways, on the recap archetype: three figures, three checks (FAA IFH ch. 7 « Horizontal
+ * Situation Indicator », ch. 9 « VOR »: full scale of the course deviation bar is 10° either side on a VOR).
+ */
+function hsiRecap(theme?: ThemeId): SlideCanvas {
+  const slide = layoutCanvas("recap", theme ? { theme } : {});
+  const words: L10n[] = [
+    L("Keys to success", "Clés du succès"),
+    L("Reading the HSI: what to keep", "Lire le HSI : à retenir"),
+    // the knobs' own labels, in English on the instrument in both languages
+    L("HDG", "HDG"),
+    L("the heading, under the lubber line at the top: read it first", "le cap, sous l’index en haut : à lire d’abord"),
+    L("CRS", "CRS"),
+    L("the course you want: the arrow, set with the OBS", "la route voulue : la flèche, affichée à l’OBS"),
+    L("10°", "10°"),
+    L("full scale of the bar on a VOR, either side", "pleine échelle de la barre sur un VOR, de chaque côté"),
+    L("Every time", "À chaque fois"),
+    L("The heading first, then the bar", "D’abord le cap, puis la barre"),
+    L("The bar is where the course is: fly towards it", "La barre est du côté de la route : allez vers elle"),
+    L("TO or FROM before you turn", "TO ou FROM avant de virer"),
+    L("FAA IFH ch. 7 (HSI) · ch. 9 (VOR)", "FAA IFH ch. 7 (HSI) · ch. 9 (VOR)"),
+  ];
+  let i = 0;
+  for (const b of slide.blocks) {
+    if (b.kind === "text" && i < words.length) b.text = { ...words[i++] };
+    else if (b.kind === "checklist" && i < words.length) b.rows = [{ text: { ...words[i++] } }];
+  }
+  return slide;
+}
 
 /** Start from scratch: one truly blank slide (no sample words, no diagram). */
 export const BLANK_STARTER: DeckStarter = {

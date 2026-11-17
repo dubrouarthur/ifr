@@ -821,6 +821,8 @@ export interface ControlStripOptions {
   pilot: StripPilot | null;
   /** false: drawn only (a thumbnail, the projector) */
   interactive: boolean;
+  /** the projector: the values only, no buttons, and the line says the instructor is flying (not « Essayez ») */
+  mirror?: boolean;
   /** a control was used: redraw, start the clock of an editor's try */
   changed(c: StageControl): void;
   /** « Réinitialiser » */
@@ -835,6 +837,8 @@ interface Cell {
   sync(sim: Sim): void;
 }
 const RESET: Record<Lang, string> = { en: "Reset", fr: "Réinitialiser" };
+/** the projector's line: the class cannot touch the strip, the instructor flies it from the console */
+const FLYING: Record<Lang, string> = { en: "Instructor flying", fr: "L’instructeur pilote" };
 const GROUP: Record<Lang, string> = {
   en: "Controls of the instrument",
   fr: "Commandes de l’instrument",
@@ -858,7 +862,7 @@ export class ControlStrip {
     this.el.setAttribute("role", "group");
     this.el.setAttribute("aria-label", GROUP[o.lang]);
     this.inner = mk("div", "sl-strip-in");
-    this.hint = mk("div", "sl-strip-hint", tryLine(this.list, o.lang));
+    this.hint = mk("div", "sl-strip-hint", o.mirror ? FLYING[o.lang] : tryLine(this.list, o.lang));
     this.body = mk("div", "sl-strip-body");
     this.inner.append(this.hint, this.body);
     this.el.append(this.inner);
@@ -899,6 +903,7 @@ export class ControlStrip {
     if (!o.interactive) {
       this.el.setAttribute("inert", "");
       this.el.classList.add("is-static");
+      if (o.mirror) this.el.classList.add("is-mirror");
     } else {
       // nothing typed or pressed in the strip reaches the slide (no paging, no selection in the editor)
       for (const ev of ["click", "dblclick", "contextmenu"] as const)
@@ -916,8 +921,11 @@ export class ControlStrip {
     this.el.dataset.side = p.side;
     // the quiet line names two actions when they fit on one line, else the first one
     const both = tryLine(this.list, this.o.lang);
-    this.hint.textContent =
-      both.length * 12.4 <= p.innerW - 2 * STRIP.pad ? both : tryLine(this.list.slice(0, 1), this.o.lang);
+    this.hint.textContent = this.o.mirror
+      ? FLYING[this.o.lang]
+      : both.length * 12.4 <= p.innerW - 2 * STRIP.pad
+        ? both
+        : tryLine(this.list.slice(0, 1), this.o.lang);
     const i = this.inner.style;
     i.width = `${p.innerW}px`;
     i.height = `${p.innerH}px`;

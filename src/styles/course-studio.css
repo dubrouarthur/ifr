@@ -3189,3 +3189,73 @@
     clip: rect(0 0 0 0);
   }
 }
+
+/* ---------------------------------------------------------------- the « Outils » panel (ui/studio.ts tools()) */
+.ce-tools {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+.ce-tools.is-nav {
+  grid-template-columns: 1fr;
+}
+.ce-tool {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.ce-tool.is-text {
+  padding: 10px 12px;
+}
+.ce-tool:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+.ce-tool:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+.ce-tool-art {
+  display: block;
+  aspect-ratio: 5 / 3;
+  border-radius: 7px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.ce-tool-art svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.ce-tool-t {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ce-tool-t b {
+  font: 600 13.5px/1.25 var(--font);
+}
+.ce-tool-t span {
+  font: 400 12px/1.35 var(--font);
+  color: var(--muted);
+}
+.ce-tool-t i {
+  font: 600 11px/1.3 var(--font);
+  font-style: normal;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+.ce-tools-h {
+  margin: 16px 0 8px;
+  font: 600 13px/1.3 var(--font);
+  color: var(--muted);
+}

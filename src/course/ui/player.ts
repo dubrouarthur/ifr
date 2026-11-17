@@ -118,10 +118,13 @@ export interface SlideContext {
   /** an event on the slide: « answered », « quizRight » / « quizWrong », « goalMet »… (the step's marks) */
   onEvent?(when: string): void;
 }
-/** The default slide renderer: the canvas package's SlideView in play mode. */
-export const canvasSlideRenderer: SlideRenderer = (ctx) => {
+/** A slide renderer: the canvas package's SlideView in play mode, with `extra` options (the projector's mirror). */
+export const slideRendererWith =
+  (extra: { mirror?: boolean } = {}): SlideRenderer =>
+  (ctx) => {
   const el = h("div", { class: "cp-slide" });
   const v = renderSlide(ctx.step.slide, el, {
+    ...extra,
     mode: "play",
     lang: ctx.lang,
     theme: ctx.course.theme,
@@ -147,6 +150,8 @@ export const canvasSlideRenderer: SlideRenderer = (ctx) => {
     relayout: () => v.relayout(),
   };
 };
+/** The default slide renderer: the canvas package's SlideView in play mode. */
+export const canvasSlideRenderer: SlideRenderer = slideRendererWith();
 /** The feedback of a slide's question fits again once it shows, and a wrong answer offers « Réessayer » (audit §14):
  *  the answers come back, the first try stays recorded. */
 export function wireSlideQuizRetry(host: SlideHost, lang: Lang, changed?: () => void) {
@@ -1846,6 +1851,48 @@ export class CoursePlayer {
               ),
             ),
           );
+      } else if (b.kind === "tool") {
+        // a teaching tool on a small slide: its question at reading size (ticked once met) and « Manipuler » as a
+        // 44 px button here, never over the drawing (it presses the block's own, which opens the tool full screen)
+        const blockEl = host.querySelector(`[data-id="${CSS.escape(b.id)}"]`);
+        const task = blockEl?.querySelector(".sl-tool-task");
+        if (task)
+          out.push(
+            h(
+              "ul",
+              { class: "cp-st-goals" },
+              h(
+                "li",
+                { class: task.classList.contains("done") ? "done" : "" },
+                h("span", { class: "cp-st-tick", "aria-hidden": "true" }, task.classList.contains("done") ? "✓" : ""),
+                h("span", {}, task.textContent?.trim() ?? ""),
+              ),
+            ),
+          );
+        const open = host.querySelector<HTMLElement>(`.sl-tool-open[data-block="${CSS.escape(b.id)}"]`);
+        if (open) {
+          const go = h(
+            "button",
+            { type: "button", class: "cp-btn primary cp-st-fly", tabindex: "-1" },
+            lang === "fr" ? "Manipuler" : "Try it",
+          );
+          go.addEventListener("click", () => open.click());
+          out.push(go);
+        }
+      } else if (b.kind === "engine3d") {
+        // a 3D engine on a small slide: its caption, and the way to open it big (its levers at 44 px there)
+        if (b.caption) out.push(richEl(txt(b.caption), lang, undefined, "cp-rich cp-st-body"));
+        out.push(
+          h(
+            "div",
+            { class: "cp-st-ctls" },
+            btn(lang === "fr" ? "Manipuler le moteur" : "Try the engine", "", () => {
+              host
+                .querySelector<HTMLButtonElement>(`[data-id="${CSS.escape(b.id)}"] .eng-tools .eng-tool:last-child`)
+                ?.click();
+            }),
+          ),
+        );
       } else if (b.kind === "checklist") {
         out.push(
           h(
@@ -2886,11 +2933,16 @@ export class CoursePlayer {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const t = e.target as HTMLElement | null;
     const tag = t?.tagName;
+    // a 3D engine's lever or a teaching tool's slider has the focus: a clicker's PageDown / PageUp still turns the
+    // page (course/engines, course/tools), and its preventDefault keeps the slider where it was
+    const clicker =
+      (e.key === "PageDown" || e.key === "PageUp") && !!t?.closest?.(".eng, .sl-tool");
     if (
-      tag === "INPUT" ||
-      tag === "TEXTAREA" ||
-      tag === "SELECT" ||
-      t?.isContentEditable
+      !clicker &&
+      (tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        t?.isContentEditable)
     )
       return;
     // a control of a slide's instrument has the focus (canvas/controlStrip.ts): its keys are its own

@@ -991,6 +991,8 @@ export function vorInBriefing(): Briefing {
             id: "vi-quiz.hsi",
             scene: "vi.drift",
             mode: "live",
+            // answer by flying: bank towards the bar, wings level, watch it come back (FAA IFH ch. 9)
+            controls: ["bank"],
           },
         ),
       ],

@@ -483,6 +483,7 @@ export function slideReadability(
   const CONTENT = new Set([
     "text",
     "diagram",
+    "tool",
     "instrument",
     "quiz",
     "calc",
@@ -490,6 +491,7 @@ export function slideReadability(
     "image",
     "simViewport",
     "callout",
+    "engine3d",
   ]);
   const meant = (a: SlideBlock, c: SlideBlock) => {
     if (a.frame.group && a.frame.group === c.frame.group) return true;

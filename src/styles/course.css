@@ -3789,6 +3789,12 @@ html.ga-doc body {
   font-size: 12.5px;
   white-space: nowrap;
 }
+/* a phone: the line wraps, so « Recommencer » stays on screen and reachable */
+@media (max-width: 560px) {
+  .pr-sub {
+    white-space: normal;
+  }
+}
 .pr-clock.late {
   color: var(--gl-warn, #9a5a00);
   font-weight: 600;
@@ -4345,6 +4351,12 @@ html.ga-doc body {
   /* one « Voler dans le simulateur » per screen: the 44 px one in the card (it presses the slide's own) */
   .cp-body[data-layout="canvas"] .sl-hud-btn.sl-yourturn.is-sim {
     display: none;
+  }
+  /* a teaching tool's « Manipuler »: the card's, never over the drawing; the slide's own stays in the tab order
+     and shows only while it has the keyboard focus */
+  .cp-body[data-layout="canvas"] .sl-hud-btn.sl-tool-open:not(:focus-visible) {
+    opacity: 0;
+    pointer-events: none;
   }
   .cp-slidetext .cp-rich p,
   .cp-slidetext .cp-rich li {

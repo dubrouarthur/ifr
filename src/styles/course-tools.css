@@ -1,0 +1,444 @@
+/* ---------------------------------------------------------------- the « Outil » element (canvas/toolBlock.ts)
+   A live drawing beside (or above) its control panel, inside the block's frame. The panel's measures are slide
+   units at zoom 1 (texts 24–28, targets 72); toolBlock.ts sets `zoom` so every target is 44 CSS px on screen.
+   Colours: the slide theme's tokens only (--sl-*). */
+.sl-tool {
+  display: flex;
+  gap: 24px;
+  box-sizing: border-box;
+  color: var(--sl-text);
+  font-family: var(--sl-font-body, "Inter", system-ui, sans-serif);
+}
+.sl-tool[data-side="below"] {
+  flex-direction: column;
+}
+.sl-tool-fig {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.sl-tool-art {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.sl-tool-art > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+.sl-tool-panel {
+  flex: none;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border-radius: 20px;
+  background: var(--sl-surface);
+  box-shadow: inset 0 0 0 2px var(--sl-rule);
+  scrollbar-width: thin;
+}
+.sl-tool.no-ctrls .sl-tool-panel {
+  background: none;
+  box-shadow: none;
+}
+.sl-tool.is-static .sl-tool-panel {
+  pointer-events: none;
+}
+.sl-tool-in {
+  box-sizing: border-box;
+  padding: 20px 22px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.sl-tool-task {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--sl-bg);
+  box-shadow: inset 0 0 0 2px var(--sl-key);
+  font: 600 24px/1.3 var(--sl-font-body, "Inter", system-ui, sans-serif);
+  color: var(--sl-text);
+}
+.sl-tool-task-ic {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 3px var(--sl-key);
+  color: transparent;
+  display: grid;
+  place-items: center;
+}
+.sl-tool-task-ic svg {
+  width: 24px;
+  height: 24px;
+}
+.sl-tool-task.done {
+  box-shadow: inset 0 0 0 3px var(--sl-ok);
+}
+.sl-tool-task.done .sl-tool-task-ic {
+  background: var(--sl-ok);
+  box-shadow: none;
+  color: var(--sl-accentInk, #fff);
+}
+/* the values read out, under the drawing: label above, figure below */
+.sl-tool-ro {
+  flex: none;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.sl-tool-ro-r {
+  flex: 1 1 0;
+  min-width: 180px;
+  box-sizing: border-box;
+  padding: 10px 16px 12px;
+  border-radius: 14px;
+  background: var(--sl-surface);
+  box-shadow: inset 0 0 0 2px var(--sl-rule);
+}
+.sl-tool-ro-r[hidden] {
+  display: none;
+}
+.sl-tool-ro dt {
+  font: 500 24px/1.25 var(--sl-font-body, "Inter", system-ui, sans-serif);
+  color: var(--sl-ink2, var(--sl-muted));
+}
+.sl-tool-ro dd {
+  margin: 2px 0 0;
+  font: 700 32px/1.2 var(--sl-font-body, "Inter", system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
+  color: var(--sl-text);
+}
+.sl-tool-ro dd[data-tone="ok"] {
+  color: var(--sl-nav);
+}
+.sl-tool-ro dd[data-tone="warn"],
+.sl-tool-ro dd[data-tone="key"] {
+  color: var(--sl-key);
+}
+.sl-tool-ro dd[data-tone="stop"] {
+  color: var(--sl-stop);
+}
+.sl-tool-ro dd[data-tone="sel"] {
+  color: var(--sl-sel);
+}
+/* the controls */
+.sl-tool-ctrls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sl-tool[data-side="below"] .sl-tool-ctrls {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 12px 28px;
+}
+.sl-tool[data-side="below"] .sl-tc {
+  flex: 1 1 320px;
+}
+.sl-tc-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 30px;
+}
+.sl-tc-n {
+  font: 600 24px/1.3 var(--sl-font-body, "Inter", system-ui, sans-serif);
+  color: var(--sl-ink2, var(--sl-muted));
+}
+.sl-tc-v {
+  font: 700 26px/1.3 var(--sl-font-body, "Inter", system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
+  color: var(--sl-accent);
+  white-space: nowrap;
+}
+.sl-tc-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 72px;
+  margin-top: 4px;
+}
+.sl-tc-btn,
+.sl-tc-opt,
+.sl-tc-chip {
+  box-sizing: border-box;
+  min-height: 72px;
+  border: 2px solid var(--sl-ruleStrong);
+  border-radius: 16px;
+  background: var(--sl-bg);
+  color: var(--sl-text);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.sl-tc-btn {
+  flex: none;
+  width: 72px;
+  height: 72px;
+  padding: 0;
+  font: 500 40px/1 var(--sl-font-body, "Inter", system-ui, sans-serif);
+}
+.sl-tc-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.sl-tc-range {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 72px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  touch-action: pan-y;
+}
+.sl-tc-range::-webkit-slider-runnable-track {
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(
+    to right,
+    var(--sl-accent) var(--pc, 0%),
+    var(--sl-rule) var(--pc, 0%)
+  );
+}
+.sl-tc-range::-moz-range-track {
+  height: 12px;
+  border-radius: 6px;
+  background: var(--sl-rule);
+}
+.sl-tc-range::-moz-range-progress {
+  height: 12px;
+  border-radius: 6px;
+  background: var(--sl-accent);
+}
+.sl-tc-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 44px;
+  height: 44px;
+  margin-top: -16px;
+  border-radius: 50%;
+  border: 4px solid var(--sl-bg);
+  background: var(--sl-accent);
+  box-shadow: 0 0 0 2px var(--sl-accent);
+}
+.sl-tc-range::-moz-range-thumb {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 4px solid var(--sl-bg);
+  background: var(--sl-accent);
+}
+.sl-tc-seg {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.sl-tc-opt {
+  flex: 1 1 0;
+  padding: 0 12px;
+  font: 600 25px/1 var(--sl-font-body, "Inter", system-ui, sans-serif);
+}
+.sl-tc-opt[aria-checked="true"] {
+  background: var(--sl-accent);
+  border-color: var(--sl-accent);
+  color: var(--sl-accentInk, #fff);
+}
+.sl-tool-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.sl-tc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px;
+  font: 600 24px/1.1 var(--sl-font-body, "Inter", system-ui, sans-serif);
+}
+.sl-tc-chip[hidden] {
+  display: none;
+}
+/* « Valeurs de départ »: one icon, always in its place, greyed at the start values */
+.sl-tc-chip.is-reset {
+  width: 72px;
+  padding: 0;
+  justify-content: center;
+}
+.sl-tc-chip.is-reset:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* the presets: in the row while the panel fits its frame, behind « Préréglages » when it does not (toolBlock.ts
+   layout()); open, the list takes the controls' place, so it always fits */
+.sl-tool-presets {
+  display: contents;
+}
+.sl-tool-menu {
+  display: none;
+}
+.sl-tool-panel.is-menu .sl-tool-menu {
+  display: inline-flex;
+}
+.sl-tool-panel.is-menu .sl-tool-presets {
+  display: none;
+}
+.sl-tool-panel.is-menu.menu-open .sl-tool-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1 0 100%;
+  order: -1;
+}
+.sl-tool-panel.is-menu.menu-open .sl-tool-ctrls {
+  display: none;
+}
+.sl-tool-menu .sl-tc-ic {
+  transition: transform 0.15s;
+}
+.sl-tool-panel.menu-open .sl-tool-menu .sl-tc-ic {
+  transform: rotate(180deg);
+}
+.sl-tool-menu[aria-expanded="true"] {
+  border-color: var(--sl-accent);
+}
+/* the moving air (wing): CSS, not a redraw per frame; never under reduced motion */
+@media (prefers-reduced-motion: no-preference) {
+  .sl-tool .sl-flow {
+    animation: sl-tool-flow 0.24s linear infinite;
+  }
+  .sl-tool .sl-eddy {
+    animation: sl-tool-spin 1.6s linear infinite;
+  }
+}
+@keyframes sl-tool-flow {
+  to {
+    stroke-dashoffset: -38;
+  }
+}
+@keyframes sl-tool-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.sl-tc-chip.is-anim {
+  border-color: var(--sl-accent);
+  color: var(--sl-accent);
+}
+.sl-tc-chip.is-anim[aria-pressed="true"] {
+  background: var(--sl-accent);
+  color: var(--sl-accentInk, #fff);
+}
+.sl-tc-ic {
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+.sl-tc-btn:focus-visible,
+.sl-tc-opt:focus-visible,
+.sl-tc-chip:focus-visible,
+.sl-tc-range:focus-visible {
+  outline: 5px solid var(--sl-accent);
+  outline-offset: 3px;
+}
+@media (hover: hover) {
+  .sl-tc-btn:not(:disabled):hover,
+  .sl-tc-opt:hover,
+  .sl-tc-chip:hover {
+    border-color: var(--sl-accent);
+  }
+}
+
+/* ---------------------------------------------------------------- a small screen: the tool over the whole screen */
+.sl-tool.is-compact .sl-tool-panel {
+  display: none;
+}
+.sl-hud-btn.sl-tool-open.is-off {
+  display: none;
+}
+.sl-tool-open .sl-tc-ic {
+  width: 18px;
+  height: 18px;
+}
+.sl-tool-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--sl-bg, #fff);
+  color: var(--sl-text, #111);
+  font-family: var(--sl-font-body, "Inter", system-ui, sans-serif);
+}
+.sl-tool-sheet-hd {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px 6px 16px;
+  background: var(--sl-bg, #fff);
+  border-bottom: 1px solid var(--sl-rule, #ccc);
+}
+.sl-tool-sheet-hd h2 {
+  margin: 0;
+  font: 600 17px/1.3 var(--sl-font-body, "Inter", system-ui, sans-serif);
+}
+.sl-tool-sheet-x {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--sl-text, #111);
+  cursor: pointer;
+}
+.sl-tool-sheet-x .sl-tc-ic {
+  width: 24px;
+  height: 24px;
+}
+.sl-tool-sheet-x:focus-visible {
+  outline: 3px solid var(--sl-accent);
+  outline-offset: 2px;
+}
+.sl-tool-sheet .sl-tool-fig {
+  flex: none;
+  padding: 12px 12px 0;
+  gap: 10px;
+}
+.sl-tool-sheet .sl-tool-art {
+  flex: none;
+  width: 100%;
+}
+.sl-tool-sheet .sl-tool-ro {
+  zoom: 0.55;
+}
+.sl-tool-sheet .sl-tool-panel {
+  width: auto !important;
+  height: auto !important;
+  max-height: none !important;
+  margin: 12px 12px 24px;
+  zoom: 0.62 !important;
+  overflow: visible;
+}

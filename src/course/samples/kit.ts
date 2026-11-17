@@ -13,12 +13,15 @@ import type {
   CourseShape,
   BriefingFor,
   GoalCheck,
+  InstrumentMotion,
   L10n,
+  MotionScript,
   ReaderBlock,
   SceneFields,
   SimScene,
   SlideBlock,
   SlideCanvas,
+  StageControl,
   Step,
   StepKind,
   ThemeId,
@@ -26,6 +29,7 @@ import type {
 import type { Weather } from "../../sim/environment";
 import { sceneFromFields } from "../scene";
 import { DEFAULT_GRID } from "../canvas/geom";
+import { L } from "../canvas/layouts";
 
 export {
   ARROW,
@@ -255,6 +259,139 @@ export function stableIds(c: Course): void {
   each(c.steps);
 }
 
+// ------------------------------------------------------------------ the animations the sample slides play
+/**
+ * The aircraft flies on as it is posed (heading, altitude and speed held) for `duration` seconds: a slide whose
+ * picture is a moment (the flag flips abeam the fix, the bar leaves in the wind) plays it, the presenter replays it
+ * (« Rejouer l’animation ») or takes the aircraft (« Piloter la démonstration »). `telling` is the moment itself
+ * (thumbnails, reduced motion). The simulator's own flight model and renderers draw it (canvas/motion.ts).
+ */
+export function flyOn(
+  duration: number,
+  telling: number,
+  iasKt: number,
+  /** at `atS` s, a standard-rate turn (3°/s, FAA IFH ch. 4) of `deg` degrees (+ right, − left): the entry turn at the fix */
+  turn?: { atS: number; deg: number },
+): InstrumentMotion {
+  const hdg: [number, number][] = turn
+    ? [
+        [0, 0],
+        [turn.atS, 0],
+        [turn.atS + Math.abs(turn.deg) / 3, turn.deg],
+      ]
+    : [[0, 0]];
+  const end = turn ? Math.max(duration, turn.atS + Math.abs(turn.deg) / 3 + 8) : duration;
+  return {
+    script: {
+      duration: end,
+      telling,
+      tracks: { hdg, vs: [[0, 0]], ias: [[0, iasKt]] },
+    },
+    loop: true,
+  };
+}
+/** An instrument block that plays an animation (a preset by name, or a script); any other block is unchanged. */
+export function moving(b: SlideBlock, m: InstrumentMotion | string): SlideBlock {
+  if (b.kind !== "instrument") return b;
+  const motion: InstrumentMotion = typeof m === "string" ? { preset: m, loop: true } : (JSON.parse(JSON.stringify(m)) as InstrumentMotion);
+  return { ...b, motion };
+}
+/** What liven() changes on an instrument block. */
+export interface Liven {
+  motion?: InstrumentMotion | string;
+  controls?: StageControl[];
+  /** frozen: the picture is read as it is (marks on the needles) */
+  still?: boolean;
+  /** the accessible description, when the picture now moves */
+  alt?: L10n;
+}
+/**
+ * Bring a slide's instrument to life after the step is built: an animation to play (a preset by name or a script)
+ * and/or the controls the student turns on the slide (canvas/controlStrip.ts). Throws when the block is not there
+ * (a renamed block fails the build, not the class).
+ */
+export function liven(
+  s: Step,
+  blockId: string,
+  o: Liven,
+): Step {
+  const slide = s.slide;
+  const at = slide?.blocks.findIndex((b) => b.id === blockId) ?? -1;
+  if (!slide || at < 0) throw new Error(`${s.id}: no block ${blockId}`);
+  let b = slide.blocks[at];
+  if (b.kind !== "instrument") throw new Error(`${s.id}: ${blockId} is not an instrument`);
+  if (o.motion) b = moving(b, o.motion);
+  if (o.controls && b.kind === "instrument") b = { ...b, mode: "live", controls: [...o.controls] };
+  // a reading lesson (marks on the needles): an honest still picture the presenter can still fly
+  if (o.still && b.kind === "instrument") b = { ...b, mode: "frozen" };
+  if (o.alt) b = { ...b, alt: { ...o.alt } };
+  const blocks = slide.blocks.slice();
+  blocks[at] = b;
+  return { ...s, slide: { ...slide, blocks } };
+}
+/** liven() for several blocks of a course, by block id (each id must be on one of the steps). */
+export function livenAll(
+  steps: Step[],
+  table: Record<string, Liven>,
+): Step[] {
+  const left = new Set(Object.keys(table));
+  const out = steps.map((s) => {
+    let r = s;
+    for (const b of s.slide?.blocks ?? [])
+      if (table[b.id]) {
+        r = liven(r, b.id, table[b.id]);
+        left.delete(b.id);
+      }
+    return r;
+  });
+  if (left.size) throw new Error(`livenAll: no block ${[...left].join(", ")}`);
+  return out;
+}
+/** A 30° intercept of a VOR course (FAA IFH ch. 9), flown from the scene of the VOR course's cover: 6 NM from ARD,
+ *  where full scale (10°) is 6 · tan 10° ≈ 1.06 NM off. At 100 kt with a 30° cut the aircraft closes at 50 kt: the bar
+ *  comes off the stop at 8 s and reaches a quarter of a dot (0.125 of full scale, about 0.13 NM) some 67 s later. The
+ *  standard-rate turn starts there, as the course teaches (a 30° turn at standard rate needs less than 0.1 NM:
+ *  10 s at 3°/s), and rolls out centred. The heading is measured from the course set on the OBS. */
+export const VOR_CAPTURE: MotionScript = {
+  duration: 100,
+  hdgRef: "course",
+  tracks: {
+    cdi: [
+      [0, 1],
+      [8, 1],
+      [75, 0.125],
+      [85, 0.05],
+      [92, 0],
+      [100, 0],
+    ],
+    hdg: [
+      [0, 30],
+      [75, 30],
+      [85, 3],
+      [92, 0],
+      [100, 0],
+    ],
+    alt: [[0, 0]],
+    vs: [[0, 0]],
+    ias: [[0, 100]],
+  },
+  telling: 60,
+  marks: [
+    {
+      id: "move",
+      channel: "cdi",
+      value: 0.125,
+      label: L("A quarter of a dot: start the turn", "Un quart de point : on commence le virage"),
+    },
+    {
+      id: "on",
+      channel: "cdi",
+      value: 0.05,
+      label: L("Centred: on the course", "Centrée : sur la route"),
+    },
+  ],
+};
+
 /** The step ids where the student acts (used by the pacing test and the library's kind-mix bar). */
 export function isStudentAction(s: Step): boolean {
   if (
@@ -267,7 +404,11 @@ export function isStudentAction(s: Step): boolean {
       b.kind === "quiz" ||
       b.kind === "calc" ||
       (b.kind === "diagram" && b.interactive) ||
-      ((b.kind === "instrument" || b.kind === "simViewport") && !!b.yourTurn),
+      ((b.kind === "instrument" || b.kind === "simViewport") && !!b.yourTurn) ||
+      // a teaching tool with a value to find (course/tools), a 3D engine with levers (course/engines): as
+      // validate.ts hasStudentAction
+      (b.kind === "tool" && !!b.task && (b.controls === undefined || b.controls.includes(b.task.key))) ||
+      (b.kind === "engine3d" && (b.controls === undefined || b.controls.length > 0)),
   );
 }
 
