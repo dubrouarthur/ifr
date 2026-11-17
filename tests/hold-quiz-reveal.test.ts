@@ -44,3 +44,22 @@ describe("hold-entry questions keep their answer", () => {
     expect(seen).toBeGreaterThan(2);
   });
 });
+
+describe("a quiz's explanation says its verdict once", () => {
+  it("« Juste. » is not followed by « Juste : »", async () => {
+    const { withoutVerdict } = await import("../src/course/canvas/blocks");
+    expect(
+      withoutVerdict("Juste : la bascule marque le travers du repère.", true),
+    ).toBe("La bascule marque le travers du repère.");
+    expect(withoutVerdict("Right: abeam the fix.", true)).toBe(
+      "Abeam the fix.",
+    );
+    expect(withoutVerdict("Juste : x", false)).toBe("Juste : x");
+    expect(
+      withoutVerdict("Non : ce secteur reçoit les caps 200 à 020.", false),
+    ).toBe("Non : ce secteur reçoit les caps 200 à 020.");
+    expect(withoutVerdict("Justement, le vent…", true)).toBe(
+      "Justement, le vent…",
+    );
+  });
+});

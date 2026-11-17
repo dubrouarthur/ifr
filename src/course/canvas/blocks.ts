@@ -28,11 +28,7 @@ import { color, diagramThemeOf, MIN_TEXT_PX, typeCss } from "./themes";
 import { arrowControl } from "./geom";
 import { libraryAsset, libraryUrl, paletteOf } from "./library";
 import { airspaceSvg } from "./airspace";
-import {
-  SlideInstrument,
-  SceneSims,
-  readoutText,
-} from "./instruments";
+import { SlideInstrument, SceneSims, readoutText } from "./instruments";
 import { mountOutsideView } from "./outsideView";
 import { instrumentFrame } from "../stage/geometry";
 import {
@@ -209,11 +205,17 @@ function textBlock(b: Of<"text">, env: BlockEnv): BlockView {
   const formula = FORMULA_STYLES.has(b.style);
   if (formula) el.classList.add("sl-st-formula");
   // the cover title rule (SPEC slides v2 §2): "Main: subtitle" → the main part in display, the rest as a subtitle
-  const cover = b.style === "display" ? /^([^\n:]{2,48}?)\s?:\s+([^\n]+)$/.exec(src) : null;
+  const cover =
+    b.style === "display" ? /^([^\n:]{2,48}?)\s?:\s+([^\n]+)$/.exec(src) : null;
   const paint = () => {
     if (cover && !formula) {
       const sub = mk("span", "sl-cover-sub");
-      sub.append(richFragment(cover[2].charAt(0).toLocaleUpperCase(env.lang) + cover[2].slice(1), { lang: env.lang }));
+      sub.append(
+        richFragment(
+          cover[2].charAt(0).toLocaleUpperCase(env.lang) + cover[2].slice(1),
+          { lang: env.lang },
+        ),
+      );
       inner.replaceChildren(richFragment(cover[1], { lang: env.lang }), sub);
       return;
     }
@@ -252,7 +254,8 @@ function textBlock(b: Of<"text">, env: BlockEnv): BlockView {
     const clip = k <= min && over(k);
     inner.style.setProperty("--fit", String(k));
     el.classList.toggle("sl-overflow", clip);
-    if (clip && env.mode === "edit") el.dataset.overflow = tx("textTooLong", env.lang);
+    if (clip && env.mode === "edit")
+      el.dataset.overflow = tx("textTooLong", env.lang);
     else delete el.dataset.overflow;
   };
   return {
@@ -274,6 +277,16 @@ function textBlock(b: Of<"text">, env: BlockEnv): BlockView {
 
 // ------------------------------------------------------------------ image
 /** Position an image inside a frame: the crop's part of it covers (or fits in) the frame. Pure. */
+/** an explanation that opens with the verdict the card already prints (« Juste : … » after « Juste. »): said once */
+export function withoutVerdict(text: string, right: boolean): string {
+  const re = right
+    ? /^(?:Juste|Exact|Correct|Right|Yes|Oui)\s*[:.,!]\s*/i
+    : /^(?:Faux|Wrong|Incorrect)\s*[:.,!]\s*/i;
+  const m = text.match(re);
+  if (!m || m[0].length >= text.length) return text;
+  const rest = text.slice(m[0].length);
+  return rest.charAt(0).toLocaleUpperCase() + rest.slice(1);
+}
 export function cropPlacement(
   frameW: number,
   frameH: number,
@@ -584,10 +597,13 @@ function calloutBlock(b: Of<"callout">, env: BlockEnv): BlockView {
     body.style.setProperty("--fit", "1");
     const H = card.clientHeight;
     if (!H) return;
-    const k = fitScale((k) => {
-      body.style.setProperty("--fit", String(k));
-      return card.scrollHeight > H + 1;
-    }, fitFloor(parseFloat(css["font-size"]) * 0.86));
+    const k = fitScale(
+      (k) => {
+        body.style.setProperty("--fit", String(k));
+        return card.scrollHeight > H + 1;
+      },
+      fitFloor(parseFloat(css["font-size"]) * 0.86),
+    );
     body.style.setProperty("--fit", String(k));
   };
   return { el, block: b, layout: fit, destroy: () => el.remove() };
@@ -620,7 +636,8 @@ function diagramBlock(b: Of<"diagram">, env: BlockEnv): BlockView {
   const d =
     b.d ?? (b.fromCalc ? env.calcProblem?.(b.fromCalc)?.diagram : undefined);
   const interactive = env.mode === "play" && !!b.interactive;
-  const canDrag = !!b.interactive && d?.kind === "calc" && !!d.calc.drag?.length;
+  const canDrag =
+    !!b.interactive && d?.kind === "calc" && !!d.calc.drag?.length;
   const cap = b.caption
     ? loc(b.caption, env.lang)
     : d?.kind === "hold" && !d.quiet
@@ -730,7 +747,13 @@ function diagramBlock(b: Of<"diagram">, env: BlockEnv): BlockView {
     const row = mk("div", "sl-diagram-cap sl-hint");
     applyCss(row, typeCss(env.theme, "foot"));
     if (canDrag) {
-      const ic = svg("svg", { viewBox: "0 0 24 24", width: 28, height: 28, class: "sl-hint-ic", "aria-hidden": "true" });
+      const ic = svg("svg", {
+        viewBox: "0 0 24 24",
+        width: 28,
+        height: 28,
+        class: "sl-hint-ic",
+        "aria-hidden": "true",
+      });
       ic.append(svg("path", { d: SVG_MOVE, fill: "currentColor" }));
       row.append(ic);
     }
@@ -756,7 +779,8 @@ function diagramBlock(b: Of<"diagram">, env: BlockEnv): BlockView {
 const coarsePointer = (): boolean =>
   typeof navigator !== "undefined" &&
   ((navigator.maxTouchPoints ?? 0) > 0 ||
-    (typeof matchMedia === "function" && matchMedia("(any-pointer: coarse)").matches));
+    (typeof matchMedia === "function" &&
+      matchMedia("(any-pointer: coarse)").matches));
 function yourTurnButton(
   env: BlockEnv,
   b: SlideBlock,
@@ -810,7 +834,8 @@ function instrumentBlock(b: Of<"instrument">, env: BlockEnv): BlockView {
   // the control strip of a live instrument (canvas/controlStrip.ts): inside the block's frame, the instrument
   // makes room for it; a block without controls is drawn exactly as before
   const side = stripShown(b);
-  const zoom = () => (env.mode === "thumb" ? 1 : stripZoom(env.scale(), coarsePointer()));
+  const zoom = () =>
+    env.mode === "thumb" ? 1 : stripZoom(env.scale(), coarsePointer());
   const shape = instrumentFrame(b.view, env.sims.env.cockpit ?? "g1000").rect;
   const aspect = shape[2] / shape[3];
   let plan: StripPlan | null = side
@@ -834,7 +859,11 @@ function instrumentBlock(b: Of<"instrument">, env: BlockEnv): BlockView {
     ...(plan ? { box: plan.inst } : {}),
     onDraw: () => strip?.refresh(),
     ...(motion
-      ? { motion, motionRest: env.mode === "play" ? ("start" as const) : ("telling" as const) }
+      ? {
+          motion,
+          motionRest:
+            env.mode === "play" ? ("start" as const) : ("telling" as const),
+        }
       : {}),
   });
   el.append(inst.el);
@@ -905,7 +934,11 @@ function instrumentBlock(b: Of<"instrument">, env: BlockEnv): BlockView {
     strip.el.classList.add("is-static");
     strip.resetEl.hidden = true;
   };
-  if (strip && env.mode === "play" && typeof requestAnimationFrame === "function")
+  if (
+    strip &&
+    env.mode === "play" &&
+    typeof requestAnimationFrame === "function"
+  )
     requestAnimationFrame(onProjector);
   const hud: HudItem[] = [];
   // « Rejouer » / « Pause » on the instrument that carries the animation (the slide plays it by itself)
@@ -915,9 +948,14 @@ function instrumentBlock(b: Of<"instrument">, env: BlockEnv): BlockView {
     // outside the instrument, by its lower-left corner (re-walk P2: it sat on the altimeter's bezel); a block
     // against the slide's left edge keeps it inside, in the drawing's corner
     const room = b.frame.x >= 72;
-    item.at = room ? [0, 1] : plan
-      ? [(plan.inst.x + 8) / b.frame.w, (plan.inst.y + plan.inst.h - 8) / b.frame.h]
-      : [0, 1];
+    item.at = room
+      ? [0, 1]
+      : plan
+        ? [
+            (plan.inst.x + 8) / b.frame.w,
+            (plan.inst.y + plan.inst.h - 8) / b.frame.h,
+          ]
+        : [0, 1];
     item.origin = room ? [1, 1] : [0, 1];
     hud.push(item);
     unMotion = item.off;
@@ -938,7 +976,8 @@ function instrumentBlock(b: Of<"instrument">, env: BlockEnv): BlockView {
   if (env.mode === "play" && b.yourTurn) {
     const btn = yourTurnButton(env, b, b.yourTurn, b.yourTurn.where === "sim");
     // the student takes the controls: the animation never moves under them
-    if (run) btn.el.addEventListener("click", () => run.pause(), { capture: true });
+    if (run)
+      btn.el.addEventListener("click", () => run.pause(), { capture: true });
     // « À vous » stays on the instrument: it never covers a control of the strip
     if (plan)
       btn.at = [
@@ -954,7 +993,14 @@ function instrumentBlock(b: Of<"instrument">, env: BlockEnv): BlockView {
     hud,
     layout: () => {
       if (side && strip) {
-        const next = stripPlan(b.controls, side, b.frame.w, b.frame.h, zoom(), aspect);
+        const next = stripPlan(
+          b.controls,
+          side,
+          b.frame.w,
+          b.frame.h,
+          zoom(),
+          aspect,
+        );
         if (next && (!plan || next.z !== plan.z)) {
           plan = next;
           place();
@@ -1060,7 +1106,8 @@ function simViewportBlock(b: Of<"simViewport">, env: BlockEnv): BlockView {
         ...(env.motionOf?.(b.scene ?? env.slideScene ?? DEMO_SCENE_ID)
           ? {
               motion: env.motionOf(b.scene ?? env.slideScene ?? DEMO_SCENE_ID),
-              motionRest: env.mode === "play" ? ("start" as const) : ("telling" as const),
+              motionRest:
+                env.mode === "play" ? ("start" as const) : ("telling" as const),
             }
           : {}),
       });
@@ -1072,7 +1119,12 @@ function simViewportBlock(b: Of<"simViewport">, env: BlockEnv): BlockView {
       const sid = b.scene ?? env.slideScene ?? DEMO_SCENE_ID;
       const mo = env.motionOf?.(sid);
       const entry = mo
-        ? env.sims.get(sid, undefined, mo, env.mode === "play" ? "start" : "telling")
+        ? env.sims.get(
+            sid,
+            undefined,
+            mo,
+            env.mode === "play" ? "start" : "telling",
+          )
         : env.sims.get(sid);
       const W = env.mode === "thumb" ? 480 : 960;
       const H = Math.max(
@@ -1085,11 +1137,14 @@ function simViewportBlock(b: Of<"simViewport">, env: BlockEnv): BlockView {
         cockpit: b.view === "cockpit",
         night: entry?.scene.timeOfDay === "night",
         // a cloud layer only when the situation has one (a clear day says 25,000 ft)
-        ...(entry?.scene.weather?.ceilingFt !== undefined && entry.scene.weather.ceilingFt < 20000
+        ...(entry?.scene.weather?.ceilingFt !== undefined &&
+        entry.scene.weather.ceilingFt < 20000
           ? {
               cloud: {
                 baseFt: entry.scene.weather.ceilingFt,
-                topFt: entry.scene.weather.cloudTopFt ?? entry.scene.weather.ceilingFt + 3000,
+                topFt:
+                  entry.scene.weather.cloudTopFt ??
+                  entry.scene.weather.ceilingFt + 3000,
               },
             }
           : {}),
@@ -1139,15 +1194,27 @@ function simViewportBlock(b: Of<"simViewport">, env: BlockEnv): BlockView {
 // ------------------------------------------------------------------ quiz
 /** Short answers are tiles (SPEC slides v2 §7): ≤ 4 options of ≤ 12 characters; longer ones are rows. Pure. */
 /** Columns of a tiled quiz in a block `w` wide (a tile is at least 200 wide, 24 apart). */
-export const quizTileCols = (n: number, w: number): number => Math.max(1, Math.min(n, Math.floor((w + 24) / 224)));
+export const quizTileCols = (n: number, w: number): number =>
+  Math.max(1, Math.min(n, Math.floor((w + 24) / 224)));
 /** Short answers ("1 NM", "060") show as big tiles, the rest as rows. Given the block width, a tile is used only
  *  when every answer fits its tile on one line at the tile size (72 px semibold, 24 px padding each side). */
-export function quizUsesTiles(options: { text: { en: string; fr?: string } }[], lang: Lang, w?: number): boolean {
-  if (options.length < 2 || options.length > 4 || !options.every((o) => plainText(loc(o.text, lang)).length <= 12)) return false;
+export function quizUsesTiles(
+  options: { text: { en: string; fr?: string } }[],
+  lang: Lang,
+  w?: number,
+): boolean {
+  if (
+    options.length < 2 ||
+    options.length > 4 ||
+    !options.every((o) => plainText(loc(o.text, lang)).length <= 12)
+  )
+    return false;
   if (w === undefined) return true;
   const cols = quizTileCols(options.length, w);
   const inner = (w - (cols - 1) * 24) / cols - 48 - 4;
-  return options.every((o) => textWidth(plainText(loc(o.text, lang)), 72, 600, -0.02) <= inner);
+  return options.every(
+    (o) => textWidth(plainText(loc(o.text, lang)), 72, 600, -0.02) <= inner,
+  );
 }
 /** The quiz on a slide: an eyebrow, the question, tiles or rows, the feedback. No outer card; the options are the
  *  only surfaces. The content scales down (never under 24 px) when the block is too small for it. */
@@ -1167,28 +1234,49 @@ function quizBlock(b: Of<"quiz">, env: BlockEnv): BlockView {
     const q = b.quiz;
     // the slide's own eyebrow already says « Question »: never say it twice
     const said = env.step?.slide?.blocks.some(
-      (x) => x.kind === "text" && (x.style === "eyebrow" || x.style === "label") && /question|quiz/i.test(x.text.en),
+      (x) =>
+        x.kind === "text" &&
+        (x.style === "eyebrow" || x.style === "label") &&
+        /question|quiz/i.test(x.text.en),
     );
-    if (!said) inner.append(mk("div", "sl-q-eyebrow", tx("quizSlot", env.lang)));
+    if (!said)
+      inner.append(mk("div", "sl-q-eyebrow", tx("quizSlot", env.lang)));
     const prompt = mk("div", "sl-q-prompt");
-    const pr = "prompt" in q && q.prompt ? loc(q.prompt, env.lang) : tx("calcSlot", env.lang);
+    const pr =
+      "prompt" in q && q.prompt
+        ? loc(q.prompt, env.lang)
+        : tx("calcSlot", env.lang);
     prompt.append(richFragment(pr, { lang: env.lang }));
     inner.append(prompt);
     if (q.kind === "mcq") {
       const tiles = quizUsesTiles(q.options, env.lang, b.frame.w);
       el.classList.add(tiles ? "is-tiles" : "is-rows");
       const list = mk("div", "sl-q-opts");
-      if (tiles) list.style.setProperty("--cols", String(quizTileCols(q.options.length, b.frame.w)));
+      if (tiles)
+        list.style.setProperty(
+          "--cols",
+          String(quizTileCols(q.options.length, b.frame.w)),
+        );
       list.setAttribute("role", env.mode === "play" ? "radiogroup" : "list");
       const why = mk("div", "sl-q-why");
       // the longest feedback reserves its room while fitting (no jump when it appears)
-      const whyTexts = [loc(q.explain, env.lang), ...q.options.map((o) => (o.why ? loc(o.why, env.lang) : ""))];
-      const longest = whyTexts.reduce((a, x) => (x.length > a.length ? x : a), "");
+      const whyTexts = [
+        loc(q.explain, env.lang),
+        ...q.options.map((o) => (o.why ? loc(o.why, env.lang) : "")),
+      ];
+      const longest = whyTexts.reduce(
+        (a, x) => (x.length > a.length ? x : a),
+        "",
+      );
       q.options.forEach((o, i) => {
         const opt = mk(env.mode === "play" ? "button" : "div", "sl-q-opt");
         if (opt instanceof HTMLButtonElement) opt.type = "button";
         const st = mk("span", "sl-q-state");
-        opt.append(mk("span", "sl-q-k", String.fromCharCode(65 + i)), mk("span", "sl-q-v", loc(o.text, env.lang)), st);
+        opt.append(
+          mk("span", "sl-q-k", String.fromCharCode(65 + i)),
+          mk("span", "sl-q-v", loc(o.text, env.lang)),
+          st,
+        );
         if (env.mode === "play")
           opt.addEventListener("click", (e) => {
             e.stopPropagation();
@@ -1196,17 +1284,30 @@ function quizBlock(b: Of<"quiz">, env: BlockEnv): BlockView {
             el.classList.add("answered");
             // a first wrong answer marks only the chosen one: the student tries again before seeing the right one
             // (re-walk P2); a second wrong answer, or a right one, shows it
-            const tries = Number(el.dataset.wrong ?? "0") + (i === q.answer ? 0 : 1);
+            const tries =
+              Number(el.dataset.wrong ?? "0") + (i === q.answer ? 0 : 1);
             el.dataset.wrong = String(tries);
             const reveal = i === q.answer || tries >= 2;
             if (!reveal) {
               list.querySelectorAll(".sl-q-opt").forEach((x, j) => {
                 x.classList.toggle("is-wrong", j === i);
                 const state = x.querySelector(".sl-q-state");
-                if (state) state.textContent = j === i ? `✗ ${tx("quizWrong", env.lang)}` : "";
+                if (state)
+                  state.textContent =
+                    j === i ? `✗ ${tx("quizWrong", env.lang)}` : "";
               });
-              const verdict = mk("b", "", `${tx("quizWrong", env.lang).split(" · ")[0]}. `);
-              why.replaceChildren(verdict, richFragment(o.why ? loc(o.why, env.lang) : tx("quizNotThis", env.lang), { lang: env.lang }));
+              const verdict = mk(
+                "b",
+                "",
+                `${tx("quizWrong", env.lang).split(" · ")[0]}. `,
+              );
+              why.replaceChildren(
+                verdict,
+                richFragment(
+                  o.why ? loc(o.why, env.lang) : tx("quizNotThis", env.lang),
+                  { lang: env.lang },
+                ),
+              );
               why.classList.remove("is-reserve");
               env.fire("answered");
               env.fire("quizWrong");
@@ -1226,8 +1327,21 @@ function quizBlock(b: Of<"quiz">, env: BlockEnv): BlockView {
                       : "";
             });
             // the live region says the result first, then why
-            const verdict = mk("b", "", `${i === q.answer ? tx("quizRight", env.lang) : tx("quizWrong", env.lang).split(" · ")[0]}. `);
-            why.replaceChildren(verdict, richFragment(loc(o.why ?? q.explain, env.lang), { lang: env.lang }));
+            const verdict = mk(
+              "b",
+              "",
+              `${i === q.answer ? tx("quizRight", env.lang) : tx("quizWrong", env.lang).split(" · ")[0]}. `,
+            );
+            why.replaceChildren(
+              verdict,
+              richFragment(
+                withoutVerdict(
+                  loc(o.why ?? q.explain, env.lang),
+                  i === q.answer,
+                ),
+                { lang: env.lang },
+              ),
+            );
             why.classList.remove("is-reserve");
             env.fire("answered");
             env.fire("answerShown");
@@ -1253,7 +1367,12 @@ function quizBlock(b: Of<"quiz">, env: BlockEnv): BlockView {
       inner.style.setProperty("--q", String(k));
     };
   }
-  return { el, block: b, layout: fit, destroy: () => (slot?.destroy?.(), el.remove()) };
+  return {
+    el,
+    block: b,
+    layout: fit,
+    destroy: () => (slot?.destroy?.(), el.remove()),
+  };
 }
 
 // ------------------------------------------------------------------ calc
@@ -1409,7 +1528,12 @@ function calcBlock(b: Of<"calc">, env: BlockEnv): BlockView {
     inner.style.transform = `scale(${k})`;
     inner.style.width = `${b.frame.w / k}px`;
   };
-  return { el, block: b, layout: fit, destroy: () => (slot?.destroy?.(), el.remove()) };
+  return {
+    el,
+    block: b,
+    layout: fit,
+    destroy: () => (slot?.destroy?.(), el.remove()),
+  };
 }
 
 // ------------------------------------------------------------------ checklist ("Do this", ticked by the sim)
@@ -1420,7 +1544,13 @@ function checklistBlock(b: Of<"checklist">, env: BlockEnv): BlockView {
   const inner = mk("div", "sl-ck-in");
   el.append(inner);
   const head = mk("div", "sl-ck-head");
-  head.append(mk("span", "sl-ck-title", b.title ? loc(b.title, env.lang) : tx("doThis", env.lang)));
+  head.append(
+    mk(
+      "span",
+      "sl-ck-title",
+      b.title ? loc(b.title, env.lang) : tx("doThis", env.lang),
+    ),
+  );
   if (b.rows.some((r) => r.check !== undefined))
     head.append(mk("span", "sl-ck-live", tx("checkedBySim", env.lang)));
   inner.append(head);
@@ -1442,7 +1572,9 @@ function checklistBlock(b: Of<"checklist">, env: BlockEnv): BlockView {
   // the goal each row stands for (the slide's « À vous », else the step's): a row met earlier keeps its tick, but its
   // value turns neutral once the aircraft has left the band again (re-walk P2: « 64 kt » in green under « 70 à 85 »)
   const goalChecks =
-    env.step?.slide?.blocks.map((k) => ("yourTurn" in k ? k.yourTurn?.goal.all : undefined)).find((g) => g?.length) ??
+    env.step?.slide?.blocks
+      .map((k) => ("yourTurn" in k ? k.yourTurn?.goal.all : undefined))
+      .find((g) => g?.length) ??
     env.step?.goal?.all ??
     [];
   const tick = () => {
@@ -1462,7 +1594,9 @@ function checklistBlock(b: Of<"checklist">, env: BlockEnv): BlockView {
       const drift = x.li.classList.contains("drift");
       if (x.r.readout && s) {
         const t = readoutText(s, x.r.readout, env.lang) ?? "";
-        x.v.textContent = drift ? `${t}${t ? " · " : ""}${tx("goalDrift", env.lang)}` : t;
+        x.v.textContent = drift
+          ? `${t}${t ? " · " : ""}${tx("goalDrift", env.lang)}`
+          : t;
       } else if (drift) {
         x.v.textContent = tx("goalDrift", env.lang);
         x.v.dataset.drift = "1";
