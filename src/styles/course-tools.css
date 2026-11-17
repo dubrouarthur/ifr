@@ -117,9 +117,8 @@
 }
 .sl-tool-ro dd {
   margin: 2px 0 0;
-  font: 700 34px/1.2 var(--sl-font-body, "Inter", system-ui, sans-serif);
+  font: 700 32px/1.2 var(--sl-font-body, "Inter", system-ui, sans-serif);
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
   color: var(--sl-text);
 }
 .sl-tool-ro dd[data-tone="ok"] {

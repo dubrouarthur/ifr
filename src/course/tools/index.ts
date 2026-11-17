@@ -7,6 +7,14 @@ import type { ToolDef, ToolValues } from "./kit";
 import { wingTool } from "./defs/wing";
 import { turnTool } from "./defs/turn";
 import { massBalanceTool } from "./defs/massBalance";
+import { runwayTool } from "./defs/runway";
+import { fuelTool } from "./defs/fuel";
+import { carbIceTool } from "./defs/carbIce";
+import { frontsTool } from "./defs/fronts";
+import { radioNavTool } from "./defs/radioNav";
+import { propTool } from "./defs/prop";
+import { machTool } from "./defs/mach";
+import { cabinTool } from "./defs/cabin";
 
 export type {
   ToolDef,
@@ -18,7 +26,19 @@ export type {
 } from "./kit";
 
 /** every tool, in the order the rail lists them (the most useful first) */
-export const TOOLS: readonly ToolDef[] = [wingTool, turnTool, massBalanceTool];
+export const TOOLS: readonly ToolDef[] = [
+  wingTool,
+  turnTool,
+  massBalanceTool,
+  runwayTool,
+  fuelTool,
+  carbIceTool,
+  frontsTool,
+  radioNavTool,
+  propTool,
+  machTool,
+  cabinTool,
+];
 const BY_ID = new Map<string, ToolDef>(TOOLS.map((t) => [t.id, t]));
 export const toolDef = (id: ToolId | string): ToolDef | undefined =>
   BY_ID.get(id);
