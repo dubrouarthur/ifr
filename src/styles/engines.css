@@ -283,6 +283,7 @@
   align-items: center;
 }
 .eng:not(.narrow) .eng-c > .eng-toggle,
+.eng:not(.narrow) .eng-c > .eng-c-hint,
 .eng:not(.narrow) .eng-c-magnetos .eng-seg {
   grid-column: 1 / -1;
 }

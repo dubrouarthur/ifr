@@ -13,7 +13,7 @@ export const PISTON_STAGES: EngineStage[] = [
       "The intake valve is open and the piston goes down: it draws the fuel-air mixture into the cylinder.",
       "La soupape d’admission est ouverte, le piston descend : il aspire le mélange air-essence dans le cylindre.",
     ),
-    focus: ["intakeValve", "piston", "intake"],
+    focus: ["cyl1", "intakeValve", "piston", "intake"],
   },
   {
     id: "compression",
@@ -22,7 +22,7 @@ export const PISTON_STAGES: EngineStage[] = [
       "Both valves are closed and the piston comes up: it squeezes the mixture. The spark comes just before the top.",
       "Les deux soupapes sont fermées, le piston remonte : il comprime le mélange. L’étincelle jaillit juste avant le haut.",
     ),
-    focus: ["piston", "plugs"],
+    focus: ["cyl1", "piston", "plugs"],
   },
   {
     id: "power",
@@ -31,7 +31,7 @@ export const PISTON_STAGES: EngineStage[] = [
       "The mixture burns and pushes the piston down: the only stroke that gives work. The rod turns the crankshaft.",
       "Le mélange brûle et repousse le piston : le seul temps moteur. La bielle fait tourner le vilebrequin.",
     ),
-    focus: ["plugs", "rod", "crank"],
+    focus: ["cyl1", "plugs", "rod", "crank"],
   },
   {
     id: "exhaust",
@@ -40,7 +40,7 @@ export const PISTON_STAGES: EngineStage[] = [
       "The exhaust valve opens and the piston comes up: it pushes the burnt gases out to the exhaust.",
       "La soupape d’échappement s’ouvre, le piston remonte : il chasse les gaz brûlés vers l’échappement.",
     ),
-    focus: ["exhaustValve", "exhaust"],
+    focus: ["cyl1", "exhaustValve", "exhaust"],
   },
   {
     id: "ignition",

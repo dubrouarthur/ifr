@@ -421,6 +421,13 @@ export function buildPiston(mats: Mats): EngineModel {
   // ---- labels
   const c1 = cyls[0];
   const parts: PartLabel[] = [
+    // the cylinders' numbers: the caption follows cylinder 1, the firing order is 1-3-2-4
+    ...cyls.map((c) => ({
+      id: `cyl${c.n}`,
+      name: L(`Cylinder ${c.n}`, `Cylindre ${c.n}`),
+      obj: root,
+      at: new THREE.Vector3(c.x, -0.75, c.s * (HEAD + 0.35)),
+    })),
     {
       id: "piston",
       name: L("Piston", "Piston"),

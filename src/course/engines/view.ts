@@ -721,10 +721,14 @@ export function mountEngine(
     const moving = st.playing && !still;
     // paused on a step, the cutaway stands still but the gauges keep following the levers (the spool-up)
     const spooling = !still && !sim.atRest();
-    const real = last ? Math.min(0.05, (t - last) / 1000) : 0;
+    const gap = last ? (t - last) / 1000 : 0;
     last = t;
+    // the picture moves at most 50 ms a frame (no jump after a stall); the gauges keep real time on a slow
+    // device (a turbine's spool-up must take its seconds, not more), up to a quarter of a second a frame
+    const real = Math.min(0.05, gap);
     const dt = moving ? real * (st.slow ? 0.2 : 1) : 0;
-    const simDt = moving ? dt : spooling ? real : 0;
+    const simReal = Math.min(0.25, gap);
+    const simDt = moving ? simReal * (st.slow ? 0.2 : 1) : spooling ? simReal : 0;
     if (moving || spooling || dirty) {
       dirty = false;
       frame(simDt, dt);
@@ -766,8 +770,7 @@ export function mountEngine(
     const arrow = k === "ArrowLeft" || k === "ArrowRight" || k === "ArrowUp" || k === "ArrowDown";
     if (t === canvas) return arrow || k === "+" || k === "=" || k === "-" || k === "_" || k === " ";
     if ((t as HTMLInputElement).type === "range") {
-      // a clicker's PageDown turns the page, not the lever
-      if (k === "PageUp" || k === "PageDown") e.preventDefault();
+      // a clicker's PageDown / PageUp go on: the player turns the page (and its preventDefault keeps the lever)
       return arrow || k === "Home" || k === "End";
     }
     if (t.getAttribute("role") === "radio") return arrow || k === " " || k === "Enter";

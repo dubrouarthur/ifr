@@ -13,6 +13,8 @@ import {
   TURBOFAN,
   TURBOPROP,
   MIXTURE,
+  REVERSER_RATE,
+  turbofanThrustFrac,
   reverserFree,
   csPropSteady,
   csPropStep,
@@ -323,7 +325,7 @@ export function engineTargets(
 const TAU: Partial<Record<EngineKind, Record<string, number>>> = {
   piston: { rpm: 0.5, map: 0.25, egt: 2.5, ff: 0.6 },
   turboprop: { ng: 1.4, itt: 1.8, torque: 1.6, np: 1.6, blade: 1.2 },
-  turbofan: { n1: 2.2, n2: 1.6, egt: 2.4, thrustPct: 2.2, thrust: 2.2 },
+  turbofan: { n1: 2.2, n2: 1.6, egt: 2.4 },
 };
 
 /** An engine in time: lever positions in, gauge values out. */
@@ -331,6 +333,8 @@ export class EngineSim {
   set: Required<EngineSettings>;
   v: Record<string, number>;
   private cs = { rpm: 2400, bladeDeg: 20 };
+  /** the turbofan's reverser doors (0 stowed … 1 deployed): the thrust turns as they open */
+  private dep = 0;
   constructor(
     readonly kind: EngineKind,
     s?: EngineSettings,
@@ -338,6 +342,7 @@ export class EngineSim {
     this.set = settingsOf(kind, s);
     this.v = engineTargets(kind, this.set);
     if (kind === "prop") this.cs = { rpm: this.v.rpm, bladeDeg: this.v.blade };
+    this.dep = this.set.reverse ? 1 : 0;
   }
   setSettings(s: EngineSettings) {
     this.set = settingsOf(this.kind, { ...this.set, ...s });
@@ -347,6 +352,7 @@ export class EngineSim {
     this.v = engineTargets(this.kind, this.set);
     if (this.kind === "prop")
       this.cs = { rpm: this.v.rpm, bladeDeg: this.v.blade };
+    this.dep = this.set.reverse ? 1 : 0;
   }
   step(dt: number) {
     if (dt <= 0) return;
@@ -368,6 +374,14 @@ export class EngineSim {
       if (!T || cur === undefined) continue;
       out[k] = cur + (t - cur) * (1 - Math.exp(-dt / T));
     }
+    if (this.kind === "turbofan") {
+      // the thrust follows the fan's speed now and the reverser doors as they open (not a lag of its own)
+      const want = this.set.reverse ? 1 : 0;
+      this.dep += Math.sign(want - this.dep) * Math.min(Math.abs(want - this.dep), REVERSER_RATE * dt);
+      const frac = turbofanThrustFrac(out.n1, this.dep);
+      out.thrustPct = frac * 100;
+      out.thrust = frac;
+    }
     this.v = out;
   }
   /** the gauges have caught up with the levers (nothing left to integrate: the frame loop may rest) */
@@ -375,9 +389,11 @@ export class EngineSim {
     const tgt = engineTargets(this.kind, this.set);
     if (this.kind === "prop")
       return Math.abs(this.cs.rpm - tgt.rpm) < 3 && Math.abs(this.cs.bladeDeg - tgt.blade) < 0.1;
+    if (this.kind === "turbofan" && this.dep !== (this.set.reverse ? 1 : 0)) return false;
     for (const [k, x] of Object.entries(tgt)) {
       const v = this.v[k];
-      if (v === undefined) continue;
+      // the turbofan's thrust is worked out from N1 and the doors (checked above), not smoothed on its own
+      if (v === undefined || (this.kind === "turbofan" && (k === "thrustPct" || k === "thrust"))) continue;
       if (Math.abs(v - x) > Math.max(0.05, Math.abs(x) * 0.002)) return false;
     }
     return true;

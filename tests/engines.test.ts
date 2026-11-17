@@ -608,6 +608,22 @@ describe("the reversers: the interlock and the reverse thrust", () => {
     expect(s.toggleReverse()).toBe(false);
     expect(s.set.reverse).toBe(true);
   });
+  it("the thrust turns as the doors open and then follows N1 (no lag of its own)", () => {
+    const s = new EngineSim("turbofan", { throttle: 0 });
+    expect(s.toggleReverse()).toBe(true);
+    s.step(0.5);
+    // doors part-way: the idle thrust already less forward than before
+    expect(s.v.thrustPct).toBeLessThan(engineTargets("turbofan", { ...s.set, reverse: false }).thrustPct);
+    for (let k = 0; k < 40; k++) s.step(0.1);
+    s.setSettings({ throttle: 1 });
+    for (let k = 0; k < 10; k++) s.step(0.1);
+    const now = turbofanOutputs({ throttle: 0, reverse: true });
+    expect(s.v.thrustPct).toBeLessThan(now.thrustPct);
+    expect(s.atRest()).toBe(false);
+    for (let k = 0; k < 300; k++) s.step(0.1);
+    expect(s.atRest()).toBe(true);
+    expect(s.v.thrustPct).toBeCloseTo(turbofanOutputs({ throttle: 1, reverse: true }).thrustPct, 0);
+  });
   it("max reverse reads clearly backwards (a fifth to a third of the rated thrust)", () => {
     const r = turbofanOutputs({ throttle: 1, reverse: true });
     expect(r.thrustPct).toBeLessThanOrEqual(-20);
@@ -733,9 +749,10 @@ describe("the view: keys, the paused spool-up, the camera on the projector", () 
       expect(key(button, " ").stopPropagation).toHaveBeenCalled();
       expect(key(canvas, "ArrowLeft").stopPropagation).toHaveBeenCalled();
       expect(key(range, "ArrowUp").stopPropagation).toHaveBeenCalled();
+      // the player turns the page (it ignores a key already prevented, so the engine leaves it alone)
       const pg = key(range, "PageDown");
       expect(pg.stopPropagation).not.toHaveBeenCalled();
-      expect(pg.preventDefault).toHaveBeenCalled();
+      expect(pg.preventDefault).not.toHaveBeenCalled();
       h.destroy();
     } finally {
       env.restore();

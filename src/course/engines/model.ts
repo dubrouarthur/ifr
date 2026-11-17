@@ -461,6 +461,18 @@ export const thrustOfN1 = (n1: number): number =>
 /** the share of the thrust the fan gives at a by-pass ratio near 5: about 80 % */
 export const fanThrustShare = (bpr: number): number =>
   clamp(0.5 + 0.06 * bpr, 0, 0.9);
+/** the reverser doors' travel, 0 stowed … 1 deployed, per second (about 2 s: AFH ch. 15 « a few seconds ») */
+export const REVERSER_RATE = 0.6;
+/**
+ * Net thrust, fraction of rated, at a fan speed N1 (%) and the reverser doors at `dep` (0 stowed … 1 deployed):
+ * the fan stream (most of the thrust) is turned forward as the doors open, the core still pushes.
+ */
+export function turbofanThrustFrac(n1: number, dep: number): number {
+  const f = thrustOfN1(n1);
+  const fan = fanThrustShare(TURBOFAN.bypassRatio);
+  const d = clamp01(dep);
+  return f * (1 - fan * d * (1 + TURBOFAN.reverseEffectiveness));
+}
 export interface TurbofanOut {
   n1: number;
   n2: number;
@@ -487,9 +499,7 @@ export function turbofanOutputs(i: {
     T.n2Idle + (n1 - T.n1Idle) * ((99 - T.n2Idle) / (T.n1Max - T.n1Idle));
   const f = thrustOfN1(n1);
   const egtC = T.egtIdle + 500 * Math.pow(f, 0.6);
-  const fan = fanThrustShare(T.bypassRatio);
-  // reversed: the fan stream (most of the thrust) is turned forward, the core still pushes
-  const frac = i.reverse ? -T.reverseEffectiveness * fan * f + (1 - fan) * f : f;
+  const frac = turbofanThrustFrac(n1, i.reverse ? 1 : 0);
   return {
     n1: round1(n1),
     n2: round1(n2),
