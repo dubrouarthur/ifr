@@ -60,6 +60,74 @@ function scenes(): Record<string, SimScene> {
 const IMG_CLOUD = "Photo: Matthias Wesselmann / Unsplash";
 const IMG_ABOVE = "Photo: Alexander Korte / Unsplash";
 
+/** The presenter's notes (audit §22): what to say, the question to ask the room, the usual mistake. */
+const NOTES: Record<string, ReturnType<typeof L>> = {
+  "hp-cover": L(
+    "Open with a show of hands: who has flown into cloud, even briefly? Today: why the body lies there, and what to trust instead.",
+    "Commencez à main levée : qui est déjà entré dans un nuage, même brièvement ? Aujourd’hui : pourquoi le corps y ment, et à quoi se fier à la place.",
+  ),
+  "hp-why": L(
+    "Let the 178 s sink in before you explain it. Ask: how long would you last? Most people say several minutes. The fastest loss of control in the study took 20 s.",
+    "Laissez le chiffre de 178 s faire son effet avant de l’expliquer. Demandez : combien de temps tiendriez-vous ? La plupart répondent plusieurs minutes. La perte de contrôle la plus rapide de l’étude a pris 20 s.",
+  ),
+  "hp-predict": L(
+    "Let everyone answer before you reveal. The usual answer is « the turn »: the inner ear only feels changes, so a steady turn feels level after about 20 to 30 s.",
+    "Faites répondre tout le monde avant de dévoiler. La réponse habituelle est « le virage » : l’oreille interne ne sent que les changements, un virage stable paraît à plat après 20 à 30 s environ.",
+  ),
+  "hp-feel": L(
+    "Point at the two attitude indicators side by side: same feeling, two different aircraft. The rule to leave with: when feeling and instruments disagree, the instruments win.",
+    "Montrez les deux horizons côte à côte : la même sensation, deux avions différents. La règle à retenir : quand la sensation et les instruments ne sont pas d’accord, les instruments gagnent.",
+  ),
+  "hp-illusions": L(
+    "Take one illusion at a time and ask who has felt it on the ground (a car braking, a lift stopping). Usual mistake: pulling in a spiral that feels level, which only tightens it.",
+    "Prenez une illusion à la fois et demandez qui l’a déjà ressentie au sol (une voiture qui freine, un ascenseur qui s’arrête). Erreur habituelle : tirer dans une spirale qui paraît à plat, ce qui la resserre.",
+  ),
+  "hp-recover": L(
+    "Have one student say the order out loud before touching anything: power off, wings level, then pull gently. Usual mistake: pulling while still banked.",
+    "Faites dire l’ordre à voix haute par un élève avant de toucher quoi que ce soit : réduire, ailes à plat, puis tirer doucement. Erreur habituelle : tirer encore incliné.",
+  ),
+  "hp-vision": L(
+    "Ask: where do you look when the sky is empty? Then show the 10° sectors, one second each. Usual mistake: one long stare straight ahead.",
+    "Demandez : où regardez-vous quand le ciel est vide ? Puis montrez les secteurs de 10°, une seconde chacun. Erreur habituelle : un long regard fixe droit devant.",
+  ),
+  "hp-oxygen": L(
+    "Compare the EASA and FAA numbers on the slide and say which rule your club flies under. Ask: at what cabin altitude does our aircraft need oxygen on a long flight?",
+    "Comparez les chiffres EASA et FAA de la diapo et dites sous quelle règle vole votre club. Demandez : à partir de quelle altitude cabine notre avion a-t-il besoin d’oxygène sur un long vol ?",
+  ),
+  "hp-hypoxia": L(
+    "Let the room argue between hypoxia and hyperventilation for a moment. The point: at altitude you cannot tell them apart, so you treat it as hypoxia.",
+    "Laissez la salle hésiter un moment entre hypoxie et hyperventilation. L’idée : en altitude on ne peut pas les distinguer, on la traite donc comme une hypoxie.",
+  ),
+  "hp-imsafe": L(
+    "Go round the room: each person names one letter and a real example. Remind them that a cold is a reason not to fly (blocked ears in the descent).",
+    "Faites un tour de salle : chacun nomme une lettre et un exemple réel. Rappelez qu’un rhume est une raison de ne pas voler (oreilles bloquées en descente).",
+  ),
+  "hp-alcohol": L(
+    "The slide gives the US rule. Say the rule that applies to your club and that it is often stricter. Ask: after a late evening, when is the earliest flight tomorrow?",
+    "La diapo donne la règle américaine. Dites la règle qui s’applique à votre club, souvent plus stricte. Demandez : après une soirée tardive, quel est le premier vol possible demain ?",
+  ),
+  "hp-tem": L(
+    "Ask for one real threat from a recent flight (weather, a busy frequency). Then the error it invited, and the undesired state if nobody caught it.",
+    "Demandez une menace réelle d’un vol récent (météo, fréquence chargée). Puis l’erreur qu’elle a provoquée, et l’état indésirable si personne ne l’avait rattrapée.",
+  ),
+  "hp-180": L(
+    "Most students choose « continue lower ». Ask what the terrain does under a lowering ceiling. The early 180° turn is a decision to make before the cloud, not in it.",
+    "La plupart des élèves choisissent « continuer plus bas ». Demandez ce que fait le relief sous un plafond qui baisse. Le demi-tour précoce se décide avant le nuage, pas dedans.",
+  ),
+  "hp-recap": L(
+    "Ask the three numbers back from memory before you show them. End on the one rule: believe the instruments.",
+    "Faites redonner les trois chiffres de mémoire avant de les montrer. Terminez sur la seule règle : croire les instruments.",
+  ),
+  "hp-fly-unusual": L(
+    "In the simulator: the student recovers from an unusual attitude. Watch the order of the hands: power, wings level, then pitch.",
+    "Au simulateur : l’élève sort d’une position inusuelle. Regardez l’ordre des gestes : puissance, ailes à plat, puis assiette.",
+  ),
+  "hp-fly-pp": L(
+    "In the simulator: the attitude indicator fails. Ask the student to name the instrument that replaces it for bank (the turn coordinator) and for pitch (airspeed and altimeter).",
+    "Au simulateur : l’horizon tombe en panne. Faites nommer l’instrument qui le remplace pour l’inclinaison (l’indicateur de virage) et pour l’assiette (anémomètre et altimètre).",
+  ),
+};
+
 export function pplHumanPerformanceCourse(): Course {
   const steps: Step[] = [
     // 1 ------------------------------------------------------------------ cover
@@ -844,7 +912,7 @@ export function pplHumanPerformanceCourse(): Course {
       ],
       minutes: 45,
     },
-    steps,
+    steps.map((st) => (st.notes || !NOTES[st.id] ? st : { ...st, notes: NOTES[st.id] })),
     scenes(),
   );
 }

@@ -183,7 +183,8 @@
   box-shadow: var(--wd-sh-card);
   overflow: hidden;
 }
-.wd-door.learn {
+/* the door of the one filled button (« Créer un cours », audit §60) */
+.wd-door.teach {
   border-color: #cfdaf0;
   box-shadow: var(--wd-sh-lift);
 }
@@ -311,21 +312,15 @@
   font-weight: 600;
   pointer-events: none;
 }
-/* Voler: the photo */
+/* Voler: a slide with a live instrument, on the dark of the instrument panel (audit §60) */
 .wd-simvis {
   position: absolute;
   inset: 0;
-  background: #8fa7b8 url("/img/sky.jpg") 50% 45% / cover no-repeat;
+  background: linear-gradient(160deg, #1d2833, #121a22);
 }
-.wd-simvis::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    180deg,
-    rgba(0, 0, 0, 0) 55%,
-    rgba(0, 0, 0, 0.32)
-  );
+.wd-simvis .wd-scr {
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
 }
 .wd-simtag {
   position: absolute;

@@ -1,6 +1,6 @@
 // The drawn instrument of each formation card on the library's home (UX logic §5): an airspeed indicator for
-// LAPL · PPL, an attitude indicator banking in the dark for the night rating, an HSI for the IR and a mass-and-balance
-// envelope for ATPL theory. Static SVG strings, decorative (the card's words say everything).
+// LAPL · PPL, an attitude indicator banking in the dark for the night rating, an HSI for the IR and a
+// dark flight display for ATPL theory. Static SVG strings, decorative (the card's words say everything).
 import type { ProgramId } from "./programs";
 
 const F = 'font-family="Inter, system-ui, sans-serif"';
@@ -67,14 +67,12 @@ function hsi(hdg: number, crs: number, dev: number): string {
   return `<svg viewBox="0 0 200 200" aria-hidden="true" focusable="false"><rect x="2" y="2" width="196" height="196" rx="18" fill="#0f1318"/><circle cx="100" cy="100" r="90" fill="#1b2027"/>${card}<g transform="rotate(${crs - hdg} 100 100)">${dots}<path d="M100 22l-7 13h14z" fill="#f4c20d"/><line x1="100" y1="34" x2="100" y2="66" stroke="#f4c20d" stroke-width="5"/><line x1="100" y1="134" x2="100" y2="176" stroke="#f4c20d" stroke-width="5"/><line x1="${100 + dev}" y1="70" x2="${100 + dev}" y2="130" stroke="#f4c20d" stroke-width="5"/></g><path d="M100 88v26M88 98h24M94 112h12" stroke="#ff8a1f" stroke-width="3.2" stroke-linecap="round"/><path d="M93 6h14l-7 10z" fill="#ff8a1f"/></svg>`;
 }
 
-function envelope(): string {
-  const h = [30, 60, 90, 120, 150]
-    .map((y) => `<line x1="20" x2="210" y1="${y}" y2="${y}"/>`)
-    .join("");
-  const v = [50, 90, 130, 170]
-    .map((x) => `<line y1="20" y2="160" x1="${x}" x2="${x}"/>`)
-    .join("");
-  return `<svg viewBox="0 0 220 170" aria-hidden="true" focusable="false"><g stroke="#d7d3ca" stroke-width="1">${h}${v}</g><path d="M60 150 L60 90 L110 40 L190 40 L190 150 Z" fill="rgba(29,95,209,.12)" stroke="#1d5fd1" stroke-width="3"/><circle cx="132" cy="84" r="7" fill="#a8238f"/><circle cx="118" cy="120" r="7" fill="#fff" stroke="#a8238f" stroke-width="3"/><line x1="132" y1="84" x2="118" y2="120" stroke="#a8238f" stroke-width="2.5" stroke-dasharray="4 4"/></svg>`;
+/** ATPL theory: a dark flight display (speed and altitude tapes, the horizon, Mach), like the other instruments */
+function efis(): string {
+  const tape = (x: number, vals: string[]) =>
+    `<rect x="${x}" y="40" width="34" height="120" rx="3" fill="#1b2027"/>` +
+    vals.map((v, i) => `<text x="${x + 17}" y="${62 + i * 28}" fill="#c5ccd6" font-size="11" font-weight="700" text-anchor="middle" ${F}>${v}</text>`).join("");
+  return `<svg viewBox="0 0 200 200" aria-hidden="true" focusable="false"><rect x="2" y="2" width="196" height="196" rx="18" fill="#0f1318"/><defs><clipPath id="lbpefis"><rect x="44" y="40" width="112" height="120" rx="4"/></clipPath></defs><g clip-path="url(#lbpefis)"><g transform="rotate(-8 100 100)"><rect x="0" y="0" width="200" height="104" fill="#3d86d9"/><rect x="0" y="104" width="200" height="100" fill="#8a5a2b"/><line x1="0" y1="104" x2="200" y2="104" stroke="#fff" stroke-width="2"/></g></g><path d="M70 102h20l10 8 10-8h20" stroke="#f4c20d" stroke-width="4" fill="none" stroke-linejoin="round"/>${tape(8, ["290", "280", "270", "260"])}${tape(158, ["370", "360", "350", "340"])}<rect x="6" y="88" width="38" height="22" rx="3" fill="#000" stroke="#fff" stroke-width="1.5"/><text x="25" y="104" fill="#fff" font-size="13" font-weight="700" text-anchor="middle" ${F}>275</text><text x="100" y="182" fill="#2fa84f" font-size="13" font-weight="700" text-anchor="middle" ${F}>M .78</text><text x="100" y="28" fill="#2fa84f" font-size="11" font-weight="700" text-anchor="middle" ${F} letter-spacing="1">FL350</text></svg>`;
 }
 
 /** The drawing of a formation card (an empty string for a formation without one). */
@@ -87,7 +85,8 @@ export function programArt(p: ProgramId): string {
     case "ir":
       return hsi(120, 90, 10);
     case "atpl":
-      return `<span class="lb-pc-paper">${envelope()}</span>`;
+      // a dark instrument like the three others (audit §59), not a paper chart
+      return efis();
     default:
       return "";
   }

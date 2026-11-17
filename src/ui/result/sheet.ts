@@ -7,7 +7,7 @@
 import { h, clear } from "../dom";
 import { Modal, saveFlightRecord } from "../modals";
 import { svgIcon, I } from "../icons";
-import { setLang, onLangChange } from "../i18n";
+import { onLangChange } from "../i18n";
 import { history } from "../history";
 import { progress, isGraded } from "../learn";
 import { EXERCISES, STAGES, exercise, type Path } from "../../train/curriculum";
@@ -308,21 +308,6 @@ export class ResultSheet extends Modal {
     ]
       .filter(Boolean)
       .join(" · ");
-    const langSeg = h(
-      "div",
-      { class: "rs-lang", role: "group", "aria-label": rt("sheet.lang") },
-      ...(["fr", "en"] as const).map((l) =>
-        h(
-          "button",
-          {
-            class: l === L ? "on" : "",
-            "aria-pressed": String(l === L),
-            onclick: () => setLang(l),
-          },
-          l.toUpperCase(),
-        ),
-      ),
-    );
     const head = h(
       "header",
       { class: "rs-hd" },
@@ -330,7 +315,6 @@ export class ResultSheet extends Modal {
       crumb.length ? h("span", { class: "crumb" }, crumb.join(" · ")) : null,
       h("span", { class: "sp" }),
       h("span", { class: "meta" }, meta),
-      langSeg,
       h(
         "button",
         {

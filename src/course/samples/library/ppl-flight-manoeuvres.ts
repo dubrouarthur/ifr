@@ -109,6 +109,114 @@ function mark(
   return [m.frame.x + 28, m.frame.y + 28];
 }
 
+/** The presenter's notes (audit §22): what to say, the question to ask the room, the usual mistake. */
+const NOTES: Record<string, ReturnType<typeof L>> = {
+  "fm-cover": L(
+    "Say the one idea of the day: attitude plus power gives the performance. Everything else today is that idea applied four times.",
+    "Dites l’idée du jour : assiette plus puissance donnent la performance. Tout le reste de la séance applique cette idée quatre fois.",
+  ),
+  "fm-goals": L(
+    "Read the four tolerances aloud and ask which one feels hardest. Come back to that answer at the end.",
+    "Lisez les quatre tolérances à voix haute et demandez laquelle paraît la plus dure. Revenez à cette réponse à la fin.",
+  ),
+  "fm-hook": L(
+    "Have everyone commit to an answer first. Most expect the aircraft to accelerate; the trim holds a speed, so the extra power becomes a climb.",
+    "Faites choisir une réponse à chacun d’abord. La plupart s’attendent à une accélération ; le compensateur tient une vitesse, la puissance en plus devient de la montée.",
+  ),
+  "fm-p1": L(
+    "Part 1: straight and level. Ask: which two things do you set, and which two do you read?",
+    "Partie 1 : le palier. Demandez : quelles sont les deux choses que l’on règle, et les deux que l’on lit ?",
+  ),
+  "fm-apf": L(
+    "Point at the live altitude and speed: they move only because attitude or power moved. Usual mistake: chasing the altimeter instead of setting an attitude.",
+    "Montrez l’altitude et la vitesse en direct : elles ne bougent que parce que l’assiette ou la puissance a bougé. Erreur habituelle : courir après l’altimètre au lieu d’afficher une assiette.",
+  ),
+  "fm-slow": L(
+    "Let a student do it on the projector: four presses on −, then wait. Ask the room why the nose ends up higher at 80 kt.",
+    "Faites-le faire par un élève sur le projecteur : quatre appuis sur −, puis attendre. Demandez à la salle pourquoi le nez finit plus haut à 80 kt.",
+  ),
+  "fm-correct": L(
+    "Too high and too slow means the nose is too high: one cause, one correction. Usual mistake: reaching for the power or the trim first.",
+    "Trop haut et trop lent, c’est le nez trop haut : une cause, une correction. Erreur habituelle : toucher d’abord à la puissance ou au compensateur.",
+  ),
+  "fm-fly-level": L(
+    "In the simulator: two minutes level. Watch the altimeter tolerance, and whether the student trims once the attitude is set.",
+    "Au simulateur : deux minutes de palier. Regardez la tolérance d’altitude, et si l’élève compense une fois l’assiette affichée.",
+  ),
+  "fm-p2": L(
+    "Part 2: climb and descent. Ask: in a descent, what sets the rate, and what sets the speed?",
+    "Partie 2 : montée et descente. Demandez : en descente, qu’est-ce qui règle le taux, et qu’est-ce qui règle la vitesse ?",
+  ),
+  "fm-power": L(
+    "The hook question, now on the live instruments: full power, hands off. Let the class watch the altimeter climb while the speed stays near 100 kt.",
+    "La question du début, cette fois sur les instruments en direct : plein gaz, mains libres. Laissez la classe regarder l’altimètre monter pendant que la vitesse reste vers 100 kt.",
+  ),
+  "fm-climb": L(
+    "Say the order out loud together: power, attitude, trim. Remind them of right rudder with full power, ball in the middle.",
+    "Dites l’ordre ensemble à voix haute : puissance, assiette, compensateur. Rappelez le pied à droite à plein gaz, bille au milieu.",
+  ),
+  "fm-vxvy": L(
+    "Ask: you have a tree line at the end of the runway, which speed? Then: and once it is behind you? Usual mistake: staying at Vx too long (engine cooling).",
+    "Demandez : une rangée d’arbres en bout de piste, quelle vitesse ? Puis : et une fois passée ? Erreur habituelle : rester trop longtemps à Vx (refroidissement du moteur).",
+  ),
+  "fm-leveloff": L(
+    "Have them work out 10 % of 700 ft/min before showing the answers. Usual mistake: starting at the target altitude, which overshoots it.",
+    "Faites calculer 10 % de 700 ft/min avant de montrer les réponses. Erreur habituelle : commencer à l’altitude visée, ce qui la dépasse.",
+  ),
+  "fm-descent": L(
+    "Point at the vario while you reduce power: the rate changes, the speed stays with the attitude. Ask how early to start the level-off (100 to 150 ft).",
+    "Montrez le vario pendant que la puissance baisse : le taux change, la vitesse reste avec l’assiette. Demandez quand commencer la mise en palier (100 à 150 ft avant).",
+  ),
+  "fm-rate-calc": L(
+    "Let them do the calculation on paper first; the numbers change at each try. Ask one student to explain the method, not the result.",
+    "Laissez faire le calcul sur papier d’abord ; les chiffres changent à chaque essai. Faites expliquer la méthode par un élève, pas le résultat.",
+  ),
+  "fm-fly-climb": L(
+    "In the simulator: climb, level off, descend. Watch the order of the hands at the level-off: attitude first, then power, then trim.",
+    "Au simulateur : montée, palier, descente. Regardez l’ordre des gestes à la mise en palier : l’assiette d’abord, puis la puissance, puis le compensateur.",
+  ),
+  "fm-p3": L(
+    "Part 3: turns. Ask: in a level turn, why does the lift have to be greater than the weight?",
+    "Partie 3 : les virages. Demandez : en virage en palier, pourquoi la portance doit-elle être plus grande que le poids ?",
+  ),
+  "fm-turn-predict": L(
+    "Most say the stall speed stays at 48 kt. Holding altitude loads the wing: about 52 kt at 30° of bank.",
+    "La plupart pensent que le décrochage reste à 48 kt. Tenir l’altitude charge l’aile : environ 52 kt à 30° d’inclinaison.",
+  ),
+  "fm-turn": L(
+    "Have the student say when to release: 15° before the heading, half the bank. Usual mistake: releasing on the heading and overshooting it.",
+    "Faites dire à l’élève quand relâcher : 15° avant le cap, la moitié de l’inclinaison. Erreur habituelle : relâcher sur le cap et le dépasser.",
+  ),
+  "fm-load": L(
+    "Go through the three banks and ask the room to guess each stall speed before it shows. The point: steep turns near the ground eat the margin.",
+    "Parcourez les trois inclinaisons et faites deviner chaque vitesse de décrochage avant qu’elle s’affiche. L’idée : un virage serré près du sol mange la marge.",
+  ),
+  "fm-turn-how": L(
+    "Walk through the four steps with your hands. Ask what the turn coordinator shows (rate of turn, not bank).",
+    "Déroulez les quatre étapes avec les mains. Demandez ce que montre l’indicateur de virage (le taux de virage, pas l’inclinaison).",
+  ),
+  "fm-bank-calc": L(
+    "Let them find the bank for a standard rate turn on paper first. Then check the rule of thumb (speed ÷ 10 + 7) against the exact result.",
+    "Faites trouver l’inclinaison du taux standard sur papier d’abord. Puis comparez la règle pratique (vitesse ÷ 10 + 7) au résultat exact.",
+  ),
+  "fm-fly-turns": L(
+    "In the simulator: turns onto headings. Watch the altitude in the turn: a little back pressure, and the roll-out started early.",
+    "Au simulateur : virages vers des caps. Regardez l’altitude en virage : un peu de traction, et la sortie commencée tôt.",
+  ),
+  "fm-mistakes": L(
+    "Ask who has done each one in flight (most have). For each, ask for the correction before showing it.",
+    "Demandez qui a déjà fait chacune en vol (la plupart). Pour chacune, faites trouver la correction avant de la montrer.",
+  ),
+  "fm-recap": L(
+    "Ask the three numbers back from memory before showing them. Then come back to the tolerance they found hardest at the start.",
+    "Faites redonner les trois chiffres de mémoire avant de les montrer. Puis revenez à la tolérance jugée la plus dure au début.",
+  ),
+  "fm-quiz": L(
+    "Let everyone answer on their own; go through the wrong answers together, each one is explained.",
+    "Laissez chacun répondre seul ; reprenez ensemble les mauvaises réponses, chacune est expliquée.",
+  ),
+};
+
 export function pplFlightManoeuvresCourse(): Course {
   const steps: Step[] = [
     // 1 ------------------------------------------------------------------ cover
@@ -1540,7 +1648,7 @@ export function pplFlightManoeuvresCourse(): Course {
         "turn",
       ],
     },
-    steps,
+    steps.map((st) => (st.notes || !NOTES[st.id] ? st : { ...st, notes: NOTES[st.id] })),
     scenes(),
   );
 }

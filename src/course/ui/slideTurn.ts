@@ -25,6 +25,7 @@ import { h } from "../../ui/dom";
 import { ct, loc } from "../i18n";
 import { doThisFor, paneOfView } from "./templates";
 import { hw, hwq } from "../handoverWords";
+import { lastFlyHandoff, lastLeftFlight, leftFlightLine, type LeftFlight } from "./flyLeft";
 import { GoalTracker, rowsFor, stageView } from "../goals";
 
 export interface YourTurnCtx {
@@ -308,10 +309,29 @@ export function yourTurnSlideRenderer(o: YourTurnRendererOptions): SlideRenderer
     const turns = (ctx.step.slide?.blocks ?? []).flatMap((b) =>
       "yourTurn" in b && b.yourTurn ? [{ id: b.id, yt: b.yourTurn }] : [],
     );
-    if (o.store && turns.length)
-      void lastYourTurn(o.store, ctx.course.id, ctx.step.id, turns)
-        .then((last) => {
-          if (last && el.isConnected && !lineFor) apply(last.id, last.yt, last.r, false);
+    // a flight in the simulator left without a result says so, until it is flown again (audit §45)
+    let leftFor: LeftFlight | null = null;
+    const showLeft = (f: LeftFlight, lang: Lang) => {
+      leftFor = f;
+      window.clearTimeout(hideT);
+      line.classList.remove("ok");
+      line.textContent = leftFlightLine(f, hw("flyInSim", lang), lang);
+      line.hidden = false;
+      for (const b of el.querySelectorAll<HTMLElement>(".sl-yourturn")) {
+        b.dataset.result = "notyet";
+        b.dataset.resultText = lang === "fr" ? "vol interrompu" : "stopped";
+      }
+    };
+    const store = o.store;
+    if (store && turns.length)
+      void Promise.all([
+        lastYourTurn(store, ctx.course.id, ctx.step.id, turns),
+        turns.some((t) => t.yt.where === "sim") ? leftFlightOf(store, ctx.course.id, ctx.step.id) : null,
+      ])
+        .then(([last, left]) => {
+          if (!el.isConnected || lineFor) return;
+          if (left) showLeft(left, ctx.lang);
+          else if (last) apply(last.id, last.yt, last.r, false);
         })
         .catch(() => undefined);
     const stopLive = watchLiveGoals({
@@ -354,6 +374,7 @@ export function yourTurnSlideRenderer(o: YourTurnRendererOptions): SlideRenderer
       setLang: (l) => {
         v.setLang(l);
         if (lineFor) showResult(lineFor.yt, lineFor.r, l, !line.hidden);
+        else if (leftFor) showLeft(leftFor, l);
       },
       destroy: () => {
         stopLive();
@@ -531,6 +552,12 @@ export function yourTurnResultLine(yt: YourTurn, r: YourTurnResult, lang: Lang):
   return fr
     ? `${k} : pas encore. Il manque : ${what}. ${again}`
     : `${k}: not yet. Still missing: ${what}. ${again}`;
+}
+
+/** The step's last flight in the simulator, when it was left without a result (audit §45). */
+async function leftFlightOf(store: CourseStore, courseId: string, stepId: string): Promise<LeftFlight | null> {
+  const [attempts, handoffs] = await Promise.all([store.listAttempts({ courseId, stepId }), store.listHandoffs()]);
+  return lastLeftFlight(lastFlyHandoff(handoffs, courseId, stepId), attempts);
 }
 
 /** The student's last attempt at one of the slide's Your turns (on the slide, or flown in the simulator). */

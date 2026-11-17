@@ -1444,3 +1444,37 @@ html body.touch .topbar .view-dock.view-dock {
   background: #1f5fd6;
   border-color: #1f5fd6;
 }
+
+/* « Vol terminé » (audit §28): the short end card of a flight outside a course */
+.modal.fd-card { width: min(420px, calc(100vw - 32px)); }
+.fd-card .fd-line { margin: 0 0 12px; font-size: 15px; }
+.fd-card .fd-time { font-variant-numeric: tabular-nums; }
+.fd-card .fd-track { background: #0f1a24; border-radius: 10px; padding: 6px; margin-bottom: 16px; }
+.fd-card .fd-track svg { display: block; width: 100%; height: auto; }
+.fd-card .fd-path { fill: none; stroke: #6fc3ff; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.fd-card .fd-start { fill: #fff; }
+.fd-card .fd-end { fill: #6fc3ff; stroke: #fff; stroke-width: 2; }
+.fd-card .fd-none { margin: 0 0 16px; }
+.fd-card .fd-acts { display: grid; gap: 8px; }
+.fd-card .fd-acts .btn { min-height: 44px; justify-content: center; gap: 8px; }
+.fd-card .fd-detail { display: block; min-height: 44px; margin: 6px auto 0; font-size: 14px; }
+
+/* « Comment piloter » (audit §25, §31): one block on the briefing's last page and the quick-flight start card */
+.htf { margin: 12px 0 0; border: 1px solid var(--line, #d8dee4); border-radius: 10px; background: var(--surface, #fff); color: var(--text, #1b2733); }
+.htf > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; font-weight: 600; font-size: 14px; cursor: pointer; list-style: none; }
+.htf > summary::-webkit-details-marker { display: none; }
+.htf > summary::after { content: "▾"; margin-left: auto; color: var(--muted, #66737f); transition: transform 0.15s; }
+.htf:not([open]) > summary::after { transform: rotate(-90deg); }
+.htf-list { margin: 0; padding: 0 14px 12px 34px; font-size: 13.5px; line-height: 1.5; display: grid; gap: 4px; }
+.modal.fs-start { width: min(480px, calc(100vw - 32px)); }
+.fs-start .fs-title { margin: 0 0 6px; font-size: 16px; }
+.fs-start .fs-goal { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text, #1b2733); }
+.fs-start .fs-k { display: block; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted, #66737f); margin-bottom: 2px; }
+.fs-start footer .btn { min-height: 44px; }
+/* the touch yoke says what it is (audit §25) */
+body.touch .pd-yoke::after { content: attr(data-label); position: absolute; left: 0; right: 0; bottom: 2px; text-align: center; font: 600 9px/1 var(--font, system-ui); letter-spacing: 0.04em; text-transform: uppercase; color: #8d9aa6; pointer-events: none; }
+/* in the briefing the slide makes room for the block (the sheet's width follows the height left for the slide) */
+.modal.brief-deck > .body > .htf { margin: 8px 16px; }
+.modal.brief-deck:has(> .body > .htf) { width: min(1280px, calc(100vw - 64px), calc((100dvh - 168px - 62px) * 16 / 9)); }
+.modal.brief-deck:has(> .body > .htf[open]) { width: min(1280px, calc(100vw - 64px), calc((100dvh - 168px - 150px) * 16 / 9)); }
+.modal.brief-deck > .body > .htf .htf-list { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); column-gap: 28px; }

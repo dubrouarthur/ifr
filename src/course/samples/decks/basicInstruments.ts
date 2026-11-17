@@ -11,6 +11,7 @@ import { G as GOAL, course } from "../kit";
 import {
   L,
   SIX,
+  easaFirst,
   coverStep,
   diagramStep,
   gauge,
@@ -182,7 +183,7 @@ export function basicInstrumentsCourse(): Course {
         "Six instruments, one aircraft: watch them move, then take the controls.",
         "Six instruments, un seul avion : regardez-les bouger, puis prenez les commandes.",
       ),
-      source: L("FAA PHAK ch. 8 · C172S POH", "FAA PHAK ch. 8 · POH C172S"),
+      source: easaFirst(L("FAA PHAK ch. 8 · C172S POH", "FAA PHAK ch. 8 · POH C172S")),
       view: SIX,
       alt: L(
         "The six flight instruments of the C172S in a standard-rate turn",
@@ -226,7 +227,7 @@ export function basicInstrumentsCourse(): Course {
           dot: { g: "asi", at: [-0.72, -0.1], moment: "vne" },
         },
       ],
-      source: POH2,
+      source: easaFirst(POH2),
       view: gauge("asi"),
       alt: L(
         "Airspeed indicator: the needle sweeps from 50 to 160 kt",
@@ -264,7 +265,7 @@ export function basicInstrumentsCourse(): Course {
         "Bring the power to about 30 % (6 clicks on −), then wait about 15 s: the speed takes a while to follow.",
         "Mettez la puissance vers 30 % (6 clics sur −), puis attendez une quinzaine de secondes : la vitesse met du temps à suivre.",
       ),
-      source: POH2,
+      source: easaFirst(POH2),
       view: SIX,
       alt: L(
         "Live six instruments, level at 3,000 ft, 88 kt",
@@ -322,9 +323,11 @@ export function basicInstrumentsCourse(): Course {
           dot: { g: "ai", at: [-0.78, -0.78], moment: "bank" },
         },
       ],
-      source: L(
-        "FAA PHAK ch. 8 · attitude indicator",
-        "FAA PHAK ch. 8 · horizon artificiel",
+      source: easaFirst(
+        L(
+          "FAA PHAK ch. 8 · attitude indicator",
+          "FAA PHAK ch. 8 · horizon artificiel",
+        ),
       ),
       view: gauge("ai"),
       alt: L(
@@ -369,9 +372,11 @@ export function basicInstrumentsCourse(): Course {
           dot: { g: "vsi", at: [0.78, 0.78], moment: "level" },
         },
       ],
-      source: L(
-        "FAA PHAK ch. 8 · FAA IFH ch. 6 · level-off",
-        "FAA PHAK ch. 8 · FAA IFH ch. 6 · mise en palier",
+      source: easaFirst(
+        L(
+          "FAA PHAK ch. 8 · FAA IFH ch. 6 · level-off",
+          "FAA PHAK ch. 8 · FAA IFH ch. 6 · mise en palier",
+        ),
       ),
       view: SIX,
       alt: L(
@@ -416,9 +421,11 @@ export function basicInstrumentsCourse(): Course {
         },
       ],
       answer: 0,
-      source: L(
-        "FAA IFH ch. 6 · leading the level-off",
-        "FAA IFH ch. 6 · anticiper la mise en palier",
+      source: easaFirst(
+        L(
+          "FAA IFH ch. 6 · leading the level-off",
+          "FAA IFH ch. 6 · anticiper la mise en palier",
+        ),
       ),
       view: gauge("alt"),
       alt: L(
@@ -462,9 +469,11 @@ export function basicInstrumentsCourse(): Course {
           ),
         },
       ],
-      source: L(
-        "FAA PHAK ch. 8 · FAA AFH ch. 3 · roll-out",
-        "FAA PHAK ch. 8 · FAA AFH ch. 3 · sortie de virage",
+      source: easaFirst(
+        L(
+          "FAA PHAK ch. 8 · FAA AFH ch. 3 · roll-out",
+          "FAA PHAK ch. 8 · FAA AFH ch. 3 · sortie de virage",
+        ),
       ),
       view: gauge("hsi"),
       alt: L(
@@ -499,7 +508,7 @@ export function basicInstrumentsCourse(): Course {
           text: L("**Ball in the middle**: balanced. Else, step on the ball", "**Bille au milieu** : symétrique. Sinon, « marchez sur la bille »"),
         },
       ],
-      source: L("FAA PHAK ch. 8 · FAA IFH ch. 4", "FAA PHAK ch. 8 · FAA IFH ch. 4"),
+      source: easaFirst(L("FAA PHAK ch. 8 · FAA IFH ch. 4", "FAA PHAK ch. 8 · FAA IFH ch. 4")),
       g: "tc",
       alt: L(
         "Turn coordinator on the standard-rate mark, ball centred",
@@ -539,9 +548,11 @@ export function basicInstrumentsCourse(): Course {
         "Bank about 15° to put the wing on the mark, level the wings 7° before 360. Altitude and speed are held for you.",
         "Inclinez d’environ 15° pour mettre l’aile sur le repère, remettez à plat 7° avant le 360. Altitude et vitesse sont tenues pour vous.",
       ),
-      source: L(
-        "FAA IFH ch. 4 · standard-rate turn",
-        "FAA IFH ch. 4 · virage standard",
+      source: easaFirst(
+        L(
+          "FAA IFH ch. 4 · standard-rate turn",
+          "FAA IFH ch. 4 · virage standard",
+        ),
       ),
       view: SIX,
       alt: L(
@@ -596,9 +607,11 @@ export function basicInstrumentsCourse(): Course {
         "Heading 180 and 3,000 ft held 10 seconds.",
         "Cap 180 et 3 000 ft tenus 10 secondes.",
       ),
-      source: L(
-        "FAA AFH ch. 3 · level turns",
-        "FAA AFH ch. 3 · virages en palier",
+      source: easaFirst(
+        L(
+          "FAA AFH ch. 3 · level turns",
+          "FAA AFH ch. 3 · virages en palier",
+        ),
       ),
       notes: L(
         "To show it first: « Ouvrir le simulateur » opens the cockpit on this situation, « Reprendre le cours » comes back here.",

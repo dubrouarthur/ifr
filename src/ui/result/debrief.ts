@@ -12,7 +12,7 @@
 import { h, clear } from "../dom";
 import { Modal } from "../modals";
 import { svgIcon, I } from "../icons";
-import { setLang, onLangChange } from "../i18n";
+import { onLangChange } from "../i18n";
 import type { Sim } from "../../sim/sim";
 import { ClipPlayer } from "../../course/clip";
 import {
@@ -268,7 +268,6 @@ export class DebriefView extends Modal {
   }
 
   private topBar(m: DebriefModel): HTMLElement {
-    const L = m.lang;
     const o = this.o!;
     const cls =
       m.outcome === "met" ? "pass" : m.outcome === "not-met" ? "fail" : "none";
@@ -321,21 +320,6 @@ export class DebriefView extends Modal {
         )
       : null;
     const exp = this.exportMenu(m);
-    const langSeg = h(
-      "div",
-      { class: "rs-lang", role: "group", "aria-label": "Language" },
-      ...(["en", "fr"] as const).map((l) =>
-        h(
-          "button",
-          {
-            class: l === L ? "on" : "",
-            "aria-pressed": String(l === L),
-            onclick: () => setLang(l),
-          },
-          l.toUpperCase(),
-        ),
-      ),
-    );
     return h(
       "header",
       { class: "dbx-top" },
@@ -388,7 +372,6 @@ export class DebriefView extends Modal {
             o.primary.label,
           )
         : null,
-      langSeg,
       h(
         "button",
         {

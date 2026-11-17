@@ -145,6 +145,8 @@ export interface OutlineOptions {
   current: number;
   onJump(i: number): void;
   onClose?(): void;
+  /** FR | EN in the sheet (a phone's top bar has no room for it, audit §44: shown there only below 480 px) */
+  onLang?(l: Lang): void;
 }
 export class OutlineSheet {
   readonly el: HTMLDivElement;
@@ -269,12 +271,37 @@ export class OutlineSheet {
         ),
         closeB,
       ),
+      o.onLang ? this.langRow(o.onLang) : null,
       list,
     );
     this.el = h("div", { class: "cp-scrim" }, sheet);
     this.el.addEventListener("click", (e) => {
       if (e.target === this.el) this.close();
     });
+  }
+  private langRow(set: (l: Lang) => void): HTMLElement {
+    const lang = this.o.lang;
+    return h(
+      "div",
+      { class: "cp-ol-lang" },
+      h("span", { class: "cp-muted" }, ps("language", lang)),
+      h(
+        "div",
+        { class: "cp-langseg", role: "group", "aria-label": ps("language", lang) },
+        ...(["fr", "en"] as Lang[]).map((l) => {
+          const b = h(
+            "button",
+            { type: "button", class: l === lang ? "on" : "", "aria-pressed": String(l === lang), lang: l },
+            l.toUpperCase(),
+          );
+          b.addEventListener("click", () => {
+            this.close();
+            if (l !== lang) set(l);
+          });
+          return b;
+        }),
+      ),
+    );
   }
   open(parent: HTMLElement) {
     this.prevFocus = document.activeElement;

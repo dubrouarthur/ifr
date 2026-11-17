@@ -4846,3 +4846,63 @@ html.ga-doc body {
     display: none;
   }
 }
+
+/* ------------------------------------------------------------ a phone under 480 px (audit §44): the way back and the
+   Sommaire are 44 px icons, the step is « 2/10 » over the thin bar, FR | EN lives in the Sommaire sheet */
+.cp-count-s,
+.cp-ol-lang {
+  display: none;
+}
+@media (max-width: 479px) {
+  .cp-top .cp-backto,
+  .cp-top .cp-olbtn {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    padding: 0;
+    justify-content: center;
+    flex: none;
+  }
+  .cp-top .cp-backto .cp-backto-w,
+  .cp-top .cp-olbtn .cp-bl {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .cp-top .cp-langseg,
+  .cp-top .cp-div {
+    display: none;
+  }
+  .cp-top .cp-prog {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 3px;
+    min-width: 44px;
+  }
+  .cp-top .cp-count {
+    display: none;
+  }
+  .cp-top .cp-count-s {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    text-align: center;
+  }
+  .cp-top .cp-bar {
+    width: 44px;
+  }
+  .cp-ol-lang {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .cp-ol-lang .cp-langseg button {
+    min-height: 44px;
+  }
+}

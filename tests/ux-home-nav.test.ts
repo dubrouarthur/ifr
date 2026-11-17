@@ -84,7 +84,7 @@ describe("Accueil", () => {
   });
   it("one filled button per screen: the doors' page has one .primary, the returning page one, the Simulateur one", () => {
     const src = readFileSync("src/ui/home.ts", "utf8");
-    // doors: « Voir les cours »; returning: « Reprendre à l’étape N »; Simulateur: « Voler maintenant »
+    // doors: « Créer un cours » (audit §60); returning: « Reprendre à l’étape N »; Simulateur: « Voler maintenant »
     // + « Reprendre le vol » on the « Vol en cours » card (audit §5), which takes the filled style from the others
     expect(src.match(/"wd-btn primary/g)?.length).toBe(4);
     expect(src).toMatch(/querySelectorAll\(".wd-btn.primary"\)\s*\.forEach\(\(b\) => b\.classList\.remove\("primary"\)\)/);
