@@ -1383,7 +1383,8 @@ function engineSlides(): GallerySlide[] {
         "A four-cylinder flat engine cut open: pistons, rods, crankshaft, valves, spark plugs, magnetos, carburettor",
         "Un moteur quatre cylindres à plat en coupe : pistons, bielles, vilebrequin, soupapes, bougies, magnétos, carburateur",
       ),
-      source: L("FAA PHAK ch. 7 · O-360 class, 180 hp at 2,700 rpm (C172S POH)", "FAA PHAK ch. 7 · classe O-360, 180 ch à 2 700 tr/min (POH C172S)"),
+      // 180 hp at 2,700 rpm: Cessna C172S POH sect. 1-2 (Lycoming IO-360-L2A)
+      source: L("FAA PHAK ch. 7 · 180 hp at 2,700 rpm (the training aircraft's flight manual)", "FAA PHAK ch. 7 · 180 ch à 2 700 tr/min (manuel de vol de l’avion-école)"),
     }),
     engineSlide({
       id: "gx-engine-prop",

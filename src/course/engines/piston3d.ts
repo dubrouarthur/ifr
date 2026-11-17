@@ -202,7 +202,7 @@ export function buildPiston(mats: Mats): EngineModel {
     b.add(still, "ghost", cylZ(BORE + 0.05, HEAD - zb, 22, true), {
       pos: [x, 0, s * (zb + (HEAD - zb) / 2)],
     });
-    for (let k = 0; k < 6; k++)
+    for (let k = 0; k < 6; k += 2)
       b.add(still, "ghostDark", cylZ(BORE + 0.2, 0.025, 22, true), {
         pos: [x, 0, s * (zb + 0.2 + k * 0.19)],
       });
@@ -272,7 +272,10 @@ export function buildPiston(mats: Mats): EngineModel {
   for (const sgn of [1, -1]) {
     const blade = new THREE.BoxGeometry(0.06, 2.3, 0.3);
     blade.translate(0, sgn * 1.25, 0);
-    b.add(prop, "black", blade, { rot: [0, 0.45 * sgn, 0] });
+    b.add(prop, "dark", blade, { rot: [0, 0.45 * sgn, 0] });
+    const tip = new THREE.BoxGeometry(0.065, 0.25, 0.3);
+    tip.translate(0, sgn * 2.27, 0);
+    b.add(prop, "oil", tip, { rot: [0, 0.45 * sgn, 0] });
   }
 
   // ---- induction: air filter, air box, carburettor (updraft, under the sump), plenum and intake pipes
@@ -383,8 +386,8 @@ export function buildPiston(mats: Mats): EngineModel {
   root.add(magL, magR);
   b.add(magL, "black", cylX(0.17, 0.17, 0.45, 14));
   b.add(magR, "black", cylX(0.17, 0.17, 0.45, 14));
-  const leadsL = new THREE.LineBasicMaterial({ color: 0xc8a24a });
-  const leadsR = new THREE.LineBasicMaterial({ color: 0xc8a24a });
+  const leadsL = new THREE.LineBasicMaterial({ color: 0xc8a24a, transparent: true, opacity: 0.55 });
+  const leadsR = new THREE.LineBasicMaterial({ color: 0xc8a24a, transparent: true, opacity: 0.55 });
   const lead = (from: THREE.Vector3, to: THREE.Vector3[]) => {
     const pts: number[] = [];
     for (const t of to) pts.push(from.x, from.y, from.z, t.x, t.y + 0.1, t.z);
@@ -656,7 +659,7 @@ export function buildPiston(mats: Mats): EngineModel {
     root,
     parts,
     stages: PISTON_STAGES,
-    view: { radius: 9.5, yaw: -0.75, pitch: 0.55, target: [0, -0.35, 0] },
+    view: { radius: 13, yaw: 0.32, pitch: 0.82, target: [0.1, -1.05, 0] },
     liveStage: () => liveStroke,
     update(f) {
       const rpm = f.v.rpm ?? 0;

@@ -99,7 +99,10 @@ export function buildProp(mats: Mats): EngineModel {
     blade.position.set(-0.55, 0.3, 0);
     const g = new THREE.BoxGeometry(0.07, 2.2, 0.36);
     g.translate(0, 1.1, 0);
-    blade.add(new THREE.Mesh(g, mats.black));
+    blade.add(new THREE.Mesh(g, mats.dark));
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.24, 0.37), mats.oil);
+    tip.position.y = 2.08;
+    blade.add(tip);
     arm.add(blade);
     spin.add(arm);
     blades.push(blade);
@@ -286,7 +289,11 @@ export function buildProp(mats: Mats): EngineModel {
     root,
     parts,
     stages: PROP_STAGES,
-    view: { radius: 8, yaw: -0.85, pitch: 0.38, target: [0.4, 0.6, 0] },
+    view: {
+      radius: 12.5,
+      yaw: -0.95,
+      pitch: 0.3,
+      target: [0.3, -0.3, 0] },
     update(f: EngineFrame) {
       const rpm = f.v.rpm ?? 2400;
       const set = f.v.rpmSet ?? 2400;

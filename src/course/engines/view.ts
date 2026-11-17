@@ -97,7 +97,7 @@ const W = {
   slow: ["Slow motion", "Ralenti"],
   prev: ["Previous step", "Étape précédente"],
   next: ["Next step", "Étape suivante"],
-  labels: ["Names", "Noms"],
+  labels: ["All names", "Tous les noms"],
   full: ["Full screen", "Plein écran"],
   close: ["Close", "Fermer"],
   steps: ["Steps", "Étapes"],
@@ -210,7 +210,7 @@ export function mountEngine(
     stage: Math.min(nStages - 1, Math.max(0, Math.round(o.stage ?? 0))),
     playing: !still && o.playing !== false,
     slow: !!o.slow,
-    labels: o.labels !== false,
+    labels: !!o.labels,
   };
   if (still) sim.settle();
 
@@ -417,10 +417,14 @@ export function mountEngine(
   panel.append(cert);
 
   // part labels
+  // a dot on the part, its name beside it (moved up or down a line to clear the others)
   const labels = model.parts.map((p) => {
-    const el = mk("span", "eng-lb", tl(p.name, lang));
+    const el = mk("span", "eng-lb");
+    const dot = mk("i", "eng-lb-dot");
+    const t = mk("span", "eng-lb-t", tl(p.name, lang));
+    el.append(dot, t);
     labelsBox.append(el);
-    return { p, el };
+    return { p, el, t, w: 0, h: 0, x: 0, y: 0, z: 0, on: false };
   });
 
   // ---- three
@@ -482,8 +486,7 @@ export function mountEngine(
     chipEls.forEach((b, i) =>
       b.setAttribute("aria-current", i === k ? "step" : "false"),
     );
-    const f = focusOf();
-    for (const l of labels) l.el.classList.toggle("on", f.has(l.p.id));
+    dirty = true;
   };
   const paintGauges = () => {
     for (const x of gaugeEls) {
@@ -531,6 +534,7 @@ export function mountEngine(
       camera.aspect = cw / ch;
       camera.updateProjectionMatrix();
     }
+    if (k !== pxScale) for (const l of labels) l.w = l.h = 0;
     pxScale = k;
     root.classList.toggle(
       "narrow",
@@ -538,18 +542,56 @@ export function mountEngine(
     );
     return true;
   };
+  const shown = (o: THREE.Object3D | null): boolean => {
+    for (let x = o; x; x = x.parent) if (!x.visible) return false;
+    return true;
+  };
+  type Box = { x: number; y: number; w: number; h: number };
+  const hit = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  const boxOf = (e: HTMLElement): Box => ({ x: e.offsetLeft, y: e.offsetTop, w: e.offsetWidth, h: e.offsetHeight });
   const paintLabels = () => {
-    if (!st.labels) return;
     const cw = stageBox.clientWidth;
     const ch = stageBox.clientHeight;
+    const focus = focusOf();
     for (const l of labels) {
       tmp.copy(l.p.at);
       l.p.obj.localToWorld(tmp);
       tmp.project(camera);
-      const off = tmp.z > 1 || Math.abs(tmp.x) > 1.05 || Math.abs(tmp.y) > 1.05;
-      l.el.style.display = off ? "none" : "";
-      if (off) continue;
-      l.el.style.transform = `translate(${((tmp.x + 1) / 2) * cw}px, ${((1 - tmp.y) / 2) * ch}px)`;
+      l.x = ((tmp.x + 1) / 2) * cw;
+      l.y = ((1 - tmp.y) / 2) * ch;
+      l.z = tmp.z;
+      l.on = focus.has(l.p.id);
+      if (!l.w || !l.h) {
+        l.w = l.t.offsetWidth;
+        l.h = l.t.offsetHeight;
+      }
+    }
+    // the step's parts first, then the nearest: a name that cannot find room is left out (never on another)
+    const order = [...labels].sort((a, b) => Number(b.on) - Number(a.on) || a.z - b.z);
+    const placed: Box[] = [boxOf(cap), boxOf(tools)];
+    const gap = 4;
+    for (const l of order) {
+      // the step's parts are always named; « Tous les noms » names the rest
+      const off = (!st.labels && !l.on) || l.z > 1 || l.x < 0 || l.y < 0 || l.x > cw || l.y > ch || !shown(l.p.obj);
+      let put: Box | null = null;
+      if (!off) {
+        const pad = l.h * 0.45;
+        for (const dy of [0, 1, -1, 2, -2]) {
+          const b = { x: l.x + pad, y: l.y - l.h / 2 + dy * (l.h + gap), w: l.w, h: l.h };
+          if (b.x + b.w > cw) b.x = l.x - pad - l.w;
+          if (b.y < 0 || b.y + b.h > ch) continue;
+          if (!placed.some((p) => hit(p, b))) {
+            put = b;
+            break;
+          }
+        }
+      }
+      l.el.style.display = put ? "" : "none";
+      l.el.classList.toggle("on", l.on);
+      if (!put) continue;
+      placed.push(put);
+      l.el.style.transform = `translate(${l.x}px, ${l.y}px)`;
+      l.t.style.transform = `translate(${put.x - l.x}px, ${put.y - l.y}px)`;
     }
   };
   const frame = (dt: number) => {

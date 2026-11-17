@@ -75,44 +75,47 @@
   pointer-events: none;
   overflow: hidden;
 }
-.eng.nolabels .eng-labels {
-  display: none;
-}
 .eng-lb {
   position: absolute;
   left: 0;
   top: 0;
-  margin: -0.65em 0 0 0.35em;
-  padding: 0.15em 0.5em;
+  width: 0;
+  height: 0;
+  will-change: transform;
+}
+.eng-lb-dot {
+  position: absolute;
+  left: -0.22em;
+  top: -0.22em;
+  width: 0.44em;
+  height: 0.44em;
+  border-radius: 50%;
+  background: var(--e-text);
+  box-shadow: 0 0 0 2px var(--e-bg);
+}
+.eng-lb-t {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 0.12em 0.5em;
   border-radius: 0.35em;
-  background: color-mix(in srgb, var(--e-bg) 82%, transparent);
+  background: color-mix(in srgb, var(--e-bg) 84%, transparent);
   color: var(--e-text);
   border: 1px solid var(--e-line);
   font-size: 0.86em;
   font-weight: 500;
   white-space: nowrap;
-  will-change: transform;
 }
-.eng-lb::before {
-  content: "";
-  position: absolute;
-  left: -0.55em;
-  top: 50%;
-  width: 0.4em;
-  height: 0.4em;
-  margin-top: -0.2em;
-  border-radius: 50%;
-  background: var(--e-text);
-  box-shadow: 0 0 0 2px var(--e-bg);
-}
-.eng-lb.on {
+.eng-lb.on .eng-lb-t {
   background: var(--e-accent);
   color: var(--e-accent-ink);
   border-color: var(--e-accent);
   font-weight: 650;
+}
+.eng-lb.on {
   z-index: 2;
 }
-.eng-lb.on::before {
+.eng-lb.on .eng-lb-dot {
   background: var(--e-accent);
 }
 .eng-cap {
@@ -194,7 +197,6 @@
   gap: 0.3em;
 }
 .eng-g-v {
-  font-family: var(--sl-font-mono, ui-monospace, monospace);
   font-variant-numeric: tabular-nums;
   font-size: 1.35em;
   font-weight: 650;

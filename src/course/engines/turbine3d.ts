@@ -464,7 +464,7 @@ export function buildTurbofan(mats: Mats): EngineModel {
     {
       id: "cascades",
       name: L("Cascades", "Grilles d’inversion"),
-      obj: root,
+      obj: cascades,
       at: new THREE.Vector3(0.15, 2.0, -0.5),
     },
   ];
@@ -476,7 +476,9 @@ export function buildTurbofan(mats: Mats): EngineModel {
     root,
     parts,
     stages: TURBOFAN_STAGES,
-    view: { radius: 10.5, yaw: -0.55, pitch: 0.42, target: [0.4, 0, 0] },
+    view: {
+      radius: 13.5,
+      yaw: -0.6, pitch: 0.42, target: [0.4, -0.45, 0] },
     update(f: EngineFrame) {
       const n1 = f.v.n1 ?? 20;
       const n2 = f.v.n2 ?? 60;
@@ -844,7 +846,9 @@ export function buildTurboprop(mats: Mats): EngineModel {
     root,
     parts,
     stages: TURBOPROP_STAGES,
-    view: { radius: 10, yaw: -0.6, pitch: 0.42, target: [-0.3, 0, 0] },
+    view: {
+      radius: 13,
+      yaw: -0.62, pitch: 0.42, target: [-0.3, -0.45, 0] },
     update(f: EngineFrame) {
       const ng = f.v.ng ?? 52;
       const np = f.v.np ?? 1000;

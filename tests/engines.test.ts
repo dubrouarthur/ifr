@@ -280,3 +280,295 @@ describe("settings", () => {
     expect(s.carbHeat).toBe(false);
   });
 });
+
+// ------------------------------------------------------------------ the levers in time, the block, the 3D view
+import { vi } from "vitest";
+import * as THREE from "three";
+import { buildEngineModel, mountEngine } from "../src/course/engines/view";
+import { EngineSim, ENGINE_CONTROLS, engineTargets } from "../src/course/engines/sim";
+import { disposeTree, makeMats } from "../src/course/engines/kit";
+import { PISTON_STAGES } from "../src/course/engines/piston3d";
+import { PROP_STAGES } from "../src/course/engines/prop3d";
+import { TURBOFAN_STAGES, TURBOPROP_STAGES } from "../src/course/engines/turbine3d";
+import { ENGINE_STAGE_COUNT, validateCourse } from "../src/course/validate";
+import { galleryCourse } from "../src/course/samples/exampleSlides";
+import { LIBRARY_ITEMS } from "../src/course/canvas/factory";
+import type { Course, EngineKind, SlideBlock } from "../src/course/types";
+
+describe("the magneto check", () => {
+  it("one magneto alone drops the run-up rpm a little (inside the POH's 150 rpm), off stops the engine", () => {
+    const at = (mags: "both" | "left" | "right" | "off") =>
+      pistonOutputs({ throttle: 0.58, mixture: 1, carbHeat: false, mags });
+    const both = at("both").rpm;
+    expect(both).toBeGreaterThan(1600);
+    expect(both).toBeLessThan(2000);
+    for (const m of ["left", "right"] as const) {
+      const drop = both - at(m).rpm;
+      expect(drop, m).toBeGreaterThan(20);
+      expect(drop, m).toBeLessThan(150);
+    }
+    expect(at("left").rpm).toBe(at("right").rpm);
+    expect(at("off").running).toBe(false);
+  });
+});
+
+describe("the engine in time (EngineSim)", () => {
+  it("a turbofan spools up over seconds; a piston answers at once", () => {
+    const fan = new EngineSim("turbofan", { throttle: 0 });
+    fan.setSettings({ throttle: 1 });
+    fan.step(1);
+    expect(fan.v.n1).toBeLessThan(80);
+    for (let k = 0; k < 200; k++) fan.step(0.1);
+    expect(fan.v.n1).toBeCloseTo(engineTargets("turbofan", fan.set).n1, 0);
+    const pis = new EngineSim("piston", { throttle: 0 });
+    pis.setSettings({ throttle: 1 });
+    for (let k = 0; k < 30; k++) pis.step(0.1);
+    expect(pis.v.rpm).toBeCloseTo(engineTargets("piston", pis.set).rpm, -1);
+  });
+  it("the constant-speed propeller comes back on speed after a throttle change, and says so", () => {
+    const s = new EngineSim("prop", { throttle: 0.4, prop: 0.5 });
+    s.setSettings({ throttle: 0.95 });
+    let over = false;
+    for (let k = 0; k < 300; k++) {
+      s.step(0.02);
+      if (s.status("fr").startsWith("Survitesse")) over = true;
+    }
+    expect(over).toBe(true);
+    expect(Math.abs(s.v.rpm - s.v.rpmSet)).toBeLessThan(15);
+    expect(s.status("fr")).toMatch(/^En régime/);
+    expect(s.status("en")).toMatch(/^On speed/);
+  });
+});
+
+describe("the engine3d block", () => {
+  const block = (o: Partial<Extract<SlideBlock, { kind: "engine3d" }>> = {}): SlideBlock => ({
+    id: "e1",
+    kind: "engine3d",
+    engine: "piston",
+    frame: { x: 120, y: 336, w: 1680, h: 648, z: 1 },
+    alt: { en: "Piston engine", fr: "Moteur à pistons" },
+    controls: ["throttle", "mixture", "carbHeat", "magnetos"],
+    set: { throttle: 0.4, mixture: 0.8, carbHeat: true, mags: "left" },
+    stage: 2,
+    labels: true,
+    slow: true,
+    caption: { en: "The four strokes", fr: "Les quatre temps" },
+    ...o,
+  } as SlideBlock);
+  const course = (b: SlideBlock): Course => {
+    const c = galleryCourse();
+    return { ...c, steps: [{ ...c.steps[0], id: "s1", slide: { ...c.steps[0].slide!, blocks: [b] } }] };
+  };
+  const errors = (b: SlideBlock) =>
+    validateCourse(course(b))
+      .filter((i) => i.level === "error")
+      .map((i) => i.path);
+  it("round-trips through JSON (a saved course, a shared link) and validates", () => {
+    const b = block();
+    expect(JSON.parse(JSON.stringify(b))).toEqual(b);
+    expect(errors(JSON.parse(JSON.stringify(b)))).toEqual([]);
+  });
+  it("refuses an unknown engine, a lever that engine does not have, a lever out of range, an unknown step", () => {
+    expect(errors(block({ engine: "rocket" as EngineKind })).some((p) => p.endsWith(".engine"))).toBe(true);
+    expect(errors(block({ engine: "turbofan", controls: ["mixture"] })).some((p) => p.includes(".controls[0]"))).toBe(true);
+    expect(errors(block({ set: { throttle: 2 } })).some((p) => p.endsWith(".set.throttle"))).toBe(true);
+    expect(errors(block({ stage: 9 })).some((p) => p.endsWith(".stage"))).toBe(true);
+  });
+  it("the validator's step counts and levers are the models' own", () => {
+    expect(ENGINE_STAGE_COUNT).toEqual({
+      piston: PISTON_STAGES.length,
+      prop: PROP_STAGES.length,
+      turboprop: TURBOPROP_STAGES.length,
+      turbofan: TURBOFAN_STAGES.length,
+    });
+    for (const k of ["piston", "prop", "turboprop", "turbofan"] as EngineKind[])
+      for (const c of ENGINE_CONTROLS[k]) expect(errors(block({ engine: k, controls: [c], set: {}, stage: 0 }))).toEqual([]);
+  });
+  it("the studio offers the four engines, and the gallery has one ready slide each", () => {
+    const items = LIBRARY_ITEMS.filter((i) => i.tab === "engines");
+    expect(items.map((i) => (i.make() as { engine: string }).engine).sort()).toEqual(["piston", "prop", "turbofan", "turboprop"]);
+    const blocks = galleryCourse().steps.flatMap((s) => s.slide?.blocks ?? []);
+    expect(blocks.filter((b) => b.kind === "engine3d").map((b) => (b as { engine: string }).engine).sort()).toEqual([
+      "piston",
+      "prop",
+      "turbofan",
+      "turboprop",
+    ]);
+  });
+});
+
+// a tiny DOM: enough for mountEngine (elements, attributes, listeners, sizes)
+class El {
+  children: El[] = [];
+  parent: El | null = null;
+  attrs = new Map<string, string>();
+  listeners = new Map<string, Set<unknown>>();
+  style: Record<string, string> & { setProperty(k: string, v: string): void } = Object.assign(Object.create(null), {
+    setProperty() {},
+  });
+  classes = new Set<string>();
+  classList = {
+    add: (...c: string[]) => c.forEach((x) => this.classes.add(x)),
+    remove: (...c: string[]) => c.forEach((x) => this.classes.delete(x)),
+    toggle: (c: string, on?: boolean) => ((on ?? !this.classes.has(c)) ? this.classes.add(c) : this.classes.delete(c)),
+    contains: (c: string) => this.classes.has(c),
+  };
+  textContent = "";
+  tabIndex = -1;
+  type = "";
+  id = "";
+  htmlFor = "";
+  value = "";
+  min = "";
+  max = "";
+  step = "";
+  clientWidth = 1000;
+  clientHeight = 600;
+  offsetWidth = 80;
+  offsetHeight = 24;
+  offsetLeft = 0;
+  offsetTop = 0;
+  constructor(public tagName: string) {}
+  set className(v: string) {
+    this.classes = new Set(v.split(/\s+/).filter(Boolean));
+  }
+  get className() {
+    return [...this.classes].join(" ");
+  }
+  setAttribute(k: string, v: string) {
+    this.attrs.set(k, String(v));
+  }
+  getAttribute(k: string) {
+    return this.attrs.get(k) ?? null;
+  }
+  hasAttribute(k: string) {
+    return this.attrs.has(k);
+  }
+  append(...ns: El[]) {
+    for (const n of ns) {
+      n.parent?.children.splice(n.parent.children.indexOf(n), 1);
+      n.parent = this;
+      this.children.push(n);
+    }
+  }
+  remove() {
+    if (!this.parent) return;
+    this.parent.children.splice(this.parent.children.indexOf(this), 1);
+    this.parent = null;
+  }
+  replaceChildren(...ns: El[]) {
+    for (const c of [...this.children]) c.remove();
+    this.append(...ns);
+  }
+  addEventListener(t: string, f: unknown) {
+    if (!this.listeners.has(t)) this.listeners.set(t, new Set());
+    this.listeners.get(t)!.add(f);
+  }
+  removeEventListener(t: string, f: unknown) {
+    this.listeners.get(t)?.delete(f);
+  }
+  get listenerCount() {
+    let n = 0;
+    for (const s of this.listeners.values()) n += s.size;
+    for (const c of this.children) n += c.listenerCount;
+    return n;
+  }
+  getBoundingClientRect() {
+    return { width: this.clientWidth, height: this.clientHeight, left: 0, top: 0 };
+  }
+  querySelectorAll() {
+    return [];
+  }
+  focus() {}
+  setPointerCapture() {}
+}
+
+describe("the 3D view frees what it built", () => {
+  it("every geometry and material of a model is disposed", () => {
+    for (const k of ["piston", "prop", "turboprop", "turbofan"] as EngineKind[]) {
+      const mats = makeMats();
+      const model = buildEngineModel(k, mats);
+      const seen = new Set<THREE.BufferGeometry | THREE.Material>();
+      model.root.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.geometry) seen.add(m.geometry);
+        const mm = m.material as THREE.Material | THREE.Material[] | undefined;
+        if (mm) for (const x of Array.isArray(mm) ? mm : [mm]) seen.add(x);
+      });
+      for (const x of Object.values(mats)) seen.add(x);
+      const freed = new Set<unknown>();
+      for (const x of seen) x.addEventListener("dispose", () => freed.add(x));
+      expect(seen.size, k).toBeGreaterThan(10);
+      disposeTree(model.root, mats);
+      expect(freed.size, k).toBe(seen.size);
+      expect(model.root.children.length).toBe(0);
+    }
+  });
+  it("destroy(): the renderer and its context go, the frame loop stops, listeners and the DOM are removed", () => {
+    const g = globalThis as Record<string, unknown>;
+    const saved = { document: g.document, raf: g.requestAnimationFrame, caf: g.cancelAnimationFrame };
+    const body = new El("body");
+    const docListeners = new Set<unknown>();
+    g.document = {
+      createElement: (t: string) => new El(t),
+      body,
+      activeElement: null,
+      visibilityState: "visible",
+      addEventListener: (_: string, f: unknown) => docListeners.add(f),
+      removeEventListener: (_: string, f: unknown) => docListeners.delete(f),
+    };
+    const pending = new Map<number, (t: number) => void>();
+    let id = 0;
+    g.requestAnimationFrame = (f: (t: number) => void) => (pending.set(++id, f), id);
+    g.cancelAnimationFrame = (n: number) => pending.delete(n);
+    try {
+      const renderer = {
+        setPixelRatio: vi.fn(),
+        setSize: vi.fn(),
+        setClearColor: vi.fn(),
+        render: vi.fn(),
+        dispose: vi.fn(),
+        forceContextLoss: vi.fn(),
+      };
+      const geoDispose = vi.spyOn(THREE.BufferGeometry.prototype, "dispose");
+      const host = new El("div");
+      const h = mountEngine(host as unknown as HTMLElement, {
+        kind: "piston",
+        lang: "fr",
+        reducedMotion: false,
+        renderer: () => renderer,
+      });
+      // a few frames: it draws, and keeps going while it plays
+      for (let k = 0; k < 3; k++) {
+        const [n, f] = [...pending][0] ?? [];
+        expect(f, `frame ${k}`).toBeTruthy();
+        pending.delete(n!);
+        f!(16 * (k + 1));
+      }
+      expect(renderer.render).toHaveBeenCalled();
+      expect(host.children.length).toBe(1);
+      expect(host.listenerCount).toBeGreaterThan(0);
+      expect(docListeners.size).toBe(1);
+      const before = geoDispose.mock.calls.length;
+      const root = host.children[0];
+      h.destroy();
+      expect(h.destroyed).toBe(true);
+      expect(renderer.dispose).toHaveBeenCalledTimes(1);
+      expect(renderer.forceContextLoss).toHaveBeenCalledTimes(1);
+      expect(pending.size).toBe(0);
+      expect(host.children.length).toBe(0);
+      expect(docListeners.size).toBe(0);
+      // the canvas' own listeners (drag, keys) and the root's are removed
+      expect(root.children.find((c) => c.classes.has("eng-view"))!.children[0].listenerCount).toBe(0);
+      expect(geoDispose.mock.calls.length - before).toBeGreaterThan(20);
+      // twice is harmless
+      h.destroy();
+      expect(renderer.dispose).toHaveBeenCalledTimes(1);
+      geoDispose.mockRestore();
+    } finally {
+      g.document = saved.document;
+      g.requestAnimationFrame = saved.raf;
+      g.cancelAnimationFrame = saved.caf;
+    }
+  });
+});

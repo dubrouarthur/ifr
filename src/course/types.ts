@@ -1541,7 +1541,7 @@ export type SlideBlock = BlockBase &
         set?: EngineSettings;
         /** the step shown first (a stroke, a station), and the picture in reduced motion; 0-based */
         stage?: number;
-        /** names on the parts (default true) */
+        /** every part named (default false: only the parts of the step shown are named) */
         labels?: boolean;
         /** start in slow motion */
         slow?: boolean;

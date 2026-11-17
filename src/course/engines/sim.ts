@@ -59,6 +59,9 @@ export const ENGINE_WHAT: Record<EngineKind, L10n> = {
   ),
 };
 
+/** a whole number as the reader writes it (« 2 400 », "2,400") */
+const n = (x: number, lang: Lang) => Math.round(x).toLocaleString(lang === "fr" ? "fr-FR" : "en-US");
+
 /** The levers each engine has (the block's default: all of them). */
 export const ENGINE_CONTROLS: Record<EngineKind, EngineControl[]> = {
   piston: ["throttle", "mixture", "carbHeat", "magnetos"],
@@ -419,15 +422,15 @@ export class EngineSim {
           "Sous-vitesse : masselottes rentrées, le pas diminue",
         );
       return t(
-        `On speed: ${Math.round(v.rpmSet)} rpm held`,
-        `En régime : ${Math.round(v.rpmSet)} tr/min tenus`,
+        `On speed: ${n(v.rpmSet, "en")} rpm held`,
+        `En régime : ${n(v.rpmSet, "fr")} tr/min tenus`,
       );
     }
     if (this.kind === "turboprop")
       return v.governing
         ? t(
-            `Np governed at ${Math.round(v.np)} rpm`,
-            `Np régulé à ${Math.round(v.np)} tr/min`,
+            `Np governed at ${n(v.np, "en")} rpm`,
+            `Np régulé à ${n(v.np, "fr")} tr/min`,
           )
         : t(
             "Under the governing range: the propeller sits on its low pitch stop",

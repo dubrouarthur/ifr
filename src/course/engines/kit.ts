@@ -47,7 +47,7 @@ export function makeMats(): Mats {
       metalness: 0.2,
       roughness: 0.6,
       transparent: true,
-      opacity: 0.18,
+      opacity: 0.13,
       depthWrite: false,
       side: THREE.DoubleSide,
     }),
