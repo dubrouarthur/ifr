@@ -2470,7 +2470,7 @@
   flex-wrap: wrap;
   gap: 8px 16px;
 }
-.ce-fr-blank {
+.ce-fr-link {
   min-height: 44px;
 }
 .ce-fr-keys {
@@ -2721,9 +2721,21 @@
   border-radius: 4px;
   background: none;
 }
-/* the six first slides of an empty slide (samples/showcaseDecks.ts startSlides): two rows of three, bigger pictures */
+/* the six first slides of an empty slide (samples/showcaseDecks.ts startSlides): two rows of three, bigger pictures,
+   under « Diapo vierge », which takes the whole width: a small white slide, its name beside it */
 .ce-fr-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.ce-fr.is-blank {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 12px 6px 6px;
+}
+.ce-fr.is-blank .ce-fr-th {
+  flex: none;
+  width: 120px;
 }
 @media (max-width: 760px) {
   .ce-fr-grid {
@@ -3083,7 +3095,7 @@
   }
 }
 
-/* « Partir d'une diapo vide »: hints on the slide itself (editor.ts blankHints), never a rail opened by itself */
+/* « Diapo vierge »: hints on the slide itself (editor.ts blankHints), never a rail opened by itself */
 .ce-fr-cancel {
   color: var(--muted);
 }

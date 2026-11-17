@@ -1316,7 +1316,7 @@ export interface EmptyStarts {
   layout(id: SlideLayoutId): void;
   /** a flight in the simulator, with a goal, on this slide */
   flight(): void;
-  /** start from nothing: the card goes away */
+  /** « Diapo vierge »: the card goes away, the slide stays empty */
   blank(): void;
   /** the whole template gallery (the « Modèles » panel) */
   more?(): void;
@@ -1371,7 +1371,7 @@ const STARTS: { id: SlideLayoutId | "flight"; t: [string, string]; s: [string, s
 /**
  * The empty slide teaches the builder without a manual: « Que voulez-vous montrer ? » and five starting slides
  * drawn for real (a cover, an idea with a live instrument, the student at the controls, a question, a flight in
- * the simulator), « Partir d’une diapo vide », and the keyboard hints the first time.
+ * the simulator) after « Diapo vierge », and the keyboard hints the first time.
  */
 export function emptySlideCard(
   lang: Lang,
@@ -1388,6 +1388,34 @@ export function emptySlideCard(
   const fr = lang === "fr";
   const views: SlideView[] = [];
   const grid = h("div", { class: "ce-fr-grid", role: "list" });
+  // « Diapo vierge » first, the whole width: the empty slide as it is, its own hints on it
+  const blankTh = h("span", { class: "ce-fr-th", "aria-hidden": "true" });
+  if (thumbs)
+    requestAnimationFrame(() => {
+      if (!blankTh.isConnected) return;
+      try {
+        views.push(renderThumb(layoutCanvas("blank", { theme: thumbs.theme }), blankTh, { lang, ...thumbs }));
+      } catch {
+        /* a thumbnail is decoration */
+      }
+    });
+  const blank = h(
+    "button",
+    { type: "button", class: "ce-fr is-blank", role: "listitem" },
+    blankTh,
+    h(
+      "span",
+      { class: "ce-fr-l" },
+      h("b", {}, fr ? "Diapo vierge" : "Blank slide"),
+      h("small", {}, fr ? "Une page blanche : texte, instruments et simulateur en un clic" : "A clean page: text, instruments and the simulator in one click"),
+    ),
+  );
+  blank.addEventListener("click", (e) => {
+    e.stopPropagation();
+    on.blank();
+  });
+  blank.addEventListener("pointerdown", (e) => e.stopPropagation());
+  grid.append(blank);
   if (on.example) {
     const pick = on.example;
     const all = startSlides();
@@ -1449,17 +1477,11 @@ export function emptySlideCard(
     b.addEventListener("pointerdown", (e) => e.stopPropagation());
     grid.append(b);
   }
-  const blank = h("button", { type: "button", class: "ce-link ce-fr-blank" }, fr ? "Partir d’une diapo vide" : "Start from an empty slide");
-  blank.addEventListener("click", (e) => {
-    e.stopPropagation();
-    on.blank();
-  });
-  blank.addEventListener("pointerdown", (e) => e.stopPropagation());
   let cancel: HTMLElement | null = null;
   if (on.cancel) {
     cancel = h(
       "button",
-      { type: "button", class: "ce-link ce-fr-blank ce-fr-cancel", "aria-keyshortcuts": "Escape" },
+      { type: "button", class: "ce-link ce-fr-link ce-fr-cancel", "aria-keyshortcuts": "Escape" },
       fr ? "Ne pas ajouter · Échap" : "Don’t add · Esc",
     );
     cancel.addEventListener("click", (e) => {
@@ -1470,7 +1492,7 @@ export function emptySlideCard(
   }
   let more: HTMLElement | null = null;
   if (on.more) {
-    more = h("button", { type: "button", class: "ce-link ce-fr-blank" }, fr ? "Tous les modèles" : "All templates");
+    more = h("button", { type: "button", class: "ce-link ce-fr-link" }, fr ? "Tous les modèles" : "All templates");
     more.addEventListener("click", (e) => {
       e.stopPropagation();
       on.more?.();
@@ -1505,7 +1527,7 @@ export function emptySlideCard(
     { class: "ce-empty-card ce-fr-card", role: "group", "aria-label": fr ? "Diapo vide" : "Empty slide" },
     h("h2", { class: "ce-empty-t" }, fr ? "Que voulez-vous montrer ?" : "What do you want to show?"),
     grid,
-    h("div", { class: "ce-fr-ft" }, h("span", { class: "ce-fr-links" }, more, blank, cancel), keys),
+    h("div", { class: "ce-fr-ft" }, h("span", { class: "ce-fr-links" }, more, cancel), keys),
   );
   return {
     el,

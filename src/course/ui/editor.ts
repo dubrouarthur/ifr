@@ -137,7 +137,6 @@ import {
 import { AI_SPARK, openAiAdd } from "../ai/entry";
 import {
   addStarterDeck,
-  BLANK_STARTER,
   deckTitle,
   titleOnCover,
   type DeckStarter,
@@ -282,7 +281,7 @@ export class CourseEditor implements InspectorHost {
   /** the reveal preview (Tout · Début · 1 · 2…) sits in the step bar, beside « n apparitions » */
   private revealHost = h("span", { class: "ce-sb-reveal" });
   private emptyKill: (() => void) | null = null;
-  /** slides whose author chose « Partir d’une diapo vide » (the first-run card stays away) */
+  /** slides whose author chose « Diapo vierge » (the first-run card stays away) */
   private emptyBlank = new Set<string>();
   /** a « Nouvelle diapo » with nothing chosen yet: Échap or another slide takes it away (newSlide.ts) */
   private pendingNew: { id: string; prev: number; depth: number } | null = null;
@@ -2117,24 +2116,25 @@ export class CourseEditor implements InspectorHost {
     this.startEl?.destroy();
     this.startEl = null;
     if (!s) {
-      // an empty course: one sentence and two ways to start (UX logic §8); the templates are the rail's « Modèles »,
-      // highlighted — the gallery of whole courses lives on the Nouveau cours page, before the course exists
+      // an empty course: one sentence and two ways to start (UX logic §8), the blank slide first; the templates are
+      // the rail's « Modèles » — the gallery of whole courses lives on the Nouveau cours page, before the course exists
       this.teardownCentre();
       const fr = this.lang === "fr";
-      const pick = h(
+      const blank = h(
         "button",
         { type: "button", class: "ce-btn ce-start-b primary" },
+        fr ? "Ajouter une diapo vierge" : "Add a blank slide",
+      );
+      blank.addEventListener("click", () => {
+        this.addTemplate("slide", { layout: "blank" });
+        this.keepBlank();
+      });
+      const pick = h(
+        "button",
+        { type: "button", class: "ce-btn ce-start-b" },
         fr ? "Choisir un modèle" : "Choose a template",
       );
       pick.addEventListener("click", () => this.openPanel("templates"));
-      const blank = h(
-        "button",
-        { type: "button", class: "ce-btn ce-start-b" },
-        fr ? "Ajouter une diapo vierge" : "Add a blank slide",
-      );
-      blank.addEventListener("click", () =>
-        this.addDeck(BLANK_STARTER, this.course.theme ?? "classroom"),
-      );
       this.stageArea.replaceChildren(
         h(
           "div",
@@ -2153,10 +2153,10 @@ export class CourseEditor implements InspectorHost {
               "p",
               {},
               fr
-                ? "Ajoutez une première diapo : choisissez un modèle à gauche, ou une diapo vierge."
-                : "Add a first slide: choose a template on the left, or a blank slide.",
+                ? "Ajoutez une première diapo : une diapo vierge, ou un modèle à gauche."
+                : "Add a first slide: a blank slide, or a template on the left.",
             ),
-            h("div", { class: "ce-start-act" }, pick, blank),
+            h("div", { class: "ce-start-act" }, blank, pick),
           ),
         ),
       );
@@ -2251,7 +2251,7 @@ export class CourseEditor implements InspectorHost {
     this.fitDevice();
   }
   /**
-   * Over an empty slide: « Que voulez-vous montrer ? » (the first-run card); once « Partir d'une diapo vide » is
+   * Over an empty slide: « Que voulez-vous montrer ? » (the first-run card); once « Diapo vierge » is
    * chosen, light hints on the slide itself (« Cliquez pour ajouter un titre », + Instrument, + Texte, + Question),
    * never a rail opened by itself. Both go as soon as the slide has a block.
    */
@@ -2298,10 +2298,7 @@ export class CourseEditor implements InspectorHost {
           }
           this.addComposedSlide(slide, ex.title, showcaseScenes());
         },
-        blank: () => {
-          this.emptyBlank.add(this.step?.id ?? "");
-          if (this.canvasEd) this.syncEmpty(this.canvasEd.canvas);
-        },
+        blank: () => this.keepBlank(),
         cancel: this.pendingNew?.id === id ? () => this.dropPending() : undefined,
       },
       {
@@ -2315,6 +2312,11 @@ export class CourseEditor implements InspectorHost {
     this.emptyKill = card.destroy;
     this.emptyEl = h("div", { class: "ce-empty-wrap", "data-kind": "card" }, card.el);
     wrap.append(this.emptyEl);
+  }
+  /** « Diapo vierge » chosen: the slide stays empty, with its own hints (no rail opened by itself). */
+  private keepBlank() {
+    this.emptyBlank.add(this.step?.id ?? "");
+    if (this.canvasEd) this.syncEmpty(this.canvasEd.canvas);
   }
   /** The empty slide's own hints: a title zone to click, then one button per kind of content. */
   private blankHints(): HTMLElement {
@@ -3110,8 +3112,8 @@ export class CourseEditor implements InspectorHost {
     this.toast(
       t2(
         this.lang,
-        "Add a slide first: pick a template on the left, or a blank slide.",
-        "Ajoutez une diapo d’abord : choisissez un modèle à gauche, ou une diapo vierge.",
+        "Add a slide first: a blank slide, or a template on the left.",
+        "Ajoutez une diapo d’abord : une diapo vierge, ou un modèle à gauche.",
       ),
     );
   }

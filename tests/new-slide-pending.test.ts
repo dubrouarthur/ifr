@@ -44,6 +44,26 @@ describe("CourseHistory.discard: a slide left without a choice leaves nothing to
   });
 });
 
+describe("« Diapo vierge » comes first wherever a slide or a course starts (owner 2026-11-17)", () => {
+  const st = readFileSync("src/course/ui/studio.ts", "utf8");
+  const ed = readFileSync("src/course/ui/editor.ts", "utf8");
+  const ds = readFileSync("src/course/ui/deckStarters.ts", "utf8");
+  it("the add-slide card opens on it, as a card, before the ready slides", () => {
+    const card = st.slice(st.indexOf("export function emptySlideCard("));
+    expect(card.indexOf("grid.append(blank);")).toBeGreaterThan(0);
+    expect(card.indexOf("grid.append(blank);")).toBeLessThan(card.indexOf("if (on.example) {"));
+    expect(card).toMatch(/class: "ce-fr is-blank", role: "listitem"/);
+    expect(card).not.toMatch(/Partir d’une diapo vide/);
+  });
+  it("an empty course offers it as the filled button, before « Choisir un modèle »", () => {
+    expect(ed).toMatch(/h\("div", \{ class: "ce-start-act" \}, blank, pick\)/);
+    expect(ed).toMatch(/\{ type: "button", class: "ce-btn ce-start-b primary" \},\s+fr \? "Ajouter une diapo vierge"/);
+  });
+  it("the « Modèles » gallery lists it first", () => {
+    expect(ds).toMatch(/for \(const d of \[BLANK_STARTER, \.\.\.DECK_STARTERS\]\)/);
+  });
+});
+
 describe("the editor wires it (items 48, 49)", () => {
   const ed = readFileSync("src/course/ui/editor.ts", "utf8");
   it("the strip's + tile and the panel make a pending slide; Échap and « Annuler » take it away", () => {
@@ -52,10 +72,12 @@ describe("the editor wires it (items 48, 49)", () => {
     expect(ed).toMatch(/e\.key === "Escape" &&\s+this\.pendingNew/);
     expect(ed).toMatch(/cancel: this\.pendingNew/);
   });
-  it("« Partir d'une diapo vide » opens no rail by itself", () => {
-    const blank = ed.match(/blank: \(\) => \{[\s\S]*?\n {8}\},/)?.[0] ?? "";
-    expect(blank).toBeTruthy();
-    expect(blank).not.toMatch(/openPanel/);
+  it("« Diapo vierge » opens no rail by itself, from the card and from an empty course", () => {
+    expect(ed).toMatch(/blank: \(\) => this\.keepBlank\(\),/);
+    const keep = ed.match(/private keepBlank\(\) \{[\s\S]*?\n {2}\}/)?.[0] ?? "";
+    expect(keep).toMatch(/this\.emptyBlank\.add/);
+    expect(keep).not.toMatch(/openPanel/);
+    expect(ed).toMatch(/this\.addTemplate\("slide", \{ layout: "blank" \}\);\s+this\.keepBlank\(\);/);
     expect(ed).toMatch(/Cliquez pour ajouter un titre/);
     expect(ed).toMatch(/Click to add a title/);
   });

@@ -228,8 +228,8 @@ export const BLANK_STARTER: DeckStarter = {
   id: "blank",
   title: L("Blank slide", "Diapo vierge"),
   pitch: L(
-    "One empty slide that offers the ready slides first",
-    "Une diapo vide qui vous propose d’abord les diapos prêtes",
+    "Start from scratch: text, instruments and the simulator are one click away",
+    "Partez de zéro : texte, instruments et simulateur s’ajoutent en un clic",
   ),
   theme: "classroom",
   slides: ["blank"],
@@ -376,8 +376,8 @@ export function addStarterDeck(
 }
 
 /**
- * The starter gallery: one card per deck, its cover drawn live by the renderer with the next slides as a strip,
- * plus the blank deck. `theme` re-draws the cards (the "light (recommended) / dark" switch).
+ * The starter gallery: the blank slide first, then one card per deck, its cover drawn live by the renderer with the
+ * next slides as a strip. `theme` re-draws the cards (the "light (recommended) / dark" switch).
  */
 export function deckStarterGallery(
   lang: Lang,
@@ -393,7 +393,7 @@ export function deckStarterGallery(
   const draw = () => {
     for (const v of views.splice(0)) v.destroy();
     grid.replaceChildren();
-    for (const d of [...DECK_STARTERS, BLANK_STARTER]) {
+    for (const d of [BLANK_STARTER, ...DECK_STARTERS]) {
       const theme: ThemeId = mode === "auto" ? d.theme : mode;
       const cover = h("div", { class: "ce-deck-cover" });
       const strip = h("div", { class: "ce-deck-strip" });
