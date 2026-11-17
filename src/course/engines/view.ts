@@ -217,7 +217,7 @@ export function mountEngine(
   // ---- DOM
   const root = mk(
     "div",
-    `eng eng-${kind}${still ? " still" : ""}${o.inert ? " inert" : ""}${o.wheelZoom ? " big" : ""}`,
+    `eng eng-${kind}${still ? " still" : ""}${o.inert ? " inert" : ""}${o.wheelZoom ? " big" : ""}${reduced && !o.still ? " reduced" : ""}`,
   );
   root.setAttribute("role", "group");
   // in the slide editor the engine is a picture: no focus, no clicks (the editor selects the block)

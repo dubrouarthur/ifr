@@ -426,6 +426,10 @@
 .eng-fs {
   font-family: var(--sl-font-body, system-ui, -apple-system, "Segoe UI", sans-serif);
 }
+/* reduced motion: say why it stands still */
+.eng.reduced .eng-foot {
+  display: block;
+}
 @media (prefers-reduced-motion: reduce) {
   .eng * {
     transition: none !important;
