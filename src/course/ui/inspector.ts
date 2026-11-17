@@ -6569,6 +6569,7 @@ function rank(b: SlideBlock): number {
       instrument: 5,
       simViewport: 5,
       diagram: 4,
+      tool: 4,
       image: 4,
       quiz: 3,
       calc: 3,

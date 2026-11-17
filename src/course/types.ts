@@ -1531,8 +1531,46 @@ export type SlideBlock = BlockBase &
         rows: { text: L10n; check?: number; readout?: ReadoutId }[];
         title?: L10n;
       }
+    | {
+        /**
+         * a teaching tool (course/tools): a live drawing worked out from the numbers (the wing and its angle of
+         * attack, the load factor in a turn, the C172S loading envelope…) with the student's controls on the slide.
+         * The presenter's console moves the same controls and the projector follows (canvas/diagramMirror.ts).
+         */
+        kind: "tool";
+        tool: ToolId;
+        /** the starting values (a missing key: the tool's default) */
+        p?: Record<string, number>;
+        /** the controls the student may move (default: the tool's main ones); [] = a still picture */
+        controls?: string[];
+        /** a small task checked live: bring `key` to `target` ± `tol` (reveals « afterCheck:0 » / « goalMet ») */
+        task?: ToolTask;
+        /** where the controls sit: right of the drawing (default on a wide frame) or under it */
+        panel?: "right" | "below";
+      }
   );
 export type SlideBlockKind = SlideBlock["kind"];
+
+/** The teaching tools a slide can hold (course/tools/index.ts lists them). */
+export type ToolId =
+  | "wing"
+  | "loadFactor"
+  | "massBalance"
+  | "takeoff"
+  | "fuel"
+  | "carbIce"
+  | "fronts"
+  | "radioNav"
+  | "prop"
+  | "mach"
+  | "pressurisation";
+/** A tool's task: one value to find with the controls (« Trouvez l’incidence de décrochage »). */
+export interface ToolTask {
+  prompt: L10n;
+  key: string;
+  target: number;
+  tol: number;
+}
 
 /** A live value in a text block. */
 export type SlideBinding =

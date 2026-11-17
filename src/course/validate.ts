@@ -144,6 +144,7 @@ const BLOCK_KINDS = keys<SlideBlockKind>({
   quiz: 1,
   calc: 1,
   checklist: 1,
+  tool: 1,
 });
 const TEXT_STYLES = keys<TextStyle>({
   display: 1,
