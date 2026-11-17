@@ -761,10 +761,10 @@ export function mountNewCourse(
       ),
     );
     syncFoot = () => {
-      const field = pick === AIRFIELD;
-      kitBox.hidden = !field;
-      what.hidden = field;
-      if (field) return;
+      const asksCode = pick === AIRFIELD;
+      kitBox.hidden = !asksCode;
+      what.hidden = asksCode;
+      if (asksCode) return;
       const d = deckOf(pick);
       what.replaceChildren(
         T(lang, "Starting point: ", "Point de départ : "),

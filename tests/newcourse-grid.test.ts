@@ -16,7 +16,7 @@ describe("new course starting points", () => {
   });
   it("« Votre terrain » is a card: its code is asked in the bar, never in a panel over the gallery", () => {
     expect(nc).not.toMatch(/airfieldKitPanel/);
-    expect(nc).toMatch(/kitBox\.hidden = !field/);
+    expect(nc).toMatch(/kitBox\.hidden = !asksCode/);
     expect(nc).toMatch(/"ICAO code of your airfield", "Code OACI de votre terrain"/);
   });
   it("cards share one width at 300 px and more, 16:9 covers, the blank slide drawn as a sheet", () => {
