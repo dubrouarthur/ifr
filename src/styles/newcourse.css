@@ -16,7 +16,8 @@
     0 1px 2px rgba(20, 24, 31, 0.04), 0 4px 16px rgba(20, 24, 31, 0.05);
   --sh-lift:
     0 2px 4px rgba(20, 24, 31, 0.05), 0 12px 32px rgba(20, 24, 31, 0.09);
-  --gutter: 40px;
+  /* the page tokens (audit §43, styles/_base.css): one width, one gutter, one h1, one button height, one card
+     radius shared with Accueil and the library; the fallbacks keep the page right if _base.css is not loaded */
   display: grid;
   grid-template-rows: 64px minmax(0, 1fr) auto;
   height: 100%;
@@ -44,7 +45,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 46px;
+  min-height: var(--btn-h, 44px);
   padding: 0 18px;
   border-radius: 10px;
   border: 1px solid var(--rule-strong);
@@ -157,9 +158,9 @@
   min-height: 0;
 }
 .nc-in {
-  max-width: 1240px;
+  max-width: calc(var(--page-max, 1200px) + 2 * var(--gutter, 40px));
   margin: 0 auto;
-  padding: 36px var(--gutter) 40px;
+  padding: 36px var(--gutter, 40px) 40px;
 }
 .nc-eyebrow {
   margin: 0 0 6px;
@@ -173,7 +174,7 @@
 }
 .nc-h1 {
   margin: 0;
-  font-size: 2.25rem;
+  font-size: var(--h1, 2.375rem);
   line-height: 1.12;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -267,7 +268,7 @@
   display: flex;
   flex-direction: column;
   border: 1px solid var(--rule);
-  border-radius: 16px;
+  border-radius: var(--radius-card, 14px);
   background: var(--card);
   box-shadow: var(--sh-card);
   overflow: hidden;
@@ -389,9 +390,9 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  max-width: 1240px;
+  max-width: calc(var(--page-max, 1200px) + 2 * var(--gutter, 40px));
   margin: 0 auto;
-  padding: 12px var(--gutter);
+  padding: 12px var(--gutter, 40px);
   padding-bottom: max(12px, env(safe-area-inset-bottom));
 }
 .nc-what {
@@ -402,15 +403,7 @@
 }
 
 /* ---------- iPad and portrait */
-@media (max-width: 1300px) {
-  .nc-page {
-    --gutter: 28px;
-  }
-}
 @media (max-width: 900px) {
-  .nc-page {
-    --gutter: 20px;
-  }
   .nc-bar {
     padding: 0 16px;
     gap: 12px;
