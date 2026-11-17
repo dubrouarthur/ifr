@@ -70,6 +70,23 @@ export function clearSpot(
   return null;
 }
 
+/**
+ * A phone's rail is a bar at the bottom: no room beside the tab, so the card stands above it, centred on it and kept
+ * inside the screen (8 px margin). Pure.
+ */
+export function aboveSpot(
+  tab: { left: number; right: number; top: number },
+  w: number,
+  hgt: number,
+  vw: number,
+): { left: number; top: number } {
+  const mid = (tab.left + tab.right) / 2;
+  return {
+    left: Math.round(Math.max(8, Math.min(vw - w - 8, mid - w / 2))),
+    top: Math.round(Math.max(8, tab.top - hgt - 12)),
+  };
+}
+
 /** Arm the tips: they show when the editor's slide and « Simulateur » tab appear (within 20 s), then never again. */
 export function armSimTip(lang: Lang): void {
   if (typeof document === "undefined") return;
@@ -283,6 +300,14 @@ function showSimTip(lang: Lang) {
     const w = tip.offsetWidth || 260;
     const th = tip.offsetHeight || 110;
     const left = Math.round(r.right + 12);
+    if (left + w > innerWidth - 8) {
+      // no room beside the tab (a phone: the rail is the bottom bar): the card stands above it
+      const a = aboveSpot(r, w, th, innerWidth);
+      tip.style.top = `${a.top}px`;
+      tip.style.left = `${a.left}px`;
+      if (arrow) arrow.hidden = true;
+      return;
+    }
     // the slide's words, as drawn, with a breathing margin: the card never covers one, nor touches it
     const words = [
       ...document.querySelectorAll<HTMLElement>(

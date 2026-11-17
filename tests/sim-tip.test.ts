@@ -1,10 +1,19 @@
 // The editor's first-run tips (audit item 39 + the « Vos diapos volent » overlap): the Simulateur card sits beside the
 // rail where it covers none of the slide's words, and an Escape typed while writing a text never closes it.
 import { describe, expect, it } from "vitest";
-import { clearSpot, clearTop, writing } from "../src/course/ui/simTip";
+import { aboveSpot, clearSpot, clearTop, writing } from "../src/course/ui/simTip";
 
 const bounds = { top: 64, bottom: 892 };
 const tab = { top: 262, bottom: 324 };
+
+describe("aboveSpot", () => {
+  it("stands above a phone's bottom tab, inside the screen (390 × 844)", () => {
+    const a = aboveSpot({ left: 200, right: 270, top: 780 }, 270, 150, 390);
+    expect(a.left).toBeGreaterThanOrEqual(8);
+    expect(a.left + 270).toBeLessThanOrEqual(382);
+    expect(a.top + 150).toBeLessThanOrEqual(780 - 12);
+  });
+});
 
 describe("clearSpot", () => {
   it("keeps clear of the lead line by a margin, never touching it (1440 × 900, PPL cover)", () => {
