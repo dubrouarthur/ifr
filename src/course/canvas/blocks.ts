@@ -363,7 +363,12 @@ function imageBlock(b: Of<"image">, env: BlockEnv): BlockView {
 // ------------------------------------------------------------------ shapes
 function shapeBlock(b: Of<"shape">, env: BlockEnv): BlockView {
   const el = mk("div", "sl-b sl-shape");
-  el.setAttribute("aria-hidden", "true");
+  // a shape is decoration, unless it carries a description (the background of a drawn figure: a runway plan)
+  const alt = b.alt ? loc(b.alt, env.lang) : "";
+  if (alt) {
+    el.setAttribute("role", "img");
+    el.setAttribute("aria-label", alt);
+  } else el.setAttribute("aria-hidden", "true");
   const { w, h } = b.frame;
   const sw = b.stroke === null ? 0 : (b.strokeW ?? 2);
   const root = svg("svg", {

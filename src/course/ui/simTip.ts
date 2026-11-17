@@ -215,10 +215,11 @@ function start(lang: Lang) {
 function showSimTip(lang: Lang) {
   const tab = document.querySelector<HTMLElement>(RAIL);
   if (!tab || !tab.getBoundingClientRect().width) return;
-  // the panel is already open: the tip has nothing to show
+  // a panel of the rail is already open (« Simulateur », or « Modèles » with its ICAO field): the tip would cover it
   if (
-    tab.classList.contains("on") ||
-    tab.getAttribute("aria-pressed") === "true"
+    document.querySelector(
+      '[data-rail].on, [data-rail][aria-pressed="true"], [data-rail][aria-expanded="true"]',
+    )
   )
     return;
   document.querySelector(".nc-simtip")?.remove();

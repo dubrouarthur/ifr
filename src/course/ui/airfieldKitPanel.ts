@@ -32,6 +32,8 @@ export interface AirfieldKitPanel {
   value(): string;
   /** another starting point was picked: the panel stays, its « chosen » mark goes */
   setChosen(on: boolean): void;
+  /** bring the field into view and focus it; with a code already typed, prepare its slides */
+  focus(prepare?: boolean): void;
   destroy(): void;
 }
 
@@ -78,15 +80,15 @@ export function airfieldKitPanel(o: AirfieldKitPanelOptions): AirfieldKitPanel {
       h(
         "h3",
         { id: `${id}-h`, class: "afk-h" },
-        T(lang, "Fit it to my field", "Adapter à mon terrain"),
+        T(lang, "Use my airfield", "Adapter à mon terrain"),
       ),
       h(
         "p",
         { class: "afk-p" },
         T(
           lang,
-          "Type your field’s ICAO code: six ready slides from the navigation data (runways, frequencies, the view, a takeoff in the simulator, the local briefing to complete).",
-          "Tapez le code OACI de votre terrain : six diapos prêtes, tirées des données de navigation (pistes, fréquences, la vue, un décollage au simulateur, le briefing local à compléter).",
+          "Type your field’s ICAO code: ready slides from the navigation data (runways, frequencies, a live HSI exercise, the view on final, a takeoff in the simulator, the local briefing to complete).",
+          "Tapez le code OACI de votre terrain : des diapos prêtes, tirées des données de navigation (pistes, fréquences, un exercice au HSI, la vue en finale, un décollage au simulateur, le briefing local à compléter).",
         ),
       ),
     ),
@@ -158,7 +160,8 @@ export function airfieldKitPanel(o: AirfieldKitPanelOptions): AirfieldKitPanel {
       b.addEventListener("click", () => o.action?.run(k));
       foot.append(b);
     }
-    preview.replaceChildren(grid, foot.childNodes.length ? foot : "");
+    // the action first, right under the status line: in a narrow panel it is never below the thumbnails
+    preview.replaceChildren(foot.childNodes.length ? foot : "", grid);
   };
 
   async function prepare() {
@@ -237,6 +240,14 @@ export function airfieldKitPanel(o: AirfieldKitPanelOptions): AirfieldKitPanel {
     value: () => input.value,
     setChosen(on) {
       el.classList.toggle("is-chosen", on);
+    },
+    focus(run = false) {
+      const reduce =
+        typeof matchMedia !== "undefined" &&
+        matchMedia("(prefers-reduced-motion: reduce)").matches;
+      el.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
+      input.focus({ preventScroll: true });
+      if (run && input.value.trim().length === 4 && !kit) void prepare();
     },
     destroy() {
       seq++;

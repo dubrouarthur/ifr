@@ -23,9 +23,16 @@ export const HOME_COPY = {
     fr: "Le deck de slides pour l’aviation",
     en: "The slide deck for aviation",
   },
+  // the start page already says what the product is: this line says what to do next
   lead: {
-    fr: "Créez, présentez et partagez des cours en diapositives, avec de vrais instruments et un simulateur dedans.",
-    en: "Create, present and share courses as slides, with real instruments and a simulator inside.",
+    fr: "Créez votre cours en diapositives, présentez-le en salle, partagez-le avec vos élèves : les instruments bougent, le simulateur est dedans.",
+    en: "Make your course as slides, present it in class, share it with your students: the instruments move, the simulator is inside.",
+  },
+  kitLabel: { fr: "Votre terrain en diapositives", en: "Your airfield as slides" },
+  kitCode: { fr: "Code OACI", en: "ICAO code" },
+  kitGo: {
+    fr: "Préparer les diapositives de ce terrain",
+    en: "Prepare this airfield’s slides",
   },
   learn: { fr: "Apprendre", en: "Learn" },
   learnLine: {
@@ -330,6 +337,47 @@ const playHref = (id: string, step?: string) =>
   `academy.html#play=${encodeURIComponent(id)}${step ? `&s=${encodeURIComponent(step)}` : ""}&from=home`;
 
 /** a link that leaves the page through `nav` (a real href: open in a new tab works) */
+/** « Votre terrain en slides » on the Enseigner door: an ICAO code, then Nouveau cours with its slides prepared
+ *  (« Adapter à mon terrain », course/airfieldKit.ts). Empty: Nouveau cours with the code field focused. */
+function kitEntry(
+  T: (k: "kitLabel" | "kitCode" | "kitGo") => string,
+  nav: (u: string) => void,
+): HTMLElement {
+  const input = h("input", {
+    id: "wd-kit-icao",
+    class: "wd-kit-in",
+    type: "text",
+    maxlength: "4",
+    autocomplete: "off",
+    autocapitalize: "characters",
+    spellcheck: "false",
+    placeholder: T("kitCode"),
+    "aria-label": T("kitCode"),
+  }) as HTMLInputElement;
+  const form = h(
+    "form",
+    { class: "wd-kit", novalidate: "" },
+    h("label", { class: "wd-kit-l", for: "wd-kit-icao" }, T("kitLabel")),
+    // the code and its button stay on one line
+    h(
+      "span",
+      { class: "wd-kit-row" },
+      input,
+      h(
+        "button",
+        { type: "submit", class: "wd-kit-go", "aria-label": T("kitGo"), title: T("kitGo") },
+        icon(I.arrow),
+      ),
+    ),
+  );
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const code = input.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
+    nav(`${HOME_LINKS.newCourse}&from=home&kit=${code}`);
+  });
+  return form;
+}
+
 function navLink(
   cls: string,
   url: string,
@@ -419,6 +467,7 @@ export function homeView(o: HomeHooks): HomeView {
       who: string,
       go: HTMLElement,
       alt: HTMLElement,
+      extra?: HTMLElement,
     ) =>
       h(
         "li",
@@ -437,6 +486,7 @@ export function homeView(o: HomeHooks): HomeView {
           h("p", { class: "wd-door-who" }, who),
           h("div", { class: "wd-door-acts" }, go),
           alt,
+          extra ?? "",
         ),
       );
     const list = h(
@@ -484,6 +534,7 @@ export function homeView(o: HomeHooks): HomeView {
               o.nav,
               T("teachPresent"),
             ),
+        kitEntry(T, o.nav),
       ),
       door(
         "learn",

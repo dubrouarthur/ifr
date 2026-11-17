@@ -38,6 +38,8 @@ const msvlRwy = makeRunwayPair(MSVL_REF, 30, 5500, 100, 1150, ['03', '21']);
 
 /** real fields shown on slides (see registerSlideAirport below) */
 const SLIDE_FIELDS = new Map<string, Airport>();
+/** the VORs and NDBs around them (a slide's receiver tunes them) */
+const SLIDE_NAVAIDS = new Map<string, Navaid>();
 
 export const AIRPORTS: Airport[] = [
   {
@@ -506,6 +508,14 @@ function smooth(e0: number, e1: number, x: number) {
  *  region's own copy (AIRPORTS) always wins. */
 export function registerSlideAirport(a: Airport): void {
   SLIDE_FIELDS.set(a.icao, a);
+}
+/** a VOR or NDB near a slide's real field, in the same frame (a live HSI on the slide tunes it) */
+export function registerSlideNavaid(n: Navaid): void {
+  SLIDE_NAVAIDS.set(`${n.ident}|${n.type === "NDB" ? "N" : "V"}`, n);
+}
+/** the navaids of slides that the loaded nav database does not hold */
+export function slideNavaids(): Navaid[] {
+  return [...SLIDE_NAVAIDS.values()].filter((n) => !NAVAIDS.some((x) => x.ident === n.ident && (x.type === "NDB") === (n.type === "NDB")));
 }
 export function slideAirportKnown(icao: string): boolean {
   return SLIDE_FIELDS.has(icao) || AIRPORTS.some((a) => a.icao === icao);

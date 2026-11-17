@@ -91,7 +91,7 @@ export function fallbackNotes(step: Step, lang: Lang): string[] {
       if (b.kind === "text" && b.editorOnly) push(plain(tx(b.text, lang)));
     const points: string[] = [];
     for (const b of blocks) {
-      if (b.editorOnly || b.presenterOnly) continue;
+      if (b.editorOnly || b.presenterOnly || b.figure) continue;
       if (b.kind === "text" && (b.style === "body" || b.style === "heading")) points.push(plain(tx(b.text, lang)));
       else if (b.kind === "callout") points.push(plain(tx(b.text, lang)));
       else if (b.kind === "checklist") for (const r of b.rows) points.push(plain(tx(r.text, lang)));

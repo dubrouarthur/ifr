@@ -886,7 +886,7 @@ function navGeom(sim: Sim): NavGeom | null {
   if (sim.av.cdi === "GPS") return null;
   const out = sim[src];
   if (!out.valid) return null;
-  const n = tunedNavaid(sim.av[src].active);
+  const n = tunedNavaid(sim.av[src].active, sim.ac.s);
   if (!n) return null;
   const obs = src === "nav2" ? sim.av.obs2 : sim.av.obs1;
   const station = { lat: n.lat, lon: n.lon, elevFt: n.elevFt };

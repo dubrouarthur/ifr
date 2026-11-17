@@ -18,6 +18,7 @@ import {
   type LatLon,
 } from "./geo";
 import type { Airport, Approach, AirwaySeg, Fix, Navaid, ProcLeg, Runway, TermLeg, TerminalProc } from "./types";
+import { declinationDeg } from "./declination";
 
 export type IndexRow = [
   icao: string,
@@ -523,23 +524,14 @@ function regionBox(pick: IndexRow[], marginDeg: number) {
       keys.add(tileKey(la, lo));
   return { minLat, maxLat, minLon, maxLon, k, center, keys };
 }
-/** Magnetic variation of a region: the departure's (CIFP), else the declination of the navaid nearest the centre. */
+/** Magnetic variation of a region: the departure's published one (CIFP), else today's declination at the departure
+ *  from the World Magnetic Model (nav/declination.ts). Not a navaid's station declination: those can be decades old
+ *  (TSU near LFPN: 1.1° W, today about 2° E), and every QFU taught from them would be off by several degrees. */
 function regionMagVar(tiles: Tile[], depIcao: string, center: LatLon): number {
   const dep = tiles.map((t) => t.airports[depIcao]).find(Boolean);
-  let magVar = dep?.magVar ?? null;
-  if (magVar === null) {
-    let best = Infinity;
-    for (const t of tiles)
-      for (const n of t.navaids)
-        if (n.mv !== null && n.mv !== undefined) {
-          const d = distanceNm(n, center);
-          if (d < best) {
-            best = d;
-            magVar = n.mv;
-          }
-        }
-  }
-  return magVar ?? 0;
+  if (dep?.magVar !== null && dep?.magVar !== undefined) return dep.magVar;
+  const at = dep ? { lat: dep.lat, lon: dep.lon } : center;
+  return Math.round(declinationDeg(at.lat, at.lon) * 10) / 10;
 }
 
 /** A navaid near a field, as a briefing lists it: what, where from the field (magnetic), how far. */
@@ -567,6 +559,8 @@ export interface RealAirfield {
   /** one row per physical runway (both ends), as published */
   strips: { ids: [string, string]; lengthFt: number; widthFt: number; surface: string; lit: boolean }[];
   navaids: NearbyNavaid[];
+  /** the VORs and NDBs of `navaids` in the field's frame, as the nav database holds them (a slide tunes them) */
+  beacons: Navaid[];
   magVar: number;
 }
 /** Read one field (ICAO) from the navdata: null when the code is not in it or the field has no runway. */
@@ -583,7 +577,7 @@ export async function realAirfield(icao: string, rangeNm = 40): Promise<RealAirf
   const rws = tileRunways(a, S);
   const here: LatLon = { lat: a.lat, lon: a.lon };
   const brgMag = (p: LatLon) => Math.round((((bearingDeg(here, p) - magVar) % 360) + 360) % 360);
-  const seen = new Map<string, NearbyNavaid & { cifp: boolean }>();
+  const seen = new Map<string, NearbyNavaid & { cifp: boolean; nav: Navaid }>();
   for (const t of tiles)
     for (const n of t.navaids) {
       const d = distanceNm(here, n);
@@ -599,10 +593,11 @@ export async function realAirfield(icao: string, rangeNm = 40): Promise<RealAirf
         distNm: Math.round(d * 10) / 10,
         brgMag: brgMag(n),
         cifp: n.src === "cifp",
+        nav: { ident: n.id, name: n.name, type: n.t, freq: n.f, elevFt: n.elev, dme: n.dme, ...S(n.lat, n.lon) },
       });
     }
   const navaids: NearbyNavaid[] = [...seen.values()]
-    .map(({ cifp: _c, ...n }) => n)
+    .map(({ cifp: _c, nav: _n, ...n }) => n)
     .sort((x, y) => x.distNm - y.distNm);
   const ils: NearbyNavaid[] = (a.ils ?? []).map((L) => ({
     ident: L.id,
@@ -642,6 +637,7 @@ export async function realAirfield(icao: string, rangeNm = 40): Promise<RealAirf
       lit: r.lit,
     })),
     navaids: [...ils, ...navaids],
+    beacons: [...seen.values()].sort((x, y) => x.distNm - y.distNm).map((n) => n.nav),
     magVar,
   };
 }
@@ -680,7 +676,7 @@ export async function loadRegion(
   ) as Tile[];
   const inBox = (lat: number, lon: number) =>
     lat >= minLat && lat <= maxLat && lon >= minLon && lon <= maxLon;
-  // magnetic variation: departure (CIFP) → nearest navaid declination → 0
+  // magnetic variation: departure (CIFP) → today’s declination there (WMM)
   const magVar = regionMagVar(tiles, pick[0][0], center);
   frame = { center, magVar };
   const S = (lat: number, lon: number) => toSim({ lat, lon });

@@ -3,7 +3,14 @@
 // shared link) registers its fields again from the navdata before its slides are drawn. Small on purpose: the
 // academy pages call it before every course they open.
 import type { SimScene } from "./types";
-import { registerSlideAirport, slideAirportKnown } from "../nav/data";
+import type { RealAirfield } from "../nav/world";
+import { registerSlideAirport, registerSlideNavaid, slideAirportKnown } from "../nav/data";
+
+/** a real field for the slides: its runways (situations, outside view) and its VORs and NDBs (a live HSI tunes them) */
+export function registerSlideField(f: RealAirfield): void {
+  registerSlideAirport(f.airport);
+  for (const n of f.beacons ?? []) registerSlideNavaid(n);
+}
 
 /** An ICAO location indicator: a letter, then 3 letters or digits (LFPN, KSFO, EGLL). */
 export const ICAO_RE = /^[A-Z][A-Z0-9]{3}$/;
@@ -29,7 +36,7 @@ export async function prepareCourseAirfields(
     const { realAirfield } = await import("../nav/world");
     for (const c of missing) {
       const f = await realAirfield(c).catch(() => null);
-      if (f) registerSlideAirport(f.airport);
+      if (f) registerSlideField(f);
     }
   })();
   let t = 0;

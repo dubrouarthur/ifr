@@ -404,6 +404,8 @@ export class SlideView {
       (this.mode !== "edit" && !!b.presenterOnly && !this.o.presenter) ||
       (this.mode !== "edit" && !!b.editorOnly);
     v.el.classList.toggle("sl-editor-note", !!b.editorOnly);
+    // a figure's label is part of the picture: the figure's description (its shape's alt) is what is read
+    if (b.figure && this.mode !== "edit") v.el.setAttribute("aria-hidden", "true");
     if (this.mode === "edit") {
       if (b.reveal?.order) v.el.dataset.reveal = String(b.reveal.order);
       else delete v.el.dataset.reveal;

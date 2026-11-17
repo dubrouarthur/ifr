@@ -1268,6 +1268,9 @@ export interface BlockBase {
   /** a note to the course's author (« Remplacez ce texte par… »): shown only while editing, never to a student,
    *  on the projector, in a thumbnail or in the reader text */
   editorOnly?: boolean;
+  /** a label inside a drawn figure (a runway plan's end numbers, its north arrow, its scale): part of the picture,
+   *  so left out of the reader text and of screen readers; the figure's own description (a shape's `alt`) says it */
+  figure?: boolean;
 }
 
 /** Type styles (the only text sizes a theme defines). */

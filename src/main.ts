@@ -1679,8 +1679,11 @@ const courseHost: CockpitHost = {
   },
   runExercise: (ex) => {
     courseExIds.add(ex.id);
-    // a flight at the instructor's own field flies in the region loadWorld just loaded
-    if (!courseRegionLoaded) backToTraining();
+    // a flight at the instructor's own field flies in the region loadWorld just loaded; the mark is used once, so a
+    // later course flight with a training situation goes back to the training world
+    const keepRegion = courseRegionLoaded;
+    courseRegionLoaded = false;
+    if (!keepRegion) backToTraining();
     Modal.closeAll();
     courseLaunch(() => startExerciseNow(ex));
   },

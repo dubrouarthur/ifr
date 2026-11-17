@@ -831,7 +831,7 @@ export class StudioPanel {
       });
       return b;
     };
-    // « Adapter à mon terrain »: an ICAO code, six slides of that field added after this one
+    // « Adapter à mon terrain »: an ICAO code, the slides of that field added after this one
     this.kitPanel = airfieldKitPanel({
       lang,
       theme,

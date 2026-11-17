@@ -652,7 +652,12 @@ export function titleOfSlide(c: SlideCanvas): L10n | null {
 export function linearText(c: SlideCanvas): ReaderBlock[] {
   const out: ReaderBlock[] = [];
   for (const b of [...c.blocks].sort(byReadingOrder)) {
-    if (b.presenterOnly || b.editorOnly) continue;
+    if (b.presenterOnly || b.editorOnly || b.figure) continue;
+    // a drawn figure's description (a runway plan): what the figure shows, in its place
+    if (b.kind === "shape" && b.alt?.en.trim()) {
+      out.push({ t: "text", text: clone(b.alt) });
+      continue;
+    }
     if (b.kind === "text" && b.text.en.trim()) {
       if (["label", "caption", "eyebrow", "small", "foot"].includes(b.style)) continue;
       out.push(

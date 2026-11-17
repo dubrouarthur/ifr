@@ -195,6 +195,8 @@ export interface NewCourseOptions {
   store: Promise<CourseStore | null>;
   program?: string;
   subject?: string;
+  /** opened from Accueil's « Votre terrain »: the ICAO field takes the focus, and a code typed there is prepared */
+  kit?: string;
   /** the way back's word (« Bibliothèque », « LAPL · PPL », « Accueil ») */
   backLabel: (l: Lang) => string;
   onBack(): void;
@@ -257,7 +259,7 @@ export function mountNewCourse(
   // « Adapter à mon terrain »: the slides prepared for the instructor's field (a starting point like a template)
   let kit: AirfieldKit | null = null;
   let kitPanel: AirfieldKitPanel | null = null;
-  let kitValue = "";
+  let kitValue = o.kit ?? "";
   const isKit = (d: DeckStarter) => !!kit && d.id === kit.starter.id;
   let busy = false;
   let views: SlideView[] = [];
@@ -791,11 +793,14 @@ export function mountNewCourse(
     }
   }
 
-  // the title field takes the focus on a desk (never pops a tablet's keyboard by itself)
+  // the title field takes the focus on a desk (never pops a tablet's keyboard by itself); opened from Accueil's
+  // « Votre terrain », the ICAO field does (and a code typed there is prepared at once)
   render(
-    typeof matchMedia === "undefined" ||
-      !matchMedia("(pointer: coarse)").matches,
+    o.kit === undefined &&
+      (typeof matchMedia === "undefined" ||
+        !matchMedia("(pointer: coarse)").matches),
   );
+  if (o.kit !== undefined) requestAnimationFrame(() => kitPanel?.focus(true));
   return {
     el,
     setLang(l: Lang) {

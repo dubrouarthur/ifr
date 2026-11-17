@@ -1,7 +1,7 @@
 // VHF nav receivers (VOR / LOC / GS / DME / markers).
 import { bearingDeg, distanceNm, FT_PER_NM, norm360, wrap180, DEG, type LatLon } from './geo';
 import type { Navaid } from './types';
-import { NAVAIDS, findFix } from './data';
+import { NAVAIDS, findFix, slideNavaids } from './data';
 
 export interface NavOutput {
   valid: boolean;
@@ -48,8 +48,14 @@ export const EMPTY_NAV: NavOutput = {
   backCourse: false,
 };
 
-export function tunedNavaid(freq: number): Navaid | undefined {
-  return NAVAIDS.find((n) => n.type !== 'NDB' && Math.abs(n.freq - freq) < 0.004);
+/** The VHF station on a frequency: the loaded nav database first, then the stations around a slide's real field
+ *  (nav/data.ts registerSlideNavaid); with a position, the nearest of the stations sharing it, as a receiver would. */
+export function tunedNavaid(freq: number, near?: LatLon): Navaid | undefined {
+  const on = (n: Navaid) => n.type !== 'NDB' && Math.abs(n.freq - freq) < 0.004;
+  const own = NAVAIDS.filter(on);
+  const all = own.length && !near ? own : [...own, ...slideNavaids().filter(on)];
+  if (all.length < 2 || !near) return all[0];
+  return all.reduce((a, b) => (distanceNm(b, near) < distanceNm(a, near) ? b : a));
 }
 
 /** Line-of-sight range (nm) for a VHF station given aircraft altitude above station. */
@@ -58,7 +64,7 @@ export function vhfRange(altAboveFt: number): number {
 }
 
 export function computeNav(freq: number, obs: number, ac: AircraftPos, magVar = 0): NavOutput {
-  const n = tunedNavaid(freq);
+  const n = tunedNavaid(freq, ac);
   if (!n) return { ...EMPTY_NAV, course: obs };
   const d = distanceNm(n, ac);
   const range = Math.min(n.type === 'ILS' || n.type === 'LOC' ? 25 : 130, vhfRange(ac.altFt - n.elevFt));

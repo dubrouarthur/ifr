@@ -1717,7 +1717,12 @@ export class CoursePlayer {
     };
     const out: HTMLElement[] = [];
     for (const b of readingOrder(slide.blocks)) {
-      if (b.presenterOnly || b.editorOnly || !isRevealed(b, steps, reveal, none)) continue;
+      if (b.presenterOnly || b.editorOnly || b.figure || !isRevealed(b, steps, reveal, none)) continue;
+      if (b.kind === "shape" && b.alt?.en.trim()) {
+        // a drawn figure (a runway plan): its description, not its labels in screen order
+        out.push(richEl(txt(b.alt), lang, undefined, "cp-rich cp-st-body"));
+        continue;
+      }
       if (b.kind === "text" && b.bind) {
         // a live value: the words as the slide draws them now (refreshed below while the panel shows)
         const live = host

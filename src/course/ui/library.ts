@@ -100,7 +100,7 @@ export type AcademyRoute =
   | { k: "share"; code: string }
   /** the Nouveau cours page: the formation (p) and subject (s) prefilled from where it was opened; from: the way
    *  back (home, lib, a formation id) */
-  | { k: "new"; p?: string; s?: string; from?: string };
+  | { k: "new"; p?: string; s?: string; from?: string; kit?: string };
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
 /** Parse academy.html's hash: #library (&p=<programme>&s=<subject>), #play=<id>&s=<step>&a=<token>, #edit=, #present=, #project=, #c=<code>. */
 export function academyRoute(hash: string): AcademyRoute {
@@ -144,8 +144,11 @@ export function academyRoute(hash: string): AcademyRoute {
     const sub = kv.get("s");
     const from = kv.get("from");
     const okP = p && /^[a-z]{2,12}$/.test(p) ? p : null;
+    // « Votre terrain » from Accueil: the ICAO field focused (and its code, when one was typed)
+    const kit = kv.get("kit");
     return {
       k: "new",
+      ...(kit !== null && kit !== undefined && /^[A-Za-z0-9]{0,4}$/.test(kit) ? { kit: kit.toUpperCase() } : {}),
       ...(okP ? { p: okP } : {}),
       ...(okP && sub && /^[a-z]{2,12}\.[a-z0-9]{2,8}$/.test(sub) ? { s: sub } : {}),
       ...(from && /^[a-z]{2,12}$/.test(from) ? { from } : {}),
@@ -230,7 +233,7 @@ export function academyHash(r: AcademyRoute): string {
     case "share":
       return `#c=${r.code}`;
     case "new":
-      return `#new${r.p ? `&p=${e(r.p)}` : ""}${r.p && r.s ? `&s=${e(r.s)}` : ""}${r.from ? `&from=${e(r.from)}` : ""}`;
+      return `#new${r.p ? `&p=${e(r.p)}` : ""}${r.p && r.s ? `&s=${e(r.s)}` : ""}${r.from ? `&from=${e(r.from)}` : ""}${r.kit !== undefined ? `&kit=${e(r.kit)}` : ""}`;
     case "play":
       return `#play=${e(r.id)}${r.s ? `&s=${e(r.s)}` : ""}${r.a ? `&a=${e(r.a)}` : ""}${r.b ? `&b=${e(r.b)}` : ""}${r.from ? `&from=${e(r.from)}` : ""}`;
     default:

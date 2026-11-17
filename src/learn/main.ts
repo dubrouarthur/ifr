@@ -327,6 +327,7 @@ async function showNewCourse(r: Extract<AcademyRoute, { k: "new" }>) {
     store: storeP,
     ...(r.p ? { program: r.p } : {}),
     ...(r.s ? { subject: r.s } : {}),
+    ...(r.kit !== undefined ? { kit: r.kit } : {}),
     backLabel: back.label,
     onBack: () => back.go(),
     onLang: (l) => setCourseLang(l),
