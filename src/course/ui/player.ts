@@ -1846,6 +1846,20 @@ export class CoursePlayer {
               ),
             ),
           );
+      } else if (b.kind === "engine3d") {
+        // a 3D engine on a small slide: its caption, and the way to open it big (its levers at 44 px there)
+        if (b.caption) out.push(richEl(txt(b.caption), lang, undefined, "cp-rich cp-st-body"));
+        out.push(
+          h(
+            "div",
+            { class: "cp-st-ctls" },
+            btn(lang === "fr" ? "Ouvrir le moteur en plein écran" : "Open the engine full screen", "", () => {
+              host
+                .querySelector<HTMLButtonElement>(`[data-id="${CSS.escape(b.id)}"] .eng-tools .eng-tool:last-child`)
+                ?.click();
+            }),
+          ),
+        );
       } else if (b.kind === "checklist") {
         out.push(
           h(

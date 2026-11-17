@@ -56,6 +56,8 @@ export { fitFloor, HINT_H, slidePalette } from "./metrics";
 import { holdFootText } from "../../train/diagram";
 import type { DiagramHub } from "./diagramMirror";
 import { problemFor, checkAnswer } from "../calc/index";
+import { engineSnapshot, mountEngine, type EngineHandle } from "../engines/view";
+import { ENGINE_NAME, tl } from "../engines/sim";
 import { UNIT_LABEL } from "../calc/text";
 
 export type SlideMode = "play" | "edit" | "thumb";
@@ -1638,6 +1640,76 @@ function checklistBlock(b: Of<"checklist">, env: BlockEnv): BlockView {
   };
 }
 
+// ------------------------------------------------------------------ engine3d (course/engines)
+/** text size inside an engine block, logical px (the slide's smallest text is 24) */
+const ENGINE_FS = 26;
+function engine3dBlock(b: Of<"engine3d">, env: BlockEnv): BlockView {
+  const el = mk("div", "sl-b sl-engine");
+  el.style.setProperty("--eng-fs", `${ENGINE_FS}px`);
+  const name = b.alt ? loc(b.alt, env.lang) : tl(ENGINE_NAME[b.engine], env.lang);
+  if (env.mode === "thumb") {
+    // a thumbnail never opens a WebGL context of its own: one shared still picture per engine
+    el.classList.add("thumb");
+    el.setAttribute("role", "img");
+    el.setAttribute("aria-label", name);
+    let url: string | null = null;
+    try {
+      url = engineSnapshot(b.engine, b.stage ?? 0, 640, 360);
+    } catch {
+      url = null;
+    }
+    if (url) {
+      const img = mk("img", "sl-engine-shot");
+      img.alt = "";
+      img.src = url;
+      el.append(img);
+    }
+    el.append(mk("span", "sl-engine-tag", name));
+    return { el, block: b, destroy: () => el.remove() };
+  }
+  let h: EngineHandle | null = null;
+  let unhub: (() => void) | undefined;
+  try {
+    h = mountEngine(el, {
+      kind: b.engine,
+      lang: env.lang,
+      controls: b.controls,
+      set: b.set,
+      stage: b.stage,
+      labels: b.labels,
+      slow: b.slow,
+      // the editor shows a still cutaway and lets the slide take the pointer
+      still: env.mode === "edit",
+      inert: env.mode === "edit",
+      onChange: () => env.diagrams?.changed(b.id),
+    });
+    // the presenter's levers and steps, mirrored on the projector (canvas/diagramMirror.ts)
+    const hh = h;
+    unhub = env.diagrams?.add(b.id, {
+      live: () => {
+        const s = hh.state();
+        return { spec: { engine: b.engine }, paused: !s.playing, x: s };
+      },
+      follow: (st) => {
+        const x = st.x as Partial<ReturnType<EngineHandle["state"]>> | undefined;
+        if (x && typeof x === "object") hh.set(x);
+      },
+    });
+  } catch {
+    el.append(mk("span", "sl-engine-tag", name));
+  }
+  return {
+    el,
+    block: b,
+    layout: () => h?.resize(),
+    destroy: () => {
+      unhub?.();
+      h?.destroy();
+      el.remove();
+    },
+  };
+}
+
 // ------------------------------------------------------------------ dispatch
 export function renderBlock(b: SlideBlock, env: BlockEnv): BlockView {
   switch (b.kind) {
@@ -1665,6 +1737,8 @@ export function renderBlock(b: SlideBlock, env: BlockEnv): BlockView {
       return calcBlock(b, env);
     case "checklist":
       return checklistBlock(b, env);
+    case "engine3d":
+      return engine3dBlock(b, env);
     default: {
       const el = mk(
         "div",
@@ -1694,6 +1768,8 @@ export function blockLabel(b: SlideBlock, lang: Lang): string {
         : tx("quizSlot", lang);
     case "calc":
       return tx("calcSlot", lang);
+    case "engine3d":
+      return tl(ENGINE_NAME[b.engine], lang);
     default:
       return blockKindLabel(b.kind, lang);
   }

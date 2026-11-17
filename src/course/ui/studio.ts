@@ -59,7 +59,8 @@ export type RailTab =
   | "media"
   | "interactive"
   | "brand"
-  | "cockpit";
+  | "cockpit"
+  | "engines";
 
 const SVGNS = "http://www.w3.org/2000/svg";
 // rail glyphs: 24 × 24 strokes
@@ -76,6 +77,7 @@ const RAIL_ICON: Record<RailTab, string> = {
     "M9 9a3 3 0 1 1 4 2.8c-.8.4-1 1-1 1.7V14 M12 17.5v.5 M4 4h16v16H4z",
   brand: "M5 20V5h9l-1.5 3.5L14 12H5 M5 4v17",
   cockpit: "M3 17l9-9 9 9 M7 13v6h10v-6 M12 3v5",
+  engines: "M4 10h3v4H4z M7 9h9v6H7z M16 10l4-3v10l-4-3 M9 9V6h5v3 M10 15v3h3v-3",
 };
 const RAIL_LABEL: Record<RailTab, [string, string]> = {
   templates: ["Templates", "Modèles"],
@@ -87,6 +89,7 @@ const RAIL_LABEL: Record<RailTab, [string, string]> = {
   interactive: ["Questions", "Questions"],
   brand: ["Club logo", "Logo du club"],
   cockpit: ["Simulator", "Simulateur"],
+  engines: ["Engines", "Moteurs"],
 };
 const RAIL_HINT: Record<RailTab, [string, string]> = {
   templates: [
@@ -122,6 +125,10 @@ const RAIL_HINT: Record<RailTab, [string, string]> = {
     "What the aircraft does, and the student at the controls",
     "Ce que fait l’avion, et l’élève aux commandes",
   ],
+  engines: [
+    "Engines in 3D, cut open: the cycle runs, the student moves the levers",
+    "Des moteurs en 3D, en coupe : le cycle tourne, l’élève manie les manettes",
+  ],
 };
 /** The rail, in the order a creator thinks: a slide, its words, its instruments, the simulator, a question, the
  *  rest (images, shapes, diagrams, club logo under « Médias »). Shapes, diagrams and the logo stay tabs of their
@@ -132,6 +139,7 @@ export const RAIL_TABS: readonly RailTab[] = [
   "instruments",
   "cockpit",
   "interactive",
+  "engines",
   "media",
 ];
 /** the parts of « Médias », in order */
@@ -151,6 +159,7 @@ export const SLIDE_ONLY: ReadonlySet<RailTab> = new Set([
   "diagrams",
   "media",
   "interactive",
+  "engines",
 ]);
 const LIB_TABS: Partial<Record<RailTab, LibraryTab[]>> = {
   text: ["text"],
@@ -159,6 +168,7 @@ const LIB_TABS: Partial<Record<RailTab, LibraryTab[]>> = {
   diagrams: ["diagrams"],
   media: ["photos", "icons"],
   interactive: ["interactive"],
+  engines: ["engines"],
 };
 
 export function railIcon(tab: RailTab | string, path?: string): SVGSVGElement {

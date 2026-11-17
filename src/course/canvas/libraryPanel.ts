@@ -3,6 +3,7 @@
 // drawn once by the cockpit renderers, icons and diagrams recolour to the slide theme. Tap a tile to add it to
 // the middle of the slide, or drag it onto the slide (pointer events: mouse, pen and finger; on touch a drag
 // starts with a sideways move or a short hold, so the list still scrolls).
+import { engineSnapshot } from "../engines/view";
 import type { Lang, SlideTheme, ThemeId } from "../types";
 import {
   LIBRARY_TABS,
@@ -44,6 +45,7 @@ const TAB_LABEL: Record<LibraryTab, CanvasString> = {
   icons: "icons",
   photos: "photos",
   interactive: "interactive",
+  engines: "engines",
 };
 const mk = <K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -149,6 +151,7 @@ export class LibraryPanel {
       instruments: ["Search an instrument", "Rechercher un instrument"],
       photos: ["Search a photo or an icon", "Rechercher une photo ou une icône"],
       interactive: ["Search a question, a calculation…", "Rechercher une question, un calcul…"],
+      engines: ["Search an engine", "Rechercher un moteur"],
     };
     const ph = PH[(o.tabs ?? [this.tab])[0] ?? this.tab] ?? PH.text;
     this.search.placeholder = (o.tabs?.length ?? 2) > 1 && !o.tabs ? tx("search", this.lang) : ph[fr ? 1 : 0];
@@ -339,6 +342,21 @@ export class LibraryPanel {
               : "is-diagram",
         );
         el.append(img);
+        break;
+      }
+      case "engine": {
+        // the engine itself, a still from the one shared renderer (drawn when the panel opens, never one per tile)
+        el.classList.add("is-engine");
+        requestAnimationFrame(() => {
+          const url = engineSnapshot(p.engine, 0, 320, 200);
+          if (!url) return;
+          const img = mk("img");
+          img.alt = "";
+          img.draggable = false;
+          img.src = url;
+          el.replaceChildren(img);
+        });
+        el.innerHTML = GLYPHS.viewport ?? "";
         break;
       }
       case "instrument": {

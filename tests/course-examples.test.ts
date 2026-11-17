@@ -42,6 +42,8 @@ describe("the gallery of ready slides", () => {
       const list = insts(s.slide.blocks);
       const moving = list.filter((b) => b.motion);
       if (s.id === "gx-recap" || s.group === "engage") continue;
+      // a 3D engine slide moves by itself: the engine block runs its own cycle (course/engines)
+      if (s.slide.blocks.some((b) => b.kind === "engine3d")) continue;
       expect(moving.length, s.id).toBeGreaterThan(0);
       for (const b of moving) {
         expect(motionIssues(b.motion), s.id).toEqual([]);

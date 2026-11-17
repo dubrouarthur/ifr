@@ -149,6 +149,8 @@ export const ambientInHg = (altFt = 0): number =>
 // ------------------------------------------------------------------ carburetted flat-four, fixed-pitch propeller
 export interface PistonIn {
   throttle: number;
+  /** the magneto switch: one magneto alone fires one plug per cylinder, a slower burn, a small rpm drop */
+  mags?: "both" | "left" | "right" | "off";
   /** 1 full rich … 0 idle cut-off */
   mixture: number;
   carbHeat: boolean;
@@ -200,6 +202,12 @@ export function egtOf(m: number, powerPct: number): number {
 }
 /** Carburettor heat: warmer, less dense air (PHAK ch. 7: up to 15 % less power; at run-up a drop of about 100 rpm). */
 export const CARB_HEAT_FACTOR = 0.95;
+/**
+ * One magneto alone: one spark plug per cylinder, a slower flame front, a little less power. At the run-up rpm
+ * (1,800 in the C172S POH) the drop stays well inside the POH's limit: 150 rpm on either magneto, 50 rpm between
+ * the two.
+ */
+export const SINGLE_MAG_FACTOR = 0.96;
 
 /**
  * The fixed-pitch case: the propeller absorbs power as rpm³ (more as the airspeed falls: at run-up it holds the
@@ -208,7 +216,9 @@ export const CARB_HEAT_FACTOR = 0.95;
 export function pistonOutputs(i: PistonIn): PistonOut {
   const map = manifoldPressure(i.throttle, i.altFt ?? 0);
   const mf = mixturePower(i.mixture);
-  const cf = i.carbHeat ? CARB_HEAT_FACTOR : 1;
+  const cf = (i.carbHeat ? CARB_HEAT_FACTOR : 1) * (i.mags === "left" || i.mags === "right" ? SINGLE_MAG_FACTOR : 1);
+  if (i.mags === "off")
+    return { rpm: 0, mapInHg: round1(ambientInHg(i.altFt ?? 0)), powerPct: 0, fuelGph: 0, egtF: 300, running: false };
   // absorption of the fixed-pitch propeller: 1.25 static, 1.0 at 100 kt
   const k = 1.25 - 0.25 * clamp((i.iasKt ?? 0) / 100, 0, 1.4);
   const avail = (map * mf * cf - FRICTION_MAP) / (FULL_MAP - FRICTION_MAP);
@@ -459,6 +469,7 @@ export function defaultSettings(kind: EngineKind): Required<EngineSettings> {
     throttle: 0.55,
     mixture: 1,
     carbHeat: false,
+    mags: "both" as "both" | "left" | "right" | "off",
     prop: 0.5,
     reverse: false,
   };
@@ -478,6 +489,7 @@ export function settingsOf(
     throttle: num(s?.throttle, d.throttle),
     mixture: num(s?.mixture, d.mixture),
     carbHeat: typeof s?.carbHeat === "boolean" ? s.carbHeat : d.carbHeat,
+    mags: s?.mags === "left" || s?.mags === "right" || s?.mags === "off" || s?.mags === "both" ? s.mags : d.mags,
     prop: num(s?.prop, d.prop),
     reverse: typeof s?.reverse === "boolean" ? s.reverse : d.reverse,
   };

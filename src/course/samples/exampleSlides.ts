@@ -30,12 +30,13 @@ import { CHECKLIST, QUIZ, SAMPLE_AUTHOR, SAMPLE_DATE } from "./kit";
 import type { Course, Step } from "../types";
 
 // ------------------------------------------------------------------ the groups of the gallery
-export type GalleryGroup = "start" | "ppl" | "nav" | "ifr" | "engage";
+export type GalleryGroup = "start" | "ppl" | "nav" | "ifr" | "engines" | "engage";
 export const GALLERY_GROUPS: { id: GalleryGroup; title: L10n }[] = [
   { id: "start", title: L("Getting started", "Commencer") },
   { id: "ppl", title: L("PPL flying", "Pilotage PPL") },
   { id: "nav", title: L("Navigation", "Navigation") },
   { id: "ifr", title: L("IFR", "IFR") },
+  { id: "engines", title: L("Engines", "Moteurs") },
   { id: "engage", title: L("Get the students involved", "Faire participer") },
 ];
 
@@ -1324,6 +1325,126 @@ function handsOn(o: {
     ),
   };
 }
+// ------------------------------------------------------------------ the engines in 3D (course/engines)
+/** One engine per slide: a short title, one line, the 3D cutaway with its levers and gauges, the source. */
+function engineSlide(o: {
+  id: string;
+  engine: Extract<SlideBlock, { kind: "engine3d" }>["engine"];
+  eyebrow: L10n;
+  title: L10n;
+  what: L10n;
+  lead: L10n;
+  alt: L10n;
+  source: L10n;
+  stage?: number;
+}): GallerySlide {
+  return {
+    id: o.id,
+    group: "engines",
+    title: o.title,
+    what: o.what,
+    slide: {
+      size: { w: 1920, h: 1080 },
+      grid: DEFAULT_GRID,
+      layout: "heroDiagram",
+      blocks: [
+        T("eyebrow", o.eyebrow, G.left, G.eyebrowY, 1392, 32),
+        T("title", o.title, G.left, G.titleY, 1680, 96),
+        T("body", o.lead, G.left, 240, 1680, 80),
+        {
+          id: `${o.id}.engine`,
+          frame: { x: G.left, y: 336, w: 1680, h: 648, z: 1 },
+          kind: "engine3d",
+          engine: o.engine,
+          alt: o.alt,
+          ...(o.stage !== undefined ? { stage: o.stage } : {}),
+        },
+        foot(o.source),
+      ],
+    },
+  };
+}
+function engineSlides(): GallerySlide[] {
+  return [
+    engineSlide({
+      id: "gx-engine-piston",
+      engine: "piston",
+      eyebrow: L("Piston engine", "Moteur à pistons"),
+      title: L("The four strokes, cut open", "Les quatre temps, en coupe"),
+      what: L(
+        "The flat four turns, each stroke named; magnetos, carburettor heat and mixture to try",
+        "Le quatre-cylindres tourne, chaque temps nommé ; magnétos, réchauffage carbu et mélange à essayer",
+      ),
+      lead: L(
+        "Intake, compression, power, exhaust: one power stroke in four, the cylinders fire in the order 1-3-2-4.",
+        "Admission, compression, combustion, échappement : un temps moteur sur quatre, les cylindres s’allument dans l’ordre 1-3-2-4.",
+      ),
+      alt: L(
+        "A four-cylinder flat engine cut open: pistons, rods, crankshaft, valves, spark plugs, magnetos, carburettor",
+        "Un moteur quatre cylindres à plat en coupe : pistons, bielles, vilebrequin, soupapes, bougies, magnétos, carburateur",
+      ),
+      source: L("FAA PHAK ch. 7 · O-360 class, 180 hp at 2,700 rpm (C172S POH)", "FAA PHAK ch. 7 · classe O-360, 180 ch à 2 700 tr/min (POH C172S)"),
+    }),
+    engineSlide({
+      id: "gx-engine-prop",
+      engine: "prop",
+      eyebrow: L("Constant-speed propeller", "Hélice à vitesse constante"),
+      title: L("The governor holds the rpm", "Le régulateur tient le régime"),
+      what: L(
+        "Push the throttle: the flyweights fly out, the blades go coarser, the rpm comes back",
+        "Poussez les gaz : les masselottes s’écartent, le pas augmente, le régime revient",
+      ),
+      lead: L(
+        "Push the throttle: the rpm rises for a moment, the flyweights lean out, the blades go coarser and the rpm comes back.",
+        "Poussez les gaz : le régime monte un instant, les masselottes s’écartent, le pas augmente et le régime revient.",
+      ),
+      alt: L(
+        "A constant-speed propeller and its governor cut open: flyweights, speeder spring, pilot valve, oil to the hub",
+        "Une hélice à vitesse constante et son régulateur en coupe : masselottes, ressort de consigne, distributeur, huile vers le moyeu",
+      ),
+      source: L("FAA PHAK ch. 7 · constant-speed propeller", "FAA PHAK ch. 7 · hélice à vitesse constante"),
+    }),
+    engineSlide({
+      id: "gx-engine-turboprop",
+      engine: "turboprop",
+      eyebrow: L("Turboprop", "Turbopropulseur"),
+      title: L("Two shafts: Ng and Np", "Deux arbres : Ng et Np"),
+      what: L(
+        "The gas generator and the free turbine turn apart; torque, ITT and Np on the gauges",
+        "Le générateur de gaz et la turbine libre tournent séparément ; couple, ITT et Np aux instruments",
+      ),
+      lead: L(
+        "The gas generator (Ng) and the free turbine (Np) have no mechanical link: the gas alone turns the propeller.",
+        "Le générateur de gaz (Ng) et la turbine libre (Np) n’ont aucun lien mécanique : seul le gaz entraîne l’hélice.",
+      ),
+      alt: L(
+        "A free-turbine turboprop cut open: intake, compressor, combustion chamber, gas generator turbine, free turbine, gearbox, propeller",
+        "Un turbopropulseur à turbine libre en coupe : entrée d’air, compresseur, chambre, turbine du générateur de gaz, turbine libre, réducteur, hélice",
+      ),
+      source: L("FAA AFH ch. 14 · EASA ATPL 021 · 675 shp class", "FAA AFH ch. 14 · EASA ATPL 021 · classe 675 shp"),
+    }),
+    engineSlide({
+      id: "gx-engine-turbofan",
+      engine: "turbofan",
+      eyebrow: L("Turbofan", "Turboréacteur double flux"),
+      title: L("N1, N2 and the by-pass stream", "N1, N2 et le flux secondaire"),
+      what: L(
+        "Two spools, the cold stream round the core, the reversers to deploy",
+        "Deux attelages, le flux froid autour du cœur, les inverseurs à déployer",
+      ),
+      lead: L(
+        "Push the thrust lever: N1 rises slowly, and the thrust grows fastest at the top of the range.",
+        "Poussez la manette : le N1 monte lentement, et la poussée croît surtout en haut de la plage.",
+      ),
+      alt: L(
+        "A two-spool turbofan cut open: fan, by-pass duct, LP and HP compressors, combustion chamber, HP and LP turbines, reversers",
+        "Un turboréacteur double flux double corps en coupe : soufflante, canal secondaire, compresseurs BP et HP, chambre, turbines HP et BP, inverseurs",
+      ),
+      source: L("FAA AFH ch. 15 · EASA ATPL 021 · by-pass ratio 5.1:1 class", "FAA AFH ch. 15 · EASA ATPL 021 · classe taux de dilution 5,1:1"),
+    }),
+  ];
+}
+
 function engageSlides(): GallerySlide[] {
   const quiz: GallerySlide = {
     id: "gx-quiz",
@@ -1554,6 +1675,7 @@ export function gallerySlides(): GallerySlide[] {
     ...pplSlides(),
     ...navSlides(),
     ...ifrSlides(),
+    ...engineSlides(),
     ...engageSlides(),
   ];
   return JSON.parse(JSON.stringify(CACHE)) as GallerySlide[];

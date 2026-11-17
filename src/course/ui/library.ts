@@ -357,6 +357,7 @@ export function kindMix(steps: readonly Step[]): KindMix {
           b.kind === "quiz" ||
           b.kind === "calc" ||
           (b.kind === "diagram" && !!b.interactive) ||
+          (b.kind === "engine3d" && (b.controls === undefined || b.controls.length > 0)) ||
           ((b.kind === "instrument" || b.kind === "simViewport") &&
             !!b.yourTurn),
       )

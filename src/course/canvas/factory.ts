@@ -6,6 +6,7 @@ import type {
   BlockFrame,
   CalcDiagram,
   DiagramSpec,
+  EngineKind,
   InstrumentGauge,
   InstrumentView,
   L10n,
@@ -42,7 +43,8 @@ export type LibraryTab =
   | "diagrams"
   | "instruments"
   | "photos"
-  | "interactive";
+  | "interactive"
+  | "engines";
 export const LIBRARY_TABS: readonly LibraryTab[] = [
   "text",
   "shapes",
@@ -51,6 +53,7 @@ export const LIBRARY_TABS: readonly LibraryTab[] = [
   "icons",
   "photos",
   "interactive",
+  "engines",
 ];
 
 /** How the library shows an item (the panel draws the thumbnail). */
@@ -59,6 +62,8 @@ export type LibraryPreview =
   | { k: "shape"; shape: string }
   | { k: "lib"; id: LibraryAssetId }
   | { k: "instrument"; view: InstrumentView }
+  /** a still picture of the 3D engine (course/engines engineSnapshot) */
+  | { k: "engine"; engine: EngineKind }
   | {
       k: "glyph";
       glyph:
@@ -663,6 +668,27 @@ const INTERACTIVE_ITEMS: LibraryItem[] = [
   },
 ];
 
+// ------------------------------------------------------------------ the 3D engines (course/engines)
+/** A 3D engine block: the whole cutaway with its levers and gauges beside it. */
+export function engineDraft(engine: EngineKind, title: L10n, w = 1680, h = 768): BlockDraft {
+  return { kind: "engine3d", engine, alt: title, frame: { w, h } };
+}
+const ENGINE_ITEMS: LibraryItem[] = (
+  [
+    ["piston", L("Piston engine, four strokes", "Moteur à pistons, 4 temps"), ["piston", "cycle", "4 temps", "magneto", "magnéto", "carburettor", "carburateur", "mixture", "mélange", "ppl"]],
+    ["prop", L("Constant-speed propeller", "Hélice à vitesse constante"), ["propeller", "hélice", "governor", "régulateur", "pas", "pitch", "ppl"]],
+    ["turboprop", L("Free-turbine turboprop", "Turbopropulseur à turbine libre"), ["turboprop", "turbopropulseur", "turbine", "ng", "np", "itt", "torque", "couple", "atpl"]],
+    ["turbofan", L("Two-spool turbofan", "Turboréacteur double flux"), ["turbofan", "jet", "réacteur", "n1", "n2", "egt", "by-pass", "dilution", "reverser", "inverseur", "atpl"]],
+  ] as [EngineKind, L10n, string[]][]
+).map(([engine, title, tags]) => ({
+  id: `engine:${engine}`,
+  tab: "engines" as const,
+  title,
+  tags: ["engine", "moteur", "3d", ...tags],
+  preview: { k: "engine" as const, engine },
+  make: () => engineDraft(engine, title),
+}));
+
 /** Every item the library panel offers, in display order per tab. */
 export const LIBRARY_ITEMS: LibraryItem[] = [
   ...TEXT_ITEMS.map(
@@ -766,6 +792,7 @@ export const LIBRARY_ITEMS: LibraryItem[] = [
     }),
   ),
   ...INTERACTIVE_ITEMS,
+  ...ENGINE_ITEMS,
 ];
 const ITEM_BY_ID = new Map(LIBRARY_ITEMS.map((i) => [i.id, i]));
 export const libraryItem = (id: string): LibraryItem | undefined =>
