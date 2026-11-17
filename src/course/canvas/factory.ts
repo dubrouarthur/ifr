@@ -23,6 +23,8 @@ import { DIAGRAMS } from "../assets/diagrams";
 import { PHOTOS } from "../assets/photos";
 import { DEFAULT_GRID, SLIDE_H, SLIDE_W, keepOnSlide, snap } from "./geom";
 import { maxZ, newBlockId } from "./ops";
+import { toolDef } from "../tools/index";
+import type { ToolId } from "../types";
 
 const L = (en: string, fr: string): L10n => ({ en, fr });
 
@@ -161,6 +163,51 @@ export function calcDiagramDraft(
   h = 528,
 ): BlockDraft {
   return diagramDraft({ kind: "calc", calc: c }, title, w, h);
+}
+
+/** a teaching tool (course/tools) at its own size, with the student's default controls and its starting values */
+export function toolDraft(id: ToolId): BlockDraft | null {
+  const d = toolDef(id);
+  if (!d) return null;
+  return {
+    kind: "tool",
+    tool: id,
+    p: { ...d.defaults },
+    alt: L(d.title.en, d.title.fr ?? d.title.en),
+    frame: { w: d.frame.w, h: d.frame.h },
+  };
+}
+/** the navigation calculations that were already live diagrams, offered beside the tools: the student drags them */
+export function navToolDrafts(): { id: string; title: L10n; blurb: L10n; draft: BlockDraft }[] {
+  const live = (id: string) => LIVE_DIAGRAMS.find((d) => d.id === id);
+  const out: { id: string; title: L10n; blurb: L10n; draft: BlockDraft }[] = [];
+  const sixty = live("sixty");
+  if (sixty)
+    out.push({
+      id: "sixty",
+      title: sixty.title,
+      blurb: L("Drag the drift: the heading change to rejoin", "Déplacez l’écart : la correction de cap pour rejoindre"),
+      draft: { ...diagramDraft(sixty.d, sixty.title, 864, 528), interactive: true } as BlockDraft,
+    });
+  const wind = live("wind");
+  if (wind)
+    out.push({
+      id: "wind",
+      title: L("Wind triangle", "Triangle des vitesses"),
+      blurb: L("Drag the wind: drift, heading and ground speed", "Déplacez le vent : dérive, cap et vitesse sol"),
+      draft: { ...diagramDraft(wind.d, wind.title, 864, 528), interactive: true } as BlockDraft,
+    });
+  const rw = L("Crosswind on the runway", "Vent de travers sur la piste");
+  out.push({
+    id: "runwayWind",
+    title: rw,
+    blurb: L("Drag the wind: headwind and crosswind components", "Déplacez le vent : composantes de face et de travers"),
+    draft: {
+      ...calcDiagramDraft({ kind: "runwayWind", runwayHdg: 250, windDir: 290, windKt: 15, drag: ["wind"] }, rw, 864, 528),
+      interactive: true,
+    } as BlockDraft,
+  });
+  return out;
 }
 
 const GAUGE_TITLES: Record<InstrumentGauge, L10n> = {

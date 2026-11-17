@@ -10,6 +10,7 @@
 // Levels: 'error' = the course would play wrong or breaks a rule (a missing scene, an image without alt text, a
 // graded step with an assist); 'warn' = advisory. Errors whose code is STRUCTURAL mean the course cannot be stored
 // or opened at all (not a course, duplicate step ids…); the editor still saves drafts with content errors.
+import { toolDef } from "./tools/index";
 import type {
   AssetRef,
   BlockAction,
@@ -3152,6 +3153,23 @@ function slide(cx: Ctx, s: Step, c: SlideCanvas, path: string) {
       case "calc":
         calcSpec(cx, b.calc, `${p}.calc`, ids);
         break;
+      case "tool": {
+        const def = toolDef(b.tool);
+        if (!def) {
+          push(cx, "error", "slide", `${p}.tool`, L("Unknown tool", "Outil inconnu"), ids);
+          break;
+        }
+        const keys = new Set(def.params.map((q) => q.key));
+        for (const [k, v] of Object.entries(b.p ?? {}))
+          if (!keys.has(k) || typeof v !== "number" || !Number.isFinite(v))
+            push(cx, "error", "slide", `${p}.p.${k}`, L("Unknown or invalid tool value", "Valeur d’outil inconnue ou invalide"), ids);
+        for (const k of b.controls ?? [])
+          if (!keys.has(k))
+            push(cx, "error", "slide", `${p}.controls`, L("Unknown tool control", "Commande d’outil inconnue"), ids);
+        if (b.task && (!keys.has(b.task.key) || !Number.isFinite(b.task.target) || !(b.task.tol >= 0)))
+          push(cx, "error", "slide", `${p}.task`, L("The tool's task names an unknown value", "La tâche de l’outil vise une valeur inconnue"), ids);
+        break;
+      }
       case "checklist": {
         // rows tick from the step goal, or from the slide's YourTurn goal when the step has none
         const yt = ytBlocks[0] as { yourTurn?: YourTurn } | undefined;
@@ -3197,7 +3215,9 @@ export function hasStudentAction(s: Step): boolean {
       b.kind === "quiz" ||
       b.kind === "calc" ||
       ((b.kind === "instrument" || b.kind === "simViewport") && !!b.yourTurn) ||
-      (b.kind === "instrument" && !!b.controls?.length),
+      (b.kind === "instrument" && !!b.controls?.length) ||
+      // a teaching tool with a value to find: the student works the controls to a target
+      (b.kind === "tool" && !!b.task && (b.controls === undefined || b.controls.includes(b.task.key))),
   );
 }
 

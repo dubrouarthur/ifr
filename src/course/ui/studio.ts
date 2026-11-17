@@ -22,6 +22,10 @@ import { GALLERY_GROUPS, galleryScenes, gallerySlides } from "../samples/example
 import { showcaseScenes, startSlides } from "../samples/showcaseDecks";
 import { LibraryPanel } from "../canvas/libraryPanel";
 import type { BlockDraft, LibraryTab } from "../canvas/factory";
+import { navToolDrafts, toolDraft } from "../canvas/factory";
+import { resolveTheme } from "../canvas/themes";
+import { TOOLS } from "../tools/index";
+import { toolColors } from "../tools/kit";
 import { baseThemeId } from "../canvas/themes";
 import { KINDS } from "./reader";
 import { TEMPLATES, titleOfSlide, tr, type TemplateId } from "./templates";
@@ -58,6 +62,7 @@ export type RailTab =
   | "diagrams"
   | "media"
   | "interactive"
+  | "tools"
   | "brand"
   | "cockpit";
 
@@ -74,6 +79,7 @@ const RAIL_ICON: Record<RailTab, string> = {
   media: "M4 5h16v14H4z M4 15l4-4 4 4 3-3 5 5 M15 9.5a1.5 1.5 0 1 0 0-.01",
   interactive:
     "M9 9a3 3 0 1 1 4 2.8c-.8.4-1 1-1 1.7V14 M12 17.5v.5 M4 4h16v16H4z",
+  tools: "M4 7h9 M17 7h3 M15 5v4 M4 17h3 M11 17h9 M9 15v4 M4 12h5 M13 12h7 M11 10v4",
   brand: "M5 20V5h9l-1.5 3.5L14 12H5 M5 4v17",
   cockpit: "M3 17l9-9 9 9 M7 13v6h10v-6 M12 3v5",
 };
@@ -85,6 +91,7 @@ const RAIL_LABEL: Record<RailTab, [string, string]> = {
   diagrams: ["Diagrams", "Schémas"],
   media: ["Media", "Médias"],
   interactive: ["Questions", "Questions"],
+  tools: ["Tools", "Outils"],
   brand: ["Club logo", "Logo du club"],
   cockpit: ["Simulator", "Simulateur"],
 };
@@ -114,6 +121,10 @@ const RAIL_HINT: Record<RailTab, [string, string]> = {
     "A question, a calculation, a checklist the simulator ticks",
     "Une question, un calcul, une check-list cochée par le simulateur",
   ],
+  tools: [
+    "Live teaching tools the student works on the slide: tap to add",
+    "Des outils en direct que l’élève manipule sur la diapo : touchez pour ajouter",
+  ],
   brand: [
     "Your school's logo and colour on every slide",
     "Le logo et la couleur de l’école sur chaque diapo",
@@ -132,6 +143,7 @@ export const RAIL_TABS: readonly RailTab[] = [
   "instruments",
   "cockpit",
   "interactive",
+  "tools",
   "media",
 ];
 /** the parts of « Médias », in order */
@@ -151,6 +163,7 @@ export const SLIDE_ONLY: ReadonlySet<RailTab> = new Set([
   "diagrams",
   "media",
   "interactive",
+  "tools",
 ]);
 const LIB_TABS: Partial<Record<RailTab, LibraryTab[]>> = {
   text: ["text"],
@@ -358,6 +371,7 @@ export class StudioPanel {
     } else if (tab === "media") this.media();
     else if (tab === "brand") this.brand();
     else if (tab === "cockpit") this.simulator();
+    else if (tab === "tools") this.tools();
     else this.library(tab);
   }
   hide() {
@@ -385,6 +399,80 @@ export class StudioPanel {
     this.kitPanel = null;
     for (const p of this.simParts.splice(0)) p.destroy();
     this.body.replaceChildren();
+  }
+
+  // ---------------------------------------------------------------- the Outils panel
+  /**
+   * The teaching tools (course/tools), each drawn live from its starting values in the course theme, with what it
+   * teaches and its syllabus subject; one tap adds it in the free-est spot of the slide (editorCore.addDraft →
+   * placement.fitFree). Then the navigation calculations that were already live diagrams (1 in 60, wind triangle,
+   * crosswind), added ready to drag.
+   */
+  private tools() {
+    const host = this.host;
+    const lang = host.lang;
+    const T = (en: string, fr: string) => t2(lang, en, fr);
+    if (!host.onSlide) {
+      this.body.replaceChildren(
+        h(
+          "div",
+          { class: "ce-panel-off" },
+          h(
+            "p",
+            {},
+            T(
+              "Tools go on a designed slide. Pick a slide in the strip below, or add one from Templates.",
+              "Les outils vont sur une diapo. Choisissez une diapo dans la bande du bas, ou ajoutez-en une depuis Modèles.",
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+    const theme = resolveTheme(host.course.theme ?? "classroom", host.course.brand);
+    const colors = toolColors(theme);
+    const add = (d: BlockDraft | null) => {
+      if (!d) return;
+      host.addDraft(d);
+      host.afterAdd?.();
+    };
+    const grid = h("div", { class: "ce-tools" });
+    for (const def of TOOLS) {
+      const art = h("span", { class: "ce-tool-art", "aria-hidden": "true" });
+      art.style.background = theme.colors.bg;
+      const v = def.draw({ ...def.defaults }, { lang, c: colors, t: 0, moving: false });
+      // our own markup (course/tools/kit.ts Svg escapes every text)
+      art.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${def.view.w} ${def.view.h}" font-family="Inter, system-ui, sans-serif">${v.svg}</svg>`;
+      const b = h(
+        "button",
+        { type: "button", class: "ce-tool", "data-tool": def.id },
+        art,
+        h(
+          "span",
+          { class: "ce-tool-t" },
+          h("b", {}, tr(def.title, lang)),
+          h("span", {}, tr(def.blurb, lang)),
+          h("i", {}, def.subject),
+        ),
+      );
+      b.addEventListener("click", () => add(toolDraft(def.id)));
+      grid.append(b);
+    }
+    const nav = h("div", { class: "ce-tools is-nav" });
+    for (const n of navToolDrafts()) {
+      const b = h(
+        "button",
+        { type: "button", class: "ce-tool is-text", "data-tool": `nav:${n.id}` },
+        h("span", { class: "ce-tool-t" }, h("b", {}, tr(n.title, lang)), h("span", {}, tr(n.blurb, lang)), h("i", {}, "PPL · 061")),
+      );
+      b.addEventListener("click", () => add(n.draft));
+      nav.append(b);
+    }
+    this.body.replaceChildren(
+      grid,
+      h("h3", { class: "ce-tools-h" }, T("Navigation calculations to drag", "Calculs de navigation à manipuler")),
+      nav,
+    );
   }
 
   // ---------------------------------------------------------------- the Simulateur panel

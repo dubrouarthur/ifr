@@ -1,6 +1,7 @@
 // Presenter notes when the author wrote none (audit item 22, Lane B fallback): the console builds a few lines
 // from what the step already says — the objective the student must hold (« Faites manipuler : … ») and the answer
 // to any question on the slide — so the instructor is never left with « Pas de notes ». Pure: no DOM.
+import { toolDef } from "../tools/index";
 import type { GoalCheck, L10n, Lang, Quiz, Step, StepGoal } from "../types";
 import { goalLabel } from "../goals";
 
@@ -81,6 +82,11 @@ export function fallbackNotes(step: Step, lang: Lang): string[] {
     const yt = (b as { yourTurn?: { goal?: StepGoal } }).yourTurn;
     if (yt?.goal) push(goalLine(yt.goal, lang));
     if (b.kind === "quiz") push(quizLine(b.quiz, lang));
+    if (b.kind === "tool") {
+      const d = toolDef(b.tool);
+      if (b.task) push((lang === "fr" ? "Tâche : " : "Task: ") + tx(b.task.prompt, lang));
+      if (d) push(tx(d.note, lang));
+    }
   }
   // nothing to fly and nothing to answer (a demo, an explanation): the author's own note on the slide (« En
   // classe : … », only the author sees it), then the slide's points to say, in reading order (re-walk P2: a template

@@ -124,6 +124,7 @@ const KIND: Record<string, [string, string]> = {
   calc: ["Calculation", "Calcul"],
   checklist: ["Checklist", "Liste de vérification"],
   quiz: ["Question", "Question"],
+  tool: ["Tool", "Outil"],
 };
 export function blockKindLabel(kind: string, lang: Lang = "en"): string {
   const v = KIND[kind];

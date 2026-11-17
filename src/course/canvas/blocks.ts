@@ -57,6 +57,8 @@ import { holdFootText } from "../../train/diagram";
 import type { DiagramHub } from "./diagramMirror";
 import { problemFor, checkAnswer } from "../calc/index";
 import { UNIT_LABEL } from "../calc/text";
+import { toolBlock } from "./toolBlock";
+import { toolDef } from "../tools/index";
 
 export type SlideMode = "play" | "edit" | "thumb";
 type Of<K extends SlideBlock["kind"]> = Extract<SlideBlock, { kind: K }>;
@@ -1665,6 +1667,8 @@ export function renderBlock(b: SlideBlock, env: BlockEnv): BlockView {
       return calcBlock(b, env);
     case "checklist":
       return checklistBlock(b, env);
+    case "tool":
+      return toolBlock(b, env);
     default: {
       const el = mk(
         "div",
@@ -1694,6 +1698,10 @@ export function blockLabel(b: SlideBlock, lang: Lang): string {
         : tx("quizSlot", lang);
     case "calc":
       return tx("calcSlot", lang);
+    case "tool": {
+      const d = toolDef(b.tool);
+      return d ? (lang === "fr" ? (d.title.fr ?? d.title.en) : d.title.en) : blockKindLabel(b.kind, lang);
+    }
     default:
       return blockKindLabel(b.kind, lang);
   }

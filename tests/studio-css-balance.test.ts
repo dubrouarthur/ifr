@@ -9,6 +9,7 @@ const FILES = [
   "src/styles/course-canvas.css",
   "src/styles/newcourse.css",
   "src/styles/course-ai.css",
+  "src/styles/course-tools.css",
 ];
 describe("studio stylesheets", () => {
   for (const f of FILES)

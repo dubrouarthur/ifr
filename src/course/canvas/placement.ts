@@ -21,6 +21,7 @@ type Kind = SlideBlock["kind"];
 const VISUAL: ReadonlySet<Kind> = new Set<Kind>([
   "instrument",
   "diagram",
+  "tool",
   "image",
   "simViewport",
 ]);
