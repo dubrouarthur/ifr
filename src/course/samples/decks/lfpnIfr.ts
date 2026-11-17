@@ -20,7 +20,12 @@ import type {
   Step,
 } from "../../types";
 import { holdEntry, type HoldEntry } from "../../../nav/holding";
-import { bearingDeg, destination, type LatLon } from "../../../nav/geo";
+import {
+  bearingDeg,
+  destination,
+  distanceNm,
+  type LatLon,
+} from "../../../nav/geo";
 import { simFrameOf } from "../../../nav/world";
 import { DEFAULT_GRID } from "../../canvas/geom";
 import { G as GR, INST, MARK, T } from "../../canvas/layouts";
@@ -85,6 +90,8 @@ const R07R = LFPN_RUNWAYS[1];
 const ILS = LFPN_ILS25R;
 const D = LFPN_DERIVED;
 const TNO = LFPN_NAV.tno;
+/** the highest sector of the conventional MSA: a briefing quotes it, not only the lowest figure */
+const MSA_MAX = Math.max(LFPN_MSA.convFt, ...LFPN_MSA.sectors.map((s) => s.ft));
 
 // ------------------------------------------------------------------ where the situations are
 // The real-world region loaded around LFPN (course/realWorld.ts) turns magnetic north into the simulator's grid
@@ -107,6 +114,13 @@ const onFinal = (nm: number, left = 0): LatLon => {
 };
 /** the glide path's altitude `nm` from the threshold: threshold + RDH + 372 ft per NM */
 const glideAlt = (nm: number) => Math.round(D.thrCrossFt + nm * D.ftPerNm);
+/** where the glide path reaches the DA, NM before the threshold: (710 − 562) ÷ 372 ≈ 0.4 */
+export const DA_NM = (ILS.daFt - D.thrCrossFt) / D.ftPerNm;
+/** the DME of TNO sits at the glide path antenna, past the threshold: a DME reading is this much more than the
+ *  distance to the threshold */
+export const DME_PAST_THR = distanceNm(TNO.gpPos, THR25R);
+/** the FAF (6.7 DME) from the threshold, NM: where the 3,000 ft intercept meets the 3.5° path */
+export const FAF_NM = ILS.fafDme - DME_PAST_THR;
 
 const ON_ILS = {
   nav1: TNO.loc,
@@ -114,6 +128,11 @@ const ON_ILS = {
   obs1: ILS.finalCourse,
   obs2: ILS.finalCourse,
   cdi: "NAV1" as const,
+  // the radios of a French field, not the house defaults: TOUSSUS Tower and the ATIS, squawk 7000 (VFR
+  // conspicuity code in France) until ATC assigns one
+  com1: LFPN_FREQ.tower,
+  com2: LFPN_FREQ.atis,
+  xpdr: LFPN_LESSON.squawk,
 };
 /** A situation of the course: the ILS final of the ready situations (its power and trim for 90 kt on a glide
  *  path), moved to LFPN, the radios on TNO. Level situations take the power of a level 90 kt. */
@@ -139,7 +158,8 @@ const at = (
     wind: { dir: 0, kt: 0 },
   });
   // the radios by frequency: the training region (where the course is built) has no TNO
-  if (sc.pose.kind === "fields") sc.pose.radios = { ...sc.pose.radios, ...ON_ILS };
+  if (sc.pose.kind === "fields")
+    sc.pose.radios = { ...sc.pose.radios, ...ON_ILS };
   sc.world = { ...LFPN_WORLD, icaos: [...LFPN_WORLD.icaos] };
   return sc;
 };
@@ -153,11 +173,12 @@ const scenes = (): Record<string, SimScene> => ({
     ILS.finalCourse,
     -D.vsFpm,
   ),
-  // 11 NM out, 0.7 NM left of the final, at the IF altitude, heading 30° onto the course
+  // 11 NM out, 0.45 NM left of the final (the bar just off the stop, 1.7 dots: it moves within seconds), at the IF
+  // altitude, heading 30° onto the course
   "pn.intercept": at(
     "pn.intercept",
     "LFPN · ILS 25R · 11 NM · 30° intercept at 3,000 ft",
-    onFinal(11, 0.7),
+    onFinal(11, 0.45),
     ILS.ifAltFt,
     D.interceptHdg,
     0,
@@ -171,19 +192,19 @@ const scenes = (): Record<string, SimScene> => ({
     ILS.finalCourse,
     -D.vsFpm,
   ),
-  // 2 NM out on the glide path: the minima and the missed approach
+  // 0.8 NM out on the glide path, a quarter of a minute before the DA: the minima and the missed approach
   "pn.final": at(
     "pn.final",
-    "LFPN · ILS 25R · 2 NM · on the glide",
-    onFinal(2),
-    glideAlt(2),
+    `LFPN · ILS 25R · ${FINAL_NM} NM · on the glide`,
+    onFinal(FINAL_NM),
+    glideAlt(FINAL_NM),
     ILS.finalCourse,
     -D.vsFpm,
   ),
   // the simulator flight: on the localizer at the IF altitude, the glide path ahead
   "pn.fly": at(
     "pn.fly",
-    "LFPN · ILS 25R · 9 NM · 3,000 ft on the localizer",
+    `LFPN · ILS 25R · ${LFPN_LESSON.flyStartNm} NM · 3,000 ft on the localizer`,
     onFinal(LFPN_LESSON.flyStartNm),
     ILS.ifAltFt,
     ILS.finalCourse,
@@ -219,62 +240,66 @@ const GLIDE35: MotionScript = {
     },
   ],
 };
-// The last two miles of the ILS 25R, then the published missed approach. From 2 NM on the glide (the scene), the
-// DA is reached 0.4 NM before the threshold: (710 − 562) ÷ 372 ft/NM. 1.6 NM at 90 kt ≈ 64 s. Full power, climb
-// on the centreline at about 700 ft/min and 74 kt; TSU (by the far end of the runway) about 44 s later, the small
-// left turn onto MAG 246°; 1,400 ft reached at about 125 s, then the speed may build. Heights are keyed relative
-// to the scene's altitude (the six instruments show the altitude itself).
-const T_DA = 64;
-const altAt = (ft: number) => ft - glideAlt(2);
+// The end of the ILS 25R, then the published missed approach. The scene sits 0.8 NM out on the glide (so the class
+// waits a quarter of a minute, not a minute, for the decision); the DA is reached 0.4 NM before the threshold:
+// (710 − 562) ÷ 372 ft/NM, 0.4 NM further at 90 kt ≈ 16 s. Full power, climb on the centreline at about 700 ft/min
+// and 74 kt; TSU (by the far end of the runway) about 44 s later, the small left turn onto MAG 246°; 1,400 ft
+// reached about 61 s after the DA, then the speed may build. Heights are keyed relative to the scene's altitude
+// (the six instruments show the altitude itself).
+const FINAL_NM = 0.8;
+const T_DA = Math.round(((FINAL_NM - DA_NM) * 3600) / LFPN_LESSON.iasKt);
+const T_TSU = T_DA + 44;
+const T_ACC = T_DA + 61;
+const T_END = T_DA + 68;
+const altAt = (ft: number) => ft - glideAlt(FINAL_NM);
 const MISSED_TRACKS = {
   hdg: [
     [0, 0],
-    [108, 0],
-    [112, ILS.missedRm - ILS.finalCourse],
-    [132, ILS.missedRm - ILS.finalCourse],
+    [T_TSU, 0],
+    [T_TSU + 4, ILS.missedRm - ILS.finalCourse],
+    [T_END, ILS.missedRm - ILS.finalCourse],
   ] as [number, number][],
   alt: [
     [0, 0],
     [T_DA, altAt(ILS.daFt)],
     [T_DA + 3, altAt(ILS.daFt) + 4],
-    [108, altAt(1220)],
-    [125, altAt(ILS.accelAltFt)],
-    [132, altAt(ILS.accelAltFt) + 60],
+    [T_TSU, altAt(1220)],
+    [T_ACC, altAt(ILS.accelAltFt)],
+    [T_END, altAt(ILS.accelAltFt) + 60],
   ] as [number, number][],
   ias: [
     [0, LFPN_LESSON.iasKt],
     [T_DA, LFPN_LESSON.iasKt],
     [T_DA + 6, 80],
     [T_DA + 16, 74],
-    [125, 74],
-    [132, 80],
+    [T_ACC, 74],
+    [T_END, 80],
   ] as [number, number][],
   rpm: [
     [0, 1900],
     [T_DA, 1900],
     [T_DA + 2, 2550],
-    [132, 2550],
+    [T_END, 2550],
   ] as [number, number][],
 };
+/** The DA question: the altimeter comes down on the glide and stops short of the DA (the answer is not shown;
+ *  the still picture, for reduced motion, is the start). */
 const DA_ONLY: MotionScript = {
-  duration: 80,
+  duration: T_DA - 5,
   hdgRef: "start",
   tracks: MISSED_TRACKS,
-  telling: T_DA + 1,
-  marks: [
-    {
-      id: "da",
-      t: T_DA,
-      label: LN((l) =>
-        l === "fr"
-          ? `DA ${ILS.daFt} ft : on décide`
-          : `DA ${ILS.daFt} ft: decide`,
-      ),
-    },
-  ],
+  telling: 0,
+};
+/** The acceleration question: the go-around up to the climb on the centreline, stopped well before 1,400 ft and
+ *  before the speed builds (the full missed approach is the slide before). */
+const MISSED_Q: MotionScript = {
+  duration: T_DA + 40,
+  hdgRef: "start",
+  tracks: MISSED_TRACKS,
+  telling: T_DA + 20,
 };
 const MISSED: MotionScript = {
-  duration: 132,
+  duration: T_END,
   hdgRef: "start",
   tracks: MISSED_TRACKS,
   telling: T_DA + 8,
@@ -298,7 +323,7 @@ const MISSED: MotionScript = {
     },
     {
       id: "tsu",
-      t: 109,
+      t: T_TSU + 1,
       label: LN((l) =>
         l === "fr"
           ? `TSU : à gauche, RM ${ILS.missedRm}°`
@@ -307,7 +332,7 @@ const MISSED: MotionScript = {
     },
     {
       id: "acc",
-      t: 125,
+      t: T_ACC,
       label: LN((l) =>
         l === "fr"
           ? `${nb(ILS.accelAltFt, "fr")} ft : on peut accélérer`
@@ -360,7 +385,13 @@ const rows = (
     }),
   ]);
 /** the « à vérifier » line under a briefing */
-const checkLine = (x: number, y: number, w: number, h = 80): SlideBlock =>
+const checkLine = (
+  x: number,
+  y: number,
+  w: number,
+  h = 80,
+  reveal?: number,
+): SlideBlock =>
   T(
     "small",
     LN((l) =>
@@ -372,8 +403,14 @@ const checkLine = (x: number, y: number, w: number, h = 80): SlideBlock =>
     y,
     w,
     h,
-    { color: "muted" },
+    { color: "muted", ...(reveal ? { reveal, group: `r${reveal - 1}` } : {}) },
   );
+
+/** a block painted over the ones it shares its frame with (an answer revealed over the question's picture) */
+const onTop = (b: SlideBlock): SlideBlock => ({
+  ...b,
+  frame: { ...b.frame, z: b.frame.z + 1 },
+});
 
 /** Metres east / north of the reference point (flat earth over a few hundred metres). */
 const enu = (p: { lat: number; lon: number }): [number, number] => [
@@ -527,7 +564,9 @@ function factQuizStep(o: {
           536,
         ),
         ...o.facts.map((t, i) => T("body", t, 1224, 152 + i * 168, 576, 152)),
-        ...(o.check ? [checkLine(1224, 152 + o.facts.length * 168, 576, 168)] : []),
+        ...(o.check
+          ? [checkLine(1224, 152 + o.facts.length * 168, 576, 168)]
+          : []),
         foot(o.source),
       ],
       o.scene,
@@ -561,7 +600,16 @@ function factsStep(o: {
         T("title", o.title, GR.left, GR.titleY, 1680, 168),
         ...rows(o.lines, GR.left, 336, 1032, pitch),
         ...(o.check
-          ? [checkLine(GR.left + 80, 336 + o.lines.length * pitch + 8, 904)]
+          ? [
+              // with the last row (never alone under an empty column)
+              checkLine(
+                GR.left + 80,
+                336 + o.lines.length * pitch + 8,
+                904,
+                80,
+                o.lines.length,
+              ),
+            ]
           : []),
         o.visual,
         foot(o.source),
@@ -692,8 +740,8 @@ export function lfpnIfrCourse(): Course {
           ),
           why: LN((l) =>
             l === "fr"
-              ? `Oui : on pénètre la R 35 A (sol–${nb(LFPN_RULES.r35a.ceilFt, "fr")} ft) et la 35 B sur autorisation de la tour, transpondeur mode 3/A obligatoire.`
-              : `Yes: R 35 A (surface–${nb(LFPN_RULES.r35a.ceilFt, "en")} ft) and 35 B are entered on the tower's clearance, mode 3/A transponder required.`,
+              ? `Oui : aux horaires ATS (annoncés par NOTAM), on pénètre la R 35 A (sol–${nb(LFPN_RULES.r35a.ceilFt, "fr")} ft) et la 35 B sur autorisation de la tour, transpondeur mode 3/A obligatoire.`
+              : `Yes: during ATS hours (announced by NOTAM), R 35 A (surface–${nb(LFPN_RULES.r35a.ceilFt, "en")} ft) and 35 B are entered on the tower's clearance, mode 3/A transponder required.`,
           ),
         },
         {
@@ -722,8 +770,8 @@ export function lfpnIfrCourse(): Course {
         ),
         LN((l) =>
           l === "fr"
-            ? `**R 35 A** sol–${nb(LFPN_RULES.r35a.ceilFt, "fr")} ft · **35 B** ${nb(LFPN_RULES.r35b.floorFt, "fr")}–${nb(LFPN_RULES.r35b.ceilFt, "fr")} ft (ouest)`
-            : `**R 35 A** SFC–${nb(LFPN_RULES.r35a.ceilFt, "en")} ft · **35 B** ${nb(LFPN_RULES.r35b.floorFt, "en")}–${nb(LFPN_RULES.r35b.ceilFt, "en")} ft (west)`,
+            ? `**R 35 A** sol–${nb(LFPN_RULES.r35a.ceilFt, "fr")} ft · **35 B** ${nb(LFPN_RULES.r35b.floorFt, "fr")}–${nb(LFPN_RULES.r35b.ceilFt, "fr")} ft (ouest), actives aux horaires ATS (NOTAM)`
+            : `**R 35 A** SFC–${nb(LFPN_RULES.r35a.ceilFt, "en")} ft · **35 B** ${nb(LFPN_RULES.r35b.floorFt, "en")}–${nb(LFPN_RULES.r35b.ceilFt, "en")} ft (west), active in ATS hours (NOTAM)`,
         ),
         LN((l) =>
           l === "fr"
@@ -896,6 +944,38 @@ export function lfpnIfrCourse(): Course {
             960,
             536,
           ),
+          // the answer: the same map with the arriving aircraft, its sector and its entry, over the plain one once
+          // answered (before that, the sectors only: the question never shows its own answer)
+          onTop(
+            DIAGRAM(
+              "pn-hold-entry.answer",
+              {
+                kind: "hold",
+                inbound: H.inbound,
+                turn: H.turn,
+                fix: H.fix,
+                crs: toMolba,
+              },
+              LN((l) =>
+                l === "fr"
+                  ? `L’attente de MOLBA, arrivée au cap ${p3(toMolba)} : entrée ${ENTRY_NAME[entry].fr?.toLowerCase()}`
+                  : `The MOLBA hold, arriving heading ${p3(toMolba)}: ${ENTRY_NAME[entry].en.toLowerCase()} entry`,
+              ),
+              1104,
+              176,
+              696,
+              784,
+              {
+                // once the right answer is shown: not after a first wrong answer, when the student tries again
+                reveal: { order: 1, when: "answerShown" },
+                caption: LN((l) =>
+                  l === "fr"
+                    ? `Attente MOLBA : rapprochement ${p3(H.inbound)}°, virages à droite`
+                    : `MOLBA hold: inbound ${p3(H.inbound)}°, right turns`,
+                ),
+              },
+            ),
+          ),
           DIAGRAM(
             "pn-hold-entry.hold",
             {
@@ -903,12 +983,11 @@ export function lfpnIfrCourse(): Course {
               inbound: H.inbound,
               turn: H.turn,
               fix: H.fix,
-              crs: toMolba,
             },
             LN((l) =>
               l === "fr"
-                ? `L’attente de MOLBA et ses secteurs d’entrée, arrivée au cap ${p3(toMolba)}`
-                : `The MOLBA hold and its entry sectors, arriving heading ${p3(toMolba)}`,
+                ? `L’attente de MOLBA et ses trois secteurs d’entrée ; vous arrivez au cap ${p3(toMolba)}`
+                : `The MOLBA hold and its three entry sectors; you arrive heading ${p3(toMolba)}`,
             ),
             1104,
             176,
@@ -968,8 +1047,8 @@ export function lfpnIfrCourse(): Course {
         ),
         LN((l) =>
           l === "fr"
-            ? `MSA **${nb(LFPN_MSA.convFt, l)} ft** (${LFPN_MSA.convNm} NM TSU) · cartes RNAV **${nb(LFPN_MSA.rnavFt, l)} ft**`
-            : `MSA **${nb(LFPN_MSA.convFt, l)} ft** (${LFPN_MSA.convNm} NM TSU) · RNAV charts **${nb(LFPN_MSA.rnavFt, l)} ft**`,
+            ? `MSA **${nb(LFPN_MSA.convFt, l)} ft**, jusqu’à **${nb(MSA_MAX, l)} ft** selon le secteur (${LFPN_MSA.convNm} NM TSU) · RNAV **${nb(LFPN_MSA.rnavFt, l)} ft**`
+            : `MSA **${nb(LFPN_MSA.convFt, l)} ft**, up to **${nb(MSA_MAX, l)} ft** by sector (${LFPN_MSA.convNm} NM TSU) · RNAV **${nb(LFPN_MSA.rnavFt, l)} ft**`,
         ),
         LN((l) =>
           l === "fr"
@@ -1039,15 +1118,15 @@ export function lfpnIfrCourse(): Course {
       view: gauge("alt"),
       alt: LN((l) =>
         l === "fr"
-          ? `Altimètre jusqu’à la DA de l’ILS 25R, ${ILS.daFt} ft`
-          : `Altimeter down to the DA of the ILS 25R, ${ILS.daFt} ft`,
+          ? `Altimètre en descente sur le glide de l’ILS 25R`
+          : `Altimeter coming down the glide path of the ILS 25R`,
       ),
       scene: "pn.final",
       motion: { script: DA_ONLY },
       notes: LN((l) =>
         l === "fr"
-          ? `L’altimètre descend jusqu’à la DA en temps réel : faites dire « décision » à ${ILS.daFt} ft. Rappelez la différence ILS / LOC : sans glide, ce sont les minima LOC (MDA ${ILS.mdaLocFt} ft).`
-          : `The altimeter comes down to the DA in real time: have the class say « decide » at ${ILS.daFt} ft. Recall ILS against LOC: without the glide path, the LOC minima apply (MDA ${ILS.mdaLocFt} ft).`,
+          ? `L’altimètre descend sur le glide en temps réel et s’arrête juste avant la DA : demandez à la classe où elle décide avant de laisser répondre (${ILS.daFt} ft). Rappelez la différence ILS / LOC : sans glide, ce sont les minima LOC (MDA ${ILS.mdaLocFt} ft).`
+          : `The altimeter comes down the glide path in real time and stops just short of the DA: ask the class where it decides before anyone answers (${ILS.daFt} ft). Recall ILS against LOC: without the glide path, the LOC minima apply (MDA ${ILS.mdaLocFt} ft).`,
       ),
     }),
     // 10 ------------------------------------------------------------------ your turn: the intercept
@@ -1115,7 +1194,7 @@ export function lfpnIfrCourse(): Course {
       notes: LN((l) =>
         l === "fr"
           ? `Donnez les commandes à un élève. Il est à ${nb(ILS.ifAltFt, l)} ft (l’altitude de l’IF), ${LFPN_LESSON.interceptDeg}° d’interception. L’erreur classique : attendre que la barre soit centrée pour virer, et traverser l’axe.`
-          : `Hand the controls to a student. He is at ${nb(ILS.ifAltFt, l)} ft (the IF altitude), a ${LFPN_LESSON.interceptDeg}° intercept. The classic error: waiting for the bar to centre before turning, and flying through the course.`,
+          : `Hand the controls to a student. The student is at ${nb(ILS.ifAltFt, l)} ft (the IF altitude), a ${LFPN_LESSON.interceptDeg}° intercept. The classic error: waiting for the bar to centre before turning, and flying through the course.`,
       ),
     }),
     // 11 ------------------------------------------------------------------ the 3.5° glide path
@@ -1132,10 +1211,25 @@ export function lfpnIfrCourse(): Course {
           kind: "calc",
           calc: {
             kind: "profile",
+            // from the intercept altitude down to where the path crosses the threshold (503 + RDH 59 ft): it starts
+            // at the FAF (6.7 DME, the DME being at the glide path antenna) and meets the DA 0.4 NM before the
+            // threshold
             fromFt: ILS.ifAltFt,
-            toFt: ILS.daFt,
+            toFt: D.thrCrossFt,
             angleDeg: ILS.gpDeg,
             gsKt: LFPN_LESSON.iasKt,
+            startLabel: LN((l) =>
+              l === "fr"
+                ? `FAF ${dc(ILS.fafDme, l)} DME`
+                : `FAF ${ILS.fafDme} DME`,
+            ),
+            marks: [
+              {
+                distNm: DA_NM,
+                altFt: ILS.daFt,
+                label: `DA ${ILS.daFt}`,
+              },
+            ],
           },
         },
         alt: LN((l) =>
@@ -1172,8 +1266,8 @@ export function lfpnIfrCourse(): Course {
       motion: { script: GLIDE35 },
       notes: LN((l) =>
         l === "fr"
-          ? `${dc(ILS.gpDeg, l)}° au lieu de 3° : la règle « 5 × la vitesse sol » sous-estime le vario d’environ 15 %. Le PAPI de la 25R est calé à ${dc(R07L.papiDeg[1], l)}° lui aussi. Vent de face : la vitesse sol baisse, le vario aussi.`
-          : `${ILS.gpDeg}° instead of 3°: the « 5 × the ground speed » rule underestimates the descent rate by about 15 %. The 25R PAPI is set at ${R07L.papiDeg[1]}° too. With a headwind the ground speed drops, and so does the descent rate.`,
+          ? `${dc(ILS.gpDeg, l)}° au lieu de 3° : la règle « 5 × la vitesse sol » sous-estime le vario d’environ 15 %. Le PAPI de la 25R est calé à ${dc(R07L.papiDeg[1], l)}° lui aussi. Vent de face : la vitesse sol baisse, le vario aussi. Le profil part du FAF (${dc(ILS.fafDme, l)} DME, le DME étant à l’antenne glide, au-delà du seuil) à ${nb(ILS.ifAltFt, l)} ft et passe la DA environ ${dc(Math.round(DA_NM * 10) / 10, l)} NM avant le seuil.`
+          : `${ILS.gpDeg}° instead of 3°: the « 5 × the ground speed » rule underestimates the descent rate by about 15 %. The 25R PAPI is set at ${R07L.papiDeg[1]}° too. With a headwind the ground speed drops, and so does the descent rate. The profile starts at the FAF (${ILS.fafDme} DME, the DME being at the glide path antenna, past the threshold) at ${nb(ILS.ifAltFt, l)} ft and passes the DA about ${Math.round(DA_NM * 10) / 10} NM before the threshold.`,
       ),
     }),
     // 12 ------------------------------------------------------------------ your turn: on the glide path
@@ -1403,14 +1497,14 @@ export function lfpnIfrCourse(): Course {
       view: gauge("alt"),
       alt: LN((l) =>
         l === "fr"
-          ? `Altimètre : la DA puis la montée vers ${nb(ILS.accelAltFt, l)} ft`
-          : `Altimeter: the DA then the climb to ${nb(ILS.accelAltFt, l)} ft`,
+          ? `Altimètre : la DA, puis la remise de gaz en montée dans l’axe`
+          : `Altimeter: the DA, then the go-around climbing on the centreline`,
       ),
       scene: "pn.final",
-      motion: { script: MISSED },
+      motion: { script: MISSED_Q },
       notes: L(
-        "A noise rule as much as an obstacle one: climb first. Ask the class to recite the missed approach in three parts.",
-        "Une règle de bruit autant que d’obstacles : on monte d’abord. Faites réciter la remise de gaz en trois temps.",
+        "The chart says « Climb to 1400 (897) before accelerating in level flight »: climb first. The animation stops before the answer; ask the class to recite the missed approach in three parts.",
+        "La carte dit « Monter à 1400 (897) avant d’accélérer en palier » : on monte d’abord. L’animation s’arrête avant la réponse ; faites réciter la remise de gaz en trois temps.",
       ),
     }),
     // 16 ------------------------------------------------------------------ the simulator
@@ -1422,7 +1516,7 @@ export function lfpnIfrCourse(): Course {
       ),
       brief: LN((l) =>
         l === "fr"
-          ? `À ${LFPN_LESSON.flyStartNm} NM sur le localizer, ${nb(ILS.ifAltFt, l)} ft, ${LFPN_LESSON.iasKt} kt, en IMC. Glide de ${dc(ILS.gpDeg, l)}° : les deux aiguilles **à moins d’une demi-échelle** jusqu’à **${ILS.daFt} ft**.`
+          ? `À ${dc(LFPN_LESSON.flyStartNm, l)} NM sur le localizer, ${nb(ILS.ifAltFt, l)} ft, ${LFPN_LESSON.iasKt} kt, en IMC. Interceptez le glide de ${dc(ILS.gpDeg, l)}° et gardez les deux aiguilles **à moins d’une demi-échelle** jusqu’à **${ILS.daFt} ft**.`
           : `${LFPN_LESSON.flyStartNm} NM out on the localizer, ${nb(ILS.ifAltFt, l)} ft, ${LFPN_LESSON.iasKt} kt, in cloud. Intercept the ${ILS.gpDeg}° glide path and keep both needles **within half scale** down to **${ILS.daFt} ft**.`,
       ),
       scene: "pn.fly",
@@ -1438,6 +1532,8 @@ export function lfpnIfrCourse(): Course {
       goal: [GOAL.cdi(2.5), { id: "gsDefl", p: { maxDots: 2.5 } }],
       holdS: LFPN_LESSON.flyHoldS,
       durationS: LFPN_LESSON.flyDurationS,
+      // the flight ends at the DA (the brief's promise), the duration only as a ceiling
+      endWhen: [GOAL.alt(0, ILS.daFt)],
       success: L(
         "Both needles within half scale for a minute on the 3.5° glide path: a stable approach.",
         "Les deux aiguilles à moins d’une demi-échelle pendant une minute sur le glide de 3,5° : une approche stable.",
@@ -1449,8 +1545,8 @@ export function lfpnIfrCourse(): Course {
       ),
       notes: LN((l) =>
         l === "fr"
-          ? `Le simulateur charge la région réelle autour de LFPN (pistes, VOR TSU, ILS TNO) : comptez quelques secondes. Environ quatre minutes de vol. « Ouvrir le simulateur » le montre d’abord à la classe ; « Reprendre le cours » revient ici. ${LFPN_DISCLAIMER.fr}.`
-          : `The simulator loads the real region around LFPN (runways, VOR TSU, ILS TNO): allow a few seconds. About four minutes of flight. « Ouvrir le simulateur » shows it to the class first; « Reprendre le cours » comes back here. ${LFPN_DISCLAIMER.en}.`,
+          ? `Le simulateur charge la région réelle autour de LFPN (pistes, VOR TSU, ILS TNO) : comptez quelques secondes. Un peu moins de cinq minutes de vol : le vol s’arrête de lui-même à la DA. « Ouvrir le simulateur » le montre d’abord à la classe ; « Reprendre le cours » revient ici. ${LFPN_DISCLAIMER.fr}.`
+          : `The simulator loads the real region around LFPN (runways, VOR TSU, ILS TNO): allow a few seconds. A little under five minutes of flight: it stops by itself at the DA. « Ouvrir le simulateur » shows it to the class first; « Reprendre le cours » comes back here. ${LFPN_DISCLAIMER.en}.`,
       ),
     }),
     // 17 ------------------------------------------------------------------ takeaways

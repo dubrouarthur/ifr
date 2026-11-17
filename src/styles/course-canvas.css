@@ -835,6 +835,11 @@
   text-wrap: balance;
   margin-top: calc(-14px * var(--q));
 }
+/* the pull towards the eyebrow only when there is one: first in the block (the slide's own eyebrow says
+   « Question »), the prompt keeps its line box, or the block's overflow clips the tops of its letters */
+.sl-q-prompt:first-child {
+  margin-top: 0;
+}
 .sl-q-prompt p {
   margin: 0;
 }
@@ -1048,10 +1053,6 @@ button.sl-q-opt.is-right:hover {
 .sl-row.current .sl-row-v {
   color: var(--sl-accent);
 }
-/* met earlier, out of the band now: the tick stays, the value is no longer « good » */
-.sl-row.done.drift .sl-row-v {
-  color: var(--sl-muted);
-}
 .sl-row.done .sl-tick {
   border-color: var(--sl-ok);
   background: var(--sl-ok);
@@ -1061,6 +1062,20 @@ button.sl-q-opt.is-right:hover {
 }
 .sl-row.done .sl-row-t {
   color: var(--sl-muted);
+}
+/* met earlier, out of tolerance now: no green tick (an empty box in the warning colour, and the words) */
+.sl-row.done.drift .sl-tick {
+  border-color: var(--sl-warn);
+  background: transparent;
+}
+.sl-row.done.drift .sl-tick::after {
+  content: none;
+}
+.sl-row.done.drift .sl-row-t {
+  color: var(--sl-text);
+}
+.sl-row.done.drift .sl-row-v {
+  color: var(--sl-warn);
 }
 
 /* ---------------------------------------------------------------- goals, highlights, actions */

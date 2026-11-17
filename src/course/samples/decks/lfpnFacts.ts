@@ -15,9 +15,10 @@ import type { L10n } from "../../types";
 
 /** The AIRAC cycle the facts were read in, and the next one (after it, every value must be checked again). */
 export const LFPN_AIRAC = {
-  cycle: "29 OCT 2026",
+  // no-break spaces: a date never breaks across two lines
+  cycle: "29\u00a0OCT\u00a02026",
   iso: "2026-10-29",
-  next: "26 NOV 2026",
+  next: "26\u00a0NOV\u00a02026",
 } as const;
 
 /** What the slides say about where the numbers come from, and what they are not for. */
@@ -184,6 +185,12 @@ export const LFPN_MSA = {
   convNm: 25,
   // RNAV charts: « ALT MNM 25 NM ARP LFPN » 2400
   rnavFt: 2400,
+  // the higher sectors of the conventional MSA: 2400 in 128°–159° beyond 23 NM, 2100 in 289°–318° beyond 20 NM
+  // (the bearings: `check`)
+  sectors: [
+    { fromDeg: 128, toDeg: 159, beyondNm: 23, ft: 2400 },
+    { fromDeg: 289, toDeg: 318, beyondNm: 20, ft: 2100 },
+  ],
 } as const;
 
 /** [IAC INA] Initial approach fixes and holds (10 JUL 2025). The INA routings themselves: `check`. */
@@ -221,8 +228,10 @@ export const LFPN_RULES = {
   // « Dans les TMA Paris de classe A (parties 2 à 10), la vitesse est limitée à IAS 250 kt maximum en dessous du FL 100 »
   tmaIasKt: 250,
   tmaBelowFl: 100,
-  // [ENR5.1] LF-R 35 A SFC–1500 ft AMSL, LF-R 35 B 1500–2000 ft AMSL: entry on TOUSSUS TWR clearance, mode 3/A
+  // [ENR5.1] LF-R 35 A SFC–1500 ft AMSL, LF-R 35 B 1500–2000 ft AMSL: entry on TOUSSUS TWR clearance, mode 3/A;
+  // active during the ATS hours announced by NOTAM (within 0500–2130)
   r35a: { name: "LF-R 35 A", floorFt: 0, ceilFt: 1500 },
+  r35ActiveByNotam: true,
   r35b: { name: "LF-R 35 B", floorFt: 1500, ceilFt: 2000 },
   // [LFPV 2.17] CTR VILLACOUBLAY D SFC–2000 ft AMSL (NE of LFPN); [ENR2.1] TMA VILLACOUBLAY A 1500–2500 ft (north)
   ctrVillaCeilFt: 2000,
@@ -247,30 +256,38 @@ export const LFPN_LESSON = {
   bankDeg: 15,
   /** the heading tolerance of the intercept goal, ° */
   hdgTol: 10,
-  /** how high above the glide path the « rejoin » situation starts, ft */
-  highFt: 150,
+  /** how high above the glide path the « rejoin » situation starts, ft (about 1.2 dots at 7 NM) */
+  highFt: 300,
   /** the descent-rate band of the glide goal, ft/min (the 3.5° rate at 90 kt, 558, ± about 100) */
   vsBand: [450, 650] as [number, number],
   /** the RVR of the minima question (an example below the LOC minimum, above the ILS one), m */
   rvrExampleM: 1000,
   /** EASA Air OPS NCO.OP.210: below the RVR minimum, no continuation below 1,000 ft above the aerodrome */
   banFt: 1000,
+  /** the transponder code set in the course's situations (the French VFR conspicuity code; ATC assigns another) */
+  squawk: "7000",
   /** the example arrival heading to MOLBA of the hold-entry question (a school example, not a routing) */
   molbaCourse: 180,
-  /** the simulator flight: start this far out on the localizer, NM; hold the goal this long, s; at most, s */
-  flyStartNm: 9,
+  /** the simulator flight: start this far out on the localizer, NM (level at the IF altitude, before the glide
+   *  path at the FAF, about 6.6 NM); hold the goal this long, s; at most, s (it ends at the DA: 7.1 NM at 90 kt,
+   *  under 5 minutes) */
+  flyStartNm: 7.5,
   flyHoldS: 60,
-  flyDurationS: 300,
+  flyDurationS: 360,
 } as const;
 
 const FT_PER_NM = 6076.12;
 /** Numbers worked out from the facts above (each with its formula). */
 export const LFPN_DERIVED = {
   /** a 3.5° path: tan(3.5°) × 6,076 ft ≈ 372 ft per NM */
-  ftPerNm: Math.round(Math.tan(LFPN_ILS25R.gpDeg * (Math.PI / 180)) * FT_PER_NM),
+  ftPerNm: Math.round(
+    Math.tan(LFPN_ILS25R.gpDeg * (Math.PI / 180)) * FT_PER_NM,
+  ),
   /** at 90 kt over the ground: 372 × 90 ÷ 60 = 558 ft/min */
   vsFpm: Math.round(
-    (Math.round(Math.tan(LFPN_ILS25R.gpDeg * (Math.PI / 180)) * FT_PER_NM) * LFPN_LESSON.iasKt) / 60,
+    (Math.round(Math.tan(LFPN_ILS25R.gpDeg * (Math.PI / 180)) * FT_PER_NM) *
+      LFPN_LESSON.iasKt) /
+      60,
   ),
   /** the same rule for 3°: about 318 ft per NM, 477 ft/min at 90 kt (« 5 × la vitesse sol ») */
   ftPerNm3: Math.round(Math.tan(3 * (Math.PI / 180)) * FT_PER_NM),

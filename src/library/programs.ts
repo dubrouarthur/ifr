@@ -59,6 +59,8 @@ interface SubjectRow {
   group?: SubjectGroup;
   /** words that file an unknown course here (its id slug or its tags) */
   words?: readonly string[];
+  /** after the official syllabus, not part of it (the IR's real airfields) */
+  beyond?: boolean;
 }
 function S<P extends ProgramId, I extends string>(
   program: P,
@@ -249,13 +251,17 @@ const SUBJECT_ROWS = [
     ["departures", "arrivals", "sid", "star", "planning", "maths"],
   ),
   S("ir", "test", "07", "Checkride", "Test pratique", ["checkride", "test"]),
-  // real airfields: their procedures, flown in the real navigation data around them
-  S("ir", "ad", "08", "Airfields", "Terrains", [
-    "airfield",
-    "airfields",
-    "aerodrome",
-    "terrains",
-  ]),
+  // real airfields: their procedures, flown in the real navigation data around them (after the official
+  // syllabus, not one of its subjects)
+  {
+    ...S("ir", "ad", "08", "Airfields", "Terrains", [
+      "airfield",
+      "airfields",
+      "aerodrome",
+      "terrains",
+    ]),
+    beyond: true,
+  },
   // ATPL: the 13 EASA subjects
   A("010", "Air law", "Droit aérien", ["law"]),
   A("021", "Airframe, systems and powerplant", "Cellule, systèmes et moteurs", [

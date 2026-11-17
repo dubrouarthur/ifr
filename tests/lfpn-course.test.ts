@@ -353,16 +353,118 @@ describe("LFPN course: its situations sit on the real ILS 25R", () => {
     }
     expect(Math.abs(dots("pn.intercept").lat ?? 0)).toBeGreaterThan(1.5);
     expect(Math.abs(dots("pn.fly").lat ?? 9)).toBeLessThan(0.3);
-    // the DME of TNO is at the glide path antenna, beside the 25R threshold (AD 2.19): 9 NM out reads about 9.2
+    // the DME of TNO is at the glide path antenna, beside the 25R threshold (AD 2.19): 7.5 NM out reads about
+    // 7.65, outside the FAF (6.7 DME): the flight starts level, before the glide path
     {
       const sim = new Sim();
       applyScene(sim, c.scenes["pn.fly"]);
       sim.updateAvionics(0);
-      expect(sim.nav1.dmeNm).toBeGreaterThan(9);
-      expect(sim.nav1.dmeNm).toBeLessThan(9.5);
+      expect(sim.nav1.dmeNm).toBeGreaterThan(7.5);
+      expect(sim.nav1.dmeNm).toBeLessThan(8);
+      expect(sim.nav1.dmeNm!).toBeGreaterThan(LFPN_ILS25R.fafDme);
+      // a French field's radios, not the house defaults
+      expect(sim.av.com1.active).toBeCloseTo(LFPN_FREQ.tower, 3);
+      expect(sim.av.xpdr).toBe("7000");
     }
     // 150 ft above the path at 7 NM: the index low
     expect(Math.abs(dots("pn.high").vert ?? 0)).toBeGreaterThan(0.4);
+  });
+});
+
+describe("LFPN course: what an instructor checks on the slides", () => {
+  const c = course();
+  const step = (id: string) => c.steps.find((s) => s.id === id)!;
+  it("a question never shows its own answer before it is answered", () => {
+    for (const s of c.steps) {
+      const blocks = slideBlocks(s);
+      if (!blocks.some((b) => b.kind === "quiz")) continue;
+      for (const b of blocks) {
+        // a hold drawn with the arriving course lights the entry (« votre entrée »): only once the right answer
+        // is shown (not after a first wrong answer, while the student tries again)
+        if (b.kind === "diagram" && b.d?.kind === "hold" && b.d.crs !== undefined)
+          expect(b.reveal?.when, `${s.id} ${b.id}`).toBe("answerShown");
+      }
+    }
+    expect(
+      slideBlocks(step("pn-hold-entry")).filter(
+        (b) => b.kind === "diagram" && b.d?.kind === "hold" && !b.reveal,
+      ),
+    ).toHaveLength(1);
+  });
+  it("the quiz animations stop before the answer (the DA, the acceleration altitude)", () => {
+    /** the value of a key track at t (linear, held at the ends) */
+    const at = (keys: [number, number][], t: number) => {
+      if (t <= keys[0][0]) return keys[0][1];
+      for (let i = 1; i < keys.length; i++)
+        if (t <= keys[i][0]) {
+          const [t0, v0] = keys[i - 1];
+          const [t1, v1] = keys[i];
+          return v0 + ((v1 - v0) * (t - t0)) / (t1 - t0);
+        }
+      return keys[keys.length - 1][1];
+    };
+    const scriptOf = (id: string) => {
+      const b = slideBlocks(step(id)).find((x) => x.kind === "instrument");
+      return b?.kind === "instrument" ? b.motion!.script! : null;
+    };
+    const base = c.scenes["pn.final"].pose;
+    const alt0 = base.kind === "fields" ? base.altFt : 0;
+    for (const [id, ft] of [
+      ["pn-quiz-da", LFPN_ILS25R.daFt],
+      ["pn-quiz-missed", LFPN_ILS25R.accelAltFt],
+    ] as const) {
+      const sc = scriptOf(id)!;
+      const keys = sc.tracks.alt!;
+      for (const t of [sc.duration, sc.telling ?? 0]) {
+        const alt = alt0 + at(keys, t);
+        if (id === "pn-quiz-da") expect(alt, `${id} t=${t}`).toBeGreaterThan(ft + 20);
+        else expect(alt, `${id} t=${t}`).toBeLessThan(ft - 100);
+      }
+      expect(sc.marks ?? [], id).toHaveLength(0);
+    }
+  });
+  it("the missed approach starts within a quarter of a minute of the DA", () => {
+    const b = slideBlocks(step("pn-missed")).find((x) => x.kind === "instrument");
+    const da = b?.kind === "instrument" ? b.motion?.script?.marks?.find((m) => m.id === "da") : undefined;
+    expect(da?.t).toBeLessThanOrEqual(20);
+  });
+  it("the 3.5° profile starts at the FAF and passes the DA 0.4 NM before the threshold", () => {
+    const d = slideBlocks(step("pn-glide")).find(
+      (b) => b.kind === "diagram" && b.d?.kind === "calc",
+    );
+    if (d?.kind !== "diagram" || d.d?.kind !== "calc" || d.d.calc.kind !== "profile")
+      throw new Error("no profile");
+    const p = d.d.calc;
+    const tch = LFPN_RUNWAYS[0].thr[1].elevFt + LFPN_NAV.tno.rdhFt;
+    expect(p.toFt).toBe(tch);
+    const ftPerNm = Math.tan((p.angleDeg! * Math.PI) / 180) * 6076.12;
+    const startNm = (p.fromFt - p.toFt) / ftPerNm;
+    // the FAF from the threshold: 6.7 DME less the DME's distance past the threshold (it is at the GP antenna)
+    const fafNm =
+      LFPN_ILS25R.fafDme - distanceNm(LFPN_NAV.tno.gpPos, LFPN_RUNWAYS[0].thr[1]);
+    expect(Math.abs(startNm - fafNm)).toBeLessThan(0.1);
+    expect(p.startLabel?.fr).toContain("FAF");
+    const da = p.marks?.find((m) => m.altFt === LFPN_ILS25R.daFt);
+    expect(da?.distNm).toBeCloseTo(0.4, 1);
+  });
+  it("the simulator flight ends at the DA, and starts before the glide path", () => {
+    const sv = slideBlocks(step("pn-fly")).find((b) => b.kind === "simViewport");
+    const yt = sv?.kind === "simViewport" ? sv.yourTurn : undefined;
+    expect(yt?.endWhen).toEqual([
+      { id: "altBand", p: { min: 0, max: LFPN_ILS25R.daFt } },
+    ]);
+    // 7.5 NM at 90 kt to the DA 0.4 NM out: under the duration's ceiling
+    expect(((7.5 - 0.4) / 90) * 3600).toBeLessThan(yt!.durationS!);
+  });
+  it("the « à vérifier » line comes with the last row, never alone", () => {
+    for (const id of ["pn-arrival", "pn-brief"]) {
+      const t = slideBlocks(step(id)).find(
+        (b) => b.kind === "text" && b.text.fr?.includes(LFPN_CHECK.fr),
+      );
+      const rows = slideBlocks(step(id)).filter((b) => b.kind === "text" && b.style === "body");
+      const last = Math.max(...rows.map((b) => b.reveal?.order ?? 0));
+      expect(t?.reveal?.order, id).toBe(last);
+    }
   });
 });
 

@@ -2233,13 +2233,20 @@ export class CourseLibrary {
         ? h(
             "p",
             { class: "lb-tools-hint" },
-            this.s("syllabusHint", {
-              a: subs[0].n,
-              b: subs[subs.length - 1].n,
-            }),
+            this.syllabusLine(subs),
           )
         : null,
     );
+  }
+  /** « The subjects follow the official syllabus, 01 to 07 » (then the subjects beyond it, by number and name) */
+  private syllabusLine(subs: readonly SubjectDef[]): string {
+    const off = subs.filter((x) => !x.beyond);
+    const more = subs.filter((x) => x.beyond);
+    const a = off[0]?.n ?? subs[0].n;
+    const b = off[off.length - 1]?.n ?? subs[subs.length - 1].n;
+    return more.length && off.length
+      ? this.s("syllabusHintBeyond", { a, b, c: more.map((x) => `${x.n} ${this.L(x.title)}`).join(", ") })
+      : this.s("syllabusHint", { a, b });
   }
   /** true for someone who teaches here: they opened a teaching place, or they have a course of their own */
   private get teaching(): boolean {

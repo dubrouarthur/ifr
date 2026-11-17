@@ -169,6 +169,8 @@ export interface CourseBrief {
   notes: string[];
   /** hand-over: the flight stops by itself after this long (a scene or calc target) */
   durationS?: number;
+  /** hand-over: the flight also stops earlier, at its end condition (a scene target's endWhen) */
+  endsEarly?: boolean;
 }
 export interface CourseFlightActions {
   capture(): void;
@@ -542,7 +544,7 @@ export class CourseFlightUi {
   showBrief(b: CourseBrief) {
     const startBtn = h('button', { type: 'button', class: 'btn primary cf-start', onclick: () => this.closeBrief(true) }, svgIcon(I.play, 15), h('span', {}, tr('cf.start')));
     // the way out before flying is the strip's one "Back to the course" (nothing recorded: the flight has not started)
-    const ho = deriveBrief({ where: 'sim', durationS: b.durationS }, detectDevice(), uiLang());
+    const ho = deriveBrief({ where: 'sim', durationS: b.durationS, endsEarly: b.endsEarly }, detectDevice(), uiLang());
     const sec = (head: string, body: Node) => h('div', { class: 'cf-card-sec' }, h('div', { class: 'cf-card-h' }, head), body);
     // two columns: what to fly (scrolls when the outside view is short) | the goals and Start (always in view)
     const card = h('section', { class: 'cf-card', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'cf-card-t' },

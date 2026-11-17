@@ -219,9 +219,13 @@ export function createProfile(
       }
       // labels: top of descent, the gradient beside the slope, the two dimensions
       lb.put(
-        descending
-          ? L(lang, "Top of descent", "Début de descente")
-          : L(lang, "Top of climb", "Fin de montée"),
+        spec.startLabel
+          ? lang === "fr"
+            ? (spec.startLabel.fr ?? spec.startLabel.en)
+            : spec.startLabel.en
+          : descending
+            ? L(lang, "Top of descent", "Début de descente")
+            : L(lang, "Top of climb", "Fin de montée"),
         [
           [xTod, yFrom - 40 * u, "middle"],
           [xTod - 30 * u, yFrom - 40 * u, "end"],

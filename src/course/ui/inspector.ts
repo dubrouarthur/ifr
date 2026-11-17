@@ -4601,6 +4601,13 @@ export class Inspector {
                     ),
                   },
                   {
+                    value: "answerShown",
+                    label: this.t(
+                      "The right answer shown",
+                      "La bonne réponse affichée",
+                    ),
+                  },
+                  {
                     value: "goalMet",
                     label: this.t("The goal met", "L’objectif atteint"),
                   },

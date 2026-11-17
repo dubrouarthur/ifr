@@ -1744,6 +1744,7 @@ const courseHost: CockpitHost = {
       notes,
       // hand-over: how the flight ends, and the goal the strip keeps in view
       durationS: t.kind === 'scene' || t.kind === 'calc' ? t.durationS : undefined,
+      endsEarly: t.kind === 'scene' && !!t.endWhen?.length,
     };
     courseGoalLine = b.goals.slice(0, 2).join(' · ');
     placeBriefCard();

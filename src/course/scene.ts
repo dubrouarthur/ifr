@@ -837,6 +837,9 @@ function applyFieldsPose(sim: Sim, f: SceneFields) {
   if (r.brg1) sim.av.bearing1 = r.brg1;
   if (r.brg2) sim.av.bearing2 = r.brg2;
   if (r.minimums !== undefined) sim.av.minimums = r.minimums;
+  if (r.com1 !== undefined) sim.av.com1.active = r.com1;
+  if (r.com2 !== undefined) sim.av.com2.active = r.com2;
+  if (r.xpdr !== undefined && /^[0-7]{4}$/.test(r.xpdr)) sim.av.xpdr = r.xpdr;
 }
 
 /**

@@ -44,7 +44,7 @@ import {
   type CourseLibrary,
 } from "../course/ui/library";
 import { allSamples, isSampleId, sampleCourse } from "../course/samples";
-import { enterCourseWorld } from "../course/realWorld";
+import { courseWorld, enterCourseWorld, worldAirports } from "../course/realWorld";
 import {
   playCourse,
   type CoursePlayer,
@@ -363,8 +363,35 @@ async function loadCourse(
   }
   if (!course && isSampleId(id)) course = sampleCourse(id);
   // a course set at a real airfield: its navigation data first (its situations sit on the real runways)
-  await enterCourseWorld(course);
+  await courseWorldReady(course);
   return { course, store };
+}
+/** How long the academy waits for a course's navigation data before drawing its slides without it, ms. */
+const WORLD_WAIT_MS = 8000;
+/**
+ * Load the navigation data a course set at a real airfield needs, saying so on the loading screen; never wait
+ * longer than WORLD_WAIT_MS (a slow or offline connection: the slides draw without the region, which keeps loading).
+ */
+async function courseWorldReady(course: Course | null): Promise<void> {
+  const icaos = worldAirports(courseWorld(course));
+  if (!icaos.length) {
+    await enterCourseWorld(course);
+    return;
+  }
+  const t = root.querySelector<HTMLElement>(".ga-boot-t");
+  if (t)
+    t.textContent =
+      lang === "fr"
+        ? `Chargement des données de navigation de ${icaos.join(", ")}…`
+        : `Loading the navigation data of ${icaos.join(", ")}…`;
+  let timer = 0;
+  await Promise.race([
+    enterCourseWorld(course),
+    new Promise<void>((res) => {
+      timer = window.setTimeout(res, WORLD_WAIT_MS);
+    }),
+  ]);
+  window.clearTimeout(timer);
 }
 /** A course with no step yet: nothing to present or play, one way back to the editor (never a blank page). */
 function emptyCourse(id: string) {
@@ -719,7 +746,7 @@ async function showEditor(id: string) {
     );
   }
   if (!course) return notFound(id);
-  await enterCourseWorld(course);
+  await courseWorldReady(course);
   // the course editor (package F): one builder for courses, briefings and designed slides (a lazy chunk)
   const editor = await import("../course/ui/editor");
   if (key !== routeKey && routeKey !== routeKeyOf({ k: "edit", id: course.id }))

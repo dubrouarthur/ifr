@@ -386,6 +386,8 @@ export function simFlightStep(o: {
   goal: GoalCheck[];
   holdS?: number;
   durationS: number;
+  /** the flight also ends when these hold (durationS is then the most it lasts) */
+  endWhen?: GoalCheck[];
   success: L10n;
   source: L10n;
   notes: L10n;
@@ -426,6 +428,7 @@ export function simFlightStep(o: {
               success: o.success,
             },
             durationS: o.durationS,
+            ...(o.endWhen?.length ? { endWhen: o.endWhen } : {}),
             returnTo: "thisStep",
           },
         },
