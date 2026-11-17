@@ -273,6 +273,68 @@
 .sl-tc-chip[hidden] {
   display: none;
 }
+/* « Valeurs de départ »: one icon, always in its place, greyed at the start values */
+.sl-tc-chip.is-reset {
+  width: 72px;
+  padding: 0;
+  justify-content: center;
+}
+.sl-tc-chip.is-reset:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* the presets: in the row while the panel fits its frame, behind « Préréglages » when it does not (toolBlock.ts
+   layout()); open, the list takes the controls' place, so it always fits */
+.sl-tool-presets {
+  display: contents;
+}
+.sl-tool-menu {
+  display: none;
+}
+.sl-tool-panel.is-menu .sl-tool-menu {
+  display: inline-flex;
+}
+.sl-tool-panel.is-menu .sl-tool-presets {
+  display: none;
+}
+.sl-tool-panel.is-menu.menu-open .sl-tool-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1 0 100%;
+  order: -1;
+}
+.sl-tool-panel.is-menu.menu-open .sl-tool-ctrls {
+  display: none;
+}
+.sl-tool-menu .sl-tc-ic {
+  transition: transform 0.15s;
+}
+.sl-tool-panel.menu-open .sl-tool-menu .sl-tc-ic {
+  transform: rotate(180deg);
+}
+.sl-tool-menu[aria-expanded="true"] {
+  border-color: var(--sl-accent);
+}
+/* the moving air (wing): CSS, not a redraw per frame; never under reduced motion */
+@media (prefers-reduced-motion: no-preference) {
+  .sl-tool .sl-flow {
+    animation: sl-tool-flow 0.24s linear infinite;
+  }
+  .sl-tool .sl-eddy {
+    animation: sl-tool-spin 1.6s linear infinite;
+  }
+}
+@keyframes sl-tool-flow {
+  to {
+    stroke-dashoffset: -38;
+  }
+}
+@keyframes sl-tool-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .sl-tc-chip.is-anim {
   border-color: var(--sl-accent);
   color: var(--sl-accent);

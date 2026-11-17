@@ -83,8 +83,12 @@ export const machTool: ToolDef = {
       "À FL 370 et 470 kt, trouvez la plus petite flèche qui garde M⊥ sous 0,70",
     ),
     key: "sweep",
-    target: 32,
-    tol: 0.4,
+    // FL 370 and 470 kt are givens: the least whole degree of sweep with M⊥ under 0.70 (M 0.82 → 32°)
+    givens: { alt: 37000, tas: 470 },
+    met: (p) =>
+      machState(p.alt, p.tas, p.sweep).machNormal < MCRIT_STRAIGHT &&
+      (p.sweep < 1 ||
+        machState(p.alt, p.tas, p.sweep - 1).machNormal >= MCRIT_STRAIGHT),
   },
   view: { w: 1000, h: 600 },
   frame: { w: 1680, h: 736 },

@@ -78,8 +78,8 @@ export const turnTool: ToolDef = {
       "Trouvez l’inclinaison qui double le poids apparent (2 g)",
     ),
     key: "bank",
-    target: 60,
-    tol: 2,
+    // the apparent weight depends on the bank alone (n = 1 / cos φ): any speed and weight
+    met: (p) => Math.abs(loadFactor(p.bank) - 2) < 0.02,
   },
   view: { w: 1000, h: 600 },
   frame: { w: 1680, h: 736 },
@@ -118,16 +118,37 @@ export const turnTool: ToolDef = {
     s.line(ox, oy - g1, tx, ty, c.accent, 3, "8 6");
     s.arrow(ox, oy, tx, ty, c.accent, 6, 22);
     s.arrow(ox, oy, ox, oy + g1, c.text, 6, 22);
-    s.text(tx + 8 * sa + 6, ty - 8 * ca - 4,
-      lang === "fr" ? "Rz" : "L", { size: 28, weight: 700, fill: c.accent, halo: c.bg });
-    s.text(ox + 14, oy + g1 + 4,
-      lang === "fr" ? "P" : "W", { size: 28, weight: 700, fill: c.text, halo: c.bg });
+    s.text(tx + 8 * sa + 6, ty - 8 * ca - 4, lang === "fr" ? "Rz" : "L", {
+      size: 28,
+      weight: 700,
+      fill: c.accent,
+      halo: c.bg,
+    });
+    s.text(ox + 14, oy + g1 + 4, lang === "fr" ? "P" : "W", {
+      size: 28,
+      weight: 700,
+      fill: c.text,
+      halo: c.bg,
+    });
     // the legend, under the figure
     const ly0 = 500;
     s.line(20, ly0 - 8, 52, ly0 - 8, c.accent, 6);
-    s.text(62, ly0, `${tr(L("Lift", "Portance"), lang)} ${num(st.n, 2, lang)} × ${tr(L("weight", "poids"), lang)}`, { size: 24, weight: 700, fill: c.accent });
+    s.text(
+      62,
+      ly0,
+      `${tr(L("Lift", "Portance"), lang)} ${num(st.n, 2, lang)} × ${tr(L("weight", "poids"), lang)}`,
+      { size: 24, weight: 700, fill: c.accent },
+    );
     s.line(20, ly0 + 26, 52, ly0 + 26, c.accent, 3, "8 6");
-    s.text(62, ly0 + 34, tr(L("its parts: carry, turn", "composantes : porter, faire virer"), lang), { size: 22, fill: c.accent });
+    s.text(
+      62,
+      ly0 + 34,
+      tr(
+        L("its parts: carry, turn", "composantes : porter, faire virer"),
+        lang,
+      ),
+      { size: 22, fill: c.accent },
+    );
     // the bank angle
     if (p.bank > 0) {
       const R = 120;
@@ -233,7 +254,6 @@ export const turnTool: ToolDef = {
       fill: tone,
       anchor: "middle",
     });
-    void loadFactor;
     return {
       svg: s.toString(),
       readouts: [

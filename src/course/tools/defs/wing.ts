@@ -9,7 +9,16 @@ import {
   wingState,
   type Flaps,
 } from "../maths/aero";
-import { L, num, ro, Svg, tr, type ToolDef, type ToolValues } from "../kit";
+import {
+  hidden,
+  L,
+  num,
+  ro,
+  Svg,
+  tr,
+  type ToolDef,
+  type ToolValues,
+} from "../kit";
 import { axes, plot } from "../plot";
 
 const FLAPS: Flaps[] = [0, 10, 30];
@@ -194,8 +203,10 @@ export const wingTool: ToolDef = {
       "Trouvez l’incidence à laquelle l’aile décroche (volets rentrés)",
     ),
     key: "alpha",
-    target: Math.round(stallAlpha(0) * 2) / 2,
-    tol: 1,
+    // flaps up is a given; within 1° of the critical angle (the control steps by 0.5°)
+    givens: { flaps: 0 },
+    met: (p) => Math.abs(p.alpha - stallAlpha(flapsOf(p))) <= 1,
+    hides: ["critical"],
   },
   view: { w: 1000, h: 600 },
   frame: { w: 1680, h: 736 },
@@ -218,8 +229,8 @@ export const wingTool: ToolDef = {
       : Infinity;
     const offs = [-185, -135, -88, -46, 46, 92, 140, 190];
     const amp = (y0: number) => st.cl * 62 * Math.exp(-Math.abs(y0) / 260);
+    // moving air: the dashes run in CSS (course-tools.css .sl-flow), the drawing is not redrawn for it
     const dash = cx.moving ? "22 16" : undefined;
-    const flowOff = cx.moving ? -((cx.t * 160) % 38) : 0;
     for (const y0 of offs) {
       const xs: number[] = [];
       for (let x = X0; x <= X1; x += 6) xs.push(x);
@@ -256,7 +267,7 @@ export const wingTool: ToolDef = {
           "stroke-width": 3,
           "stroke-opacity": torn ? 0.9 : 0.75,
           "stroke-dasharray": dash,
-          "stroke-dashoffset": flowOff,
+          class: cx.moving ? "sl-flow" : undefined,
         },
       );
     }
@@ -273,13 +284,21 @@ export const wingTool: ToolDef = {
           ? sp[0]
           : CY + (x - CX) * Math.tan((alpha * Math.PI) / 180) * 0.4;
         const r = 12 + (i % 3) * 5;
-        const spin = cx.moving ? cx.t * 4 + i : i;
         const y = top - 26 - (i % 2) * 18;
-        const a0 = spin % (2 * Math.PI);
+        const a0 = i % (2 * Math.PI);
         const a1 = a0 + 4.4;
+        // each eddy turns about its own centre in CSS (.sl-eddy) when the drawing may move
         s.path(
           `M${x + r * Math.cos(a0)} ${y + r * Math.sin(a0)} A${r} ${r} 0 1 1 ${x + r * Math.cos(a1)} ${y + r * Math.sin(a1)}`,
-          { stroke: c.stop, "stroke-width": 3, "stroke-opacity": 0.85 },
+          {
+            stroke: c.stop,
+            "stroke-width": 3,
+            "stroke-opacity": 0.85,
+            class: cx.moving ? "sl-eddy" : undefined,
+            style: cx.moving
+              ? `transform-origin:${Math.round(x)}px ${Math.round(y)}px`
+              : undefined,
+          },
         );
       }
     }
@@ -301,16 +320,24 @@ export const wingTool: ToolDef = {
     if (Math.abs(alpha) >= 0.5) {
       const p2x = CX - R * Math.cos(a);
       const p2y = CY - R * Math.sin(a);
-      s.path(`M${CX - R} ${CY} A${R} ${R} 0 0 ${alpha > 0 ? 1 : 0} ${p2x} ${p2y}`, { stroke: c.key, "stroke-width": 5 });
+      s.path(
+        `M${CX - R} ${CY} A${R} ${R} 0 0 ${alpha > 0 ? 1 : 0} ${p2x} ${p2y}`,
+        { stroke: c.key, "stroke-width": 5 },
+      );
     }
     const mid = a / 2;
-    s.text(CX - (R + 16) * Math.cos(mid), CY - (R + 16) * Math.sin(mid) + (alpha >= 0 ? -6 : 22), `α ${num(alpha, 1, lang)}°`, {
-      size: 30,
-      weight: 700,
-      fill: c.key,
-      anchor: "end",
-      halo: c.bg,
-    });
+    s.text(
+      CX - (R + 16) * Math.cos(mid),
+      CY - (R + 16) * Math.sin(mid) + (alpha >= 0 ? -6 : 22),
+      `α ${num(alpha, 1, lang)}°`,
+      {
+        size: 30,
+        weight: 700,
+        fill: c.key,
+        anchor: "end",
+        halo: c.bg,
+      },
+    );
     s.text(X0, 40, tr(L("Relative wind →", "Vent relatif →"), lang), {
       size: 24,
       fill: c.muted,
@@ -415,20 +442,28 @@ export const wingTool: ToolDef = {
       cur.push([pl.X(x), pl.Y(cl(x, flaps))]);
     s.polyline(cur, { stroke: c.accent, "stroke-width": 4 });
     const sa = st.stallAlpha;
-    s.line(pl.X(sa), pl.y0, pl.X(sa), pl.y1, c.stop, 2.5, "8 6");
+    // a task looking for the critical angle: the curve stays, its top is not labelled
+    if (!hidden(cx, "critical")) {
+      s.line(pl.X(sa), pl.y0, pl.X(sa), pl.y1, c.stop, 2.5, "8 6");
+      s.text(
+        pl.X(sa) - 8,
+        pl.Y(st.clMax) - 16,
+        `${lang === "fr" ? "Cz" : "CL"} max ${num(st.clMax, 2, lang)}`,
+        {
+          size: 22,
+          anchor: "end",
+          fill: c.stop,
+          weight: 600,
+          halo: c.bg,
+        },
+      );
+    }
     s.text(
-      pl.X(sa) - 8,
-      pl.Y(st.clMax) - 16,
-      `${lang === "fr" ? "Cz" : "CL"} max ${num(st.clMax, 2, lang)}`,
-      {
-        size: 22,
-        anchor: "end",
-        fill: c.stop,
-        weight: 600,
-        halo: c.bg,
-      },
+      pl.x0 + 12,
+      pl.y0 + 6,
+      `${tr(L("Flaps", "Volets"), lang)} ${flaps}°`,
+      { size: 22, fill: c.accent, weight: 700, halo: c.bg },
     );
-    s.text(pl.x0 + 12, pl.y0 + 6, `${tr(L("Flaps", "Volets"), lang)} ${flaps}°`, { size: 22, fill: c.accent, weight: 700, halo: c.bg });
     s.circle(pl.X(alpha), pl.Y(st.cl), 11, {
       fill: st.stalled ? c.stop : c.key,
       stroke: c.bg,
@@ -452,10 +487,23 @@ export const wingTool: ToolDef = {
     return {
       svg: s.toString(),
       readouts: [
-        ro(L(`Lift coefficient ${C_}`, `Coefficient ${C_}`), num(st.cl, 2, lang), st.stalled ? "stop" : undefined),
+        ro(
+          L(`Lift coefficient ${C_}`, `Coefficient ${C_}`),
+          num(st.cl, 2, lang),
+          st.stalled ? "stop" : undefined,
+        ),
         ro(L("Lift / drag", "Finesse"), num(st.ld, 1, lang)),
-        ro(L("Critical angle", "Incidence critique"), `${num(st.stallAlpha, 0, lang)}°`, st.nearStall > 0.85 ? "stop" : undefined),
-        ro(L("Stall speed (1 g)", "Vitesse de décrochage (1 g)"), `${num(st.vs, 0, lang)} kt`, p.ias < st.vs ? "stop" : undefined),
+        ro(
+          L("Critical angle", "Incidence critique"),
+          `${num(st.stallAlpha, 0, lang)}°`,
+          st.nearStall > 0.85 ? "stop" : undefined,
+          "critical",
+        ),
+        ro(
+          L("Stall speed (1 g)", "Vitesse de décrochage (1 g)"),
+          `${num(st.vs, 0, lang)} kt`,
+          p.ias < st.vs ? "stop" : undefined,
+        ),
       ],
       say: `${tr(L("Angle of attack", "Incidence"), lang)} ${num(alpha, 1, lang)}°, ${C_} ${num(st.cl, 2, lang)}: ${tr(verdict, lang)}.`,
     };

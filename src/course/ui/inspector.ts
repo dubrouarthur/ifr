@@ -3,7 +3,7 @@
 // Block | Slide | Goal | Notes for designed slides (the selected block's fields, the layout and theme pickers).
 // Author texts are edited in the language of the editor's EN / FR switch, with a "FR missing" badge.
 // Also the small DOM kit the editor and the tray share (segments, chips, switches, fields, popover menus).
-import { toolControls, toolDef, toolValues } from "../tools/index";
+import { blockStart, toolControls, toolDef, toolTask, toolTaskData, toolValues } from "../tools/index";
 import { snapParam } from "../tools/kit";
 import { toolSide } from "../canvas/toolBlock";
 import { blockKindLabel } from "../canvas/strings";
@@ -5152,11 +5152,14 @@ export class Inspector {
         const d = toolDef(b.tool);
         if (!d) break;
         const on = new Set(toolControls(d, b));
-        const start = toolValues(d, b.p);
+        const start = blockStart(d, b);
+        // the values the task's prompt states are set by the task: neither a control nor a starting value here
+        const givens = toolTask(d, b)?.givens ?? {};
+        const free = d.params.filter((q) => !(q.key in givens));
         out.push(
           group(T("Student's controls", "Commandes de l’élève"), [
             chips(
-              d.params.map((q) => ({ value: q.key, label: tr(q.label, this.lang), on: on.has(q.key) })),
+              free.map((q) => ({ value: q.key, label: tr(q.label, this.lang), on: on.has(q.key) })),
               (k, yes) =>
                 setB((x) => {
                   const t = x as typeof b;
@@ -5169,7 +5172,7 @@ export class Inspector {
               { label: T("Student's controls", "Commandes de l’élève") },
             ),
             field(
-              T("Controls", "Commandes"),
+              T("Controls position", "Place des commandes"),
               seg(
                 [
                   { value: "right" as const, label: T("On the right", "À droite") },
@@ -5182,7 +5185,7 @@ export class Inspector {
           ]),
           group(
             T("Starting values", "Valeurs de départ"),
-            d.params.map((q) =>
+            free.map((q) =>
               field(
                 tr(q.label, this.lang),
                 q.choices
@@ -5217,11 +5220,18 @@ export class Inspector {
                     (yes) =>
                       setB((x) => {
                         const t = x as typeof b;
-                        if (yes) t.task = JSON.parse(JSON.stringify(d.task)) as typeof d.task;
+                        if (yes) t.task = toolTaskData(d);
                         else delete t.task;
                       }),
                     tr(d.task.prompt, this.lang),
-                    { sub: T("Checked live; it counts as the student's action", "Vérifiée en direct ; elle compte comme une action de l’élève") },
+                    {
+                      sub: Object.keys(d.task.givens ?? {}).length
+                        ? T(
+                            "Checked live; it counts as the student's action. It sets the values its question states.",
+                            "Vérifiée en direct ; elle compte comme une action de l’élève. Elle fixe les valeurs que son énoncé donne.",
+                          )
+                        : T("Checked live; it counts as the student's action", "Vérifiée en direct ; elle compte comme une action de l’élève"),
+                    },
                   ),
                 ]),
               ]

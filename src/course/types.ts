@@ -1567,9 +1567,11 @@ export type ToolId =
 /** A tool's task: one value to find with the controls (« Trouvez l’incidence de décrochage »). */
 export interface ToolTask {
   prompt: L10n;
+  /** the control the student works. When it is the tool's own task (course/tools), the tool checks it over all
+   *  the values; otherwise `target` ± `tol` on that control */
   key: string;
-  target: number;
-  tol: number;
+  target?: number;
+  tol?: number;
 }
 
 /** A live value in a text block. */

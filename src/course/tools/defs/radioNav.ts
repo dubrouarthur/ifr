@@ -1,8 +1,13 @@
 // Teaching tool « VOR et ADF »: the station seen from above with the aircraft on its radial, the selected course and
 // its TO / FROM halves, and the two instruments (the VOR indicator, the ADF). Maths and sources: ../maths/radio.ts
 // (FAA Instrument Flying Handbook ch. 9).
-import { radioState, VOR_DEG_PER_DOT, wrap360 } from "../maths/radio";
-import { hdg, L, ro, Svg, tr, type ToolDef } from "../kit";
+import {
+  radioState,
+  VOR_DEG_PER_DOT,
+  VOR_FULL_SCALE,
+  wrap360,
+} from "../maths/radio";
+import { hdg, hidden, L, ro, Svg, tr, type ToolDef } from "../kit";
 
 export const radioNavTool: ToolDef = {
   id: "radioNav",
@@ -82,8 +87,12 @@ export const radioNavTool: ToolDef = {
       "Affichez l’OBS pour rejoindre la station : aiguille centrée, TO",
     ),
     key: "obs",
-    target: 300,
-    tol: 1,
+    // checked from the radial the aircraft is on, whatever the student or the creator set it to
+    met: (p) => {
+      const st = radioState(p.radial, p.obs, p.hdg);
+      return st.flag === "TO" && st.centred;
+    },
+    hides: ["qdm"],
   },
   view: { w: 1000, h: 600 },
   frame: { w: 1680, h: 736 },
@@ -269,8 +278,9 @@ export const radioNavTool: ToolDef = {
       fill: c.muted,
       anchor: "middle",
     });
-    // the rules
-    s.text(770, 440, `QDM = QDR ± 180 = ${hdg(st.qdm)}°`, {
+    // the rules (a task looking for the QDM leaves the results out)
+    const qdmTxt = hidden(cx, "qdm") ? "?" : `${hdg(st.qdm)}°`;
+    s.text(770, 440, `QDM = QDR ± 180 = ${qdmTxt}`, {
       size: 26,
       weight: 700,
       fill: c.text,
@@ -279,7 +289,7 @@ export const radioNavTool: ToolDef = {
     s.text(
       770,
       480,
-      `${tr(L("MB = MH + RB", "QDM = Cm + G"), lang)} = ${hdg(wrap360(p.hdg + st.rb))}°`,
+      `${tr(L("MB = MH + RB", "QDM = Cm + G"), lang)} = ${hidden(cx, "qdm") ? "?" : `${hdg(wrap360(p.hdg + st.rb))}°`}`,
       { size: 24, fill: c.muted, anchor: "middle" },
     );
     s.text(
@@ -288,17 +298,25 @@ export const radioNavTool: ToolDef = {
       `${tr(L("1 dot =", "1 point ="), lang)} ${VOR_DEG_PER_DOT}°`,
       { size: 22, fill: c.muted, anchor: "middle" },
     );
-    const dev = Math.round(Math.abs(st.deviation));
-    const side =
-      st.deviation > 0 ? L("right", "à droite") : L("left", "à gauche");
+    // past full scale the needle is against its stop: the degrees it shows are no longer the deviation
+    const side = st.raw > 0 ? L("right", "à droite") : L("left", "à gauche");
+    const dots = Math.round(Math.abs(st.dots));
     const needle = st.centred
       ? tr(L("centred", "centrée"), lang)
-      : `${dev}° ${tr(side, lang)}`;
+      : Math.abs(st.raw) > VOR_FULL_SCALE
+        ? tr(
+            L(
+              `full scale ${side.en} (> ${VOR_FULL_SCALE}°)`,
+              `en butée ${side.fr} (> ${VOR_FULL_SCALE}°)`,
+            ),
+            lang,
+          )
+        : `${Math.round(Math.abs(st.raw))}° · ${dots} ${tr(dots > 1 ? L("dots", "points") : L("dot", "point"), lang)} ${tr(side, lang)}`;
     return {
       svg: s.toString(),
       readouts: [
         ro(L("Radial (QDR)", "Radial (QDR)"), `${hdg(st.radial)}°`),
-        ro(L("QDM", "QDM"), `${hdg(st.qdm)}°`, "key"),
+        ro(L("QDM", "QDM"), `${hdg(st.qdm)}°`, "key", "qdm"),
         ro(L("Flag", "Indicateur"), st.flag, st.flag === "TO" ? "sel" : "warn"),
         ro(L("Needle", "Aiguille"), needle, st.centred ? "ok" : undefined),
         ro(L("ADF bearing", "Gisement ADF"), `${hdg(st.rb)}°`),

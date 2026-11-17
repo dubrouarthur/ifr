@@ -4,7 +4,7 @@
 import type { L10n, SlideBlock, SlideCanvas, ToolId } from "../types";
 import { DEFAULT_GRID } from "../canvas/geom";
 import { G, L, T } from "../canvas/layouts";
-import { TOOLS } from "../tools/index";
+import { TOOLS, toolTaskData } from "../tools/index";
 
 /** the sources each tool slide cites (the tool's maths module holds the details) */
 const SOURCES: Record<ToolId, L10n> = {
@@ -71,9 +71,7 @@ export function toolSlides(): ToolSlide[] {
       kind: "tool",
       tool: d.id,
       p: { ...d.defaults },
-      ...(d.task
-        ? { task: JSON.parse(JSON.stringify(d.task)) as typeof d.task }
-        : {}),
+      ...(d.task ? { task: toolTaskData(d) } : {}),
       alt: L(d.title.en, d.title.fr ?? d.title.en),
       frame: { x: G.left, y: 248, w: 1680, h: 736, z: 1 },
     };

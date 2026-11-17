@@ -20,6 +20,8 @@ export interface RadioState {
   flag: "TO" | "FROM";
   /** course deviation, deg (+: the course is to the right — fly right), clamped to full scale */
   deviation: number;
+  /** the same before the clamp: past ±10° the needle is against its stop (« en butée ») */
+  raw: number;
   /** the same, in dots (±5) */
   dots: number;
   /** ADF relative bearing, deg clockwise from the nose */
@@ -42,6 +44,7 @@ export function radioState(
     qdm,
     flag: from ? "FROM" : "TO",
     deviation,
+    raw,
     dots: deviation / VOR_DEG_PER_DOT,
     rb: wrap360(qdm - heading),
     centred: Math.abs(raw) <= VOR_DEG_PER_DOT / 2,

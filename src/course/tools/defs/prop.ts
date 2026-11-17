@@ -196,7 +196,15 @@ export const propTool: ToolDef = {
     };
     const phi = (st.phi * Math.PI) / 180;
     // the relative wind carried on past the pivot, so its angle reads against the plane of rotation
-    s.line(ox, oy, ox + 200 * Math.cos(phi), oy + 200 * Math.sin(phi), c.sel, 2.5, "8 6");
+    s.line(
+      ox,
+      oy,
+      ox + 200 * Math.cos(phi),
+      oy + 200 * Math.sin(phi),
+      c.sel,
+      2.5,
+      "8 6",
+    );
     arc(150, 0, b, c.text, `β ${num(st.beta, 1, lang)}°`, 8);
     if (st.phi > 0.5) arc(100, 0, phi, c.sel, `φ ${num(st.phi, 1, lang)}°`, 8);
     s.text(40, 520, `α = β − φ = ${num(st.alpha, 1, lang)}°`, {

@@ -215,7 +215,12 @@ export const cabinTool: ToolDef = {
     s.circle(ax + 30, cy, 11, { fill: tone, stroke: c.bg, "stroke-width": 3 });
     s.text(
       ax + 54,
-      cy + (Math.abs(cy - ay) < 30 ? 28 : Math.abs(st.cabinFt - CABIN_MAX_FT) < 2500 ? -22 : 0),
+      cy +
+        (Math.abs(cy - ay) < 30
+          ? 28
+          : Math.abs(st.cabinFt - CABIN_MAX_FT) < 2500
+            ? -22
+            : 0),
       `${tr(L("cabin", "cabine"), lang)} ${num(st.cabinFt, 0, lang)} ft`,
       { size: 22, weight: 700, fill: tone, mid: true, halo: c.bg },
     );

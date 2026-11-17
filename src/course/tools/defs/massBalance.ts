@@ -158,7 +158,15 @@ export const massBalanceTool: ToolDef = {
     };
     station(WB.frontArm, p.front, 400, tr(L("Front", "Avant"), lang));
     station(WB.rearArm, p.rear, 400, tr(L("Rear", "Arrière"), lang));
-    station(WB.bag1Arm, p.bag, 120, tr(L("Bags", "Soute"), lang), 56, c.accent, 34);
+    station(
+      WB.bag1Arm,
+      p.bag,
+      120,
+      tr(L("Bags", "Soute"), lang),
+      56,
+      c.accent,
+      34,
+    );
     // fuel in the wings (both tanks)
     const fuelLb = p.fuel * WB.fuelLbPerGal;
     for (const dy of [-150, 150]) {

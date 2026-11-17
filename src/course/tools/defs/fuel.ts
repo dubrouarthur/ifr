@@ -3,7 +3,7 @@
 // ../maths/perf.ts (EU Part-NCO.OP.125 reserve: 30 min by day, 45 min by night; 53 US gal usable).
 import { fuelPlan, USABLE_L } from "../maths/perf";
 import { FMT } from "../../calc/text";
-import { L, num, ro, Svg, tr, type ToolDef } from "../kit";
+import { hidden, L, num, ro, Svg, tr, type ToolDef } from "../kit";
 
 export const fuelTool: ToolDef = {
   id: "fuel",
@@ -88,8 +88,20 @@ export const fuelTool: ToolDef = {
       "Trouvez le carburant minimum pour 2 h de vol de jour à 35 L/h",
     ),
     key: "fuel",
-    target: 5 + (35 * (120 + 30)) / 60,
-    tol: 2.5,
+    // the prompt's figures are givens. Never below the legal minimum (taxi 5 + trip 70 + reserve 17.5 = 92.5 L,
+    // Part-NCO.OP.125): one-sided, the reserve covered and less than 3 L more (93, 94 or 95 L in 1 L steps)
+    givens: { flow: 35, trip: 120, night: 0, taxi: 5 },
+    met: (p) => {
+      const st = fuelPlan({
+        fuelL: p.fuel,
+        flowLph: p.flow,
+        tripMin: p.trip,
+        taxiL: p.taxi,
+        night: Math.round(p.night) === 1,
+      });
+      return st.verdict === "ok" && p.fuel - st.requiredL < 3;
+    },
+    hides: ["required"],
   },
   view: { w: 1000, h: 600 },
   frame: { w: 1680, h: 736 },
@@ -187,7 +199,7 @@ export const fuelTool: ToolDef = {
         anchor: X(p.fuel) > 820 ? "end" : "middle",
       },
     );
-    if (st.requiredL > 0)
+    if (st.requiredL > 0 && !hidden(cx, "required"))
       s.text(
         X(st.requiredL) + (st.requiredL < p.fuel ? -8 : 8),
         y - 12,
@@ -268,6 +280,7 @@ export const fuelTool: ToolDef = {
           L("Fuel required", "Carburant nécessaire"),
           `${num(st.requiredL, 0, lang)} L`,
           "key",
+          "required",
         ),
         ro(
           L("Left on landing", "Restant à l’arrivée"),
@@ -279,7 +292,7 @@ export const fuelTool: ToolDef = {
           `${st.reserveMin} min · ${num(st.reserveL, 0, lang)} L`,
         ),
       ],
-      say: `${tr(L("On board", "À bord"), lang)} ${num(p.fuel, 0, lang)} L, ${tr(L("required", "nécessaire"), lang)} ${num(st.requiredL, 0, lang)} L: ${tr(verdict, lang)}.`,
+      say: `${tr(L("On board", "À bord"), lang)} ${num(p.fuel, 0, lang)} L${hidden(cx, "required") ? "" : `, ${tr(L("required", "nécessaire"), lang)} ${num(st.requiredL, 0, lang)} L`}: ${tr(verdict, lang)}.`,
     };
   },
 };

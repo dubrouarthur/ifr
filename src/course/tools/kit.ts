@@ -1,6 +1,6 @@
 // Teaching tools — what every tool shares (pure, no DOM): the tool definition, the drawing context, a small SVG
 // string builder (our own markup: every text is escaped) and the number formats of each language.
-import type { L10n, Lang, SlideTheme, ToolId, ToolTask } from "../types";
+import type { L10n, Lang, SlideTheme, ToolId } from "../types";
 import { FMT } from "../calc/text";
 
 export const L = (en: string, fr: string): L10n => ({ en, fr });
@@ -32,6 +32,8 @@ export interface ToolReadout {
   label: L10n;
   value: string;
   tone?: Tone;
+  /** names the readout, so a task can keep it hidden (« ? ») until the student finds the value */
+  key?: string;
 }
 /** the theme colours a drawing uses (slide theme tokens: never a free colour) */
 export interface ToolColors {
@@ -74,6 +76,24 @@ export interface DrawCx {
   t: number;
   /** the drawing may move (play mode, no reduced-motion preference) */
   moving: boolean;
+  /** the values a task keeps hidden until it is met (readout keys): the drawing leaves them out too */
+  hide?: ReadonlySet<string>;
+}
+/** is this value hidden by the task in progress? */
+export const hidden = (cx: DrawCx, key: string): boolean => !!cx.hide?.has(key);
+/**
+ * A tool's ready task. It is checked over ALL the values (never one control against a fixed number), so it stays
+ * right whatever else the student or the creator changes. The values the prompt states (« 2 h de vol à 35 L/h »)
+ * are its givens: while the task is on they are set and their controls are not offered. Presets and « Animer » are
+ * not offered either (they would give the answer), and the readouts in `hides` show « ? » until it is met.
+ */
+export interface ToolTaskDef {
+  prompt: L10n;
+  /** the control the student works */
+  key: string;
+  givens?: ToolValues;
+  met(p: ToolValues): boolean;
+  hides?: string[];
 }
 export interface ToolView {
   /** the inner SVG markup in the tool's viewBox */
@@ -100,8 +120,8 @@ export interface ToolDef {
   sweep?: { key: string; from: number; to: number; s: number };
   /** the presenter's note: what to show, what to ask */
   note: L10n;
-  /** a ready task (the example slide uses it) */
-  task?: ToolTask;
+  /** a ready task (the example slide uses it; a block stores { prompt, key }, the check lives here) */
+  task?: ToolTaskDef;
   /** the drawing's viewBox */
   view: { w: number; h: number };
   /** the size a new tool block takes (slide units) */
@@ -302,8 +322,14 @@ export const lerpMap = (
 export const deg = (rad: number): number => (rad * 180) / Math.PI;
 export const rad = (d: number): number => (d * Math.PI) / 180;
 /** a value read out with its label (the panel's list) */
-export const ro = (label: L10n, value: string, tone?: Tone): ToolReadout => ({
+export const ro = (
+  label: L10n,
+  value: string,
+  tone?: Tone,
+  key?: string,
+): ToolReadout => ({
   label,
   value,
   tone,
+  ...(key ? { key } : {}),
 });

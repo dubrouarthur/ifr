@@ -7,7 +7,14 @@
 import "../../styles/course-tools.css";
 import type { Lang, SlideBlock } from "../types";
 import type { BlockEnv, BlockView } from "./blocks";
-import { taskMet, toolControls, toolDef, toolValues } from "../tools/index";
+import {
+  blockStart,
+  liveControls,
+  taskMet,
+  toolDef,
+  toolTask,
+  toolValues,
+} from "../tools/index";
 import {
   paramText,
   snapParam,
@@ -49,6 +56,7 @@ const ICON = {
   pause: "M7 5h4v14H7zM13 5h4v14h-4z",
   reset: "M12 5a7 7 0 1 1-6.6 4.7M5 4v5h5",
   check: "M5 12.5l4.5 4.5L19 7",
+  more: "M6 9l6 6 6-6",
 };
 function icon(d: string, filled = false): SVGSVGElement {
   const s = document.createElementNS(SVGNS, "svg");
@@ -82,9 +90,11 @@ export function toolBlock(b: Of, env: BlockEnv): BlockView {
   const play = env.mode === "play";
   const reduced = reducedMotion();
   const colors = toolColors(env.theme);
-  const start = toolValues(D, b.p);
+  // a task's givens are set and their controls not offered (tools/index.ts liveControls)
+  const start = blockStart(D, b);
   let p: ToolValues = { ...start };
-  const keys = toolControls(D, b);
+  const keys = liveControls(D, b);
+  const own = toolTask(D, b);
   const side = toolSide(b);
   el.dataset.side = side;
   el.dataset.tool = D.id;
@@ -236,6 +246,19 @@ export function toolBlock(b: Of, env: BlockEnv): BlockView {
           stop();
         });
       }
+      // on a focused − / +, the arrows work the value (never the slide behind)
+      for (const bt of [minus, plus])
+        bt.addEventListener("keydown", (e) => {
+          const d =
+            e.key === "ArrowUp" || e.key === "ArrowRight"
+              ? 1
+              : e.key === "ArrowDown" || e.key === "ArrowLeft"
+                ? -1
+                : 0;
+          if (!d) return;
+          e.preventDefault();
+          bump(d);
+        });
       row.append(minus, range, plus);
       box.append(row);
       ctls.push({
@@ -257,21 +280,47 @@ export function toolBlock(b: Of, env: BlockEnv): BlockView {
     }
     ctrlBox.append(box);
   }
-  // presets, « Animer », back to the start
+  // presets, « Animer », back to the start. While a task is on, no presets and no « Animer »: they would give the
+  // answer. When the panel would not fit its frame, the presets fold behind one « Préréglages » chip (layout()).
   const acts = mk("div", "sl-tool-acts");
   let animBtn: HTMLButtonElement | null = null;
   let resetBtn: HTMLButtonElement | null = null;
+  let menuBtn: HTMLButtonElement | null = null;
+  const presetBox = mk("div", "sl-tool-presets");
+  presetBox.id = `sl-tool-pr-${b.id}`;
+  const setMenu = (open: boolean) => {
+    panel.classList.toggle("menu-open", open);
+    menuBtn?.setAttribute("aria-expanded", open ? "true" : "false");
+  };
   if (keys.length) {
-    for (const pr of D.presets) {
-      const bt = mk("button", "sl-tc-chip", tr(pr.label, lang));
-      bt.type = "button";
-      bt.addEventListener("click", () => {
-        stopSweep();
-        change(toolValues(D, { ...p, ...pr.p }), "user");
-      });
-      acts.append(bt);
+    if (!b.task && D.presets.length) {
+      for (const pr of D.presets) {
+        const bt = mk("button", "sl-tc-chip", tr(pr.label, lang));
+        bt.type = "button";
+        bt.addEventListener("click", () => {
+          stopSweep();
+          change(toolValues(D, { ...p, ...pr.p }), "user");
+          if (panel.classList.contains("menu-open")) {
+            setMenu(false);
+            menuBtn?.focus();
+          }
+        });
+        presetBox.append(bt);
+      }
+      menuBtn = mk("button", "sl-tc-chip sl-tool-menu");
+      menuBtn.type = "button";
+      menuBtn.setAttribute("aria-controls", presetBox.id);
+      menuBtn.setAttribute("aria-expanded", "false");
+      menuBtn.append(
+        mk("span", "", t2(lang, "Presets", "Préréglages")),
+        icon(ICON.more),
+      );
+      menuBtn.addEventListener("click", () =>
+        setMenu(!panel.classList.contains("menu-open")),
+      );
+      acts.append(presetBox, menuBtn);
     }
-    if (D.sweep && keys.includes(D.sweep.key)) {
+    if (!b.task && D.sweep && keys.includes(D.sweep.key)) {
       animBtn = mk("button", "sl-tc-chip is-anim");
       animBtn.type = "button";
       animBtn.addEventListener("click", () =>
@@ -279,12 +328,13 @@ export function toolBlock(b: Of, env: BlockEnv): BlockView {
       );
       acts.append(animBtn);
     }
+    // one icon, always in its place (greyed at the start values): the row never jumps
     resetBtn = mk("button", "sl-tc-chip is-reset");
     resetBtn.type = "button";
-    resetBtn.append(
-      icon(ICON.reset),
-      mk("span", "", t2(lang, "Start values", "Valeurs de départ")),
-    );
+    const resetName = t2(lang, "Start values", "Valeurs de départ");
+    resetBtn.setAttribute("aria-label", resetName);
+    resetBtn.title = resetName;
+    resetBtn.append(icon(ICON.reset));
     resetBtn.addEventListener("click", () => {
       stopSweep();
       change({ ...start }, "user");
@@ -294,23 +344,40 @@ export function toolBlock(b: Of, env: BlockEnv): BlockView {
   }
   el.append(panel);
   if (!keys.length && !b.task) el.classList.add("no-ctrls");
+  // inside the panel the arrows belong to the control in focus, never to the player behind (next slide)
+  panel.addEventListener("keydown", (e) => {
+    if (e.key.startsWith("Arrow")) e.stopPropagation();
+    if (e.key === "Escape" && panel.classList.contains("menu-open")) {
+      e.stopPropagation();
+      setMenu(false);
+      menuBtn?.focus();
+    }
+  });
 
   // ---------------------------------------------------------------- state
   let view: ToolView | null = null;
-  const t0 = performance.now();
-  const draw = (t = 0) => {
+  // the values a task keeps hidden until it is met (then they stay shown)
+  let met = false;
+  const hide = (): ReadonlySet<string> | undefined =>
+    own?.hides?.length && !met ? new Set(own.hides) : undefined;
+  let label = "";
+  // drawn once per change: what moves by itself (the airflow) moves in CSS (course-tools.css), not by redrawing
+  const draw = () => {
     view = D.draw(p, {
       lang,
       c: colors,
-      t,
+      t: 0,
       moving: play && !reduced && !!D.animated,
+      hide: hide(),
     });
     svg.innerHTML = view.svg; // our own markup: kit.ts Svg escapes every text
-    svg.setAttribute("aria-label", `${tr(D.title, lang)}. ${view.say}`);
+    const next = `${tr(D.title, lang)}. ${view.say}`;
+    if (next !== label) svg.setAttribute("aria-label", (label = next));
   };
   const roRows: { dt: HTMLElement; dd: HTMLElement }[] = [];
   const syncReadouts = () => {
     const list = view?.readouts ?? [];
+    const hidden = hide();
     while (roRows.length < list.length) {
       const row = mk("div", "sl-tool-ro-r");
       const dt = mk("dt");
@@ -323,16 +390,17 @@ export function toolBlock(b: Of, env: BlockEnv): BlockView {
       const x = list[i];
       (r.dt.parentElement as HTMLElement).hidden = !x;
       if (!x) return;
+      const masked = !!x.key && !!hidden?.has(x.key);
       r.dt.textContent = tr(x.label, lang);
-      r.dd.textContent = x.value;
-      r.dd.dataset.tone = x.tone ?? "plain";
+      r.dd.textContent = masked ? "?" : x.value;
+      r.dd.dataset.tone = masked ? "plain" : (x.tone ?? "plain");
     });
   };
-  let met = false;
+  let lastSrc: "user" | "remote" | "anim" | "start" = "start";
   const syncAll = () => {
     for (const c of ctls) c.sync();
     if (resetBtn)
-      resetBtn.hidden = keys.every((k) => Math.abs(p[k] - start[k]) < 1e-9);
+      resetBtn.disabled = keys.every((k) => Math.abs(p[k] - start[k]) < 1e-9);
     if (animBtn) {
       animBtn.replaceChildren(
         icon(sweeping ? ICON.pause : ICON.play, true),
@@ -346,16 +414,18 @@ export function toolBlock(b: Of, env: BlockEnv): BlockView {
       );
       animBtn.setAttribute("aria-pressed", sweeping ? "true" : "false");
     }
-    syncReadouts();
     if (b.task && taskRow) {
-      const ok = taskMet(b, p);
+      const ok = taskMet(D, b, p);
       taskRow.classList.toggle("done", ok);
-      if (ok && !met && play) {
+      // found by the student (or the presenter's console), never by the starting values or an animation
+      if (ok && !met && play && (lastSrc === "user" || lastSrc === "remote")) {
         met = true;
+        if (own?.hides?.length) draw(); // the hidden values come back
         env.fire("goalMet");
         announce(t2(lang, "Found. ", "Trouvé. ") + (view?.say ?? ""));
       }
     }
+    syncReadouts();
   };
   let sayT: number | null = null;
   function announce(t: string) {
@@ -380,8 +450,8 @@ export function toolBlock(b: Of, env: BlockEnv): BlockView {
   };
   function change(next: ToolValues, src: "user" | "remote" | "anim") {
     p = next;
-    if (!loop) draw(0);
-    else draw((performance.now() - t0) / 1000);
+    lastSrc = src;
+    draw();
     syncAll();
     if (src === "remote") return;
     post(src === "user");
@@ -441,19 +511,6 @@ export function toolBlock(b: Of, env: BlockEnv): BlockView {
     post(true);
   }
 
-  // ---------------------------------------------------------------- the moving air (play, no reduced motion)
-  let loop: number | null = null;
-  let lastFrame = 0;
-  if (play && !reduced && D.animated) {
-    const frame = (now: number) => {
-      loop = requestAnimationFrame(frame);
-      if (!el.isConnected || now - lastFrame < 33) return;
-      lastFrame = now;
-      draw((now - t0) / 1000);
-    };
-    loop = requestAnimationFrame(frame);
-  }
-
   // ---------------------------------------------------------------- the presenter's console ↔ the projector
   const unhub = hub?.add(b.id, {
     live: () => ({ spec: { ...p }, paused: !sweeping }),
@@ -471,6 +528,7 @@ export function toolBlock(b: Of, env: BlockEnv): BlockView {
   // Under this scale the panel cannot keep 44 px targets inside the frame (a phone, a tablet held upright): the
   // slide shows the drawing and its values, and « Manipuler » opens the tool over the whole screen, in CSS pixels.
   let compact = false;
+  let kCompact = -1;
   let sheet: HTMLElement | null = null;
   let hudBtn: HTMLButtonElement | null = null;
   const hud: {
@@ -487,10 +545,15 @@ export function toolBlock(b: Of, env: BlockEnv): BlockView {
     );
     hudBtn.setAttribute(
       "aria-label",
-      `${t2(lang, "Try it", "Manipuler")} : ${tr(D.title, lang)}`,
+      t2(
+        lang,
+        `Try it: ${tr(D.title, lang)}`,
+        `Manipuler : ${tr(D.title, lang)}`,
+      ),
     );
     hudBtn.addEventListener("click", () => openSheet());
-    hud.push({ el: hudBtn, at: [1, 1], origin: [1, 1] });
+    // hung under the block's frame (never over the drawing and its values)
+    hud.push({ el: hudBtn, at: [1, 1], origin: [1, 0] });
   }
   const onSheetKey = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
@@ -498,8 +561,12 @@ export function toolBlock(b: Of, env: BlockEnv): BlockView {
       closeSheet();
     }
   };
+  // the sheet is modal: everything else on the page is inert while it is open (focus stays in it)
+  let inerted: Element[] = [];
   function openSheet() {
     if (sheet) return;
+    setMenu(false);
+    panel.classList.remove("is-menu");
     const view = el.closest(".sl-view") as HTMLElement | null;
     sheet = mk("div", "sl-tool-sheet");
     sheet.setAttribute("role", "dialog");
@@ -526,25 +593,39 @@ export function toolBlock(b: Of, env: BlockEnv): BlockView {
     sheet.append(hd, fig, panel);
     sheet.addEventListener("keydown", onSheetKey);
     document.body.append(sheet);
+    for (const x of Array.from(document.body.children))
+      if (x !== sheet && !x.hasAttribute("inert")) {
+        x.setAttribute("inert", "");
+        inerted.push(x);
+      }
     (panel.querySelector("button, input") as HTMLElement | null)?.focus();
   }
   function closeSheet() {
     if (!sheet) return;
+    for (const x of inerted) x.removeAttribute("inert");
+    inerted = [];
     art.style.aspectRatio = "";
     el.prepend(fig);
     el.append(panel);
     sheet.remove();
     sheet = null;
     if (hudBtn?.isConnected) hudBtn.focus();
+    layout();
   }
 
   // ---------------------------------------------------------------- size
-  const layout = () => {
+  // the panel never hides a control below a scroll inside the slide: when it does not fit the frame the presets
+  // fold behind « Préréglages », and if that is not enough (a small screen) the tool opens full screen instead
+  const overflows = () => panel.scrollHeight > panel.clientHeight + 1;
+  function layout() {
     const k = env.scale();
-    compact = play && k > 0 && k < 0.42 && !!hudBtn;
-    el.classList.toggle("is-compact", compact);
-    hudBtn?.classList.toggle("is-off", !compact);
-    if (!compact && sheet) closeSheet();
+    let small = play && k > 0 && k < 0.42 && !!hudBtn;
+    if (sheet) {
+      if (small || k === kCompact) return;
+      closeSheet(); // the screen grew: back on the slide (closeSheet lays out again)
+      return;
+    }
+    el.classList.remove("is-compact");
     const z = play ? toolZoom(k) : 1;
     const W = b.frame.w;
     const H = b.frame.h;
@@ -558,8 +639,20 @@ export function toolBlock(b: Of, env: BlockEnv): BlockView {
       panel.style.width = `${W / z}px`;
       panel.style.maxHeight = `${(H * 0.6) / z}px`;
     }
-  };
-  draw(0);
+    if (!small) {
+      const open = panel.classList.contains("menu-open");
+      panel.classList.remove("is-menu", "menu-open");
+      if (menuBtn && overflows()) panel.classList.add("is-menu");
+      if (open && panel.classList.contains("is-menu")) setMenu(true);
+      else setMenu(false);
+      if (hudBtn && overflows()) small = true;
+    }
+    compact = small;
+    kCompact = k;
+    el.classList.toggle("is-compact", compact);
+    hudBtn?.classList.toggle("is-off", !compact);
+  }
+  draw();
   syncAll();
   layout();
   return {
@@ -571,7 +664,6 @@ export function toolBlock(b: Of, env: BlockEnv): BlockView {
       closeSheet();
       hudBtn?.remove();
       unhub?.();
-      if (loop !== null) cancelAnimationFrame(loop);
       stopSweep();
       if (sayT !== null) clearTimeout(sayT);
       if (postT !== null) clearTimeout(postT);

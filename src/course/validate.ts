@@ -10,7 +10,7 @@
 // Levels: 'error' = the course would play wrong or breaks a rule (a missing scene, an image without alt text, a
 // graded step with an assist); 'warn' = advisory. Errors whose code is STRUCTURAL mean the course cannot be stored
 // or opened at all (not a course, duplicate step ids…); the editor still saves drafts with content errors.
-import { toolDef } from "./tools/index";
+import { taskCheck, toolDef, toolTask } from "./tools/index";
 import type {
   AssetRef,
   BlockAction,
@@ -3166,8 +3166,22 @@ function slide(cx: Ctx, s: Step, c: SlideCanvas, path: string) {
         for (const k of b.controls ?? [])
           if (!keys.has(k))
             push(cx, "error", "slide", `${p}.controls`, L("Unknown tool control", "Commande d’outil inconnue"), ids);
-        if (b.task && (!keys.has(b.task.key) || !Number.isFinite(b.task.target) || !(b.task.tol >= 0)))
-          push(cx, "error", "slide", `${p}.task`, L("The tool's task names an unknown value", "La tâche de l’outil vise une valeur inconnue"), ids);
+        if (b.task) {
+          // the tool's own task is checked over all its values (tools/index.ts); any other needs a target ± tol
+          const own = toolTask(def, b);
+          if (!keys.has(b.task.key) || (!own && (!Number.isFinite(b.task.target) || !((b.task.tol ?? -1) >= 0))))
+            push(cx, "error", "slide", `${p}.task`, L("The tool's task names an unknown value", "La tâche de l’outil vise une valeur inconnue"), ids);
+          else {
+            // run the task from the block's own starting values and the controls the student gets
+            const chk = taskCheck(def, b);
+            if (chk === "impossible")
+              push(cx, "error", "slide", `${p}.task`, L("The tool's task cannot be met from these starting values", "La tâche de l’outil est impossible avec ces valeurs de départ"), ids);
+            else if (chk === "met")
+              push(cx, "warn", "slide", `${p}.task`, L("The tool's task is already met at the start: change a starting value", "La tâche de l’outil est déjà réussie au départ : changez une valeur de départ"), ids);
+            else if (chk === "noControl")
+              push(cx, "warn", "slide", `${p}.controls`, L("The student does not get the control the task needs", "L’élève n’a pas la commande dont la tâche a besoin"), ids);
+          }
+        }
         break;
       }
       case "checklist": {
