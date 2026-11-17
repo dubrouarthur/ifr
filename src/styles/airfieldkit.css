@@ -164,9 +164,9 @@
     transition: opacity 0.2s;
   }
 }
-/* the studio's « Modèles » panel: narrow, the thumbnails two by two */
+/* the studio's « Modèles » panel, after the ready slides: narrow, the thumbnails two by two */
 .ce-panel-b > .afk {
-  margin: 0 0 18px;
+  margin: 22px 0 18px;
   padding: 14px;
   gap: 10px;
 }
