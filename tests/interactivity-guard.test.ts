@@ -9,8 +9,9 @@
 //      not already met before the student acts (its situation at rest does not satisfy every check);
 //  (d) every slide with a live block can be driven by the presenter: its situation resolves (the console's
 //      « Piloter la démonstration » deck has an aircraft to fly);
-//  (e) presenter notes on every step, or the console's fallback (« À dire », ui/presenterNotes.ts) builds at least
-//      two points from the slide;
+//  (e) presenter notes on every step, or the console's fallback (ui/presenterNotes.ts) builds at least two lines,
+//      one of them more than the slide read aloud (« À dire »): an objective, an answer, a calculation's rule, how
+//      to teach this kind of slide, or the author's note;
 //  (f) every step has a title, in both languages.
 // Besides the courses, what a creator adds from the studio is checked the same way (every rule but (a), which is
 // about a whole course): each layout of « Mise en page » / « Tous les modèles » made into a step as the studio makes
@@ -39,7 +40,9 @@ import { stripControls } from "../src/course/canvas/controlStrip";
 import { problemFor } from "../src/course/calc";
 import { evaluate, flyCriteria, GoalTracker, stageView } from "../src/course/goals";
 import { LAYOUTS } from "../src/course/canvas/layouts";
-import { linearText, makeStep } from "../src/course/ui/templates";
+import { linearText, makeStep, starterScene } from "../src/course/ui/templates";
+
+const starter = starterScene("g1000", "s");
 import { EMPTY_STARTS, EMPTY_STARTS_VFR } from "../src/course/ui/studio";
 import { showcaseScenes, startSlides } from "../src/course/samples/showcaseDecks";
 import { Sim, type Failures } from "../src/sim/sim";
@@ -245,12 +248,15 @@ function guard(c: Course, o: { skip?: readonly Rule[]; handsOff?: boolean } = {}
     run = interactive(s) ? 0 : run + 1;
     if (run >= 3) add("a", s, "third step in a row without an interaction");
     // (e) presenter notes
+    // the fallback counts when it gives two lines and one of them is more than the slide read aloud (« À dire ») —
+    // an objective, an answer, a calculation's rule, how to teach this kind of slide or the author's note
     const notes = !!(s.notes?.en?.trim() && s.notes?.fr?.trim());
-    if (!notes && fallbackNotes(s, "fr").length < 2)
+    const fb = fallbackNotes(s, "fr");
+    if (!notes && (fb.length < 2 || fb.every((l) => l.startsWith("À dire"))))
       add(
         "e",
         s,
-        `no presenter notes (fallback gives ${fallbackNotes(s, "fr").length})`,
+        `no presenter notes (fallback gives ${fb.length}${fb.length ? `, ${fb.filter((l) => !l.startsWith("À dire")).length} beyond « À dire »` : ""})`,
       );
     // (c) every « À vous »
     if (s.kind === "try" && !s.slide) {
@@ -524,5 +530,53 @@ describe("interactivity guard rules", () => {
       true,
     );
     expect(r.some((i) => i.rule === "d")).toBe(true);
+  });
+  it("flags an « À vous » already met before the student acts, and one that is met hands off", () => {
+    const c = blank("x");
+    c.scenes = { s: starter };
+    const frame = { x: 0, y: 0, w: 600, h: 600, z: 1 };
+    const turn = (all: GoalCheck[]): Step =>
+      step({
+        notes: { en: "n", fr: "n" },
+        slide: {
+          size: { w: 1920, h: 1080 },
+          scene: "s",
+          blocks: [
+            {
+              id: "y",
+              kind: "instrument",
+              frame,
+              view: { kind: "gauge", gauge: "hsi" },
+              mode: "live",
+              controls: ["obs1"],
+              yourTurn: { where: "slide", prompt: { en: "p", fr: "p" }, goal: { all, holdS: 3, graded: false } },
+            },
+          ],
+        },
+      });
+    // the starter pose: OBS 090 with a TO flag, heading 120 (FAA intercept picture)
+    c.steps = [turn([{ id: "obs", p: { nav: 1, value: 90, tol: 3 } }, { id: "toFrom", p: { value: "TO" } }])];
+    expect(guard(c).some((i) => i.rule === "c" && /already met/.test(i.msg))).toBe(true);
+    // heading 120 is held by the trimmed aircraft: nothing to do but wait
+    c.steps = [turn([{ id: "heading", p: { value: 120, tol: 5 } }, { id: "obs", p: { nav: 1, value: 200, tol: 3 } }])];
+    expect(guard(c).some((i) => i.rule === "c")).toBe(false);
+    c.steps = [turn([{ id: "heading", p: { value: 120, tol: 5 } }, { id: "altBand", p: { min: 3800, max: 4200 } }])];
+    expect(guard(c, { handsOff: true }).some((i) => i.rule === "c" && /already met|hands off/.test(i.msg))).toBe(true);
+  });
+  it("does not count notes that only read the slide aloud", () => {
+    const c = blank("x");
+    c.steps = [
+      step({
+        slide: {
+          size: { w: 1920, h: 1080 },
+          blocks: [
+            { id: "a", kind: "text", style: "body", frame: { x: 0, y: 0, w: 900, h: 100, z: 1 }, text: { en: "The needle points at the beacon all the time", fr: "L’aiguille pointe la balise en permanence" } },
+            { id: "b", kind: "text", style: "body", frame: { x: 0, y: 200, w: 900, h: 100, z: 1 }, text: { en: "The heading changes, the bearing does not", fr: "Le cap change, le relèvement ne change pas" } },
+          ],
+        },
+      }),
+    ];
+    expect(fallbackNotes(c.steps[0], "fr").length).toBeGreaterThanOrEqual(2);
+    expect(guard(c).some((i) => i.rule === "e")).toBe(true);
   });
 });

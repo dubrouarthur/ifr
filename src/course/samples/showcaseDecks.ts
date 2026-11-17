@@ -783,6 +783,12 @@ export const PPL_CIRCUIT = deck({
         }),
       SHOW_NOTES.yourTurn,
       "yourTurn",
+      // a 3° path at 68 kt is about 360 ft/min (5 × the groundspeed, FAA AFH ch. 8): 500 is a round target to feel
+      // the link between the pitch and the vario
+      L(
+        "One student flies, the class calls out the vario. Ask first: to go down faster, what moves, the nose or the power? Here the speed is held for them, so it is the nose: a small change, then wait for the needle.",
+        "Un élève pilote, la classe annonce le vario. Demandez d’abord : pour descendre plus vite, qu’est-ce qui bouge, le nez ou la puissance ? Ici la vitesse est tenue pour lui, c’est donc le nez : une petite correction, puis on attend l’aiguille.",
+      ),
     ],
     [
       "yourTurn",
@@ -1676,6 +1682,10 @@ export const ATPL_DISPLAYS = deck({
         }),
       SHOW_NOTES.yourTurn,
       "yourTurn",
+      L(
+        "Before the student turns the knob, ask which way the aircraft will roll and by how much: right, 30°. Then point out that nobody touches the yoke: the autopilot flies the turn onto the bug, the mode stays HDG.",
+        "Avant que l’élève tourne le bouton, demandez de quel côté l’avion va s’incliner et de combien : à droite, 30°. Puis faites remarquer que personne ne touche au manche : le pilote automatique vire jusqu’au repère, le mode reste HDG.",
+      ),
     ],
     [
       "quiz",

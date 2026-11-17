@@ -160,7 +160,8 @@ export function fallbackNotes(step: Step, lang: Lang): string[] {
   for (const t of teach ? [teach].flat() : []) if (out.length < 2) push(tx(t, lang));
   if (out.length < 2) {
     const title = plain(tx(step.title, lang));
-    /** a point worth saying: a phrase, not a label or the title again */
+    /** a point worth saying: a phrase, not a label or the title again (the interactivity guard does not count these
+     *  « À dire » lines alone: a step also needs an objective, an answer, a rule or how to teach the slide) */
     const worth = (p: string) => p.length >= 12 && p !== title;
     let said = 0;
     const say = (p: string) => {

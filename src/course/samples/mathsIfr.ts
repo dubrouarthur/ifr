@@ -2245,7 +2245,14 @@ export function mathsIfrCourse(): Course {
         ],
       },
     ],
-    { minutes: 3, calcLink: { step: "mi-60-calc", use: "both" } },
+    {
+      minutes: 3,
+      calcLink: { step: "mi-60-calc", use: "both" },
+      notes: L(
+        "Before they turn the bug, have a student say the heading computed and how: the error angle plus the angle to rejoin. Then watch the needle together: it comes back slowly, so the skill is holding the heading, not chasing the needle.",
+        "Avant qu’ils tournent l’index, faites dire à un élève le cap calculé et comment : l’angle d’erreur plus l’angle pour rejoindre. Puis regardez l’aiguille ensemble : elle revient lentement, le savoir-faire est de tenir le cap, pas de courir après l’aiguille.",
+      ),
+    },
   );
   const RATE_CALC = step(
     "mi-rate-calc",
