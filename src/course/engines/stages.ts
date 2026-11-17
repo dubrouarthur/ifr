@@ -26,7 +26,7 @@ export const PISTON_STAGES: EngineStage[] = [
   },
   {
     id: "power",
-    name: L("Power", "Combustion"),
+    name: L("Power", "Combustion-détente"),
     text: L(
       "The mixture burns and pushes the piston down: the only stroke that gives work. The rod turns the crankshaft.",
       "Le mélange brûle et repousse le piston : le seul temps moteur. La bielle fait tourner le vilebrequin.",

@@ -12,6 +12,8 @@ import {
   CS_PROP,
   TURBOFAN,
   TURBOPROP,
+  MIXTURE,
+  reverserFree,
   csPropSteady,
   csPropStep,
   flyweightTilt,
@@ -90,20 +92,31 @@ export function controlName(c: EngineControl, kind: EngineKind): L10n {
   }
 }
 /** the two ends of a lever, as the pilot says them */
-export function controlEnds(c: EngineControl, kind: EngineKind): [L10n, L10n] {
+export function controlEnds(
+  c: EngineControl,
+  kind: EngineKind,
+  reversed = false,
+): [L10n, L10n] {
+  if (c === "throttle" && kind === "turbofan" && reversed)
+    return [L("Reverse idle", "Ralenti inversion"), L("Max reverse", "Inversion max")];
   if (c === "mixture")
     return [L("Idle cut-off", "Étouffoir"), L("Full rich", "Plein riche")];
   if (c === "prop")
-    return [L("Low rpm", "Petit régime"), L("High rpm", "Plein petit pas")];
+    return [
+      L("Low rpm (coarse)", "Grand pas (bas régime)"),
+      L("High rpm (fine)", "Petit pas (haut régime)"),
+    ];
   if (kind === "turbofan")
     return [L("Idle", "Ralenti"), L("Take-off", "Décollage")];
   return [L("Idle", "Ralenti"), L("Full", "Plein gaz")];
 }
 
+const RPM = L("rpm", "tr/min");
 export interface GaugeSpec {
   id: string;
   name: L10n;
-  unit: string;
+  /** the unit as the reader writes it (« tr/min », "rpm") */
+  unit: L10n;
   min: number;
   max: number;
   /** red line (the published limit cited in model.ts) */
@@ -115,7 +128,7 @@ export const ENGINE_GAUGES: Record<EngineKind, GaugeSpec[]> = {
     {
       id: "rpm",
       name: L("RPM", "Régime"),
-      unit: "tr/min",
+      unit: RPM,
       min: 0,
       max: 3000,
       red: 2700,
@@ -124,7 +137,7 @@ export const ENGINE_GAUGES: Record<EngineKind, GaugeSpec[]> = {
     {
       id: "map",
       name: L("Manifold pressure", "Pression d’admission"),
-      unit: "inHg",
+      unit: L("inHg", "inHg"),
       min: 10,
       max: 30,
       digits: 1,
@@ -132,7 +145,7 @@ export const ENGINE_GAUGES: Record<EngineKind, GaugeSpec[]> = {
     {
       id: "egt",
       name: L("EGT", "EGT"),
-      unit: "°F",
+      unit: L("°F", "°F"),
       min: 1000,
       max: 1500,
       digits: 0,
@@ -140,7 +153,7 @@ export const ENGINE_GAUGES: Record<EngineKind, GaugeSpec[]> = {
     {
       id: "ff",
       name: L("Fuel flow", "Débit carburant"),
-      unit: "gal/h",
+      unit: L("gph", "gal/h"),
       min: 0,
       max: 16,
       digits: 1,
@@ -150,7 +163,7 @@ export const ENGINE_GAUGES: Record<EngineKind, GaugeSpec[]> = {
     {
       id: "rpm",
       name: L("RPM", "Régime"),
-      unit: "tr/min",
+      unit: RPM,
       min: 1500,
       max: 3000,
       red: 2700,
@@ -159,7 +172,7 @@ export const ENGINE_GAUGES: Record<EngineKind, GaugeSpec[]> = {
     {
       id: "map",
       name: L("Manifold pressure", "Pression d’admission"),
-      unit: "inHg",
+      unit: L("inHg", "inHg"),
       min: 10,
       max: 30,
       digits: 1,
@@ -167,7 +180,7 @@ export const ENGINE_GAUGES: Record<EngineKind, GaugeSpec[]> = {
     {
       id: "blade",
       name: L("Blade angle", "Calage des pales"),
-      unit: "°",
+      unit: L("°", "°"),
       min: 10,
       max: 35,
       digits: 1,
@@ -177,16 +190,17 @@ export const ENGINE_GAUGES: Record<EngineKind, GaugeSpec[]> = {
     {
       id: "torque",
       name: L("Torque", "Couple"),
-      unit: "ft·lb",
+      unit: L("ft·lb", "ft·lb"),
       min: 0,
-      max: 2000,
+      // past the 1,865 limit, so an overtorque shows on the gauge rather than off its end
+      max: 2200,
       red: TURBOPROP.torqueMax,
       digits: 0,
     },
     {
       id: "itt",
       name: L("ITT", "ITT"),
-      unit: "°C",
+      unit: L("°C", "°C"),
       min: 400,
       max: 900,
       red: TURBOPROP.ittMax,
@@ -195,7 +209,7 @@ export const ENGINE_GAUGES: Record<EngineKind, GaugeSpec[]> = {
     {
       id: "ng",
       name: L("Ng", "Ng"),
-      unit: "%",
+      unit: L("%", "%"),
       min: 40,
       max: 105,
       red: TURBOPROP.ngMax,
@@ -204,7 +218,7 @@ export const ENGINE_GAUGES: Record<EngineKind, GaugeSpec[]> = {
     {
       id: "np",
       name: L("Np", "Np"),
-      unit: "tr/min",
+      unit: RPM,
       min: 800,
       max: 2000,
       red: TURBOPROP.npMax,
@@ -215,7 +229,7 @@ export const ENGINE_GAUGES: Record<EngineKind, GaugeSpec[]> = {
     {
       id: "n1",
       name: L("N1", "N1"),
-      unit: "%",
+      unit: L("%", "%"),
       min: 0,
       max: 110,
       red: TURBOFAN.n1Red,
@@ -224,17 +238,17 @@ export const ENGINE_GAUGES: Record<EngineKind, GaugeSpec[]> = {
     {
       id: "egt",
       name: L("EGT", "EGT"),
-      unit: "°C",
+      unit: L("°C", "°C"),
       min: 300,
       max: 1000,
       red: TURBOFAN.egtRed,
       digits: 0,
     },
-    { id: "n2", name: L("N2", "N2"), unit: "%", min: 0, max: 110, digits: 1 },
+    { id: "n2", name: L("N2", "N2"), unit: L("%", "%"), min: 0, max: 110, digits: 1 },
     {
       id: "thrustPct",
       name: L("Thrust", "Poussée"),
-      unit: "%",
+      unit: L("%", "%"),
       min: -40,
       max: 100,
       digits: 0,
@@ -356,21 +370,51 @@ export class EngineSim {
     }
     this.v = out;
   }
-  /** one line of what is happening (the governor's state, the engine stopped, reversers…) */
+  /** the gauges have caught up with the levers (nothing left to integrate: the frame loop may rest) */
+  atRest(): boolean {
+    const tgt = engineTargets(this.kind, this.set);
+    if (this.kind === "prop")
+      return Math.abs(this.cs.rpm - tgt.rpm) < 3 && Math.abs(this.cs.bladeDeg - tgt.blade) < 0.1;
+    for (const [k, x] of Object.entries(tgt)) {
+      const v = this.v[k];
+      if (v === undefined) continue;
+      if (Math.abs(v - x) > Math.max(0.05, Math.abs(x) * 0.002)) return false;
+    }
+    return true;
+  }
+  /** the reversers may be deployed or stowed now (the interlock: thrust lever at idle first) */
+  reverserFree(): boolean {
+    return reverserFree(this.set.throttle);
+  }
+  /**
+   * The student's reverser switch: deploys or stows only with the thrust lever at idle (AFH ch. 15). false when
+   * the interlock holds it (nothing changes).
+   */
+  toggleReverse(): boolean {
+    if (this.kind !== "turbofan" || !this.reverserFree()) return false;
+    this.setSettings({ reverse: !this.set.reverse });
+    return true;
+  }
+  /** one line of what is happening (the governor's state, the engine stopped, reversers…), no moving number */
   status(lang: Lang): string {
     const t = (en: string, fr: string) => (lang === "fr" ? fr : en);
     const v = this.v;
     if (this.kind === "piston") {
-      if (!v.running)
-        return this.set.mags === "off"
-          ? t(
-              "Magnetos off: the engine stops",
-              "Magnétos sur OFF : le moteur s’arrête",
-            )
-          : t(
-              "Idle cut-off: no fuel, the engine stops",
-              "Étouffoir : plus d’essence, le moteur s’arrête",
-            );
+      if (!v.running) {
+        const why = pistonOutputs({
+          throttle: this.set.throttle,
+          mixture: this.set.mixture,
+          carbHeat: this.set.carbHeat,
+          mags: this.set.mags,
+        }).stop;
+        if (why === "mags")
+          return t("Magnetos off: the engine stops", "Magnétos sur arrêt : le moteur s’arrête");
+        if (why === "cutoff")
+          return t("Idle cut-off: no fuel, the engine stops", "Étouffoir : plus d’essence, le moteur s’arrête");
+        if (why === "lean")
+          return t("Mixture too lean: the engine stops", "Mélange trop pauvre : le moteur s’arrête");
+        return t("Too little power to keep turning: the engine stalls", "Trop peu de puissance : le moteur cale");
+      }
       const bits: string[] = [];
       if (this.set.mags === "left" || this.set.mags === "right")
         bits.push(
@@ -386,60 +430,85 @@ export class EngineSim {
             "Réchauffage carburateur : air chaud, un peu moins de puissance",
           ),
         );
-      if (this.set.mixture < 0.5)
-        bits.push(
-          t(
-            "Lean of peak EGT: power drops",
-            "Plus pauvre que le pic d’EGT : la puissance baisse",
-          ),
-        );
-      else if (this.set.mixture < 0.9)
-        bits.push(
-          t(
-            "Leaned: near best power",
-            "Mélange appauvri : proche de la puissance maximale",
-          ),
-        );
-      return (
-        bits.join(" · ") || t("Running: full rich", "En marche : plein riche")
-      );
+      const m = this.set.mixture;
+      // the zones of the model's own mixture curve (model.ts MIXTURE)
+      if (m < MIXTURE.egtPeak - 0.03)
+        bits.push(t("Lean of peak EGT: power drops", "Plus pauvre que le pic d’EGT : la puissance baisse"));
+      else if (m <= MIXTURE.egtPeak + 0.05)
+        bits.push(t("Near peak EGT", "Proche du pic d’EGT"));
+      else if (m <= MIXTURE.bestPower + 0.07)
+        bits.push(t("Leaned: near best power", "Mélange appauvri : proche de la puissance maximale"));
+      else if (m < 0.97) bits.push(t("Slightly leaned", "Mélange légèrement appauvri"));
+      return bits.join(" · ") || t("Running: full rich", "En marche : plein riche");
     }
     if (this.kind === "prop") {
       const tilt = flyweightTilt(v.rpm, v.rpmSet);
+      const tail =
+        // the handbooks' order: rpm up first, then MAP; the threshold (MAP over the rpm's hundreds + 5) is the
+        // picture's, the POH's power tables give the real combinations
+        v.map > v.rpmSet / 100 + 5
+          ? t(
+              " · High MAP at low rpm: raise the rpm first",
+              " · PA élevée à bas régime : augmentez d’abord le régime",
+            )
+          : "";
       if (tilt > 0.08)
-        return t(
-          "Overspeed: flyweights out, the blades go coarser",
-          "Survitesse : masselottes écartées, le pas augmente",
+        return (
+          t(
+            "Overspeed: flyweights out, the blades go coarser",
+            "Survitesse : masselottes écartées, le pas augmente",
+          ) + tail
         );
       if (tilt < -0.08 && v.blade <= CS_PROP.fineDeg + 0.05)
-        return t(
-          "Below the governing range: blades on the fine stop",
-          "Sous la plage de régulation : pales en butée petit pas",
+        return (
+          t(
+            "Below the governing range: blades on the fine stop",
+            "Sous la plage de régulation : pales en butée petit pas",
+          ) + tail
         );
       if (tilt < -0.08)
-        return t(
-          "Underspeed: flyweights in, the blades go finer",
-          "Sous-vitesse : masselottes rentrées, le pas diminue",
+        return (
+          t(
+            "Underspeed: flyweights in, the blades go finer",
+            "Sous-vitesse : masselottes rentrées, le pas diminue",
+          ) + tail
         );
-      return t(
-        `On speed: ${n(v.rpmSet, "en")} rpm held`,
-        `En régime : ${n(v.rpmSet, "fr")} tr/min tenus`,
+      return (
+        t(`On speed: ${n(v.rpmSet, "en")} rpm held`, `En régime : ${n(v.rpmSet, "fr")} tr/min tenus`) + tail
       );
     }
-    if (this.kind === "turboprop")
-      return v.governing
-        ? t(
-            `Np governed at ${n(v.np, "en")} rpm`,
-            `Np régulé à ${n(v.np, "fr")} tr/min`,
-          )
-        : t(
-            "Under the governing range: the propeller sits on its low pitch stop",
-            "Sous la plage de régulation : l’hélice est en butée petit pas",
-          );
+    if (this.kind === "turboprop") {
+      const bits: string[] = [];
+      if (v.torque > TURBOPROP.torqueMax + 5)
+        bits.push(
+          t(
+            `Torque over the limit (${n(TURBOPROP.torqueMax, "en")} ft·lb): reduce power`,
+            `Couple au-delà de la limite (${n(TURBOPROP.torqueMax, "fr")} ft·lb) : réduisez la puissance`,
+          ),
+        );
+      if (v.itt > TURBOPROP.ittMax)
+        bits.push(
+          t(
+            `ITT over ${n(TURBOPROP.ittMax, "en")} °C: reduce power`,
+            `ITT au-delà de ${n(TURBOPROP.ittMax, "fr")} °C : réduisez la puissance`,
+          ),
+        );
+      // the Np the lever sets (not the moving needle)
+      const npSet = TURBOPROP.npMin + this.set.prop * (TURBOPROP.npMax - TURBOPROP.npMin);
+      bits.push(
+        v.governing
+          ? t(`Np governed at ${n(npSet, "en")} rpm`, `Np régulé à ${n(npSet, "fr")} tr/min`)
+          : t(
+              "Under the governing range: the propeller sits on its low pitch stop",
+              "Sous la plage de régulation : l’hélice est en butée petit pas",
+            ),
+      );
+      return bits.join(" · ");
+    }
     if (this.set.reverse)
       return t(
-        "Reversers deployed: the fan's air goes forward",
-        "Inverseurs déployés : l’air de la soufflante repart vers l’avant",
+        "Reversers deployed: the fan's air goes forward. The thrust lever now sets reverse thrust",
+        "Inverseurs déployés : l’air de la soufflante repart vers l’avant. La manette règle maintenant l’inversion",
       );
     return t(
       `By-pass ratio ${TURBOFAN.bypassRatio.toLocaleString("en")}:1`,
@@ -447,6 +516,12 @@ export class EngineSim {
     );
   }
 }
+
+/** Why the reverser switch does not move (the interlock), said where the switch is. */
+export const REVERSER_LOCKED = L(
+  "Thrust lever to idle first",
+  "Manette au ralenti d’abord",
+);
 
 /** A gauge value as text in the reader's language (« 2 450 », « 24,8 »). */
 export function gaugeText(g: GaugeSpec, v: number, lang: Lang): string {

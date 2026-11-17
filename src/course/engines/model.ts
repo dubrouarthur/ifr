@@ -13,7 +13,11 @@
 //    engines (turbojet, turboprop, turbofan; N1 / N2, EGT, ITT, torque).
 //  - FAA AFH (FAA-H-8083-3C) ch. 14 « Transition to turbopropeller-powered airplanes » (free turbine, Ng / Np,
 //    beta range) and ch. 15 « Transition to jet-powered airplanes » (N1 / N2, spool-up, reversers).
-//  - Cessna C172S POH: Lycoming IO-360-L2A, 180 BHP at 2,700 rpm (sect. 1), max 2,700 rpm (sect. 2).
+//  - Cessna C172S POH: Lycoming IO-360-L2A, 180 BHP at 2,700 rpm (sect. 1), max 2,700 rpm (sect. 2), run-up at
+//    1,800 rpm with a magneto drop of at most 150 rpm and 50 rpm between the two (sect. 4). That engine is
+//    fuel-injected: the model and the picture are its carburetted sister, the O-360 class (same 180 hp at 2,700,
+//    same bore and stroke), so the C172S figures stand in for a carburetted 180 hp trainer's; the carburettor
+//    heat figures are the PHAK's, not that POH's.
 //  - Lycoming O-360 type certificate data sheet E-286: bore 5.125 in, stroke 4.375 in, 361 cu in; firing order
 //    1-3-2-4 (Lycoming four-cylinder engines).
 //  - EASA Part-FCL ATPL learning objectives 021 « Airframe, systems and powerplant » (021.11 piston engines,
@@ -167,9 +171,11 @@ export interface PistonOut {
   /** exhaust gas temperature, °F (relative scale: peak about 1,450) */
   egtF: number;
   running: boolean;
+  /** why it stopped: magnetos off, idle cut-off, a mixture too lean to burn, too little power to keep turning */
+  stop?: "mags" | "cutoff" | "lean" | "stall";
 }
 /** MAP at idle, inHg (closed throttle: the engine draws a strong vacuum) */
-const IDLE_MAP = 10.5;
+const IDLE_MAP = 11;
 /** the power the engine spends on itself (friction, pumping), as an equivalent MAP: what idle overcomes */
 const FRICTION_MAP = 9.2;
 /** MAP at idle, then at full throttle at sea level (the reference: best power there gives the rated rpm at 100 kt) */
@@ -186,28 +192,43 @@ export function manifoldPressure(throttle: number, altFt = 0): number {
  */
 export function mixturePower(m: number): number {
   const x = clamp01(m);
-  if (x <= 0.12) return 0;
-  return x >= 0.75
-    ? 1 - 0.8 * (x - 0.75) ** 2
-    : Math.max(0, 1 - 2.4 * (0.75 - x) ** 2);
+  if (x <= MIXTURE.cutoff) return 0;
+  return x >= MIXTURE.bestPower
+    ? 1 - 0.8 * (x - MIXTURE.bestPower) ** 2
+    : Math.max(0, 1 - 2.4 * (MIXTURE.bestPower - x) ** 2);
 }
 /** EGT, °F: peaks a little lean of best power (mixture 0.6). */
 export function egtOf(m: number, powerPct: number): number {
   const x = clamp01(m);
-  if (x <= 0.12 || powerPct <= 0) return 300;
-  const peak = 1 - ((x - 0.6) / 0.5) ** 2;
+  if (x <= MIXTURE.cutoff || powerPct <= 0) return 300;
+  const peak = 1 - ((x - MIXTURE.egtPeak) / 0.5) ** 2;
   return Math.round(
     1050 + 400 * clamp01(peak) * (0.55 + 0.45 * clamp01(powerPct / 100)),
   );
 }
-/** Carburettor heat: warmer, less dense air (PHAK ch. 7: up to 15 % less power; at run-up a drop of about 100 rpm). */
-export const CARB_HEAT_FACTOR = 0.95;
+/**
+ * Carburettor heat: warmer, less dense air (PHAK ch. 7: « a decrease in engine output, sometimes up to 15
+ * percent »). Applied to the power the engine makes (not to the MAP): 10 % less power, about 5 % less rpm on the
+ * fixed-pitch propeller, a drop of about 100 rpm at the run-up and a small one at idle (the engine runs on).
+ */
+export const CARB_HEAT_FACTOR = 0.9;
 /**
  * One magneto alone: one spark plug per cylinder, a slower flame front, a little less power. At the run-up rpm
  * (1,800 in the C172S POH) the drop stays well inside the POH's limit: 150 rpm on either magneto, 50 rpm between
  * the two.
  */
-export const SINGLE_MAG_FACTOR = 0.96;
+export const SINGLE_MAG_FACTOR = 0.93;
+/** Mixture positions the model is built on (the lever, 0 idle cut-off … 1 full rich): what the status reads. */
+export const MIXTURE = {
+  /** idle cut-off: no fuel at all */
+  cutoff: 0.12,
+  /** peak EGT (egtOf) */
+  egtPeak: 0.6,
+  /** best power, rich of peak (mixturePower) */
+  bestPower: 0.75,
+} as const;
+/** Under this rpm the flat-four does not keep turning: it stalls (« moteur calé »). Idle is about 600. */
+export const STALL_RPM = 450;
 
 /**
  * The fixed-pitch case: the propeller absorbs power as rpm³ (more as the airspeed falls: at run-up it holds the
@@ -216,23 +237,26 @@ export const SINGLE_MAG_FACTOR = 0.96;
 export function pistonOutputs(i: PistonIn): PistonOut {
   const map = manifoldPressure(i.throttle, i.altFt ?? 0);
   const mf = mixturePower(i.mixture);
+  // carburettor heat and a single magneto take a share of the power the engine makes (not of the MAP)
   const cf = (i.carbHeat ? CARB_HEAT_FACTOR : 1) * (i.mags === "left" || i.mags === "right" ? SINGLE_MAG_FACTOR : 1);
-  if (i.mags === "off")
-    return { rpm: 0, mapInHg: round1(ambientInHg(i.altFt ?? 0)), powerPct: 0, fuelGph: 0, egtF: 300, running: false };
+  const stopped = (stop: PistonOut["stop"]): PistonOut => ({
+    rpm: 0,
+    mapInHg: round1(ambientInHg(i.altFt ?? 0)),
+    powerPct: 0,
+    fuelGph: 0,
+    egtF: 300,
+    running: false,
+    stop,
+  });
+  if (i.mags === "off") return stopped("mags");
+  if (clamp01(i.mixture) <= MIXTURE.cutoff) return stopped("cutoff");
   // absorption of the fixed-pitch propeller: 1.25 static, 1.0 at 100 kt
   const k = 1.25 - 0.25 * clamp((i.iasKt ?? 0) / 100, 0, 1.4);
-  const avail = (map * mf * cf - FRICTION_MAP) / (FULL_MAP - FRICTION_MAP);
-  if (avail <= 0)
-    return {
-      rpm: 0,
-      mapInHg: round1(ambientInHg(i.altFt ?? 0)),
-      powerPct: 0,
-      fuelGph: 0,
-      egtF: 300,
-      running: false,
-    };
+  const avail = (cf * (map * mf - FRICTION_MAP)) / (FULL_MAP - FRICTION_MAP);
+  if (avail <= 0) return stopped(mf < 0.9 ? "lean" : "stall");
   const n = Math.sqrt(avail / k);
   const rpm = FLAT_FOUR.ratedRpm * n;
+  if (rpm < STALL_RPM) return stopped(mf < 0.9 ? "lean" : "stall");
   const powerPct = 100 * k * n ** 3;
   // brake specific fuel consumption, lb/hp/h: about 0.42 lean, 0.55 full rich (avgas 6 lb/US gal)
   const bsfc = 0.42 + 0.13 * clamp01((clamp01(i.mixture) - 0.6) / 0.4);
@@ -413,7 +437,22 @@ export const TURBOFAN = {
   egtRed: 950,
   /** reverse: N1 is limited (reverse idle … max reverse) */
   n1MaxReverse: 78,
+  /**
+   * How much of the fan stream's thrust comes back as reverse thrust (the cascades turn it forward and out).
+   * A teaching value, not a published figure (the AFH ch. 15 and the ATPL 021 objectives describe the effect,
+   * the figure depends on the installation): chosen so max reverse reads about a quarter of the rated thrust
+   * backwards, the core still pushing forward (only the fan stream is reversed on a cascade reverser).
+   */
+  reverseEffectiveness: 0.8,
+  /**
+   * The interlock: the reverse levers lift only with the thrust levers at idle, and stow only from reverse idle
+   * (AFH ch. 15). The lever position counted as idle.
+   */
+  idleLever: 0.05,
 } as const;
+/** Can the reversers be deployed or stowed now? Only with the thrust lever at (reverse) idle. */
+export const reverserFree = (throttle: number): boolean =>
+  clamp01(throttle) <= TURBOFAN.idleLever;
 /** the share of the air that goes round the core (the by-pass stream): BPR / (1 + BPR) */
 export const bypassShare = (bpr: number): number => bpr / (1 + bpr);
 /** Thrust fraction of N1 (%): steep (thrust grows about as N1^2.6); monotonic. */
@@ -449,8 +488,8 @@ export function turbofanOutputs(i: {
   const f = thrustOfN1(n1);
   const egtC = T.egtIdle + 500 * Math.pow(f, 0.6);
   const fan = fanThrustShare(T.bypassRatio);
-  // reversed: the fan stream (most of the thrust) goes forward at about 40 % efficiency, the core still pushes
-  const frac = i.reverse ? -0.4 * fan * f + (1 - fan) * f : f;
+  // reversed: the fan stream (most of the thrust) is turned forward, the core still pushes
+  const frac = i.reverse ? -T.reverseEffectiveness * fan * f + (1 - fan) * f : f;
   return {
     n1: round1(n1),
     n2: round1(n2),

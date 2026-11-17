@@ -1337,6 +1337,8 @@ function engineSlide(o: {
   alt: L10n;
   source: L10n;
   stage?: number;
+  /** where the levers start (the task of the slide starts there) */
+  set?: Extract<SlideBlock, { kind: "engine3d" }>["set"];
 }): GallerySlide {
   return {
     id: o.id,
@@ -1358,6 +1360,7 @@ function engineSlide(o: {
           engine: o.engine,
           alt: o.alt,
           ...(o.stage !== undefined ? { stage: o.stage } : {}),
+          ...(o.set ? { set: o.set } : {}),
         },
         foot(o.source),
       ],
@@ -1375,10 +1378,14 @@ function engineSlides(): GallerySlide[] {
         "The flat four turns, each stroke named; magnetos, carburettor heat and mixture to try",
         "Le quatre-cylindres tourne, chaque temps nommé ; magnétos, réchauffage carbu et mélange à essayer",
       ),
+      // the lead is the student's task and what they should see: the run-up's magneto check
+      // (C172S POH sect. 4: 1,800 rpm, at most 150 rpm drop on either magneto, 50 rpm between them)
       lead: L(
-        "Intake, compression, power, exhaust: one power stroke in four, the cylinders fire in the order 1-3-2-4.",
-        "Admission, compression, combustion, échappement : un temps moteur sur quatre, les cylindres s’allument dans l’ordre 1-3-2-4.",
+        "Try it: at the run-up, magnetos to L, then R. The drop stays under 150 rpm, the difference under 50.",
+        "Essayez : au point fixe, magnétos sur G, puis sur D. La chute reste sous 150 tr/min, l’écart sous 50.",
       ),
+      // throttle at the run-up rpm (about 1,800: model.ts pistonOutputs)
+      set: { throttle: 0.58 },
       alt: L(
         "A four-cylinder flat engine cut open: pistons, rods, crankshaft, valves, spark plugs, magnetos, carburettor",
         "Un moteur quatre cylindres à plat en coupe : pistons, bielles, vilebrequin, soupapes, bougies, magnétos, carburateur",
@@ -1396,9 +1403,10 @@ function engineSlides(): GallerySlide[] {
         "Poussez les gaz : les masselottes s’écartent, le pas augmente, le régime revient",
       ),
       lead: L(
-        "Push the throttle: the rpm rises for a moment, the flyweights lean out, the blades go coarser and the rpm comes back.",
-        "Poussez les gaz : le régime monte un instant, les masselottes s’écartent, le pas augmente et le régime revient.",
+        "Try it: push the throttle all at once. The rpm rises for a moment, then comes back; the blade angle grows.",
+        "Essayez : poussez les gaz d’un coup. Le régime monte un instant, puis revient ; le calage des pales augmente.",
       ),
+      set: { throttle: 0.4 },
       alt: L(
         "A constant-speed propeller and its governor cut open: flyweights, speeder spring, pilot valve, oil to the hub",
         "Une hélice à vitesse constante et son régulateur en coupe : masselottes, ressort de consigne, distributeur, huile vers le moyeu",
@@ -1414,9 +1422,10 @@ function engineSlides(): GallerySlide[] {
         "The gas generator and the free turbine turn apart; torque, ITT and Np on the gauges",
         "Le générateur de gaz et la turbine libre tournent séparément ; couple, ITT et Np aux instruments",
       ),
+      // torque = power ÷ Np (model.ts turbopropOutputs): fewer rpm for the same power, more torque
       lead: L(
-        "The gas generator (Ng) and the free turbine (Np) have no mechanical link: the gas alone turns the propeller.",
-        "Le générateur de gaz (Ng) et la turbine libre (Np) n’ont aucun lien mécanique : seul le gaz entraîne l’hélice.",
+        "Try it: at full power, pull the propeller lever back. Np falls, torque rises: the same power at fewer rpm.",
+        "Essayez : à pleine puissance, reculez la manette d’hélice. Np baisse, le couple monte : même puissance, moins de tours.",
       ),
       alt: L(
         "A free-turbine turboprop cut open: intake, compressor, combustion chamber, gas generator turbine, free turbine, gearbox, propeller",
@@ -1433,9 +1442,10 @@ function engineSlides(): GallerySlide[] {
         "Two spools, the cold stream round the core, the reversers to deploy",
         "Deux attelages, le flux froid autour du cœur, les inverseurs à déployer",
       ),
+      // the spool-up (AFH ch. 15) and the reverser interlock: about 4 s to N1 90 % from the slide's start
       lead: L(
-        "Push the thrust lever: N1 rises slowly, and the thrust grows fastest at the top of the range.",
-        "Poussez la manette : le N1 monte lentement, et la poussée croît surtout en haut de la plage.",
+        "Try it: push the thrust lever and count the seconds to N1 90 %. Then idle, and deploy the reversers.",
+        "Essayez : poussez la manette et comptez les secondes jusqu’à N1 90 %. Puis ralenti, et sortez les inverseurs.",
       ),
       alt: L(
         "A two-spool turbofan cut open: fan, by-pass duct, LP and HP compressors, combustion chamber, HP and LP turbines, reversers",

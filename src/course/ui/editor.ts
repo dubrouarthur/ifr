@@ -3146,7 +3146,9 @@ export class CourseEditor implements InspectorHost {
       if (
         e.key === "Escape" &&
         !document.querySelector(".ce-pop") &&
-        !host.querySelector(".ga-yt")
+        !host.querySelector(".ga-yt") &&
+        // a 3D engine's full-screen layer closes itself first (course/engines/view.ts)
+        !document.querySelector(".eng-fs")
       ) {
         e.preventDefault();
         close();

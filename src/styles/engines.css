@@ -255,6 +255,10 @@
 .eng-g.over .eng-g-fill {
   background: var(--e-stop);
 }
+/* below zero (reverse thrust): the other way, another colour */
+.eng-g.neg .eng-g-fill {
+  background: var(--e-key);
+}
 .eng-status {
   margin: 0;
   font-size: 0.92em;
@@ -291,7 +295,6 @@
 .eng:not(.narrow) .eng-c-ends {
   grid-column: 2;
 }
-.eng:not(.big) .eng-c-ends,
 .eng:not(.big) .eng-steps,
 .eng:not(.big) .eng-foot {
   display: none;
@@ -299,8 +302,65 @@
 .eng-c-ends {
   display: flex;
   justify-content: space-between;
+  gap: 0.5em;
   font-size: 0.78em;
+  line-height: 1.15;
   color: var(--e-ink2);
+}
+.eng-c-ends > span:last-child {
+  text-align: right;
+}
+/* the reverser interlock: the switch waits for the thrust lever at idle, and says so */
+.eng-c.locked > .eng-toggle {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.eng-c-hint {
+  display: block;
+  margin-top: 0.2em;
+  font-size: 0.82em;
+  color: var(--e-key);
+}
+.eng-c-hint[hidden] {
+  display: none;
+}
+.eng-c-hint.flash {
+  animation: eng-flash 0.6s ease-out 2;
+}
+@keyframes eng-flash {
+  50% {
+    color: var(--e-text);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .eng-c-hint.flash {
+    animation: none;
+    font-weight: 700;
+  }
+}
+/* the projector: the room sees the picture, the gauges and where the levers are; nothing to press */
+.eng.display .eng-top,
+.eng.display .eng-foot,
+.eng.display .eng-c-hint,
+.eng.display .eng-steps {
+  display: none;
+}
+.eng.display .eng-range {
+  pointer-events: none;
+}
+.eng.display .eng-cv {
+  cursor: default;
+}
+.eng .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 .eng-range {
   width: 100%;

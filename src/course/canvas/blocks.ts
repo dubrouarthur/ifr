@@ -1687,6 +1687,8 @@ function engine3dBlock(b: Of<"engine3d">, env: BlockEnv): BlockView {
         // the editor shows a still cutaway and lets the slide take the pointer
         still: env.mode === "edit",
         inert: env.mode === "edit",
+        // the projector shows the room a picture and its gauges: the console drives it (ui/projector.ts)
+        display: env.mode === "play" && !!el.closest(".cp-projector"),
         onChange: () => env.diagrams?.changed(b.id),
       });
       // the presenter's levers and steps, mirrored on the projector (canvas/diagramMirror.ts)

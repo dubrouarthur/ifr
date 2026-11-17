@@ -5,6 +5,7 @@
 // Also the small DOM kit the editor and the tray share (segments, chips, switches, fields, popover menus).
 import { ENGINE_CONTROLS, ENGINE_KINDS, ENGINE_NAME, controlName, tl } from "../engines/sim";
 import { ENGINE_STAGES } from "../engines/stages";
+import { settingsOf } from "../engines/model";
 import type { EngineKind } from "../types";
 import { blockKindLabel } from "../canvas/strings";
 import type {
@@ -5402,6 +5403,11 @@ export class Inspector {
               sub: T("Otherwise only the parts of the step shown", "Sinon seulement les pièces de l’étape affichée"),
             }),
           ]),
+          // where the levers start: a magneto check at the run-up rpm, a reverser slide at idle…
+          group(T("Starting position", "Position de départ"), this.engineStart(b, setB)),
+          this.l10n(T("Caption (phone)", "Légende (téléphone)"), b.caption, (v) =>
+            setB((x) => ((x as typeof b).caption = v), "caption", false),
+          ),
         );
         break;
       }
@@ -5474,6 +5480,67 @@ export class Inspector {
           ]),
         );
         break;
+      }
+    }
+    return out;
+  }
+
+  /** The engine block's starting lever positions (course/engines): each lever as the slide opens. */
+  private engineStart(
+    b: Extract<SlideBlock, { kind: "engine3d" }>,
+    setB: (f: (x: SlideBlock) => void, key?: string, render?: boolean) => void,
+  ): HTMLElement[] {
+    const T = (en: string, fr: string) => this.t(en, fr);
+    const cur = settingsOf(b.engine, b.set);
+    const put = (f: (s: NonNullable<typeof b.set>) => void, key?: string, render = true) =>
+      setB(
+        (x) => {
+          const y = x as typeof b;
+          const s = { ...(y.set ?? {}) };
+          f(s);
+          if (Object.keys(s).length) y.set = s;
+          else delete y.set;
+        },
+        key,
+        render,
+      );
+    const out: HTMLElement[] = [];
+    for (const c of ENGINE_CONTROLS[b.engine]) {
+      const name = tl(controlName(c, b.engine), this.lang);
+      if (c === "throttle" || c === "mixture" || c === "prop") {
+        out.push(
+          field(
+            name,
+            numIn(
+              b.set?.[c] === undefined ? undefined : Math.round(b.set[c]! * 100),
+              (v) =>
+                put(
+                  (s) => (v === undefined ? delete s[c] : (s[c] = Math.max(0, Math.min(100, v)) / 100)),
+                  `set.${c}`,
+                  false,
+                ),
+              { min: 0, max: 100, step: 1, unit: "%", label: name, ph: String(Math.round(cur[c] * 100)) },
+            ),
+          ),
+        );
+      } else if (c === "carbHeat" || c === "reverse") {
+        out.push(sw(cur[c], (v) => put((s) => (s[c] = v)), name));
+      } else if (c === "magnetos") {
+        out.push(
+          field(
+            name,
+            selectIn<"both" | "left" | "right" | "off">(
+              [
+                { value: "both", label: T("Both", "Les deux") },
+                { value: "left", label: T("Left only", "Gauche seule") },
+                { value: "right", label: T("Right only", "Droite seule") },
+                { value: "off", label: T("Off", "Arrêt") },
+              ],
+              cur.mags,
+              (v) => put((s) => (v === "both" ? delete s.mags : (s.mags = v))),
+            ),
+          ),
+        );
       }
     }
     return out;

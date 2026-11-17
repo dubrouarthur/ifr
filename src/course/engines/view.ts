@@ -15,6 +15,7 @@ import {
   ENGINE_GAUGES,
   ENGINE_NAME,
   EngineSim,
+  REVERSER_LOCKED,
   controlEnds,
   controlName,
   gaugeText,
@@ -42,6 +43,13 @@ export interface EngineLiveState {
   playing: boolean;
   slow: boolean;
   labels: boolean;
+  /** where the camera looks from (the class sees the part the instructor turned the engine to) */
+  cam?: EngineCam;
+}
+export interface EngineCam {
+  yaw: number;
+  pitch: number;
+  radius: number;
 }
 export interface EngineViewOpts {
   kind: EngineKind;
@@ -62,6 +70,10 @@ export interface EngineViewOpts {
   reducedMotion?: boolean;
   /** the « Plein écran » button (default true) */
   fullscreen?: boolean;
+  /** the projector: a picture and its gauges for the room, no buttons (the console drives it) */
+  display?: boolean;
+  /** the camera to start from (the full-screen view opens where the slide's view was) */
+  cam?: EngineCam;
   /** mouse-wheel zoom (the full-screen view; on a slide the wheel scrolls the page) */
   wheelZoom?: boolean;
   /** called after every change made here (a lever, a step, play / pause) */
@@ -126,6 +138,16 @@ const W = {
   left: ["L", "G"],
   right: ["R", "D"],
   magOff: ["Off", "Arrêt"],
+  bothLong: ["Both magnetos", "Les deux magnétos"],
+  leftLong: ["Left magneto only", "Magnéto gauche seule"],
+  rightLong: ["Right magneto only", "Magnéto droite seule"],
+  offLong: ["Magnetos off", "Magnétos coupées"],
+  toward: ["towards {x}", "vers {x}"],
+  mixFull: ["full rich", "plein riche"],
+  mixBest: ["best power", "puissance maximale"],
+  mixPeak: ["peak EGT", "pic d’EGT"],
+  mixLean: ["lean", "pauvre"],
+  mixCut: ["idle cut-off", "étouffoir"],
   notCert: [
     "Procedural training, not FSTD certified",
     "Entraînement procédural, non certifié FSTD",
@@ -217,7 +239,7 @@ export function mountEngine(
   // ---- DOM
   const root = mk(
     "div",
-    `eng eng-${kind}${still ? " still" : ""}${o.inert ? " inert" : ""}${o.wheelZoom ? " big" : ""}${reduced && !o.still ? " reduced" : ""}`,
+    `eng eng-${kind}${still ? " still" : ""}${o.inert ? " inert" : ""}${o.wheelZoom ? " big" : ""}${reduced && !o.still ? " reduced" : ""}${o.display ? " display" : ""}`,
   );
   root.setAttribute("role", "group");
   // in the slide editor the engine is a picture: no focus, no clicks (the editor selects the block)
@@ -230,11 +252,16 @@ export function mountEngine(
     "aria-label",
     `${tl(ENGINE_NAME[kind], lang)}. ${w("orbit", lang)}`,
   );
-  if (!o.inert) canvas.tabIndex = 0;
+  // the room's screen takes no input: the console turns the engine
+  const quiet = !!o.inert || !!o.display;
+  if (!quiet) canvas.tabIndex = 0;
   const labelsBox = mk("div", "eng-labels");
   labelsBox.setAttribute("aria-hidden", "true");
+  // the caption follows the moving stroke (about once a second): a screen reader hears only the step chosen
   const cap = mk("div", "eng-cap");
-  cap.setAttribute("aria-live", "polite");
+  cap.setAttribute("aria-hidden", "true");
+  const said = mk("p", "sr-only eng-said");
+  said.setAttribute("aria-live", "polite");
   const capN = mk("span", "eng-cap-n");
   const capT = mk("b", "eng-cap-t");
   const capX = mk("span", "eng-cap-x");
@@ -242,7 +269,7 @@ export function mountEngine(
   // the bar over the picture: the steps and play on the left, names and full screen on the right
   const top = mk("div", "eng-top");
   const tools = mk("div", "eng-tools");
-  stageBox.append(canvas, labelsBox, cap, top);
+  stageBox.append(canvas, labelsBox, cap, top, said);
   const panel = mk("div", "eng-panel");
   root.append(stageBox, panel);
   host.append(root);
@@ -252,7 +279,7 @@ export function mountEngine(
   lbBtn.setAttribute("aria-pressed", String(st.labels));
   tools.append(lbBtn);
   let fsBtn: HTMLButtonElement | null = null;
-  if (o.fullscreen !== false && !o.inert) {
+  if (o.fullscreen !== false && !quiet) {
     fsBtn = btn("eng-btn eng-tool", w("full", lang));
     tools.append(fsBtn);
   }
@@ -265,7 +292,7 @@ export function mountEngine(
     const box = mk("div", "eng-g");
     const name = mk("span", "eng-g-n", tl(g.name, lang));
     const val = mk("b", "eng-g-v");
-    const unit = mk("span", "eng-g-u", g.unit);
+    const unit = mk("span", "eng-g-u", tl(g.unit, lang));
     const bar = mk("span", "eng-g-bar");
     const fill = mk("i", "eng-g-fill");
     bar.append(fill);
@@ -294,14 +321,35 @@ export function mountEngine(
   ctlBox.setAttribute("aria-label", w("levers", lang));
   const sync: (() => void)[] = [];
   const changed = () => {
-    o.onChange?.({ ...st, set: { ...st.set } });
+    o.onChange?.(handle.state());
   };
   const apply = (s: EngineSettings) => {
     sim.setSettings(s);
     st.set = sim.set;
-    if (still || !st.playing) sim.settle();
+    // a still picture jumps to the new values; otherwise the gauges follow in time, playing or paused (a
+    // turbine's spool-up is what the student is shown)
+    if (still) sim.settle();
     dirty = true;
     kick();
+  };
+  /** a lever's position in words: the per cent and the end it is near (the mixture: the zone it is in) */
+  const leverText = (c: EngineControl, x: number): string => {
+    const pc = `${Math.round(x * 100)} %`;
+    if (c === "mixture") {
+      const zone =
+        x <= 0.12
+          ? "mixCut"
+          : x < 0.57
+            ? "mixLean"
+            : x <= 0.65
+              ? "mixPeak"
+              : x <= 0.82
+                ? "mixBest"
+                : "mixFull";
+      return `${pc}, ${w(zone, lang)}`;
+    }
+    const [lo, hi] = controlEnds(c, kind, kind === "turbofan" && st.set.reverse);
+    return `${pc}, ${w("toward", lang, { x: tl(x < 0.5 ? lo : hi, lang) })}`;
   };
   for (const c of controls) {
     const row = mk("div", `eng-c eng-c-${c}`);
@@ -316,22 +364,28 @@ export function mountEngine(
       range.min = "0";
       range.max = "100";
       range.step = "1";
-      const [lo, hi] = controlEnds(c, kind);
       const ends = mk("span", "eng-c-ends");
-      ends.append(mk("span", "", tl(lo, lang)), mk("span", "", tl(hi, lang)));
+      ends.setAttribute("aria-hidden", "true");
+      const loEl = mk("span", "");
+      const hiEl = mk("span", "");
+      ends.append(loEl, hiEl);
       const read = () => st.set[c];
       const put = () => {
         range.value = String(Math.round(read() * 100));
-        range.setAttribute("aria-valuetext", `${Math.round(read() * 100)} %`);
+        range.setAttribute("aria-valuetext", leverText(c, read()));
+        // the turbofan's thrust lever sets reverse thrust once the reversers are out
+        const [lo, hi] = controlEnds(c, kind, kind === "turbofan" && st.set.reverse);
+        loEl.textContent = tl(lo, lang);
+        hiEl.textContent = tl(hi, lang);
       };
       range.addEventListener("input", () => {
         apply({ [c]: Number(range.value) / 100 });
-        put();
+        paintControls();
         changed();
       });
       sync.push(put);
       row.append(lab, range, ends);
-    } else if (c === "carbHeat" || c === "reverse") {
+    } else if (c === "carbHeat") {
       const t = btn("eng-btn eng-toggle", name);
       const put = () => {
         t.setAttribute("aria-pressed", String(st.set[c]));
@@ -344,20 +398,52 @@ export function mountEngine(
       });
       sync.push(put);
       row.append(t);
+    } else if (c === "reverse") {
+      // the interlock: the reversers move only with the thrust lever at idle (AFH ch. 15)
+      const t = btn("eng-btn eng-toggle", name);
+      const hint = mk("span", "eng-c-hint", tl(REVERSER_LOCKED, lang));
+      hint.id = `${id}-h`;
+      const put = () => {
+        const locked = !sim.reverserFree();
+        t.setAttribute("aria-pressed", String(st.set.reverse));
+        t.setAttribute("aria-disabled", String(locked));
+        if (locked) t.setAttribute("aria-describedby", hint.id);
+        else t.removeAttribute("aria-describedby");
+        t.textContent = `${name} · ${st.set.reverse ? w("on", lang) : w("off", lang)}`;
+        hint.hidden = !locked;
+        row.classList.toggle("locked", locked);
+      };
+      t.addEventListener("click", () => {
+        if (!sim.toggleReverse()) {
+          // said where the student looks: the hint under the switch flashes
+          hint.classList.remove("flash");
+          void hint.offsetWidth;
+          hint.classList.add("flash");
+          return;
+        }
+        st.set = sim.set;
+        dirty = true;
+        kick();
+        paintControls();
+        changed();
+      });
+      sync.push(put);
+      row.append(t, hint);
     } else if (c === "magnetos") {
       const lab = mk("span", "eng-c-n", name);
       lab.id = id;
       const seg = mk("div", "eng-seg");
       seg.setAttribute("role", "radiogroup");
       seg.setAttribute("aria-labelledby", id);
-      const opts: ["off" | "left" | "right" | "both", string][] = [
-        ["off", w("magOff", lang)],
-        ["right", w("right", lang)],
-        ["left", w("left", lang)],
-        ["both", w("both", lang)],
+      // the letters of the real key switch (Arrêt-D-G-Les deux), the full words for a screen reader
+      const opts: ["off" | "left" | "right" | "both", string, string][] = [
+        ["off", w("magOff", lang), w("offLong", lang)],
+        ["right", w("right", lang), w("rightLong", lang)],
+        ["left", w("left", lang), w("leftLong", lang)],
+        ["both", w("both", lang), w("bothLong", lang)],
       ];
-      const bs = opts.map(([v, txt]) => {
-        const b = btn("eng-btn eng-seg-b", txt);
+      const bs = opts.map(([v, txt, long]) => {
+        const b = btn("eng-btn eng-seg-b", long, txt);
         b.setAttribute("role", "radio");
         b.addEventListener("click", () => {
           apply({ mags: v });
@@ -420,6 +506,13 @@ export function mountEngine(
   if (foot.textContent) panel.append(foot);
   const cert = mk("p", "eng-cert", w("notCert", lang));
   panel.append(cert);
+  if (o.display) {
+    // the room's screen: the levers read as positions, the steps as the one lit; nothing to press
+    for (const x of [ctlBox, chips, top] as (HTMLElement & { inert?: boolean })[]) {
+      x.inert = true;
+      x.setAttribute("aria-hidden", "true");
+    }
+  }
 
   // part labels
   // a dot on the part, its name beside it (moved up or down a line to clear the others)
@@ -444,9 +537,9 @@ export function mountEngine(
   scene.add(model.root);
   const camera = new THREE.PerspectiveCamera(32, 16 / 9, 0.5, 100);
   const target = new THREE.Vector3(...model.view.target);
-  let yaw = model.view.yaw;
-  let pitch = model.view.pitch;
-  let radius = model.view.radius;
+  let yaw = o.cam?.yaw ?? model.view.yaw;
+  let pitch = o.cam?.pitch ?? model.view.pitch;
+  let radius = o.cam?.radius ?? model.view.radius;
   const placeCamera = () => {
     // a tall box (a phone): step back so the whole engine stays in the picture
     const R = radius * Math.max(1, 1.5 / Math.max(0.3, camera.aspect)) ** 0.9;
@@ -499,8 +592,14 @@ export function mountEngine(
     for (const x of gaugeEls) {
       const v = sim.v[x.g.id] ?? 0;
       x.val.textContent = gaugeText(x.g, v, lang);
-      const f = Math.max(0, Math.min(1, (v - x.g.min) / (x.g.max - x.g.min)));
-      x.fill.style.width = `${f * 100}%`;
+      const at = (u: number) =>
+        Math.max(0, Math.min(1, (u - x.g.min) / (x.g.max - x.g.min)));
+      // a gauge that reads both ways (thrust, reverse below zero) fills from its zero mark
+      const from = x.g.min < 0 ? at(0) : 0;
+      const to = at(v);
+      x.fill.style.left = `${Math.min(from, to) * 100}%`;
+      x.fill.style.width = `${Math.abs(to - from) * 100}%`;
+      x.box.classList.toggle("neg", x.g.min < 0 && v < 0);
       x.box.classList.toggle("over", x.g.red !== undefined && v > x.g.red);
     }
     const s = sim.status(lang);
@@ -598,8 +697,8 @@ export function mountEngine(
       l.t.style.transform = `translate(${put.x - l.x}px, ${put.y - l.y}px)`;
     }
   };
-  const frame = (dt: number) => {
-    sim.step(dt);
+  const frame = (simDt: number, dt: number) => {
+    sim.step(simDt);
     model.update({
       dt,
       v: sim.v,
@@ -620,19 +719,22 @@ export function mountEngine(
       return;
     }
     const moving = st.playing && !still;
+    // paused on a step, the cutaway stands still but the gauges keep following the levers (the spool-up)
+    const spooling = !still && !sim.atRest();
     const real = last ? Math.min(0.05, (t - last) / 1000) : 0;
     last = t;
     const dt = moving ? real * (st.slow ? 0.2 : 1) : 0;
-    if (moving || dirty) {
+    const simDt = moving ? dt : spooling ? real : 0;
+    if (moving || spooling || dirty) {
       dirty = false;
-      frame(dt);
+      frame(simDt, dt);
       gaugeT += real;
-      if (gaugeT > 0.1 || !moving) {
+      if (gaugeT > 0.1 || (!moving && !spooling)) {
         gaugeT = 0;
         paintGauges();
       }
     }
-    if (moving && visible) raf = requestAnimationFrame(loop);
+    if ((moving || spooling) && visible) raf = requestAnimationFrame(loop);
     else last = 0;
   };
   const kick = () => {
@@ -642,21 +744,36 @@ export function mountEngine(
   const goStage = (k: number, user: boolean) => {
     st.stage = ((k % nStages) + nStages) % nStages;
     lastShown = -1;
-    // a chosen step pauses the engine on it (except the piston's strokes, which play on with the stroke named)
-    if (user && !still && !(kind === "piston" && st.stage < 4))
-      st.playing = false;
-    if (user && kind === "piston" && st.stage < 4 && st.playing) {
-      // jump the crank to that stroke so the class sees it now
-      st.playing = false;
-    }
-    if (!st.playing) sim.settle();
+    // a chosen step pauses the cutaway on it (the piston's crank posed on that stroke) so the class sees the
+    // part; the gauges keep following the levers in time (a lever pushed now still shows the turbine's lag)
+    if (user && !still) st.playing = false;
     dirty = true;
     paintControls();
     kick();
-    if (user) changed();
+    if (user) {
+      const s = model.stages[st.stage];
+      said.textContent = `${w("step", lang, { n: st.stage + 1, t: nStages })}${lang === "fr" ? " : " : ": "}${tl(s.name, lang)}. ${tl(s.text, lang)}`;
+      changed();
+    }
   };
 
   // ---- input
+  /** the keys a control of the engine uses itself (they must not turn the page as well) */
+  const ownsKey = (e: KeyboardEvent): boolean => {
+    const t = e.target as HTMLElement | null;
+    const k = e.key;
+    if (!t || e.metaKey || e.ctrlKey || e.altKey) return false;
+    const arrow = k === "ArrowLeft" || k === "ArrowRight" || k === "ArrowUp" || k === "ArrowDown";
+    if (t === canvas) return arrow || k === "+" || k === "=" || k === "-" || k === "_" || k === " ";
+    if ((t as HTMLInputElement).type === "range") {
+      // a clicker's PageDown turns the page, not the lever
+      if (k === "PageUp" || k === "PageDown") e.preventDefault();
+      return arrow || k === "Home" || k === "End";
+    }
+    if (t.getAttribute("role") === "radio") return arrow || k === " " || k === "Enter";
+    if (t.tagName === "BUTTON") return k === " " || k === "Enter";
+    return false;
+  };
   const listen = <K extends keyof HTMLElementEventMap>(
     el: HTMLElement | Document,
     type: K,
@@ -690,10 +807,28 @@ export function mountEngine(
     changed();
   });
   fsBtn?.addEventListener("click", () => openFullscreen());
-  if (!o.inert) {
-    // the slide around must not take these (a tap on the slide, the presenter's Space for the next slide)
-    for (const t of ["pointerdown", "click", "keydown", "wheel"] as const)
+  // the camera, mirrored on the projector: about ten times a second while it turns, and where it stops
+  let camT = 0;
+  let camTimer: ReturnType<typeof setTimeout> | null = null;
+  const camChanged = (now = false) => {
+    if (camTimer) clearTimeout(camTimer);
+    camTimer = null;
+    const t = Date.now();
+    if (now || t - camT > 100) {
+      camT = t;
+      changed();
+    } else camTimer = setTimeout(() => camChanged(true), 100);
+  };
+  offs.push(() => camTimer && clearTimeout(camTimer));
+  if (!quiet) {
+    // the slide around must not take a tap or the wheel (a tap on the slide turns the page)
+    for (const t of ["pointerdown", "click", "wheel"] as const)
       listen(root, t, (e: Event) => e.stopPropagation());
+    // keys: only those a control here uses stop here; the rest (PageDown from a clicker, an arrow on a plain
+    // button, Échap, Tab) go on to the player and the presenter
+    listen(root, "keydown", (e) => {
+      if (ownsKey(e)) e.stopPropagation();
+    });
     const pts = new Map<number, { x: number; y: number }>();
     let pinch0 = 0;
     let r0 = radius;
@@ -728,9 +863,10 @@ export function mountEngine(
       placeCamera();
       dirty = true;
       kick();
+      camChanged();
     });
     const up = (e: PointerEvent) => {
-      pts.delete(e.pointerId);
+      if (pts.delete(e.pointerId)) camChanged(true);
       pinch0 = 0;
     };
     listen(canvas, "pointerup", up);
@@ -745,6 +881,7 @@ export function mountEngine(
           placeCamera();
           dirty = true;
           kick();
+          camChanged();
         },
         { passive: false },
       );
@@ -765,6 +902,7 @@ export function mountEngine(
       placeCamera();
       dirty = true;
       kick();
+      camChanged();
     });
   }
   const r0v = model.view.radius;
@@ -857,6 +995,7 @@ export function mountEngine(
       playing: st.playing,
       slow: st.slow,
       labels: st.labels,
+      cam: { yaw, pitch, radius },
       fullscreen: false,
       wheelZoom: true,
       onChange: (s) => {
@@ -867,9 +1006,17 @@ export function mountEngine(
     // pause this one while the big one runs
     const wasVisible = visible;
     visible = false;
+    // the layer is modal: the page behind takes neither the focus nor the pointer
+    const behind = [...document.body.children].filter(
+      (n): n is HTMLElement => n !== layer && !(n as HTMLElement).inert,
+    );
+    for (const n of behind) n.inert = true;
+    // its keys first, before any host's (the student preview's, the player's, the presenter's Échap): on the
+    // window, in the capture phase, so nothing inside or around stops them first
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
+        e.stopImmediatePropagation();
         close();
       } else if (e.key === "Tab") {
         // keep the focus in the layer
@@ -877,10 +1024,18 @@ export function mountEngine(
           ...layer.querySelectorAll<HTMLElement>(
             "button, input, [tabindex='0']",
           ),
-        ].filter((n) => !n.hasAttribute("disabled"));
+        ].filter(
+          (n) =>
+            !n.hasAttribute("disabled") &&
+            !n.closest("[inert]") &&
+            n.getClientRects().length > 0,
+        );
         if (!f.length) return;
         const i = f.indexOf(document.activeElement as HTMLElement);
-        if (e.shiftKey && i <= 0) {
+        if (i < 0) {
+          e.preventDefault();
+          (e.shiftKey ? f[f.length - 1] : f[0]).focus();
+        } else if (e.shiftKey && i === 0) {
           e.preventDefault();
           f[f.length - 1].focus();
         } else if (!e.shiftKey && i === f.length - 1) {
@@ -889,10 +1044,12 @@ export function mountEngine(
         }
       }
     };
-    layer.addEventListener("keydown", key);
+    window.addEventListener("keydown", key, true);
     const close = () => {
       if (!fs) return;
       fs = null;
+      window.removeEventListener("keydown", key, true);
+      for (const n of behind) n.inert = false;
       inner.destroy();
       layer.remove();
       visible = wasVisible;
@@ -923,19 +1080,26 @@ export function mountEngine(
         st.set = sim.set;
       }
       if (p.labels !== undefined) st.labels = p.labels;
+      if (p.cam && [p.cam.yaw, p.cam.pitch, p.cam.radius].every(Number.isFinite)) {
+        yaw = p.cam.yaw;
+        pitch = Math.max(-1.2, Math.min(1.35, p.cam.pitch));
+        radius = clampR(p.cam.radius);
+        placeCamera();
+      }
       if (p.slow !== undefined) st.slow = p.slow;
       if (p.playing !== undefined) st.playing = !still && p.playing;
       if (p.stage !== undefined && p.stage !== st.stage) {
         st.stage = Math.min(nStages - 1, Math.max(0, Math.round(p.stage)));
         lastShown = -1;
       }
-      if (still || !st.playing) sim.settle();
+      // a still picture jumps; a moving one follows in time (the projector shows the same spool-up)
+      if (still) sim.settle();
       paintControls();
       paintGauges();
       dirty = true;
       kick();
     },
-    state: () => ({ ...st, set: { ...st.set } }),
+    state: () => ({ ...st, set: { ...st.set }, cam: { yaw, pitch, radius } }),
     resize() {
       dirty = true;
       kick();

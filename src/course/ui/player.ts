@@ -2900,11 +2900,15 @@ export class CoursePlayer {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const t = e.target as HTMLElement | null;
     const tag = t?.tagName;
+    // a 3D engine's lever has the focus: a clicker's PageDown / PageUp still turns the page (course/engines)
+    const clicker =
+      (e.key === "PageDown" || e.key === "PageUp") && !!t?.closest?.(".eng");
     if (
-      tag === "INPUT" ||
-      tag === "TEXTAREA" ||
-      tag === "SELECT" ||
-      t?.isContentEditable
+      !clicker &&
+      (tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        t?.isContentEditable)
     )
       return;
     // a control of a slide's instrument has the focus (canvas/controlStrip.ts): its keys are its own

@@ -572,3 +572,227 @@ describe("the 3D view frees what it built", () => {
     }
   });
 });
+
+// ------------------------------------------------------------------ review fixes: words, interlocks, keys, time
+import { ENGINE_GAUGES, tl } from "../src/course/engines/sim";
+import { CARB_HEAT_FACTOR, STALL_RPM, reverserFree } from "../src/course/engines/model";
+
+describe("the gauges speak the reader's language", () => {
+  it("no French unit on an English gauge, the French rpm is « tr/min »", () => {
+    for (const k of ["piston", "prop", "turboprop", "turbofan"] as EngineKind[])
+      for (const g of ENGINE_GAUGES[k]) {
+        expect(tl(g.unit, "en"), `${k}.${g.id}`).not.toMatch(/tr\/min/);
+        if (g.id === "rpm" || g.id === "np") {
+          expect(tl(g.unit, "en")).toBe("rpm");
+          expect(tl(g.unit, "fr")).toBe("tr/min");
+        }
+      }
+  });
+  it("the turboprop's torque gauge reaches past its limit (an overtorque shows on the dial)", () => {
+    const tq = ENGINE_GAUGES.turboprop.find((g) => g.id === "torque")!;
+    expect(tq.max).toBeGreaterThan(TURBOPROP.torqueMax * 1.1);
+  });
+});
+
+describe("the reversers: the interlock and the reverse thrust", () => {
+  it("cannot deploy or stow above idle; at idle they do", () => {
+    const s = new EngineSim("turbofan", { throttle: 0.92 });
+    expect(reverserFree(0.92)).toBe(false);
+    expect(s.toggleReverse()).toBe(false);
+    expect(s.set.reverse).toBe(false);
+    s.setSettings({ throttle: 0 });
+    expect(s.toggleReverse()).toBe(true);
+    expect(s.set.reverse).toBe(true);
+    // max reverse, then try to stow without coming back to reverse idle
+    s.setSettings({ throttle: 1 });
+    expect(s.toggleReverse()).toBe(false);
+    expect(s.set.reverse).toBe(true);
+  });
+  it("max reverse reads clearly backwards (a fifth to a third of the rated thrust)", () => {
+    const r = turbofanOutputs({ throttle: 1, reverse: true });
+    expect(r.thrustPct).toBeLessThanOrEqual(-20);
+    expect(r.thrustPct).toBeGreaterThanOrEqual(-35);
+    expect(turbofanOutputs({ throttle: 0, reverse: true }).thrustPct).toBeLessThanOrEqual(0);
+  });
+});
+
+describe("the piston's edge cases match their words", () => {
+  const run = (o: Partial<Parameters<typeof pistonOutputs>[0]> = {}) =>
+    pistonOutputs({ throttle: 0, mixture: 1, carbHeat: false, ...o });
+  it("carburettor heat at idle: a small drop, the engine runs on", () => {
+    const a = run();
+    const b = run({ carbHeat: true });
+    expect(b.running).toBe(true);
+    expect(b.rpm).toBeGreaterThan(STALL_RPM);
+    expect((a.rpm - b.rpm) / a.rpm).toBeLessThan(0.1);
+    expect(CARB_HEAT_FACTOR).toBeGreaterThanOrEqual(0.85);
+  });
+  it("a running engine never turns slower than the stall rpm", () => {
+    for (let t = 0; t <= 1; t += 0.1)
+      for (let m = 0; m <= 1; m += 0.05)
+        for (const carbHeat of [false, true]) {
+          const o = pistonOutputs({ throttle: t, mixture: m, carbHeat, mags: "left" });
+          if (o.running) expect(o.rpm).toBeGreaterThanOrEqual(STALL_RPM);
+        }
+  });
+  it("why it stopped: idle cut-off, too lean, magnetos off", () => {
+    const say = (set: Parameters<typeof settingsOf>[1]) => new EngineSim("piston", set).status("fr");
+    expect(say({ mixture: 0 })).toMatch(/^Étouffoir/);
+    expect(say({ mixture: 0.2 })).toMatch(/^Mélange trop pauvre/);
+    expect(say({ mags: "off" })).toMatch(/^Magnétos sur arrêt/);
+    // lean of the model's EGT peak is not « near best power »
+    expect(say({ throttle: 0.8, mixture: 0.5 })).toMatch(/pic d’EGT/);
+    expect(say({ throttle: 0.8, mixture: 0.5 })).not.toMatch(/puissance maximale/);
+    expect(say({ throttle: 0.8, mixture: 0.75 })).toMatch(/puissance maximale/);
+  });
+});
+
+describe("exceedances are said in words", () => {
+  it("turboprop: full power with the propeller lever back is an overtorque", () => {
+    const s = new EngineSim("turboprop", { throttle: 1, prop: 0 });
+    expect(s.v.torque).toBeGreaterThan(TURBOPROP.torqueMax);
+    expect(s.status("fr")).toMatch(/Couple au-delà de la limite/);
+    expect(new EngineSim("turboprop", { throttle: 1, prop: 1 }).status("fr")).not.toMatch(/Couple/);
+  });
+  it("turboprop: the status names the Np the lever sets, not the moving needle", () => {
+    const s = new EngineSim("turboprop", { throttle: 0.6, prop: 1 });
+    const before = s.status("en");
+    s.setSettings({ throttle: 1 });
+    s.step(0.3);
+    expect(s.status("en")).toBe(before);
+  });
+  it("constant-speed propeller: high MAP at low rpm says raise the rpm first", () => {
+    const s = new EngineSim("prop", { throttle: 1, prop: 0 });
+    expect(s.status("fr")).toMatch(/augmentez d’abord le régime/);
+    expect(new EngineSim("prop", { throttle: 1, prop: 1 }).status("fr")).not.toMatch(/augmentez/);
+  });
+});
+
+describe("the view: keys, the paused spool-up, the camera on the projector", () => {
+  const setup = () => {
+    const g = globalThis as Record<string, unknown>;
+    const saved = { document: g.document, raf: g.requestAnimationFrame, caf: g.cancelAnimationFrame };
+    const body = new El("body");
+    g.document = {
+      createElement: (t: string) => new El(t),
+      body,
+      activeElement: null,
+      visibilityState: "visible",
+      addEventListener() {},
+      removeEventListener() {},
+    };
+    const pending = new Map<number, (t: number) => void>();
+    let id = 0;
+    g.requestAnimationFrame = (f: (t: number) => void) => (pending.set(++id, f), id);
+    g.cancelAnimationFrame = (n: number) => pending.delete(n);
+    let now = 0;
+    const run = (frames: number) => {
+      for (let k = 0; k < frames; k++) {
+        const [n, f] = [...pending][0] ?? [];
+        if (!f) return k;
+        pending.delete(n!);
+        f((now += 16));
+      }
+      return frames;
+    };
+    const renderer = () => ({
+      setPixelRatio() {},
+      setSize() {},
+      setClearColor() {},
+      render() {},
+      dispose() {},
+    });
+    const restore = () => {
+      g.document = saved.document;
+      g.requestAnimationFrame = saved.raf;
+      g.cancelAnimationFrame = saved.caf;
+    };
+    return { run, renderer, restore };
+  };
+  type Fn = (e: unknown) => void;
+  const fire = (el: El, type: string, e: Record<string, unknown>) => {
+    for (const f of el.listeners.get(type) ?? []) (f as Fn)(e);
+  };
+  it("a clicker's PageDown and an arrow on a button go on to the slide; the engine keeps its own keys", () => {
+    const env = setup();
+    try {
+      const host = new El("div");
+      const h = mountEngine(host as unknown as HTMLElement, { kind: "piston", lang: "fr", reducedMotion: false, renderer: env.renderer });
+      const root = host.children[0];
+      const canvas = root.children[0].children[0];
+      const key = (target: unknown, k: string) => {
+        const e = { key: k, target, stopPropagation: vi.fn(), preventDefault: vi.fn() };
+        fire(root, "keydown", e);
+        return e;
+      };
+      const button = { tagName: "BUTTON", getAttribute: () => null };
+      const range = { tagName: "INPUT", type: "range", getAttribute: () => null };
+      expect(key(button, "PageDown").stopPropagation).not.toHaveBeenCalled();
+      expect(key(button, "ArrowRight").stopPropagation).not.toHaveBeenCalled();
+      expect(key(button, "Escape").stopPropagation).not.toHaveBeenCalled();
+      expect(key(button, " ").stopPropagation).toHaveBeenCalled();
+      expect(key(canvas, "ArrowLeft").stopPropagation).toHaveBeenCalled();
+      expect(key(range, "ArrowUp").stopPropagation).toHaveBeenCalled();
+      const pg = key(range, "PageDown");
+      expect(pg.stopPropagation).not.toHaveBeenCalled();
+      expect(pg.preventDefault).toHaveBeenCalled();
+      h.destroy();
+    } finally {
+      env.restore();
+    }
+  });
+  it("paused on a step, a lever pushed still spools up in time (no jump), and comes to rest", () => {
+    const env = setup();
+    try {
+      const host = new El("div");
+      const h = mountEngine(host as unknown as HTMLElement, {
+        kind: "turbofan",
+        lang: "fr",
+        reducedMotion: false,
+        renderer: env.renderer,
+        playing: false,
+        set: { throttle: 0.3 },
+      });
+      env.run(2);
+      const n0 = new EngineSim("turbofan", { throttle: 0.3 }).v.n1;
+      h.set({ set: { throttle: 1 } });
+      env.run(10);
+      const sim = new EngineSim("turbofan", { throttle: 1 });
+      // about 0.16 s later N1 has moved, far from its target
+      const gauges = host.children[0].children[1].children[0];
+      const n1 = Number(gauges.children[0].children[1].children[0].textContent.replace(",", ".").replace(/\s/g, ""));
+      expect(n1).toBeGreaterThan(n0);
+      expect(n1).toBeLessThan(sim.v.n1 - 20);
+      expect(h.state().playing).toBe(false);
+      // it keeps going until the gauges have caught up, then the loop rests
+      const ran = env.run(5000);
+      expect(ran).toBeLessThan(5000);
+      h.destroy();
+    } finally {
+      env.restore();
+    }
+  });
+  it("the camera is part of the live state, and a projector follows it", () => {
+    const env = setup();
+    try {
+      const a = mountEngine(new El("div") as unknown as HTMLElement, { kind: "turbofan", lang: "fr", reducedMotion: false, renderer: env.renderer });
+      const b = mountEngine(new El("div") as unknown as HTMLElement, {
+        kind: "turbofan",
+        lang: "fr",
+        reducedMotion: false,
+        renderer: env.renderer,
+        display: true,
+      });
+      const cam = { yaw: 1.1, pitch: 0.2, radius: a.state().cam!.radius * 1.2 };
+      b.set({ ...a.state(), cam });
+      expect(b.state().cam!.yaw).toBeCloseTo(1.1, 6);
+      expect(b.state().cam!.radius).toBeCloseTo(cam.radius, 6);
+      // the room's screen takes no input
+      expect(b.el.classList.contains("display")).toBe(true);
+      a.destroy();
+      b.destroy();
+    } finally {
+      env.restore();
+    }
+  });
+});
