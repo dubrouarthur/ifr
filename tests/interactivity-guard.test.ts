@@ -15,6 +15,7 @@
 import { writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type {
+  CalcProblem,
   Course,
   FlyIt,
   GoalCheck,
@@ -28,6 +29,9 @@ import { SAMPLES } from "../src/course/samples";
 import { isStudentAction } from "../src/course/samples/kit";
 import { fallbackNotes } from "../src/course/ui/presenterNotes";
 import { DECK_STARTERS, addStarterDeck } from "../src/course/ui/deckStarters";
+import { stripControls } from "../src/course/canvas/controlStrip";
+import { problemFor } from "../src/course/calc";
+import { flyCriteria } from "../src/course/goals";
 
 type Rule = "a" | "b" | "c" | "d" | "e" | "f";
 interface Issue {
@@ -62,7 +66,7 @@ const sceneOf = (b: Inst | View, slide: SlideCanvas): string | undefined =>
 const hasStrip = (b: SlideBlock): boolean =>
   b.kind === "instrument" &&
   b.mode === "live" &&
-  !!b.controls?.length &&
+  stripControls(b.controls).length > 0 &&
   b.strip !== "hidden";
 
 /** an animation plays on this situation (the block's own, or another instrument's of the slide on the same one) */
@@ -77,6 +81,18 @@ function animated(b: Inst | View, slide: SlideCanvas): boolean {
       !!(x.motion?.preset || x.motion?.script) &&
       sceneOf(x, slide) === sc,
   );
+}
+
+/** the situation flies by itself, visibly: a descent or a climb, a bank, or a failure running (the needles move
+ *  with nobody at the controls) */
+function sceneMoves(c: Course, b: Inst | View, slide: SlideCanvas): boolean {
+  const failing = (f: object | undefined) => Object.values(f ?? {}).some(Boolean);
+  if (b.kind === "instrument" && failing(b.failures)) return true;
+  const sc = c.scenes[sceneOf(b, slide) ?? ""];
+  if (!sc) return false;
+  if (failing(sc.failures)) return true;
+  const p = sc.pose;
+  return p.kind === "fields" && (Math.abs(p.vsFpm ?? 0) >= 100 || Math.abs(p.bank ?? 0) >= 5);
 }
 
 /** a live block: an instrument that flies (live, or animated), or a simulator view */
@@ -112,19 +128,36 @@ function yourTurnIssues(yt: YourTurn): string[] {
   const out: string[] = [];
   const g = goalIssue(yt.goal);
   if (g) out.push(g);
+  // the run ends: the goal held for a while (the whole goal, or a row's own hold), or a stop condition / time
+  const rowHold = (yt.goal?.all ?? []).some(
+    (c) => ((c as { p?: { holdS?: unknown } }).p?.holdS as number) > 0,
+  );
   const end =
     (yt.endWhen?.length ?? 0) > 0 ||
     (yt.durationS ?? 0) > 0 ||
-    (yt.goal?.holdS ?? 0) > 0;
-  if (!end) out.push("no end condition (goal.holdS, endWhen or durationS)");
+    (yt.goal?.holdS ?? 0) > 0 ||
+    rowHold;
+  if (!end) out.push("no end condition (a hold, endWhen or durationS)");
   return out;
 }
-function flyItIssues(f: FlyIt): string[] {
+/** the problem a calc step poses (its fixed seed, else a sample one): what a linked Try it / Fly it checks */
+function calcProblemOf(c: Course, stepId: string): CalcProblem | undefined {
+  const spec = c.steps.find((x) => x.id === stepId)?.calc;
+  if (!spec) return undefined;
+  try {
+    return problemFor(spec, spec.seed ?? 1);
+  } catch {
+    return undefined;
+  }
+}
+function flyItIssues(c: Course, f: FlyIt): string[] {
   const t = f.target;
   // a lesson, a circuit, a procedure or a scenario: the engine grades and ends it
   if (t.kind !== "scene" && t.kind !== "calc") return [];
   const out: string[] = [];
-  if (!f.criteria.length || !f.criteria.some((c) => toleranced(c.check)))
+  // the criteria the flight checks: the author's, else (a calc target) the solved problem's stage goals
+  const crit = flyCriteria(f, t.kind === "calc" ? calcProblemOf(c, t.step) : undefined);
+  if (!crit.length || !crit.some((x) => toleranced(x.check)))
     out.push("Fly it: no criterion with a tolerance");
   const end =
     t.kind === "scene"
@@ -163,10 +196,18 @@ function guard(c: Course): Issue[] {
       );
     // (c) every « À vous »
     if (s.kind === "try" && !s.slide) {
-      const g = goalIssue(s.goal);
-      if (g) add("c", s, `Try it: ${g}`);
+      // the goal: the step's, else the linked calculation's stage goals, else the question asked on the stage (a
+      // number with its tolerance: « set 29.92 and read the altimeter »)
+      const linked =
+        s.calcLink && s.calcLink.use !== "stage"
+          ? calcProblemOf(c, s.calcLink.step)?.stage?.goals
+          : undefined;
+      const goal = s.goal ?? (linked?.length ? { all: linked, graded: false } : undefined);
+      const asked = s.quiz?.kind === "numeric" && s.quiz.tol > 0;
+      const g = goalIssue(goal);
+      if (g && !asked) add("c", s, `Try it: ${g}`);
     }
-    if (s.flyIt) for (const m of flyItIssues(s.flyIt)) add("c", s, m);
+    if (s.flyIt) for (const m of flyItIssues(c, s.flyIt)) add("c", s, m);
     const slide = s.slide;
     if (s.stage?.mode === "live" && !slide) {
       // (b) a live stage: something to turn, or the presenter's actions
@@ -187,6 +228,7 @@ function guard(c: Course): Issue[] {
         !!b.yourTurn ||
         hasStrip(b) ||
         animated(b, slide) ||
+        (b.kind === "instrument" && sceneMoves(c, b, slide)) ||
         (b.kind === "simViewport" &&
           (!!b.clip ||
             slide.blocks.some(
@@ -314,8 +356,8 @@ describe("interactivity guard rules", () => {
       step({ id: "3", title: { en: "", fr: "" } }),
     ];
     const r = guard(c);
-    expect(r.some((i) => i.rule === "a" && i.step === "3")).toBe(true);
-    expect(r.some((i) => i.rule === "f" && i.step === "3")).toBe(true);
+    expect(r.some((i) => i.rule === "a" && i.step.startsWith("#3 3 "))).toBe(true);
+    expect(r.some((i) => i.rule === "f" && i.step.startsWith("#3 3 "))).toBe(true);
   });
   it("flags a live instrument nobody can move, and an « À vous » without tolerance or end", () => {
     const c = blank("x");

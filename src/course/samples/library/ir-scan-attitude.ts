@@ -8,7 +8,7 @@
 // EASA Part-FCL Appendix 7 (IR skill test tolerances: heading ±5°, speed ±5 kt with all engines operating);
 // AMC1 FCL.615(b) IR theoretical knowledge; C172S POH section 4 (Vy 74 KIAS at sea level).
 import type { Course, SimScene, Step } from "../../types";
-import { DIAGRAM, INST, L, course, slideStep, step } from "../kit";
+import { DIAGRAM, INST, L, course, livenAll, slideStep, step } from "../kit";
 import { G, calloutRows, foot, head, slide } from "../navSlides";
 import {
   GAUGE,
@@ -739,7 +739,33 @@ export function irScanAttitudeCourse(): Course {
       tags: ["ir", "easa", "faa", "c172s", "attitude", "instruments", "scan"],
       minutes: 45,
     },
-    steps,
+    livenAll(steps, {
+      // the cover flies a standard-rate turn (canvas/motion.ts « turn-std », FAA IFH ch. 6)
+      "sa-cover.six": {
+        motion: "turn-std",
+        alt: L(
+          "The C172S six-pack at 3,000 ft and 100 KIAS: a standard-rate turn, 3° a second",
+          "Les six instruments du C172S à 3 000 ft et 100 KIAS : un virage au taux standard, 3° par seconde",
+        ),
+      },
+      // control, then performance: the power is set, the tachometer moves first, the airspeed follows (« power »:
+      // FAA IFH ch. 6 control and performance; POH C172S section 5 cruise table)
+      "sa-control.inst": {
+        motion: "power",
+        alt: L(
+          "The six-pack, level at 3,000 ft: the power goes from 2,100 to 2,500 RPM, then the speed builds",
+          "Les six instruments, en palier à 3 000 ft : la puissance passe de 2 100 à 2 500 tr/min, puis la vitesse augmente",
+        ),
+      },
+      // the primary instruments of straight and level appear as the aircraft levels off (« level-off », FAA IFH ch. 6)
+      "sa-primary.six": {
+        motion: "level-off",
+        alt: L(
+          "Six-pack: a level-off from a climb, then straight and level",
+          "Six instruments : une mise en palier depuis une montée, puis le palier",
+        ),
+      },
+    }),
     scenes(),
   );
 }

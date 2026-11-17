@@ -11,7 +11,7 @@
 import type { Briefing, L10n, SimScene, Step, YourTurn } from "../../types";
 import { holdEntry, type HoldEntry } from "../../../nav/holding";
 import { defaultAloft } from "../../../sim/wind";
-import { G as GOAL, scene } from "../kit";
+import { G as GOAL, flyOn, moving, scene } from "../kit";
 import {
   DIAGRAM,
   G,
@@ -405,7 +405,8 @@ export function holdNdbBriefing(): Briefing {
       eyebrow: L("Outbound · abeam", "Éloignement · le travers"),
       title: L("When are you abeam PA?", "Quand êtes-vous au travers de PA ?"),
       visual: [
-        INST(
+        moving(
+          INST(
           GAUGE("rmi"),
           L(
             `RMI flown live outbound on heading ${pad3(OUT_HDG)}: the head of the pointer moves through 180 as PA passes abeam`,
@@ -416,6 +417,9 @@ export function holdNdbBriefing(): Briefing {
           696,
           696,
           { id: "n-abeam.rmi", scene: "hn.abeam", mode: "live" },
+          ),
+          // the moment, replayed on demand: PA abeam about 11 s in (0.27 NM at 90 kt)
+          flyOn(30, 14, 90),
         ),
       ],
       quiz: mcq(

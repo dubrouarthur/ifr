@@ -2557,6 +2557,15 @@ export function mathsIfrCourse(): Course {
             label: L("Pass ARD", "Passez ARD"),
             check: GOAL.passed("ARD"),
           },
+          // the lateral standard while descending: course 090 to ARD within ¾ scale (FAA IR ACS, the ¾-scale rule)
+          {
+            id: "c2",
+            label: L(
+              "Course 090 to ARD within ¾ scale",
+              "Route 090 vers ARD à moins de ¾ de pleine échelle",
+            ),
+            check: GOAL.acsLat(),
+          },
         ],
         debrief: L(
           "Compare your altitude over ARD with the crossing altitude. High: you started late — every minute late at 600 ft/min is 600 ft still to lose. Low: you started early, or descended too fast.",

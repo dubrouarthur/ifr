@@ -29,7 +29,7 @@ import {
   whyStep,
   yourTurnStep,
 } from "./kit";
-import { G as GOAL, INST, QUIZ, T, slideStep } from "../kit";
+import { G as GOAL, INST, QUIZ, T, flyOn, moving, slideStep } from "../kit";
 
 /** a block one level above the others in its frame (an answer drawn over the question's picture replaces it) */
 const above = (b: SlideBlock): SlideBlock => ({
@@ -723,7 +723,8 @@ function holdBriefingFor(entry: HoldEntry): Briefing {
       title: L("When do you start the clock?", "Quand lancez-vous le chrono ?"),
       // the cue itself, flown live: the TO / FROM flag flips at the moment the clock starts
       visual: [
-        INST(
+        moving(
+          INST(
           GAUGE("hsi"),
           entry === "DIRECT"
             ? L(
@@ -739,6 +740,9 @@ function holdBriefingFor(entry: HoldEntry): Briefing {
           576,
           576,
           { id: `${x}-clock.hsi`, scene: `${x}.clock`, mode: "live" },
+          ),
+          // the moment, replayed on demand: abeam (or over) ARD about 20 s in, 0.5 NM at 90 kt
+          flyOn(40, 24, 90),
         ),
         T(
           "small",

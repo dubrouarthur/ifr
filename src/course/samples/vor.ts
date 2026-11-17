@@ -26,6 +26,8 @@ import {
   G,
   IMG,
   INST,
+  moving,
+  VOR_CAPTURE,
   L,
   MARK,
   QUIZ,
@@ -214,7 +216,7 @@ function cover(): Step {
           "14 étapes · environ 35 min · vous pilotez le HSI dans 7 d’entre elles",
         ),
         hero: [
-          INST(
+          moving(INST(
             HSI,
             L(
               "HSI tuned to ARD, course 090, heading 120",
@@ -224,9 +226,9 @@ function cover(): Step {
             180,
             720,
             720,
-            // flown live: the bar comes in as the aircraft closes on the course
+            // flown live: the bar comes in as the aircraft closes on the course (a 30° intercept, replayed)
             { id: "v-cover.hsi", scene: "vor.intercept", mode: "live" },
-          ),
+          ), { script: VOR_CAPTURE, loop: true }),
         ],
       }),
       { scene: "vor.intercept" },
@@ -754,7 +756,9 @@ function wind(): Step {
           300,
           672,
           672,
-          { id: "v-wind.hsi", scene: "vor.drift", mode: "live" },
+          // the student brackets the wind on the slide: bank left towards the course, wings level to hold the
+          // heading (FAA IFH ch. 9, bracketing)
+          { id: "v-wind.hsi", scene: "vor.drift", mode: "live", controls: ["bank"] },
         ),
         ...pointRows([
           {

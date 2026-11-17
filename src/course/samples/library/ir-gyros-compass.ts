@@ -8,7 +8,7 @@
 // C172S POH sect. 3 "Vacuum System Failure", "Emergency Operation in Clouds", sect. 7 "Vacuum Gage" (desired
 // suction 4.5 to 5.5 inHg; the low-vacuum annunciation below 3.0 inHg).
 import type { Course, SimScene, SlideBlock, Step } from "../../types";
-import { DIAGRAM, INST, L, MARK, T, course, slideStep, step } from "../kit";
+import { DIAGRAM, INST, L, MARK, T, course, livenAll, slideStep, step } from "../kit";
 import { G, foot, head, slide } from "../navSlides";
 import {
   GAUGE,
@@ -694,6 +694,8 @@ export function irGyrosCompassCourse(): Course {
           scene: "gc.vac",
           failuresOnEnter: { vacuum: true },
           assist: { holdAlt: true, holdIas: true },
+          // the presenter replays the failure or lets it run a minute: the horizon tips further
+          presenter: [{ k: "reset" }, { k: "failure", key: "vacuum" }, { k: "flyFor", s: 60 }],
         },
         quiz: {
           kind: "tap",
@@ -828,7 +830,27 @@ export function irGyrosCompassCourse(): Course {
       ],
       minutes: 50,
     },
-    steps,
+    livenAll(steps, {
+      // the course in one picture: a vacuum failure, the horizon tips slowly (« vacuum »: FAA IFH ch. 5,
+      // POH C172S section 3)
+      "gc-cover.ai": {
+        motion: "vacuum",
+        alt: L(
+          "Attitude indicator in level flight, after a vacuum failure: it tips slowly while the aircraft stays level",
+          "Horizon artificiel en palier, après une panne de dépression : il bascule lentement alors que l’avion reste à plat",
+        ),
+      },
+      // which instruments the vacuum drives: the same failure on the six-pack, the turn coordinator stays right
+      "gc-power.inst": {
+        motion: "vacuum",
+        alt: L(
+          "The C172S six-pack after a vacuum failure: the attitude and heading indicators drift, the electric turn coordinator stays right",
+          "Les six instruments du C172S après une panne de dépression : l’horizon et le cap dérivent, l’indicateur de virage électrique reste juste",
+        ),
+      },
+      // a reading lesson: the drift is minutes long, the picture stays still
+      "gc-drift.hi": { still: true },
+    }),
     scenes(),
   );
 }
