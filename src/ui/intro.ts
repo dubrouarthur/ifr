@@ -60,12 +60,12 @@ export const INTRO_ACTIONS = {
 /** What the library holds, as its landing shows it (src/library/model shelves(); tests/intro.test.ts keeps these in
  *  step with the live model): items per formation and its number of subjects, and the whole library. */
 export const INTRO_COUNTS = {
-  total: 134,
-  all: { c: 14, f: 75, k: 45 },
+  total: 135,
+  all: { c: 15, f: 75, k: 45 },
   // n items, s subjects; c courses, f simulator flights, k checklists (the page says these, never « éléments »)
   ppl: { n: 64, s: 15, c: 10, f: 23, k: 31 },
   night: { n: 22, s: 4, c: 3, f: 8, k: 11 },
-  ir: { n: 96, s: 7, c: 10, f: 65, k: 21 },
+  ir: { n: 97, s: 8, c: 11, f: 65, k: 21 },
   atpl: { n: 8, s: 13, c: 8, f: 0, k: 0 },
   club: { n: 4 },
 } as const;

@@ -47,6 +47,7 @@ import { distanceNm, wrap180 } from './nav/geo';
 import { runway } from './nav/data';
 import { assessTouchdown } from './sim/landing';
 import { currentRegion, leaveRealWorld, toReal } from './nav/world';
+import { enterWorld } from './course/realWorld';
 import { chartIndex } from './plates/plates';
 import type { Phase } from './sim/recorder';
 import { setSetupPanel, setAllRemaining, setSetupHelp, type SetupItem } from './train/setupAssist';
@@ -1272,6 +1273,8 @@ let capNotice: { kind: 'bad' | 'good'; text: string } | null = null;
 let capNoticeTimer = 0;
 /** the exercises a course flight started (their result window offers "Back to the course") */
 const courseExIds = new Set<string>();
+/** the course flight being started flies in a real airfield's region (CockpitHost.ensureWorld) */
+let courseRealWorld = false;
 /** the course flight being started while the bridge installs (the strip names it at once) */
 let pendingFlight: { course: string; step: string } | null = null;
 // hand-over: the goal of the course flight, shown in the course strip while the student flies
@@ -1677,12 +1680,25 @@ const courseHost: CockpitHost = {
     if (bridgeBuffer) bridgeBuffer.push({ text: t, kind: k ?? 'info', ...(ms ? { ms } : {}) });
     else toast(t, k ?? 'info', ms);
   },
+  // a course set at a real airfield (course/realWorld.ts): its region with the terrain, kept for the flight
+  ensureWorld: async (w) => {
+    courseRealWorld = false;
+    if (w.kind !== 'real') return true;
+    const ok = await enterWorld(w, { terrain: true });
+    if (ok) {
+      courseRealWorld = true;
+      rebuildOutside();
+      charts.refresh?.();
+    }
+    return ok;
+  },
   runExercise: (ex) => {
     courseExIds.add(ex.id);
-    // a flight at the instructor's own field flies in the region loadWorld just loaded; the mark is used once, so a
-    // later course flight with a training situation goes back to the training world
-    const keepRegion = courseRegionLoaded;
+    // a flight at a real field (a course set there, or the instructor's own field) flies in the region just loaded;
+    // the marks are used once, so a later course flight with a training situation goes back to the training world
+    const keepRegion = courseRegionLoaded || courseRealWorld;
     courseRegionLoaded = false;
+    courseRealWorld = false;
     if (!keepRegion) backToTraining();
     Modal.closeAll();
     courseLaunch(() => startExerciseNow(ex));
@@ -1753,6 +1769,7 @@ const courseHost: CockpitHost = {
       notes,
       // hand-over: how the flight ends, and the goal the strip keeps in view
       durationS: t.kind === 'scene' || t.kind === 'calc' ? t.durationS : undefined,
+      endsEarly: t.kind === 'scene' && !!t.endWhen?.length,
     };
     courseGoalLine = b.goals.slice(0, 2).join(' · ');
     placeBriefCard();

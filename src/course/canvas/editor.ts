@@ -783,7 +783,7 @@ export class CanvasEditor {
   /** Reveal order badges (one per group and order), just outside each block's top-left corner. */
   private drawReveals() {
     const seen = new Set<string>();
-    const EV: Record<string, string> = { answered: "?", goalMet: "✓", presenter: "P", yourTurnDone: "↩" };
+    const EV: Record<string, string> = { answered: "?", answerShown: "?✓", goalMet: "✓", presenter: "P", yourTurnDone: "↩" };
     const all = this.core.canvas.blocks;
     // badges only while the build order is being looked at (Reveal preview) or for the selected blocks' groups:
     // never a row of numbers over the slide's own numbers

@@ -277,7 +277,7 @@ describe("§8 an exercise on a slide is done with the slide's own controls", () 
     expect(stuck).toEqual([]);
     for (let i = 0; i < 10; i++) ((t += 250), tick());
     expect(stuck.length).toBe(1);
-    expect(stuck[0]).toMatch(/^Un indice : Mettez la puissance vers 30 %/);
+    expect(stuck[0]).toMatch(/^Un indice : mettez la puissance vers 30 %/);
     stop();
   });
   it("the tip gives the number to set, the same as the hint", () => {

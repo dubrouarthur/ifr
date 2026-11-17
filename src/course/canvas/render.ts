@@ -503,9 +503,34 @@ export class SlideView {
   }
   private applyReveal() {
     const all = this.mode !== "play";
+    // a block revealed by an event replaces the one under it in the same frame (the answer drawn over the
+    // question's picture): the one under goes, or both pictures would show at once (a thumbnail shows the
+    // answer; the editor keeps both, to edit either)
+    const replaced = new Set<string>();
+    if (this.mode !== "edit")
+      for (const v of this.views.values()) {
+        if (!revealOf(v.block).event) continue;
+        if (!all && !isRevealed(v.block, this.steps, this.revealN, this.events))
+          continue;
+        const f = v.block.frame;
+        for (const u of this.views.values())
+          if (
+            u !== v &&
+            u.block.frame.x === f.x &&
+            u.block.frame.y === f.y &&
+            u.block.frame.w === f.w &&
+            u.block.frame.h === f.h &&
+            (u.block.frame.z ?? 0) < (f.z ?? 0)
+          )
+            replaced.add(u.block.id);
+      }
     for (const v of this.views.values()) {
-      const shown = isRevealed(v.block, this.steps, this.revealN, this.events);
-      v.revealed?.(all || shown);
+      const shown =
+        isRevealed(v.block, this.steps, this.revealN, this.events) &&
+        !replaced.has(v.block.id);
+      v.revealed?.((all && !replaced.has(v.block.id)) || shown);
+      if (this.mode === "thumb")
+        v.el.style.visibility = replaced.has(v.block.id) ? "hidden" : "";
       if (all) {
         // the editor dims what a reveal preview has not shown yet (it never hides it)
         v.el.classList.toggle(

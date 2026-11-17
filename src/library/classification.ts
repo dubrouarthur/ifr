@@ -173,6 +173,11 @@ export const CLASSIFICATION: Readonly<Record<string, Placement>> = {
     also: ["atpl.062"],
     words: "ils localizer glide minima da remise de gaz decision altitude go-around missed approach",
   },
+  "sample-deck-lfpn-ifr": {
+    home: "ir.ad",
+    level: 2,
+    words: "toussus toussus-le-noble lfpn paris saclay versailles terrain aerodrome ils 25r remise de gaz attente molba odilo airfield missed approach",
+  },
   // ---- the course library, wave 2 (planned in samples/library/catalogue.ts; one home each, set here so that the
   // authors never edit this shared file)
   "sample-lib-ppl-effects-of-controls": {

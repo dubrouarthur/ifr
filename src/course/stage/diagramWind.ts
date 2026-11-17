@@ -68,10 +68,11 @@ function vector(
 }
 
 // ------------------------------------------------------------------ wind dial (shared)
-interface WindDial {
+export interface WindDial {
   set(dir: number, kt: number): void;
 }
-function windDial(
+/** A wind dial: the handle sits where the wind comes FROM, its distance from the centre is the speed. */
+export function windDial(
   sh: Shell,
   lang: Lang,
   cx: number,

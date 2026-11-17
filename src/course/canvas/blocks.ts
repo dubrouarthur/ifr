@@ -1199,6 +1199,7 @@ function quizBlock(b: Of<"quiz">, env: BlockEnv): BlockView {
             why.replaceChildren(verdict, richFragment(loc(o.why ?? q.explain, env.lang), { lang: env.lang }));
             why.classList.remove("is-reserve");
             env.fire("answered");
+            env.fire("answerShown");
             env.fire(i === q.answer ? "quizRight" : "quizWrong");
           });
         list.append(opt);
@@ -1417,8 +1418,6 @@ function checklistBlock(b: Of<"checklist">, env: BlockEnv): BlockView {
     const s = sim();
     let view: ReturnType<typeof stageView> | null = null;
     for (const x of rows) {
-      if (x.r.readout && s)
-        x.v.textContent = readoutText(s, x.r.readout, env.lang) ?? "";
       const c = x.r.check !== undefined ? goalChecks[x.r.check] : undefined;
       if (s && c && x.li.classList.contains("done")) {
         try {
@@ -1428,6 +1427,18 @@ function checklistBlock(b: Of<"checklist">, env: BlockEnv): BlockView {
           x.li.classList.remove("drift");
         }
       } else x.li.classList.remove("drift");
+      // met earlier, out of tolerance now: never a green tick alone, the word says it
+      const drift = x.li.classList.contains("drift");
+      if (x.r.readout && s) {
+        const t = readoutText(s, x.r.readout, env.lang) ?? "";
+        x.v.textContent = drift ? `${t}${t ? " · " : ""}${tx("goalDrift", env.lang)}` : t;
+      } else if (drift) {
+        x.v.textContent = tx("goalDrift", env.lang);
+        x.v.dataset.drift = "1";
+      } else if (x.v.dataset.drift) {
+        x.v.textContent = "";
+        delete x.v.dataset.drift;
+      }
     }
   };
   tick();

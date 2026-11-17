@@ -17,6 +17,8 @@ export interface Navaid extends LatLon {
   tch?: number;
   /** Optional DME co-located */
   dme?: boolean;
+  /** where the DME is when it is not at the navaid itself (an ILS DME at the glide path antenna) */
+  dmePos?: LatLon;
   /** Runway the LOC serves */
   runway?: string;
   airport?: string;

@@ -67,6 +67,9 @@ interface TileAirport {
     gsLat: number | null;
     gsLon: number | null;
     tch: number;
+    /** the DME when it is not at the localizer (an AIP correction: the ILS DME at the glide path) */
+    dmeLat?: number;
+    dmeLon?: number;
   }[];
   rwCifp?: Record<
     string,
@@ -223,6 +226,11 @@ function rot(p: LatLon, c: LatLon, deg: number): LatLon {
   const x2 = x * Math.cos(a) - y * Math.sin(a);
   const y2 = y * Math.cos(a) + x * Math.sin(a);
   return { lat: c.lat + y2, lon: c.lon + x2 / k };
+}
+/** real → simulator coordinates of a region centred on `center` with that variation (what toSim does once the
+ *  region is loaded: a course posing its situations before the region is there uses it) */
+export function simFrameOf(p: LatLon, center: LatLon, magVar: number): LatLon {
+  return rot(p, center, magVar);
 }
 /** real → simulator coordinates */
 export function toSim(p: LatLon): LatLon {
@@ -660,6 +668,9 @@ export async function loadRegion(
   icaos: string[],
   marginDeg = 1.2,
   onProgress?: (s: LoadStep) => void,
+  /** terrain: false — the navigation data only (a course's slides): no elevation tiles are fetched, the ground is
+   *  flat land with the airports at their elevation */
+  opts: { terrain?: boolean } = {},
 ): Promise<LoadedRegion> {
   onProgress?.({ step: "index" });
   const idx = await airportIndex();
@@ -766,8 +777,11 @@ export async function loadRegion(
             L.gsLat !== null && L.gsLon !== null
               ? S(L.gsLat, L.gsLon)
               : undefined,
-          tch: rw ? (a.rwCifp?.[L.rwy]?.tch ?? 50) : 50,
+          tch: rw ? (a.rwCifp?.[L.rwy]?.tch ?? L.tch ?? 50) : 50,
           dme: true,
+          ...(L.dmeLat != null && L.dmeLon != null
+            ? { dmePos: S(L.dmeLat, L.dmeLon) }
+            : {}),
           runway: L.rwy,
           airport: icao,
           ...S(L.lat, L.lon),
@@ -947,7 +961,10 @@ export async function loadRegion(
       land: (p) => (grid.sample(p, false) > 0.5 ? 1 : 0),
     });
   };
-  const demJob = loadDem(minLat - 0.3, maxLat + 0.3, minLon - 0.4, maxLon + 0.4, (d, t) => onProgress?.({ step: "terrain", done: d, total: t }));
+  const demJob =
+    opts.terrain === false
+      ? Promise.resolve()
+      : loadDem(minLat - 0.3, maxLat + 0.3, minLon - 0.4, maxLon + 0.4, (d, t) => onProgress?.({ step: "terrain", done: d, total: t }));
   const ready = await Promise.race([demJob.then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), 12000))]);
   build();
   if (!ready)

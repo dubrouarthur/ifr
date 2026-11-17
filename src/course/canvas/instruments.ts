@@ -623,10 +623,11 @@ export function readoutText(
         : `${dec(Math.abs(d))} ${lang === "fr" ? "pt" : "dot"}${d > 0.05 ? " R" : d < -0.05 ? " L" : ""}`;
     }
     case "gsDots": {
+      // where the aircraft is against the glide path (+ = fly up: the aircraft is low), like the bar's side above
       const d = verticalDots(v);
-      return d === null
-        ? null
-        : `${dec(Math.abs(d))} ${lang === "fr" ? "pt" : "dot"}`;
+      const fr = lang === "fr";
+      const side = d === null ? "" : d < -0.05 ? (fr ? " haut" : " high") : d > 0.05 ? (fr ? " bas" : " low") : "";
+      return d === null ? null : `${dec(Math.abs(d))} ${fr ? "pt" : "dot"}${side}`;
     }
     case "wca": {
       const w = ((v.hdgDeg - v.trkDeg + 540) % 360) - 180;

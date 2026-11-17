@@ -2718,7 +2718,7 @@ function slide(cx: Ctx, s: Step, c: SlideCanvas, path: string) {
           ),
           ids,
         );
-      if (w === "answered" && !hasQuiz)
+      if ((w === "answered" || w === "answerShown") && !hasQuiz)
         push(
           cx,
           "warn",

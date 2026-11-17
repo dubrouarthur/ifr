@@ -448,6 +448,10 @@ export interface SceneFields {
     brg2?: "OFF" | "NAV2" | "GPS" | "ADF";
     baro?: number;
     minimums?: number | null;
+    /** the communication radios' active frequencies (MHz), and the transponder code (« 7000 ») */
+    com1?: number;
+    com2?: number;
+    xpdr?: string;
   };
 }
 export interface SimScene {
@@ -1063,6 +1067,8 @@ export type CalcDiagram = { drag?: string[] } &
         gsKt?: number;
         distNm?: number;
         marks?: { distNm: number; altFt?: number; label: string }[];
+        /** the name of the start of the slope (a FAF, a FAP), in place of « Top of descent » */
+        startLabel?: L10n;
       }
     /** turn: bank, TAS → rate and radius (standard-rate circle) */
     | { kind: "turn"; tasKt: number; bankDeg: number }
@@ -1119,6 +1125,27 @@ export type CalcDiagram = { drag?: string[] } &
         kind: "cgEnvelope";
         table: "c172s";
         points: { weightLb: number; momentLbIn: number; label: L10n }[];
+      }
+    /** an aerodrome's runways drawn from their published thresholds (plan view, true north up) and the wind:
+     *  head and cross components on each runway direction, the runway in use (drag: 'wind') */
+    | {
+        kind: "runways";
+        strips: {
+          /** the two designators, low QFU first ("07L", "25R") */
+          ids: [string, string];
+          /** magnetic QFU of each end */
+          qfu: [number, number];
+          /** the two thresholds, metres east and north of a reference point */
+          ends: [[number, number], [number, number]];
+          widthM: number;
+          /** displaced threshold at each end, m (the landing threshold is that far in) */
+          dthrM?: [number, number];
+          /** a short line beside the strip ("1 100 × 30 m") */
+          label?: string;
+        }[];
+        /** magnetic wind (the ATIS gives it magnetic), ° and kt */
+        windDir: number;
+        windKt: number;
       }
     /** VDP on the final segment: MDA, TDZE, 3° path, distance from the threshold */
     | {
@@ -1228,11 +1255,13 @@ export interface BlockFrame {
 export interface BlockReveal {
   /** 1, 2, 3… — the n-th reveal of the slide (blocks with the same order appear together) */
   order: number;
-  /** what triggers it: a click / Next (default), the quiz answered, the step goal met, goal check i met, the
-   *  presenter, or the end of a YourTurn on this slide */
+  /** what triggers it: a click / Next (default), the quiz answered, the quiz's right answer shown (a right
+   *  answer, or a second wrong one: never after a first wrong one, when the student tries again), the step goal
+   *  met, goal check i met, the presenter, or the end of a YourTurn on this slide */
   when?:
     | "click"
     | "answered"
+    | "answerShown"
     | "goalMet"
     | `afterCheck:${number}`
     | "presenter"

@@ -356,6 +356,8 @@ export interface HandoverInput {
   clock?: boolean;
   /** sim: the run ends after this long */
   durationS?: number;
+  /** sim: the run also ends earlier, when its end condition is met (durationS is then the most it lasts) */
+  endsEarly?: boolean;
   /** the goal was already met on an earlier visit */
   alreadyMet?: boolean;
 }
@@ -417,7 +419,11 @@ export function deriveBrief(
   const goals = rows.map((r) => i.rowTexts?.[r.check] ?? r.text);
   const hold = goal?.holdS ?? 0;
   let ends: string;
-  if (i.where === "sim" && i.durationS)
+  if (i.where === "sim" && i.durationS && i.endsEarly)
+    ends = fr
+      ? `Le vol s’arrête de lui-même quand l’exercice est terminé (au plus tard après ${secs(i.durationS, lang)}), puis le résultat s’affiche.`
+      : `The flight stops by itself when the exercise is over (after ${secs(i.durationS, lang)} at most), then the result shows.`;
+  else if (i.where === "sim" && i.durationS)
     ends = fr
       ? `Le vol s’arrête de lui-même après ${secs(i.durationS, lang)}, puis le résultat s’affiche.`
       : `The flight stops by itself after ${secs(i.durationS, lang)}, then the result shows.`;

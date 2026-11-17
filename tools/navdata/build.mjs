@@ -16,6 +16,7 @@
 // Usage: node tools/navdata/build.mjs <dir with airports.csv runways.csv navaids.csv airport-frequencies.csv> [FAACIFP18]
 import fs from 'node:fs';
 import path from 'node:path';
+import { CORRECTIONS, correctAirport } from './corrections.mjs';
 
 const [srcDir, cifpPath] = process.argv.slice(2);
 if (!srcDir) {
@@ -432,6 +433,14 @@ if (cifpPath) {
     term.get(icao)[sub === 'D' ? 'sids' : 'stars'].push(entry);
     if (sub === 'D') nSid++; else nStar++;
   }
+}
+
+// ------------------------------------------------------------------ AIP corrections (aip-corrections.json)
+for (const [icao, c] of Object.entries(CORRECTIONS.airports)) {
+  const d = apts.get(icao);
+  if (!d) continue;
+  const { source: _s, ...fix } = c;
+  correctAirport(d, fix);
 }
 
 // ------------------------------------------------------------------ write

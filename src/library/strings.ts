@@ -307,6 +307,10 @@ const S = {
     en: "The subjects follow the official syllabus, {a} to {b}.",
     fr: "Les matières suivent le programme officiel, de {a} à {b}.",
   },
+  syllabusHintBeyond: {
+    en: "The subjects follow the official syllabus, {a} to {b}; then {c}.",
+    fr: "Les matières suivent le programme officiel, de {a} à {b} ; puis {c}.",
+  },
   soonOne: {
     en: "Coming to {b}: “{t}” is being written.",
     fr: "Bientôt dans {b} : « {t} » est en préparation.",

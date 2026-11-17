@@ -126,7 +126,7 @@ describe("the bookcase: programmes and subjects", () => {
       "081",
       "090",
     ]);
-    expect(SUBJECTS.filter((s) => s.program === "ir")).toHaveLength(7);
+    expect(SUBJECTS.filter((s) => s.program === "ir")).toHaveLength(8);
   });
 });
 
@@ -455,7 +455,7 @@ describe("a programme page", () => {
   /** the items of a section another formation lends it */
   const lentIn = (s: { items: LibItem[]; subject: { program: string } }) =>
     s.items.filter((i) => programOf(i) !== s.subject.program);
-  it("IR: its seven subjects in order, lessons in curriculum order, the PPL attitude lessons lent as cards", () => {
+  it("IR: its eight subjects in order, lessons in curriculum order, the PPL attitude lessons lent as cards", () => {
     const v = programView(items, "ir");
     const secs = v.groups.flatMap((g) => g.sections);
     expect(secs.map((s) => s.subject.id)).toEqual([
@@ -466,6 +466,7 @@ describe("a programme page", () => {
       "ir.emer",
       "ir.proc",
       "ir.test",
+      "ir.ad",
     ]);
     // every card is the subject's own, or lent by another formation that points here
     for (const s of secs)

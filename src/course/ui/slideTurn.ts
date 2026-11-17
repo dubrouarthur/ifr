@@ -533,7 +533,10 @@ function enlargeButtons(el: HTMLElement, step: Step, lang: Lang) {
 
 /** The hint, said on the slide when the student is stuck. Pure. */
 export function stuckLine(yt: YourTurn, lang: Lang): string {
-  const hint = yt.hint ? loc(yt.hint, lang) : "";
+  const h = yt.hint ? loc(yt.hint, lang) : "";
+  // after the colon, a sentence goes on in lower case (« Un indice : la barre… »); an abbreviation (« VSI »,
+  // « LOC ») keeps its capitals
+  const hint = /^\p{Lu}\p{Ll}/u.test(h) ? h[0].toLocaleLowerCase(lang) + h.slice(1) : h;
   return lang === "fr" ? `Un indice : ${hint}` : `A hint: ${hint}`;
 }
 

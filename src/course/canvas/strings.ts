@@ -35,6 +35,7 @@ const S = {
   quizRightAnswer: ["Right answer", "Bonne réponse"],
   quizNotThis: ["Not this one: try again.", "Pas celle-ci : réessayez."],
   answeredInPlayer: ["Answered in the player", "Répondu dans le lecteur"],
+  goalDrift: ["out of tolerance", "hors tolérance"],
   textTooLong: ["Text too long", "Texte trop long"],
   answer: ["Answer", "Réponse"],
   // editor
