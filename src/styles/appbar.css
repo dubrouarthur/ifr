@@ -22,7 +22,7 @@
     0 1px 2px rgba(20, 24, 31, 0.04), 0 4px 16px rgba(20, 24, 31, 0.05);
   --wd-sh-lift:
     0 2px 4px rgba(20, 24, 31, 0.05), 0 12px 32px rgba(20, 24, 31, 0.09);
-  --wd-gutter: 40px;
+  --wd-gutter: var(--gutter, 40px);
   font-family: "Inter", system-ui, sans-serif;
   font-feature-settings: "cv05", "ss03";
   -webkit-font-smoothing: antialiased;
@@ -193,10 +193,6 @@ header.wd-appbar.wd-appbar {
 }
 
 @media (max-width: 1200px) {
-  .wd-appbar,
-  .wd-page {
-    --wd-gutter: 28px;
-  }
   header.wd-appbar.wd-appbar {
     gap: 20px;
   }
@@ -206,10 +202,6 @@ header.wd-appbar.wd-appbar {
 }
 /* portrait tablet: the tabs keep their words, the icons go; the search narrows */
 @media (max-width: 900px) {
-  .wd-appbar,
-  .wd-page {
-    --wd-gutter: 20px;
-  }
   header.wd-appbar.wd-appbar {
     gap: 12px;
   }

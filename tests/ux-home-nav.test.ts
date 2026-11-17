@@ -72,10 +72,10 @@ describe("Accueil", () => {
     expect(HOME_COPY.teachGo.fr).toBe("Créer un cours");
     expect(HOME_COPY.flyGo.fr).toBe("Ouvrir le simulateur");
   });
-  it("the doors link to one library, the PPL formation, the new course page and the instructors' page", () => {
+  it("the doors link to one library, the first PPL course (audit §11), the new course page and the instructors' page", () => {
     expect(HOME_LINKS).toEqual({
       library: "academy.html#library",
-      ppl: "academy.html#library&p=ppl",
+      ppl: "academy.html#play=sample-deck-basic-instruments&from=ppl",
       newCourse: "academy.html#new",
       instructors: "academy.html#library&p=instructors",
       present: "academy.html#library&p=instructors&do=present",
@@ -85,7 +85,9 @@ describe("Accueil", () => {
   it("one filled button per screen: the doors' page has one .primary, the returning page one, the Simulateur one", () => {
     const src = readFileSync("src/ui/home.ts", "utf8");
     // doors: « Voir les cours »; returning: « Reprendre à l’étape N »; Simulateur: « Voler maintenant »
-    expect(src.match(/"wd-btn primary/g)?.length).toBe(3);
+    // + « Reprendre le vol » on the « Vol en cours » card (audit §5), which takes the filled style from the others
+    expect(src.match(/"wd-btn primary/g)?.length).toBe(4);
+    expect(src).toMatch(/querySelectorAll\(".wd-btn.primary"\)\s*\.forEach\(\(b\) => b\.classList\.remove\("primary"\)\)/);
   });
   it("the page is a page: no dialog role, Esc does not close it, the library is not embedded in it", () => {
     const fc = readFileSync("src/ui/flightcenter.ts", "utf8");

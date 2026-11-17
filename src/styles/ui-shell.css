@@ -1337,3 +1337,110 @@ html body .topbar .scn-wrap > .scn {
 html body.touch .topbar .view-dock.view-dock {
   --vd-h: 44px;
 }
+
+/* ---------------------------------------------------------------- phone (audit §6)
+   The top bar is « ← · titre · Pause · Plus »: View, EFB and Instructor move into Plus, every label stays the
+   button's accessible name (visually hidden, never removed), every target 44 px. */
+.menu .phone-only {
+  display: none;
+}
+@media (max-width: 600px) {
+  .menu .phone-only {
+    display: flex;
+  }
+  .menu .menu-h.phone-only {
+    display: block;
+  }
+  html body .topbar {
+    gap: 4px;
+    padding: 6px 6px;
+  }
+  html body .topbar .tb-views,
+  html body .topbar .tb-efb,
+  html body .topbar .tb-ios,
+  html body .topbar .tb-cdu,
+  html body .topbar .tb-rule {
+    display: none;
+  }
+  html body .topbar .tb-home .logo {
+    display: none;
+  }
+  html body .topbar .tb-home .lbl,
+  html body .topbar .tb-pause .lbl,
+  html body .topbar .tb-more .lbl {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  html body .topbar .tb-home,
+  html body .topbar .tb-pause,
+  html body .topbar .tb-more {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+    padding-inline: 10px;
+  }
+  html body .topbar .scn-wrap {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  html body .topbar .tb-actions {
+    flex: 0 0 auto;
+    margin-left: auto;
+  }
+  html body .topbar .tb-sim .tb-pause {
+    border-radius: 8px;
+  }
+}
+/* the calm phone note: the simulator flies best on a larger screen; the courses work here */
+.phone-note {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 200;
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 14px;
+  background: #fff;
+  color: #1b2430;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  font-size: 15px;
+  line-height: 1.4;
+}
+.phone-note b {
+  font-size: 16px;
+}
+.phone-note p {
+  margin: 0;
+  color: #4a5562;
+}
+.phone-note-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.phone-note-acts .btn {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 16px;
+  border-radius: 10px;
+  text-decoration: none;
+  font-weight: 600;
+  color: #1b2430;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+}
+.phone-note-acts .btn.primary {
+  color: #fff;
+  background: #1f5fd6;
+  border-color: #1f5fd6;
+}

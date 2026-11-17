@@ -46,7 +46,9 @@ import {
   type SubjectId,
 } from "../../library/programs";
 import {
+  compareInLibrary,
   continueItems,
+  coverage,
   isDone,
   isNewcomer,
   lessonRank,
@@ -64,6 +66,7 @@ import {
 } from "../../library/model";
 import {
   coursePlacement,
+  isOwnCourse,
   libraryItems,
   procBase,
   splitItem,
@@ -81,7 +84,7 @@ import { procedureSheet } from "../../library/procedureSheet";
 import { programArt } from "../../library/programArt";
 import { BRAND } from "../../brand";
 import { lt, ltN, type LibStringKey } from "../../library/strings";
-import { isTeaching, markTeaching } from "../../library/role";
+import { isTeaching, setTeaching } from "../../library/role";
 import "../../styles/library.css";
 // ------------------------------------------------------------------ routes (academy.html hash)
 export type AcademyRoute =
@@ -180,7 +183,7 @@ export function academyRoute(hash: string): AcademyRoute {
 /** Where a course is filed, as the course player's context line says it: « IR › Radionavigation ». Opened from a
  *  formation that borrows it (`from`), the line names that formation's subject, so it agrees with the way back:
  *  « LAPL · PPL › Navigation ». */
-export function courseHomeLine(course: Course, lang: Lang, from?: string): string {
+export function courseHomeLine(course: Course, lang: Lang, from?: string, received = false): string {
   const sample = isSampleId(course.id);
   const place = coursePlacement(
     {
@@ -198,7 +201,10 @@ export function courseHomeLine(course: Course, lang: Lang, from?: string): strin
       ? place.also.find((s) => subjectDef(s).program === from)
       : undefined;
   const d = subjectDef(lent ?? place.home);
-  return `${loc(programDef(d.program).code, lang)} › ${loc(d.title, lang)}`;
+  const line = `${loc(programDef(d.program).code, lang)} › ${loc(d.title, lang)}`;
+  // a course someone sent: who shared it, then where it is filed (audit §21)
+  const by = received && !sample ? course.author?.name?.trim() : "";
+  return by ? `${lt("sharedBy", lang, { name: by })} · ${line}` : line;
 }
 export function academyHash(r: AcademyRoute): string {
   const e = encodeURIComponent;
@@ -219,6 +225,60 @@ export function academyHash(r: AcademyRoute): string {
 }
 /** The library card to bring back into view after a course (sessionStorage, read once): « course:<id> ». */
 export const BACK_ITEM_KEY = "ifr.lib.backItem";
+/** The share link of a built-in course: its own address (every device has it), short enough for a message. */
+export const sampleShareUrl = (
+  id: string,
+  page = "academy.html",
+  base = "https://example.org/",
+): string => new URL(`${page}${academyHash({ k: "play", id })}`, base).href;
+/** The share link of a course: a built-in one by its address, my own one encoded in the link (text only, short). */
+export async function courseShareUrl(
+  course: Course,
+  sample: boolean,
+  page = "academy.html",
+  base = location.href,
+): Promise<{ ok: true; url: string } | { ok: false; reason: "images" | "tooBig" }> {
+  if (sample) return { ok: true, url: sampleShareUrl(course.id, page, base) };
+  const pack = await import("../pack");
+  const r = await pack.encodeCourseShare(course);
+  if (!r.fits) return { ok: false, reason: r.reason === "images" ? "images" : "tooBig" };
+  return { ok: true, url: new URL(pack.courseShareLink(r.code, page), base).href };
+}
+/** The course that follows a built-in course in its programme: the next one in its subject, else the first course of
+ *  the next subject that has one (syllabus order, the library's own). Null at the end, or for a course of my own. */
+export function nextCourseAfter(
+  courseId: string,
+  samples: readonly Course[],
+): { id: string; title: L10n; minutes?: number; steps: number } | null {
+  const entries = libraryEntries({ samples, stored: [] });
+  const items = libraryItems({
+    lang: "en",
+    courses: entries,
+    sampleProgram: (id) => SAMPLES.find((s) => s.id === id)?.program,
+    flights: false,
+  })
+    .filter((i) => i.kind === "course")
+    .sort(compareInLibrary);
+  const at = items.findIndex((i) => i.key === `course:${courseId}`);
+  if (at < 0) return null;
+  const prog = programOf(items[at]);
+  const next = items.slice(at + 1).find((i) => programOf(i) === prog);
+  if (!next || next.open.k !== "course") return null;
+  return {
+    id: next.open.id,
+    title: next.title,
+    ...(next.minutes !== undefined ? { minutes: next.minutes } : {}),
+    steps: next.count?.n ?? 0,
+  };
+}
+/** « d sur n cours terminés »: the slide courses a formation page draws, and those done. Pure. */
+export function courseProgress(drawn: readonly LibItem[]): { n: number; done: number } {
+  const cs = drawn.filter((i) => i.kind === "course");
+  return { n: cs.length, done: cs.filter(isDone).length };
+}
+/** A file the library opens as a course: the new .wingdeck, the older .ifrcourse, or plain JSON. */
+export const isCourseFileName = (name: string): boolean =>
+  /\.(wingdeck|ifrcourse|json|gz)$/i.test(name);
 /** academy.html plus the route (what the Flight Center opens, in the same tab). */
 export const academyHref = (r: AcademyRoute, page = "academy.html"): string =>
   `${page}${academyHash(r)}`;
@@ -312,6 +372,8 @@ function progressOf(
     ...(p.updated ? { at: p.updated } : {}),
   };
 }
+/** The subjects a « Nouveau cours » template is written for (that formation's first template). */
+const SUBJECT_TEMPLATE: Partial<Record<string, LibStringKey>> = { "ppl.circ": "soonCircuit" };
 /** Build the library's entries: stored courses first (newest first), then the built-in samples. */
 export function libraryEntries(x: EntryInput): LibraryEntry[] {
   const out: LibraryEntry[] = [];
@@ -774,7 +836,7 @@ export class CourseLibrary {
     this.fileIn = h("input", {
       type: "file",
       accept:
-        ".ifrcourse,.json,application/json,application/gzip,application/x-ifrcourse",
+        ".wingdeck,.ifrcourse,.json,application/json,application/gzip,application/x-ifrcourse",
       multiple: true,
       hidden: true,
       onchange: () => this.importFiles(),
@@ -807,6 +869,27 @@ export class CourseLibrary {
       this.pdfIn,
     );
     this.el.addEventListener("keydown", (e) => this.onKey(e));
+    // a course file dropped anywhere on the library is opened (audit §2: a student opens what the instructor sent)
+    const hasFiles = (e: DragEvent) =>
+      !!e.dataTransfer && [...e.dataTransfer.types].includes("Files");
+    this.el.addEventListener("dragover", (e) => {
+      if (!this.store || !hasFiles(e)) return;
+      e.preventDefault();
+      this.el.classList.add("lb-drop");
+    });
+    this.el.addEventListener("dragleave", (e) => {
+      if (e.target === this.el || !this.el.contains(e.relatedTarget as Node))
+        this.el.classList.remove("lb-drop");
+    });
+    this.el.addEventListener("drop", (e) => {
+      this.el.classList.remove("lb-drop");
+      if (!this.store || !hasFiles(e)) return;
+      e.preventDefault();
+      const files = [...(e.dataTransfer?.files ?? [])].filter((f) =>
+        isCourseFileName(f.name),
+      );
+      if (files.length) void this.importFiles(files, true);
+    });
     const release = () => {
       this.anchor = null;
       this.moved = true;
@@ -1121,6 +1204,9 @@ export class CourseLibrary {
     this.markSubject(s);
     this.writeHash(false);
     if (!sec) return;
+    // a subject inside the closed « En préparation » block: open it so the jump lands somewhere
+    const det = sec.closest("details");
+    if (det && !det.open) det.open = true;
     const reduce =
       typeof matchMedia !== "undefined" &&
       matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -1329,7 +1415,8 @@ export class CourseLibrary {
         h(
           "p",
           { class: "lb-ctx num" },
-          ltN("item1", "items", v.total, this.lang),
+          // they are all simulator flights: say so (audit §41, never « éléments »)
+          ltN("flight1", "flightsN", v.total, this.lang),
         ),
       );
       this.headX.replaceChildren();
@@ -1340,6 +1427,8 @@ export class CourseLibrary {
       const d = programDef(p);
       const v = programView(this.items, p);
       const own = p === "club" || p === "instructors";
+      // the progress counts the courses (« 0 sur 10 cours terminés »), never the check-lists (audit §11)
+      const courses = courseProgress(this.drawnIn(p));
       this.headL.replaceChildren(
         this.crumb([toLanding, this.L(d.code)]),
         h(
@@ -1352,15 +1441,29 @@ export class CourseLibrary {
           "p",
           { class: "lb-ctx" },
           h("span", {}, own ? this.L(d.blurb) : this.L(d.frame)),
-          !own && v.total
+          // the syllabus as it is: what is ready, what is being written (audit §4)
+          !own && coverage(v).soon
+            ? [
+                h("span", { class: "lb-dot", "aria-hidden": "true" }, "·"),
+                h(
+                  "span",
+                  { class: "num lb-ready" },
+                  this.s("readyLine", {
+                    r: coverage(v).ready,
+                    s: coverage(v).soon,
+                  }),
+                ),
+              ]
+            : null,
+          !own && courses.n
             ? [
                 h("span", { class: "lb-dot", "aria-hidden": "true" }, "·"),
                 h(
                   "span",
                   { class: "num" },
-                  this.s("doneOf", { d: v.done, n: v.total }),
+                  this.s("coursesDoneOf", { d: courses.done, n: courses.n }),
                 ),
-                this.bar(v.done, v.total),
+                this.bar(courses.done, courses.n),
               ]
             : null,
         ),
@@ -1378,7 +1481,8 @@ export class CourseLibrary {
       );
       return;
     }
-    const n = this.items.length;
+    const k = { all: 0, course: 0, sim: 0, proc: 0 };
+    for (const i of this.items) (k.all++, k[i.kind]++);
     this.headL.replaceChildren(
       h(
         "p",
@@ -1387,13 +1491,39 @@ export class CourseLibrary {
         h(
           "span",
           { class: "lb-eyebrow-n num" },
-          ` · ${this.s("eyebrowN", { n })}`,
+          ` · ${this.kindWords(k)}`,
         ),
       ),
       h("h1", { class: "lb-h1" }, this.s("title")),
       h("p", { class: "lb-lead" }, this.s("lead")),
     );
-    this.headX.replaceChildren(this.newCourseBtn());
+    // a student opens what they were sent; « Nouveau cours » shows once the person has a course of their own
+    const mine = this.entries.some((e) => !e.sample);
+    this.headX.replaceChildren(
+      h(
+        "div",
+        { class: "lb-head-row" },
+        this.store ? this.receivedBtn() : "",
+        mine ? this.newCourseBtn() : "",
+      ),
+    );
+  }
+  /** « Ouvrir un cours reçu »: a .wingdeck / .ifrcourse file (or drop it on the page); one course opens at once. */
+  private receivedBtn(): HTMLElement {
+    return h(
+      "button",
+      {
+        class: "gl-btn lb-head-received",
+        type: "button",
+        title: this.s("openReceivedSub"),
+        onclick: () => {
+          this.openAfterImport = true;
+          this.fileIn.click();
+        },
+      },
+      ic("upload", 18),
+      this.s("openReceived"),
+    );
   }
   /** The one « Nouveau cours » of the page (secondary: the page's filled button, if any, is « Reprendre »). */
   private newCourseBtn(at?: SubjectId): HTMLElement {
@@ -1459,6 +1589,10 @@ export class CourseLibrary {
    *  before the flight lesson: a beginner reads, practises, then flies). */
   private startOf(p: ProgramId): LibItem | undefined {
     const all = this.drawnIn(p);
+    // the programme's own first course (PPL: the basic instruments), never a guess from the page order (audit §11)
+    const fixed = programDef(p).start;
+    const own = fixed ? all.find((i) => i.key === `course:${fixed}`) : undefined;
+    if (own) return own;
     // its own first course or flight, else what another formation lends it
     return (
       all.find((i) => i.kind !== "proc" && programOf(i) === p) ??
@@ -1500,6 +1634,19 @@ export class CourseLibrary {
     return this.lang === "fr"
       ? `${hh} h ${String(mm).padStart(2, "0")}`
       : `${hh} h ${mm} min`;
+  }
+  /** « 10 cours · 23 vols · 31 check-lists » (the glossary's words for the library's kinds, none at zero). */
+  private kindWords(
+    k: Record<LibKind | "all", number>,
+    courses = true,
+  ): string {
+    return [
+      courses && k.course ? ltN("course1", "coursesN", k.course, this.lang) : "",
+      k.sim ? ltN("flight1", "flightsN", k.sim, this.lang) : "",
+      k.proc ? ltN("checklist1", "checklistsN", k.proc, this.lang) : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
   }
   private bar(done: number, total: number): HTMLElement {
     return h(
@@ -1667,9 +1814,11 @@ export class CourseLibrary {
     ctx: CardCtx,
     cols = this.cols,
   ): HTMLElement {
+    // a card alone in its subject spans the row as a wide card, never floating in empty space (audit §4)
+    const one = items.length === 1 && cols >= 2 && ctx === "subject";
     return h(
       "ul",
-      { class: "lb-grid", style: `--lb-cols:${cols}` },
+      { class: `lb-grid${one ? " is-one" : ""}`, style: `--lb-cols:${cols}` },
       ...items.map((i) => this.card(i, ctx)),
     );
   }
@@ -1701,6 +1850,8 @@ export class CourseLibrary {
     const out: HTMLElement[] = [];
     const cont = continueItems(this.items, 4);
     if (cont.length) out.push(this.resumeBox(cont));
+    const editing = this.editBox();
+    if (editing) out.push(editing);
     const sh = shelves(this.items);
     const newcomer = isNewcomer(this.items);
     out.push(
@@ -1717,7 +1868,8 @@ export class CourseLibrary {
       ),
     );
     const club = sh.find((x) => x.program === "club");
-    const mine = this.entries.filter((e) => !e.sample).length;
+    // the same number as « Mes cours et brouillons » (every course of my own, whatever its subject)
+    const mine = this.entries.filter(isOwnCourse).length;
     out.push(
       h(
         "section",
@@ -1729,7 +1881,7 @@ export class CourseLibrary {
           this.otherCard(
             "club",
             "list",
-            club?.total ? ltN("item1", "items", club.total, this.lang) : "",
+            club?.total ? this.kindWords(club.kinds) : "",
           ),
           this.otherCard(
             "instructors",
@@ -1739,22 +1891,23 @@ export class CourseLibrary {
         ),
       ),
     );
-    out.push(
+    // « Nouveau sur Wingdeck ? »: first thing on a first visit (nothing started, no course of my own), else last
+    const discover = h(
+      "p",
+      { class: `lb-discover${newcomer && !cont.length && !mine ? " is-first" : ""}` },
+      ic("play", 16),
+      h("span", {}, `${this.s("newHere")} `),
       h(
-        "p",
-        { class: "lb-discover" },
-        ic("play", 16),
-        h("span", {}, `${this.s("newHere")} `),
-        h(
-          "a",
-          {
-            class: "lb-link b",
-            href: `${this.o.simPage ?? "index.html"}?intro=1`,
-          },
-          this.s("discover"),
-        ),
+        "a",
+        {
+          class: "lb-link b",
+          href: `${this.o.simPage ?? "index.html"}?intro=1`,
+        },
+        this.s("discover"),
       ),
     );
+    if (newcomer && !cont.length && !mine) out.unshift(discover);
+    else out.push(discover);
     return out;
   }
   /** Reprendre: what the student started or was given, one row each; the first row's button is the page's one
@@ -1771,7 +1924,11 @@ export class CourseLibrary {
       ),
     );
   }
-  private resumeRow(i: LibItem, primary: boolean): HTMLElement {
+  private resumeRow(
+    i: LibItem,
+    primary: boolean,
+    act?: { label: string; run: () => void },
+  ): HTMLElement {
     const th = h("span", {
       class: `lb-cover lb-resume-th cov-${i.kind}`,
       "aria-hidden": "true",
@@ -1822,11 +1979,33 @@ export class CourseLibrary {
         {
           class: primary ? "gl-primary sm" : "gl-btn sm",
           type: "button",
-          "aria-label": `${this.s("resumeBtn")} — ${this.L(i.title)}`,
-          onclick: () => this.openItem(i),
+          "aria-label": `${act?.label ?? this.s("resumeBtn")} — ${this.L(i.title)}`,
+          onclick: () => (act ? act.run() : this.openItem(i)),
         },
-        ic("play", 15),
-        this.s("resumeBtn"),
+        ic(act ? "edit" : "play", 15),
+        act?.label ?? this.s("resumeBtn"),
+      ),
+    );
+  }
+  /** « Reprendre la modification »: the course of my own edited last, one row, back into the editor (audit §3). */
+  private editBox(): HTMLElement | null {
+    if (!this.store) return null;
+    const last = this.entries
+      .filter(isOwnCourse)
+      .sort((a, b) => (a.updated < b.updated ? 1 : -1))[0];
+    const item = last && this.items.find((x) => x.key === `course:${last.id}`);
+    if (!last || !item) return null;
+    return h(
+      "section",
+      { class: "lb-resume lb-edit-resume", "aria-labelledby": "lb-edit-h" },
+      h("h2", { class: "lb-resume-h", id: "lb-edit-h" }, this.s("resumeEdit")),
+      h(
+        "ul",
+        { class: "lb-resume-l" },
+        this.resumeRow(item, false, {
+          label: this.t("edit"),
+          run: () => this.go({ k: "edit", id: last.id }),
+        }),
       ),
     );
   }
@@ -1868,16 +2047,38 @@ export class CourseLibrary {
           { class: "lb-pc-bd" },
           h("span", { class: "lb-pc-name" }, this.L(d.title)),
           h("span", { class: "lb-pc-desc" }, this.L(d.blurb)),
+          // what is really there (audit §4): the slide courses and the syllabus covered first, a bar for the
+          // coverage, then the flights and the check-lists, never one « éléments » number
+          h(
+            "span",
+            { class: "lb-pc-cov num" },
+            h(
+              "span",
+              { class: "lb-pc-cov-t" },
+              [
+                ltN("courseReady1", "coursesReady", sh.kinds.course, this.lang),
+                this.s("subjectsReady", { r: sh.ready, n: sh.subjects }),
+              ].join(" · "),
+            ),
+            h(
+              "span",
+              {
+                class: "lb-bar lb-pc-bar",
+                role: "img",
+                "aria-label": this.s("subjectsReady", {
+                  r: sh.ready,
+                  n: sh.subjects,
+                }),
+              },
+              h("i", {
+                style: `width:${Math.round((sh.ready / Math.max(1, sh.subjects)) * 100)}%`,
+              }),
+            ),
+          ),
           h(
             "span",
             { class: "lb-pc-meta num" },
-            [
-              ltN("item1", "items", sh.total, this.lang),
-              ltN("subject1", "subjectsN", subjectsOf(p).length, this.lang),
-              sh.done ? ltN("done1", "doneN", sh.done, this.lang) : "",
-            ]
-              .filter(Boolean)
-              .join(" · "),
+            this.kindWords(sh.kinds, false),
           ),
           nx
             ? h(
@@ -1970,17 +2171,28 @@ export class CourseLibrary {
   private programBody(p: ProgramId): HTMLElement {
     const v = programView(this.items, p, this.st.kind);
     const main = h("div", { class: "lb-main" });
-    if (p === "instructors") markTeaching();
     if (p === "instructors") main.append(this.toolsBlock());
     if (p === "club") main.append(this.clubToolsBlock());
     const kinded = this.st.kind !== "all";
+    // the syllabus subjects with nothing yet go in ONE closed « En préparation (n) » block after what is ready
+    const soonRows: HTMLElement[] = [];
+    const ownProg = p === "club" || p === "instructors";
     for (const g of v.groups) {
       const secs: HTMLElement[] = [];
       for (const s of g.sections) {
         const id = s.subject.id;
+        if (!s.total && !ownProg) {
+          soonRows.push(this.soonRowEl(s));
+          continue;
+        }
         // the author's and the club's own subjects start empty: they say how to start, not « bientôt »
         if (!s.total && id === "instructors.mine") {
           if (!kinded || this.st.kind === "course") secs.push(this.draftsEmpty());
+          continue;
+        }
+        // « Enseigner avec Wingdeck »: how it works, in five steps, never a « bientôt » row (audit §19)
+        if (!s.total && id === "instructors.teach") {
+          if (!kinded) secs.push(this.teachGuide());
           continue;
         }
         if (!s.total && id === "club.courses") {
@@ -2008,6 +2220,21 @@ export class CourseLibrary {
         ),
       );
     }
+    if (soonRows.length)
+      main.append(
+        h(
+          "details",
+          { class: "lb-soon-block" },
+          h(
+            "summary",
+            {},
+            h("span", { class: "lb-soon-block-t" }, this.s("soonBlock")),
+            h("span", { class: "num lb-soon-block-n" }, String(soonRows.length)),
+            h("span", { class: "lb-soon-block-sub" }, this.s("soonBlockSub")),
+          ),
+          ...soonRows,
+        ),
+      );
     // the subject in view: the asked one, else the first one with something to open under the filter
     // (nothing at all, as on an instructor's first visit: the subject that says how to start, never « bientôt »)
     const home = programDef(p).fallback;
@@ -2036,6 +2263,8 @@ export class CourseLibrary {
     if (x.n) return h("span", { class: `${cls} num${n ? "" : " is-zero"}` }, String(n));
     if (x.subject.id === "club.courses" || x.subject.id === "instructors.mine")
       return h("span", { class: `${cls} num is-zero` }, "0");
+    // the five steps of « Enseigner avec Wingdeck » are on the page: no count, no « bientôt »
+    if (x.subject.id === "instructors.teach") return h("span", { class: cls });
     return h("span", { class: `${cls} is-soon` }, this.s("soonWord"));
   }
   /** The Sommaire: every subject at its official number, its count or « bientôt »; a click scrolls to it. */
@@ -2166,8 +2395,10 @@ export class CourseLibrary {
    *  the fixed kind order; checklists as rows when there are more than three, free practice always as rows. */
   private subjectSection(s: SubjectSection): HTMLElement {
     const d = s.subject;
+    const k = { all: 0, course: 0, sim: 0, proc: 0 };
+    for (const i of s.items) (k.all++, k[i.kind]++);
     const meta = [
-      ltN("item1", "items", s.items.length, this.lang),
+      this.kindWords(k),
       s.minutes ? this.s("about", { t: this.dur(s.minutes) }) : "",
     ]
       .filter(Boolean)
@@ -2213,6 +2444,9 @@ export class CourseLibrary {
     const own = d.program === "club";
     // an authoring action: students never see nine « Créer un cours ici » on their formation page
     const create = !own && d.program !== "instructors" && this.teaching;
+    // « Nouveau cours » has a ready template for this subject (the circuit, first of the PPL templates): the row says
+    // so instead of « bientôt », and its link opens « Nouveau cours » on it (audit §23)
+    const tpl = create ? SUBJECT_TEMPLATE[d.id] : undefined;
     return h(
       "section",
       {
@@ -2231,7 +2465,9 @@ export class CourseLibrary {
         { class: "lb-soon-t" },
         own
           ? this.s(d.id === "club.drills" ? "clubNoLists" : "clubNothing")
-          : this.soonText(s.soon),
+          : tpl
+            ? this.s(tpl)
+            : this.soonText(s.soon),
       ),
       !create
         ? null
@@ -2297,10 +2533,34 @@ export class CourseLibrary {
           h("small", {}, this.s(sub)),
         ),
       );
+    // « Je suis instructeur »: an explicit switch (audit §18); someone with a course of their own already teaches
+    const own = this.entries.some((e) => !e.sample);
+    const sw = own
+      ? null
+      : h(
+          "label",
+          { class: "lb-teach" },
+          h("input", {
+            type: "checkbox",
+            role: "switch",
+            checked: isTeaching(),
+            onchange: (e: Event) => {
+              setTeaching((e.target as HTMLInputElement).checked);
+              this.renderAll();
+            },
+          }),
+          h(
+            "span",
+            { class: "lb-teach-t" },
+            h("b", {}, this.s("teachSwitch")),
+            h("small", {}, this.s("teachSwitchSub")),
+          ),
+        );
     return h(
       "section",
       { class: "lb-tools", "aria-label": this.s("tools") },
       h("p", { class: "lb-cap" }, this.s("tools")),
+      sw,
       h(
         "div",
         { class: "lb-tools-l" },
@@ -2412,6 +2672,26 @@ export class CourseLibrary {
     );
   }
   /** My courses and drafts before the first one: one quiet block with the two ways to start. */
+  /** « Enseigner avec Wingdeck »: choisir, présenter, partager, les élèves volent, les résultats restent sur
+   *  l’appareil (audit §19); « Présenter à une classe » is the tool above it. */
+  private teachGuide(): HTMLElement {
+    const d = subjectDef("instructors.teach");
+    const steps = (["teach1", "teach2", "teach3", "teach4", "teach5"] as const).map((k, i) =>
+      h(
+        "li",
+        {},
+        h("span", { class: "lb-teach-n num", "aria-hidden": "true" }, String(i + 1)),
+        h("span", { class: "lb-teach-s" }, h("b", {}, this.s(k)), h("span", {}, this.s(`${k}Sub` as LibStringKey))),
+      ),
+    );
+    return h(
+      "section",
+      { class: "lb-subj lb-teach-guide", "data-subject": d.id },
+      h("div", { class: "lb-subj-h" }, h("h2", {}, h("span", { class: "lb-subj-n num" }, d.n), this.L(d.title))),
+      h("p", { class: "lb-teach-lead" }, this.s("teachLead")),
+      h("ol", { class: "lb-teach-l" }, ...steps),
+    );
+  }
   private draftsEmpty(): HTMLElement {
     const d = subjectDef("instructors.mine");
     return h(
@@ -2710,7 +2990,7 @@ export class CourseLibrary {
                 { class: "lb-tile-n" },
                 fi
                   ? this.s("toolsN", { n: 4 })
-                  : ltN("item1", "items", sh.total, this.lang),
+                  : this.kindWords(sh.kinds) || ltN("item1", "items", sh.total, this.lang),
                 sh.done ? this.bar(sh.done, sh.total) : null,
               ),
               ),
@@ -2818,9 +3098,8 @@ export class CourseLibrary {
   }
   private moreBtn(i: LibItem): HTMLElement | null {
     if (i.kind !== "course") return null;
-    // « Plus d’actions » only on what the user can act on: for a student the whole card opens the course, and the
-    // authoring actions (duplicate, present, export, share) belong to who teaches
-    if (!this.teaching) return null;
+    // « … » on every course card (audit §18): Ouvrir · Présenter · Copier le lien for everyone; the authoring actions
+    // (duplicate, export, delete) join them once this device teaches
     const b = h(
       "button",
       {
@@ -3181,18 +3460,15 @@ export class CourseLibrary {
     }
   }
   private async shareLink(e: LibraryEntry) {
-    const c = e.course ?? sampleCourse(e.id);
+    // a built-in course is on every device: its link is its address (audit §2), never the whole course encoded
+    const c = e.course ?? (e.sample ? sampleCourse(e.id) : null);
     if (!c) return;
-    const pack = await import("../pack");
-    const r = await pack.encodeCourseShare(c);
-    if (!r.fits)
+    const r = await courseShareUrl(c, !!e.sample, this.o.page ?? "academy.html");
+    if (!r.ok)
       return this.toast(
         r.reason === "images" ? this.t("linkImages") : this.t("linkTooBig"),
       );
-    const url = new URL(
-      pack.courseShareLink(r.code, this.o.page ?? "academy.html"),
-      location.href,
-    ).href;
+    const url = r.url;
     try {
       await navigator.clipboard.writeText(url);
       this.toast(this.t("linkCopied"));
@@ -3376,10 +3652,16 @@ export class CourseLibrary {
       ...(subj ? { s: subj } : {}),
     });
   }
-  private async importFiles() {
+  /** files picked in the file input, or dropped on the page; `openOne`: a single course received opens at once */
+  private openAfterImport = false;
+  private async importFiles(dropped?: File[], openOne = false) {
     const s = this.store;
-    const files = [...(this.fileIn.files ?? [])];
-    this.fileIn.value = "";
+    const files = dropped ?? [...(this.fileIn.files ?? [])];
+    if (!dropped) {
+      this.fileIn.value = "";
+      openOne = this.openAfterImport;
+      this.openAfterImport = false;
+    }
     if (!s || !files.length) return;
     this.toast(this.t("importing"));
     try {
@@ -3400,6 +3682,14 @@ export class CourseLibrary {
       }
       markImported([...added, ...replaced]);
       await this.load();
+      const got = [...added, ...replaced];
+      if (openOne && got.length === 1) {
+        const e = this.entries.find((x) => x.id === got[0]);
+        if (e) {
+          this.toast(this.s("receivedOpened"));
+          return this.play(e);
+        }
+      }
       const parts = [
         added.length ? this.t("importAdded", { n: added.length }) : "",
         replaced.length ? this.t("importReplaced", { n: replaced.length }) : "",
@@ -3495,7 +3785,14 @@ export class CourseLibrary {
     const items: [string, () => void, boolean?][] = [
       [this.t("open"), () => this.play(e, e.progress?.stepId)],
     ];
-    if (this.store)
+    const teach = this.teaching;
+    if (!e.briefing)
+      items.push([
+        this.t("presentThis"),
+        () => this.go({ k: "present", id: e.id }),
+      ]);
+    items.push([this.t("shareLink"), () => void this.shareLink(e)]);
+    if (this.store && teach)
       items.push([
         e.sample ? this.t("duplicateEdit") : this.t("edit"),
         () => void this.edit(e),
@@ -3504,13 +3801,7 @@ export class CourseLibrary {
       items.push([this.t("duplicate"), () => void this.duplicate(e)]);
     if (this.store && !e.sample && e.course)
       items.push([this.s("file"), () => this.fileCourse(e)]);
-    if (!e.briefing)
-      items.push([
-        this.t("presentThis"),
-        () => this.go({ k: "present", id: e.id }),
-      ]);
-    items.push([this.t("export"), () => void this.exportEntry(e)]);
-    items.push([this.t("shareLink"), () => void this.shareLink(e)]);
+    if (teach) items.push([this.t("export"), () => void this.exportEntry(e)]);
     if (this.store && !e.sample) {
       items.push([
         e.assigned ? this.t("unmarkAssigned") : this.t("markAssigned"),

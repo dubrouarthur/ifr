@@ -112,7 +112,11 @@ export function coursePlacement(
   let home: SubjectId | null = null;
   let also: readonly SubjectId[] = [];
   const filed = c?.subject;
+  // a course written on this device with « Choisir plus tard »: it lives in « Mes cours et brouillons » only, never
+  // guessed into a formation from its template's tags (audit §3)
+  const unfiled = !e.sample && e.shelf === "draft" && !own && !c?.sample;
   if (isSubjectId(filed)) home = filed;
+  else if (unfiled) home = "instructors.mine";
   else if (row && (e.sample || !own || subjectDef(row.home).program === own)) {
     home = row.home;
     also = e.sample ? (row.also ?? []) : [];
@@ -137,6 +141,9 @@ export function coursePlacement(
     programDef(subjectDef(home).program).level;
   return { home, also, level };
 }
+/** A course of my own: written (or duplicated) on this device, not built in and not received in a club pack. */
+export const isOwnCourse = (e: Pick<LibraryEntry, "sample" | "shelf">): boolean =>
+  !e.sample && e.shelf !== "club";
 /** Tags that name a shelf (a course imported without a program). */
 const TAG_SHELF: Readonly<Record<string, ProgramId>> = {
   vfr: "ppl",
@@ -161,7 +168,13 @@ export function courseItems(
   const out: LibItem[] = [];
   list.forEach((e, i) => {
     if (briefingLessonOf(e)) return;
-    const { home, also, level } = coursePlacement(e, o.sampleProgram);
+    const placed = coursePlacement(e, o.sampleProgram);
+    const { home, level } = placed;
+    // every course of my own is also listed in « Mes cours et brouillons », whatever its subject (audit §3)
+    const also =
+      isOwnCourse(e) && home !== "instructors.mine"
+        ? [...placed.also, "instructors.mine" as SubjectId]
+        : placed.also;
     const purpose = e.sample ? CLASSIFICATION[e.id]?.purpose : undefined;
     const blurb = purpose ?? e.summary ?? o.sampleBlurb?.(e.id);
     out.push({

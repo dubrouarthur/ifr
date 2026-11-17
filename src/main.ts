@@ -26,7 +26,7 @@ import { createResultSheet, ResultObserver, buildReport, type ResultOpenOpts } f
 import { DebriefView } from './ui/result/debrief';
 import { debriefOpen, type ExerciseCtx, type FlightCtx } from './ui/result/debriefSource';
 import { computeDebrief } from './sim/recorder';
-import { FlightCenter } from './ui/flightcenter';
+import { COCKPIT_HASH, FlightCenter } from './ui/flightcenter';
 import { FlightSetup } from './ui/flightsetup';
 import { SettingsModal } from './ui/settings';
 import { WeatherStation } from './ui/weather';
@@ -67,7 +67,7 @@ import type { CourseBridge, CockpitHost, FlyOutcome } from './course/cockpitBrid
 import type { TrayItem } from './course/store';
 import { momentLine } from './course/captureMoment';
 import type { CalcProblem } from './course/types';
-import { markCockpitBridge } from './course/cockpitLink';
+import { captureBoot as readCaptureBoot, markCockpitBridge, readFlyNote } from './course/cockpitLink';
 import { BRAND, brandMarkSvg, brandTagline } from './brand';
 import { scenarioName, scenarioDesc, scenarioKind, aircraftLabel } from './ui/scenarioText';
 
@@ -110,6 +110,10 @@ registerStrings('en', {
   'pv.paused': 'Paused',
   'pv.orEsc': 'or press Esc',
   'tb.home': 'Home',
+  'tb.backSlide': 'Go back to the slide',
+  'tb.backSlideTip': 'Back to the slide in the studio: your captures go with you',
+  'tb.backCourse': 'Back to the course',
+  'tb.backCourseTip': 'Back to the course, on the step you are flying (Home is in the flight menu)',
   'tb.homeTip': 'Back to the home page: learn, teach or pick another flight (F2)',
   'tb.rate': 'Simulation speed: {r}',
   'tb.restart': 'Restart the flight',
@@ -145,9 +149,10 @@ registerStrings('fr', {
   'tb.instructorTip': 'Poste instructeur (I)',
   'tb.more': 'Plus',
   'tb.moreTip': 'Plus : procédures, outils, apprentissage, réglages',
-  'tb.resume': 'Reprendre',
+  // « Reprendre » is for « Reprendre le cours » / « Reprendre le vol »: the paused aircraft « Continue » (audit §27)
+  'tb.resume': 'Continuer',
   'tb.pause': 'Pause',
-  'tb.resumeTip': 'Reprendre (Échap)',
+  'tb.resumeTip': 'Continuer (Échap)',
   'tb.pauseTip': 'Pause (Échap)',
   'ped.shortcuts': 'Raccourcis',
   'ped.shortcutsTip': 'Raccourcis clavier',
@@ -156,6 +161,10 @@ registerStrings('fr', {
   'pv.paused': 'En pause',
   'pv.orEsc': 'ou appuyez sur Échap',
   'tb.home': 'Accueil',
+  'tb.backSlide': 'Revenir à la diapo',
+  'tb.backSlideTip': 'Revenir à la diapo dans le studio : vos captures vous suivent',
+  'tb.backCourse': 'Reprendre le cours',
+  'tb.backCourseTip': 'Revenir au cours, sur l’étape que vous volez (Accueil est dans le menu du vol)',
   'tb.homeTip': 'Retour à l’accueil : apprendre, enseigner ou choisir un autre vol (F2)',
   'tb.rate': 'Vitesse de simulation : {r}',
   'tb.restart': 'Recommencer le vol',
@@ -179,9 +188,9 @@ registerStrings('fr', {
   Instructor: 'Instructeur',
   'Instructor station (I)': 'Poste instructeur (I)',
   Pause: 'Pause',
-  Resume: 'Reprendre',
+  Resume: 'Continuer',
   'Pause (Esc)': 'Pause (Échap)',
-  'Resume (Esc)': 'Reprendre (Échap)',
+  'Resume (Esc)': 'Continuer (Échap)',
   'Simulation rate: click to change (Ctrl+1 / 2 / 4)': 'Vitesse de simulation : cliquez pour changer (Ctrl+1 / 2 / 4)',
   More: 'Plus',
   'More: procedures, tools, learning, settings': 'Plus : procédures, outils, apprentissage, réglages',
@@ -194,6 +203,10 @@ registerStrings('fr', {
   'Simulation speed': 'Vitesse de simulation',
   Library: 'Bibliothèque',
   'End flight & debrief': 'Terminer le vol et débriefer',
+  'View…': 'Vue…',
+  'EFB: charts and checklists': 'EFB : cartes et check-lists',
+  'Instructor station': 'Poste instructeur',
+  'On this screen': 'Sur cet écran',
   'Instrument panel…': 'Tableau de bord…',
   'Pair instructor (phone/tablet)…': 'Associer l’instructeur (téléphone ou tablette)…',
   'Plan a new flight…': 'Préparer un nouveau vol…',
@@ -210,6 +223,9 @@ registerStrings('fr', {
   'Training records': 'Carnet d’entraînement',
   'Guided tour': 'Visite guidée',
   'Explain instruments': 'Expliquer les instruments',
+  'Go-around': 'Remise de gaz',
+  'EFB (charts)': 'EFB (cartes)',
+  'All keyboard shortcuts': 'Tous les raccourcis clavier',
   'Keyboard shortcuts': 'Raccourcis clavier',
   Shortcuts: 'Raccourcis',
   App: 'Application',
@@ -362,6 +378,15 @@ type OtwMode = 'normal' | 'big' | 'visual' | 'none';
 let otwMode = store.get<OtwMode>('ifr.otw', 'normal');
 let debriefShown = false;
 let endTimer = 0;
+/** seconds flown (the sim running, no page over it) since this flight started: a flight under way is offered back
+ *  on Accueil and Simulateur (« Vol en cours », audit §5), never lost by going home */
+let flownS = 0;
+/** a flight the pilot has really flown and not finished: Accueil offers « Reprendre le vol » */
+function flightUnderWay(): boolean {
+  if (flownS < 1 || sim.ac.s.crashed || sim.replaying) return false;
+  if (lesson) return !lesson.finished;
+  return !debriefShown && !lessonResult.isOpen;
+}
 
 const input = new InputManager({ onAction: (a) => doAction(a) });
 const audio = new CockpitAudio(store.get('ifr.muted', false));
@@ -503,6 +528,10 @@ const fc = new FlightCenter({
   // procedures mode: a drill flies in one click (a real-world one first loads its region in the builder)
   flyDrill: (c) => flyDrill(c),
   editDrill: (x) => (typeof x === 'string' ? builder.drill(x) : builder.edit(x)),
+  // « Vol en cours » on Accueil and Simulateur (audit §5): back to the paused flight, or end it with its debrief
+  flight: () => (flightUnderWay() ? { title: scnName.textContent || tr('course.freeFlight'), timeS: flownS } : null),
+  resumeFlight: () => { if (sim.paused) togglePause(); },
+  endFlight: () => endFlight(),
 });
 const builder = new CircuitBuilder((c) => flyCircuit(c), (m, k) => toast(m, k ?? 'info'));
 // a failure card in the builder opens the club procedure editor (a new procedure answers that failure)
@@ -631,6 +660,7 @@ function offerBriefingCourse(exerciseId: string) {
 }
 function startLesson(run: LessonRun) {
   courseRunStarts(run.ex);
+  flownS = 0;
   lesson = run;
   if (pendingBackToCourse) backToCourseFor.set(run, pendingBackToCourse);
   pendingBackToCourse = null;
@@ -642,7 +672,7 @@ function startLesson(run: LessonRun) {
   coachKey = '';
   updateHeader();
   if (run.ex.plate) charts.show(run.ex.plate);
-  toast(tr('ex.started', { title: run.ex.title }), 'info');
+  toast(tr('ex.started', { title: exTitle(run.ex) }), 'info');
   atc.clear();
   lastAtcStep = -1;
   if (run.rt.clearance) atc.say(run.rt.clearance);
@@ -699,6 +729,7 @@ function startScenario(sc: Scenario, wx: WxPreset, a: AssessSettings = launcher.
   lastAtcStep = -1;
   lastScenario = sc;
   lastWx = wx;
+  flownS = 0;
   sim.assess = { ...a };
   sim.load(sc);
   Object.assign(sim.weather, wx.wx);
@@ -875,7 +906,17 @@ const sensItem = lx(h('button', { class: 'menu-item', role: 'menuitem', onclick:
 // Plus holds the flight's speed and end, help and the switches (UX logic §7). The panel's own keys keep Procedures
 // (PROC, X) and Direct-To (D→, D); the CDU is F3 (a top-bar button in the airliner); the flight menu holds the
 // weather and the connections; the library, the paths and the records are reached from Accueil.
+// on a phone the top bar keeps « ← · titre · Pause · Plus » (audit §6): View, EFB and Instructor live here instead
+const phoneItem = (ic: string, label: string, fn: () => void) => {
+  const b = moreItem(ic, label, '', fn);
+  b.classList.add('phone-only');
+  return b;
+};
 moreMenu.append(
+  (() => { const x = menuHead('On this screen'); x.classList.add('phone-only'); return x; })(),
+  phoneItem(I.eye, 'View…', () => viewDock.toggle(moreBtn, 'down')),
+  phoneItem(I.tablet, 'EFB: charts and checklists', () => charts.toggle()),
+  phoneItem(I.instructor, 'Instructor station', () => ios.toggle()),
   menuHead('Flight'),
   rateBtn,
   moreItem(I.restart, 'Restart the flight', '', () => restartFlight()),
@@ -923,6 +964,33 @@ function scheduleHide(ms = 700) {
 /** a flight just started: give the bar a moment, then get out of the way */
 function chromeAfterStart() {
   if (autoHide) scheduleHide(1600);
+  phoneNotice();
+}
+/** On a phone the instruments are too small to fly by (audit §6): say so once per visit, calmly, with a way back to
+ *  the courses and a way on. Never a dead end: « Continuer ici » keeps the flight. */
+function phoneNotice() {
+  if (typeof matchMedia === 'undefined' || !matchMedia('(max-width: 600px)').matches) return;
+  try {
+    if (sessionStorage.getItem('ifr.phoneNote') === '1') return;
+    sessionStorage.setItem('ifr.phoneNote', '1');
+  } catch { /* shown once on this page */ }
+  if (document.querySelector('.phone-note')) return;
+  const fr = uiLang() === 'fr';
+  const wasPaused = sim.paused;
+  sim.paused = true;
+  syncPauseBtn();
+  const close = () => { note.remove(); if (!wasPaused && sim.paused) togglePause(); };
+  const stay = h('button', { class: 'btn primary', type: 'button', onclick: close }, fr ? 'Continuer ici' : 'Carry on here');
+  const note = h('div', { class: 'phone-note', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'phone-note-t' },
+    h('b', { id: 'phone-note-t' }, fr ? 'Le simulateur se pilote mieux sur tablette ou ordinateur' : 'The simulator flies best on a tablet or a computer'),
+    h('p', {}, fr
+      ? 'Sur un téléphone, les instruments sont trop petits pour être lus. Les cours en diapos, eux, se suivent très bien ici.'
+      : 'On a phone the instruments are too small to read. The slide courses work well here.'),
+    h('div', { class: 'phone-note-acts' },
+      h('a', { class: 'btn', href: 'academy.html#library' }, fr ? 'Retour aux cours' : 'Back to the courses'),
+      stay));
+  document.body.append(note);
+  setTimeout(() => stay.focus(), 0);
 }
 function revealChrome() {
   clearTimeout(revealTimer);
@@ -1009,12 +1077,23 @@ onLangChange(() => {
 document.addEventListener('click', (e) => { if (!moreMenu.contains(e.target as Node)) moreMenu.classList.remove('open'); });
 /** the FMC CDU: a top-bar button in the airliner only (G1000 and steam: More → Tools) */
 const cduBtn = lx(h('button', { class: 'btn tb-cdu', onclick: () => cduPanel.toggle(), 'aria-label': 'CDU' }, icon(I.keypad), h('span', { class: 'lbl' }, 'CDU')), 'FMC CDU: route, approach, legs, hold (F3)', 'title');
-/** « ← Accueil »: the one way home, with the product mark and the word (UX logic §7; it replaces the hub button) */
-const homeLbl = lx(h('span', { class: 'lbl' }), 'tb.home');
-const homeBtn = lx(h('button', { class: 'btn tb-fc tb-home', type: 'button', onclick: () => fc.showPlace('home') },
+/** the page's query at boot: a course link (?fly=, ?capture=) is known before its bridge loads */
+const bootQ = new URLSearchParams(location.search);
+/** capture mode (the studio's « Voler et capturer »: ?capture=…&return=…): the cockpit opens for a slide */
+const capBoot = readCaptureBoot(location.search);
+const captureBoot = capBoot.capturing;
+/** capture mode with a way back: the top-left button is « Revenir à la diapo », not « Accueil » */
+const captureBootBack = capBoot.back;
+/** « ← Accueil »: the one way home, with the product mark and the word (UX logic §7; it replaces the hub button).
+ *  In capture mode it goes back to the slide (Accueil stays in the flight menu) */
+/** a course flight (?fly=…): the top-left button is « ← <the course> » and does what the strip's « Reprendre le
+ *  cours » does (it asks first when the flight has no result); Accueil stays in the flight menu (audit §15) */
+const courseFlyBoot = bootQ.has('fly') && !captureBoot;
+const homeLbl = lx(h('span', { class: 'lbl' }), captureBootBack ? 'tb.backSlide' : courseFlyBoot ? 'tb.backCourse' : 'tb.home');
+const homeBtn = lx(h('button', { class: 'btn tb-fc tb-home', type: 'button', onclick: () => (captureBootBack ? void backToSlide() : courseFlyBoot || courseBridge?.handoff ? courseUi.requestBack() : fc.showPlace('home')) },
   h('span', { class: 'tb-back', 'aria-hidden': 'true' }, svgIcon(I.arrow, 16)),
   h('span', { class: 'logo brand-mark', 'aria-hidden': 'true', html: brandMarkSvg(22) }),
-  homeLbl), 'tb.homeTip', 'title');
+  homeLbl), captureBootBack ? 'tb.backSlideTip' : courseFlyBoot ? 'tb.backCourseTip' : 'tb.homeTip', 'title');
 const topbar = h('header', { class: 'topbar' },
   homeBtn,
   h('i', { class: 'tb-rule', 'aria-hidden': 'true' }),
@@ -1113,8 +1192,11 @@ const courseUi = new CourseFlightUi({
   back10: () => courseBack10(),
   flyFromHere: () => courseFlyFromHere(),
   backToNow: () => { courseBridge?.ring.endPreview(sim); previewT = null; syncPauseBtn(); syncCourseStrip(); },
-  toEditor: () => captureLeave(courseBridge?.captureReturn ?? null),
+  toEditor: () => void backToSlide(),
   backToCourse: () => void stripBackToCourse(),
+  // « Revenir au cours sans résultat ? »: the aircraft waits while the strip asks
+  hold: () => { const was = !sim.paused; sim.paused = true; syncPauseBtn(); return was; },
+  release: () => { sim.paused = false; syncPauseBtn(); },
   start: () => { sim.paused = false; syncPauseBtn(); chromeAfterStart(); fitSoon(); },
   // capture mode: « Capturer un moment pour la diapo »
   intro: () => showCaptureIntro(),
@@ -1149,7 +1231,11 @@ let pendingFlight: { course: string; step: string } | null = null;
 // hand-over: the goal of the course flight, shown in the course strip while the student flies
 let courseGoalLine = '';
 /** a ?fly= link is being resolved: the strip says so, no Paused veil, no Resume, no title of the previous flight */
-let courseLoading = new URLSearchParams(location.search).has('fly');
+let courseLoading = bootQ.has('fly') || captureBoot;
+/** capture mode: the bridge did not come up (failed, or more than 8 s): the strip still shows, with the way back */
+let captureFallback = false;
+/** capture mode: the free flight the author flies from (none at boot when the link carries the slide's situation) */
+let captureFreeStarted = false;
 /** the bridge's own messages while it installs (course changed, started again, link expired): they go into the brief
  *  card, or are shown once the flight (or the Flight Center) is up, so no window hides them */
 let bridgeBuffer: { text: string; kind: 'info' | 'good' | 'warn' | 'bad'; ms?: number }[] | null = [];
@@ -1174,8 +1260,13 @@ function courseFlyFromHere(run = false) {
   syncPauseBtn();
   syncCourseStrip();
 }
+/** C or Shift+C before capture mode came up (the strip's fallback): say so, calmly */
+function captureNotReady() {
+  toast(uiLang() === 'fr' ? 'Le mode capture n’est pas prêt. Revenez à la diapo et relancez « Voler et capturer ».' : 'Capture mode is not ready. Go back to the slide and start « Fly and capture » again.', 'warn', 9000);
+}
 async function courseCapture() {
   const b = courseBridge;
+  if (!b && captureFallback) { captureNotReady(); return; }
   if (!b?.capturing) return;
   // C on the arrival card: the slide's situation itself, captured at once
   if (courseUi.cardKind === 'capture') courseUi.closeBrief(false);
@@ -1189,6 +1280,7 @@ async function courseCapture() {
 }
 async function courseClip() {
   const b = courseBridge;
+  if (!b && captureFallback) { captureNotReady(); return; }
   if (!b?.capturing) return;
   if (courseUi.cardKind === 'capture') courseUi.closeBrief(false);
   // the clip ends now: a look-back first returns to the live flight
@@ -1279,6 +1371,45 @@ function captureLeave(url: string | null) {
   courseUi.leaving(captureSlide ?? captureTitle ?? '');
   location.href = url;
 }
+/** the studio URL of the capture link, checked like the bridge does (same site only); null: none, or not safe */
+async function bootReturnUrl(): Promise<string | null> {
+  const ret = bootQ.get('return');
+  if (!ret) return null;
+  try {
+    const { isSafeReturnUrl } = await import('./course/handoff');
+    return isSafeReturnUrl(ret, location.origin) ? ret : null;
+  } catch {
+    return null;
+  }
+}
+/** « Revenir à la diapo » (top bar, strip, loading card): works before the bridge is up, and if it never comes */
+async function backToSlide() {
+  const url = courseBridge?.captureReturn ?? (await bootReturnUrl());
+  if (url) captureLeave(url);
+  else fc.showPlace('home');
+}
+/** capture mode: the free flight the author flies from, once (the slide's situation, when posed, replaces it) */
+function startCaptureFlight() {
+  if (captureFreeStarted) return;
+  captureFreeStarted = true;
+  startScenario(lastScenario, lastWx);
+}
+/** capture mode did not come up (an error, or more than 8 s): the cockpit shows anyway, with the capture strip and
+ *  « Revenir à la diapo », never the default flight with « Accueil » as the only way out */
+function captureFallbackNow(failed: boolean) {
+  if (!captureBoot || captureFallback || courseBridge?.capturing) return;
+  captureFallback = true;
+  courseLoading = false;
+  startCaptureFlight();
+  const fr = uiLang() === 'fr';
+  toast(failed
+    ? (fr ? 'Le mode capture n’a pas pu démarrer. Revenez à la diapo et réessayez.' : 'Capture mode could not start. Go back to the slide and try again.')
+    : (fr ? 'Le mode capture met du temps à se préparer. Vous pouvez déjà voler ; s’il ne vient pas, revenez à la diapo.' : 'Capture mode is taking a while. You can fly already; if it does not come, go back to the slide.'), 'warn', 9000);
+  syncCourseStrip();
+  updateHeader();
+  syncPauseBtn();
+  fitSoon();
+}
 /** the arrival card (and the strip's « ? »): what a capture is for, what it keeps, how */
 function showCaptureIntro() {
   const b = courseBridge;
@@ -1344,6 +1475,9 @@ function courseBack10() {
   syncPauseBtn();
   syncCourseStrip();
 }
+/** the last course-flight state the autopilot bar was set for */
+let courseNoApFor = false;
+let courseNoAp = false;
 /** the strip at 4 Hz (and after each action): capture mode, or the course flight in progress */
 function syncCourseStrip() {
   const b = courseBridge;
@@ -1352,15 +1486,31 @@ function syncCourseStrip() {
   const st: CourseStripState = {};
   const newest = b?.ring.newest;
   if (b?.capturing) st.capture = { title: captureTitle, slide: captureSlide, count: capItems.length, crashed: !!sim.ac.s.crashed, previewAgo: previewT !== null && newest ? Math.round(newest.t - previewT) : null, canBack: canBack10(b), hasEditor: !!b.captureReturn };
+  else if (!b && captureFallback) st.capture = { title: captureTitle, slide: captureSlide, count: 0, crashed: !!sim.ac.s.crashed, previewAgo: null, canBack: false, hasEditor: captureBootBack };
   else if (b?.handoff && b.course && b.step) {
     const n = b.course.steps.findIndex((x) => x.id === b.step!.id) + 1;
     st.flight = { course: l10n(b.course.title), step: l10n(b.step.title), hasResult: !!courseOutcome || (b.plan?.kind === 'scenario' && !lesson && (debriefShown || !!sim.ac.s.crashed)), ...(n > 0 ? { n, of: b.course.steps.length } : {}), ...(courseGoalLine ? { goal: courseGoalLine } : {}) /* hand-over */ };
   }
   else if (!b && pendingFlight) st.flight = { ...pendingFlight, hasResult: false };
-  else if (courseLoading) st.loading = true;
+  else if (courseLoading) st.loading = captureBoot ? 'capture' : true;
+  // a six-pack course flight: no autopilot bar (once per flight: the Plus menu brings it back)
+  const noAp = !!st.flight && cockpitType === 'steam' && !sim.ap.engaged;
+  if (noAp !== courseNoApFor) {
+    courseNoApFor = noAp;
+    courseNoAp = noAp;
+    syncAfcsShown();
+    fitSoon();
+  }
+  // the strip says the goal: the exercise window folds to its one-line pill for this flight (audit §15)
+  lessonWin.foldForFlight(st.flight?.goal ? `${st.flight.course}|${st.flight.step}` : null);
+  // the top-left button names the course it goes back to
+  if (!captureBootBack) {
+    const want = st.flight ? st.flight.course : tr(courseFlyBoot ? 'tb.backCourse' : 'tb.home');
+    if (homeLbl.textContent !== want) homeLbl.textContent = want;
+  }
   // (the button's own display rule beats the hidden attribute: set it inline). The brief card's Start is the one
   // primary while it is up (Esc still starts), so Resume hides with it
-  const hidePause = courseLoading || courseUi.briefOpen;
+  const hidePause = courseLoading || courseUi.briefOpen || courseUi.asking;
   if (cached(pauseBtn, 'cfHide', String(hidePause))) pauseBtn.style.display = hidePause ? 'none' : '';
   // a course flight: the strip's "Back to the course" is the one way back (the top bar's Courses button hides)
   document.body.classList.toggle('cf-flying', !!st.flight || !!st.loading);
@@ -1560,7 +1710,7 @@ function placeBriefCard() {
   const sb = sitRect().bottom;
   const top = Math.max(8, Math.round(sb - o.top + 10));
   courseUi.card.style.setProperty('--cf-top', `${top}px`);
-  // a short outside view (portrait, a tall panel): the card becomes a sheet over the panel, so « Commencer le vol »
+  // a short outside view (portrait, a tall panel): the card becomes a sheet over the panel, so « Prendre les commandes »
   // is always on screen (the flight waits paused; nothing on the panel is needed before it starts)
   const sheet = otw.offsetParent !== null && o.bottom - sb < 260;
   courseUi.card.classList.toggle('cf-sheet', sheet);
@@ -1595,6 +1745,9 @@ async function installCourses() {
     courseBridge = b;
     courseLoading = false;
     if (b.capturing) {
+      captureFallback = false;
+      // no slide situation posed (none in the link, or it could not be read): the free flight to capture from
+      if (!b.startScene) startCaptureFlight();
       const id = b.params.capture;
       const stepId = b.params.step;
       // the course and the slide the moment is for: the arrival card and the strip name them
@@ -1612,6 +1765,7 @@ async function installCourses() {
   } catch (e) {
     console.warn('course bridge', e);
     courseLoading = false;
+    if (captureBoot) captureFallbackNow(true);
     syncCourseStrip();
   }
   // the bridge's messages not already in the brief card: now, over whatever opened (toast() goes above a window)
@@ -1633,12 +1787,16 @@ let timeOfDay = store.get<TimeOfDay>('ifr.tod', 'day');
 // tablets: the lighter scene at native pixel ratio 1 (a 2x retina canvas costs 4x the fill rate on an iPad GPU)
 let gfx = store.get<Quality>('ifr.gfx', touchUi ? 'low' : 'high');
 let outsideLoading = false;
+/** bootOutsideWhenIdle() has asked for an idle moment */
+let outsideQueued = false;
+/** no WebGL here (or the 3D world failed): the frame loop stops asking for it */
+let outsideFailed = false;
 async function initOutside() {
   if (outside || outsideLoading) return;
   outsideLoading = true;
   try {
     const mod = await import('./avionics/outside3d');
-    if (!mod.webglAvailable()) return;
+    if (!mod.webglAvailable()) { outsideFailed = true; return; }
     outside = new mod.Outside3D(glCanvas, gfx, timeOfDay);
     otw.classList.add('has-gl');
     viewList = mod.VIEWS;
@@ -1651,6 +1809,7 @@ async function initOutside() {
     if (otwMode !== 'none' && viewMode === 'cockpit') showLookHint();
   } catch (e) {
     console.warn('WebGL outside view unavailable', e);
+    outsideFailed = true;
     outside = null;
     viewDock.setAvailable(false);
   } finally {
@@ -1905,10 +2064,16 @@ const afcs = h('section', { class: 'afcs', 'aria-label': tr('Autopilot and selec
 );
 // the autopilot bar shows on every device by default (v2 key: the earlier mouse-only default was 'off')
 let afcsBar = store.get<boolean | null>('ifr.afcsBar.v2', null) ?? true;
+/** a course flight on the six-pack panel: the autopilot bar is not part of the lesson (audit §15); the Plus menu
+ *  item still turns it on for this flight (courseNoAp is declared with syncCourseStrip) */
+function syncAfcsShown() {
+  cockpit.classList.toggle('with-afcs', afcsBar && cockpitType !== 'airliner' && !courseNoAp);
+}
 function setAfcsBar(on: boolean, persist = true) {
+  courseNoAp = false;
   afcsBar = on;
   if (persist) store.set('ifr.afcsBar.v2', on);
-  cockpit.classList.toggle('with-afcs', on && cockpitType !== 'airliner');
+  syncAfcsShown();
   afcsSw.classList.toggle('on', on);
   afcsItem.setAttribute('aria-checked', String(on));
   fitSoon();
@@ -1950,7 +2115,7 @@ function setCockpit(t: CockpitType, announce = true, persist = true) {
   panel.classList.remove('theme-g1000', 'theme-steam', 'theme-airliner');
   panel.classList.add(`theme-${t}`);
   cockpit.classList.toggle('with-mcp', t === 'airliner');
-  cockpit.classList.toggle('with-afcs', afcsBar && t !== 'airliner');
+  syncAfcsShown();
   cockpit.dataset.theme = t;
   setSetupPanel(t === 'steam' ? 'steam' : 'glass');
   // the G1000 EIS and the airliner show the engine and electrical readings: the gauges strip is for the steam panel
@@ -2058,7 +2223,8 @@ const footer = h('footer', { class: 'footer pedestal' },
 );
 // shortcuts menu (desktop; the chip is hidden on touch): each row runs its action
 const pdPop = h('div', { class: 'pd-pop', role: 'menu', 'aria-label': 'Keyboard shortcuts', hidden: '' });
-const pdRow = (k: string, label: string, run: () => void) => h('button', { class: 'pd-pop-row', type: 'button', role: 'menuitem', onclick: () => { closePdPop(); run(); } }, h('span', {}, label), h('kbd', {}, k));
+// the labels in the UI language (audit §26)
+const pdRow = (k: string, label: string, run: () => void) => h('button', { class: 'pd-pop-row', type: 'button', role: 'menuitem', onclick: () => { closePdPop(); run(); } }, lx(h('span', {}), label), h('kbd', {}, k));
 pdPop.append(
   pdRow('F1', 'Explain instruments', () => toggleExplain()),
   pdRow('G', 'Go-around', () => goAround()),
@@ -2238,7 +2404,7 @@ let pauseShown: boolean | null = null;
 let pauseVeilShown: boolean | null = null;
 /** the « En pause » veil is up: paused by the pilot (not a crash, the course brief card, the look-back or a link
  *  loading, which pause on purpose and say so themselves) */
-const pauseVeilWanted = () => sim.paused && !sim.ac.s.crashed && !courseUi.briefOpen && previewT === null && !courseLoading
+const pauseVeilWanted = () => sim.paused && !sim.ac.s.crashed && !courseUi.briefOpen && !courseUi.asking && previewT === null && !courseLoading
   // portrait: the outside view is a thin band under the bars, the veil would not show; the top bar's highlighted
   // « Reprendre » is the one way on
   && !document.body.classList.contains('portrait');
@@ -2515,10 +2681,10 @@ function updateHeader() {
   const ex = lesson?.ex ?? (briefing.isOpen ? briefing.run?.ex : null) ?? lastLessonEx;
   // a course flight loading: not the title of the previous flight
   // capturing for a slide: the header says so (never « Leçon », which no slide is called)
-  const capName = courseBridge?.capturing && !ex
+  const capName = (courseBridge?.capturing || captureBoot) && !ex
     ? `${uiLang() === 'fr' ? 'Capture pour la diapo' : 'Capture for the slide'}${captureTitle ? ` : ${captureTitle}` : ''}`
     : null;
-  const name = courseLoading ? tr('cf.course') : capName ?? (ex ? exTitle(ex) : sim.scenario ? scenarioName(sim.scenario) : tr('course.freeFlight'));
+  const name = capName ?? (courseLoading ? tr('cf.course') : ex ? exTitle(ex) : sim.scenario ? scenarioName(sim.scenario) : tr('course.freeFlight'));
   const ap = sim.fp.approach;
   const hold = lesson?.rt.hold;
   const parts: string[] = [];
@@ -2560,6 +2726,14 @@ function updateSitbar() {
     [sbw('Minimums'), mins === null ? '—' : `${mins} · ${alt - mins >= 0 ? '+' : ''}${alt - mins} ft`, mins === null ? 'dim' : alt < mins ? 'warn' : ''],
     [sbw('Conditions'), imc ? 'IMC' : 'VMC', imc ? 'imc' : 'good'],
   ];
+  // a course flight: the phase and the altitude (and a waypoint or minima only when the exercise has them); the
+  // course strip says the rest (audit §15)
+  if (courseBridge?.handoff && !courseBridge.capturing) {
+    const keep = new Set([sbw('Phase'), sbw('Altitude'), ...(to ? [sbw('Next')] : []), ...(mins !== null ? [sbw('Minimums')] : [])]);
+    for (let i = cells.length - 1; i >= 0; i--) if (!keep.has(cells[i][0])) cells.splice(i, 1);
+    const altCell = cells.find((c) => c[0] === sbw('Altitude'));
+    if (altCell && !sim.ap.engaged) { altCell[1] = `${alt} ft`; altCell[2] = ''; }
+  }
   // the brief card and the 10 s look-back are paused on purpose: no "Paused" veil over them
   pauseVeil.classList.toggle('on', pauseVeilWanted());
   const key = cells.map((c) => c[0] + c[1]).join('|');
@@ -2828,6 +3002,8 @@ function frameBody(now: number) {
   const dt = Math.max(0, Math.min(0.1, (now - last) / 1000));
   last = now;
   if (intro.isOpen) return; // the start page covers everything: no sim, no drawing
+  // the cockpit is shown for the first time (Accueil / Simulateur closed): its 3D world boots now (audit §17)
+  if (!outside && !outsideLoading && !outsideQueued && !outsideFailed && !fc.isOpen) bootOutsideWhenIdle();
   // Accueil and Simulateur are opaque pages over the cockpit: nothing behind them can be seen. The flight holds
   // (paused, as under the pause veil) and nothing is drawn — no 3D, no instruments — so the page stays fluid and a
   // club iPad stays cool. The cockpit draws again as soon as the page closes.
@@ -2837,6 +3013,7 @@ function frameBody(now: number) {
     audio.update(sim, dt); // the engine sound fades with the pause
     return;
   }
+  if (!sim.paused && !sim.replaying && !Modal.anyOpen()) flownS += dt;
   if (sim.ac.s.crashed && !crashShown && !sim.replaying) showCrash(sim.ac.s.crashed);
   if (!sim.ac.s.crashed && crashShown) hideCrash();
   // touchdown feedback (rate, g, speed, position on the runway)
@@ -3194,14 +3371,18 @@ new ResizeObserver(fitSoon).observe(afcs);
 // portrait: the outside view grows with the lesson panel
 new ResizeObserver(() => { if (document.body.classList.contains('portrait')) fitSoon(); }).observe(coach);
 /** boots the outside view at the next idle moment (never while the start page is up: it would freeze the page) */
+/** Accueil and Simulateur are pages of their own: the 3D outside view (its shaders take seconds to compile on a
+ *  slow GPU and freeze the page meanwhile) boots only once the cockpit is shown (audit §17) */
+const outsideWanted = () => !intro.isOpen && !fc.isOpen;
 function bootOutsideWhenIdle() {
-  if (outside || outsideLoading || intro.isOpen) return;
+  if (outside || outsideLoading || outsideQueued || !outsideWanted()) return;
+  outsideQueued = true;
   const ric = (window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
-  const go = () => { if (!intro.isOpen) void initOutside(); };
+  const go = () => { outsideQueued = false; if (outsideWanted()) void initOutside(); };
   if (ric) ric(go, { timeout: 1500 });
   else setTimeout(go, 200);
 }
-requestAnimationFrame(() => setTimeout(() => { if (!intro.isOpen) void initOutside(); }, 50));
+requestAnimationFrame(() => setTimeout(() => { if (outsideWanted()) void initOutside(); }, 50));
 // keep the bezel controls inside the bezel whatever the window size: ONE scale for every side column of
 // both bezels (PFD and MFD knobs and keys are always the same size), plus a few sizes the CSS lays out with
 /** tablet portrait (and any narrow, tall window): instruments first — the PFD then the MFD, each at its 4:3
@@ -3449,8 +3630,27 @@ const deepClub = deepQ.get('club');
 // a course link (Ground school): ?fly= a course step, ?scene= a shared scene, ?capture= for the editor, ?proc= a
 // procedure drill. The bridge decides what flies: no start page, no Flight Center.
 const courseLink = ['fly', 'scene', 'capture', 'proc'].some((k) => deepQ.has(k));
-// capture mode starts in a free flight: the author flies to the moment to capture (the Flight Center picks another)
-if (deepQ.has('capture') && !deepQ.has('fly')) startScenario(lastScenario, lastWx);
+// capture mode starts in a free flight: the author flies to the moment to capture (the Flight Center picks another).
+// A link that carries the slide's situation (?scene=) does not: the bridge poses it, and the loading card stays up
+// until then, so the default flight never shows under « Capture pour la diapo »
+if (captureBoot && !capBoot.scene) startCaptureFlight();
+// a course flight: the loading card names the step and offers « Annuler, revenir au cours » before the bridge loads
+// (audit §16); the course page wrote the note just before it left
+if (courseFlyBoot) {
+  const note = readFlyNote(location.search);
+  courseUi.setVeilNote(note);
+  courseUi.setVeilBack(() => {
+    if (courseBridge?.handoff) { void backToCourse(null); return; }
+    courseUi.leaving(note?.course ?? '');
+    if (note) location.href = note.back;
+    else if (window.history.length > 1) window.history.back();
+    else location.href = 'academy.html';
+  });
+}
+if (captureBoot) {
+  courseUi.setVeilBack(captureBootBack ? () => void backToSlide() : null);
+  window.setTimeout(() => { if (!courseBridge) captureFallbackNow(false); }, 8000);
+}
 // this cockpit flies course steps and captures scenes: the Ground school offers Fly it at once (the bridge itself
 // loads a moment later, and marks it again)
 markCockpitBridge();
@@ -3485,9 +3685,12 @@ else if (location.hash === '#accueil' || location.hash === '#courses') fc.showPl
 else if (introWanted()) intro.show();
 else fc.showPlace('home');
 // the tabs of another page link here with a hash: follow it when it changes in this page too
+// Back and Forward between them too (audit §30): Back from the cockpit shows the page it came from (the flight
+// waits, paused, under « Vol en cours »); Forward to #vol brings the paused cockpit back
 window.addEventListener('hashchange', () => {
   if (location.hash === '#simulateur') fc.showPlace('sim');
   else if (location.hash === '#accueil') fc.showPlace('home');
+  else if (location.hash === COCKPIT_HASH && fc.isOpen && flightUnderWay()) fc.close();
 });
 // « Préparer un vol » opened from the Simulateur page and closed without a flight: back to that page, the focus on
 // the button that opened it (a flight started, or another window opened, keeps the cockpit)

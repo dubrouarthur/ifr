@@ -12,8 +12,8 @@ export const BRAND = {
   short: "Wingdeck",
   /** what the product is, in one line (intro headline, Flight Center hero, page descriptions) */
   tagline: {
-    en: "The platform for aviation education",
-    fr: "La plateforme de l’éducation aéronautique",
+    en: "The slide deck for aviation",
+    fr: "Le deck de slides pour l’aviation",
   },
   /** what it brings together, in a few words (the eyebrow over the headline) */
   eyebrow: {

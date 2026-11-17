@@ -1,6 +1,7 @@
 // Ground school player (package E) — progress marks, the top-bar progress ticks and the Outline sheet (every step
 // with its kind, minutes and status; tap to jump). Pure helpers are unit-tested.
 import type { L10n, Lang, Step } from "../types";
+import { sectionLabel } from "../i18n";
 import {
   h,
   icon,
@@ -10,6 +11,7 @@ import {
   L,
   ps,
   taskChip,
+  taskWord,
   textEl,
 } from "./reader";
 
@@ -74,7 +76,7 @@ export function markText(
   mark: StepMark | undefined,
   lang: Lang,
 ): string {
-  if (!mark?.visited) return isTask(step) && mark ? ps("todoShort", lang) : "";
+  if (!mark?.visited) return isTask(step) && mark ? openText(step, lang) : "";
   if (mark.drill)
     return ps("scoreLine", lang, {
       c: mark.drill.correct,
@@ -87,8 +89,15 @@ export function markText(
   if (mark.correct || mark.calcOk) return ps("right", lang);
   if (mark.answered || mark.calcOk === false) return ps("wrong", lang);
   // a task never attempted is still to do: only what was done says « done »
-  if (isTask(step)) return ps("todoShort", lang);
+  if (isTask(step)) return openText(step, lang);
   return ps("seen", lang);
+}
+/** A task not attempted yet, in its own words: a question « sans réponse », a flight « pas fait », else « à faire ». */
+export function openText(step: Step, lang: Lang): string {
+  const w = taskWord(step);
+  if (w === "question") return ps("unanswered", lang);
+  if (w === "flight") return ps("notFlown", lang);
+  return ps("todoShort", lang);
 }
 
 // ------------------------------------------------------------------ the ticks
@@ -171,7 +180,7 @@ export class OutlineSheet {
           h(
             "li",
             { class: "cp-ol-sec cp-label", role: "presentation" },
-            s.section,
+            sectionLabel(s.section, lang),
           ),
         );
       }

@@ -61,12 +61,24 @@ export const INTRO_ACTIONS = {
  *  step with the live model): items per formation and its number of subjects, and the whole library. */
 export const INTRO_COUNTS = {
   total: 134,
-  ppl: { n: 64, s: 15 },
-  night: { n: 22, s: 4 },
-  ir: { n: 96, s: 7 },
-  atpl: { n: 8, s: 13 },
+  all: { c: 14, f: 75, k: 45 },
+  // n items, s subjects; c courses, f simulator flights, k checklists (the page says these, never « éléments »)
+  ppl: { n: 64, s: 15, c: 10, f: 23, k: 31 },
+  night: { n: 22, s: 4, c: 3, f: 8, k: 11 },
+  ir: { n: 96, s: 7, c: 10, f: 65, k: 21 },
+  atpl: { n: 8, s: 13, c: 8, f: 0, k: 0 },
   club: { n: 4 },
 } as const;
+/** « 10 cours · 23 vols · 31 check-lists » (one glossary, audit §41): what a formation holds, in kinds */
+export function kindsLine(C: Pick<IntroText, "coursesN" | "flightsN" | "checklistsN">, x: { c: number; f: number; k: number }): string {
+  return [
+    x.c ? fill(C.coursesN, x.c) : "",
+    x.f ? fill(C.flightsN, x.f) : "",
+    x.k ? fill(C.checklistsN, x.k) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
 
 /** The formations the page links to, in training order. */
 export const INTRO_PROGS = ["ppl", "night", "ir", "atpl"] as const;
@@ -104,7 +116,9 @@ export interface IntroText {
   slidesN: string;
   progsLabel: string;
   progs: Record<(typeof INTRO_PROGS)[number], string>;
-  itemsN: string;
+  coursesN: string;
+  flightsN: string;
+  checklistsN: string;
   libAll: string;
   loading: string;
   finH: string;
@@ -135,9 +149,9 @@ const FR: IntroText = frTypo({
   langLabel: "Langue",
   skipBtn: "Passer",
   skipTip: "Passer la présentation et aller à l’Accueil (Échap)",
-  eyebrow: "Diapositives pour l’aviation",
-  h1: "Des cours d’aviation qui volent",
-  lead: "Créez et partagez vos cours en diapositives, avec de vrais outils d’aviation dedans : instruments en direct, simulateur de vol, calculs.",
+  eyebrow: "Diapositives · Instruments · Simulateur",
+  h1: "Le deck de slides pour l’aviation",
+  lead: "Créez, présentez et partagez des cours en diapositives, avec de vrais outils d’aviation dedans : instruments en direct, simulateur de vol, calculs.",
   who: "Pour les instructeurs, les aéroclubs, les écoles de pilotage et leurs élèves.",
   create: "Créer un cours",
   discover: "Découvrir les cours",
@@ -176,7 +190,9 @@ const FR: IntroText = frTypo({
     ir: "IR",
     atpl: "Théorie ATPL",
   },
-  itemsN: "{n} éléments",
+  coursesN: "{n} cours",
+  flightsN: "{n} vols",
+  checklistsN: "{n} check-lists",
   libAll: "Toute la bibliothèque",
   loading: "Chargement des diapositives…",
   finH: "Créez votre premier cours",
@@ -186,7 +202,7 @@ const FR: IntroText = frTypo({
     "Il prépare un premier jet de vos diapos ; vous relisez et modifiez tout. Avec votre propre clé API.",
   ],
   skip: "Ne plus afficher cette page au démarrage",
-  again: "Elle reste dans l’Accueil : « Voir la présentation ».",
+  again: "Elle reste dans l’Accueil : « Découvrir Wingdeck ».",
   note: "Entraînement procédural, non certifié FSTD",
   noteTip:
     "Wingdeck n’est pas un FSTD (simulateur d’entraînement au vol certifié) : les heures n’y sont pas comptées.",
@@ -196,9 +212,9 @@ const EN: IntroText = {
   langLabel: "Language",
   skipBtn: "Skip",
   skipTip: "Skip the introduction and go to Home (Esc)",
-  eyebrow: "Slides for aviation",
-  h1: "Aviation courses that fly",
-  lead: "Build and share your courses as slides, with real aviation tools inside: live instruments, a flight simulator, calculations.",
+  eyebrow: "Slides · Instruments · Simulator",
+  h1: "The slide deck for aviation",
+  lead: "Create, present and share courses as slides, with real aviation tools inside: live instruments, a flight simulator, calculations.",
   who: "For instructors, aeroclubs, flight schools and their students.",
   create: "Create a course",
   discover: "Explore the courses",
@@ -236,7 +252,9 @@ const EN: IntroText = {
     ir: "IR",
     atpl: "ATPL theory",
   },
-  itemsN: "{n} items",
+  coursesN: "{n} courses",
+  flightsN: "{n} flights",
+  checklistsN: "{n} checklists",
   libAll: "The whole library",
   loading: "Loading the slides…",
   finH: "Create your first course",
@@ -246,7 +264,7 @@ const EN: IntroText = {
     "It drafts your slides; you review and change everything. With your own API key.",
   ],
   skip: "Don’t show this page at start-up",
-  again: "It stays in Home: “See the introduction”.",
+  again: "It stays in Home: “Discover Wingdeck”.",
   note: "Procedural training, not a certified FSTD",
   noteTip:
     "Wingdeck is not an FSTD (a certified flight simulation training device): time flown here is not logged.",
@@ -756,7 +774,7 @@ export class Intro {
                   "prog",
                   null,
                   h("b", {}, C.progs[p]),
-                  h("span", {}, fill(C.itemsN, INTRO_COUNTS[p].n)),
+                  h("span", {}, kindsLine(C, INTRO_COUNTS[p])),
                 ),
               ),
             ),
@@ -768,7 +786,7 @@ export class Intro {
                 "prog prog-all",
                 this.hooks.courses ?? null,
                 h("b", {}, C.libAll),
-                h("span", {}, fill(C.itemsN, INTRO_COUNTS.total)),
+                h("span", {}, kindsLine(C, INTRO_COUNTS.all)),
                 ico(IC.chev),
               ),
             ),

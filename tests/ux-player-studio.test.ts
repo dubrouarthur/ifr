@@ -41,14 +41,17 @@ describe("the course player says what is true", () => {
     for (const k of ["quiz", "calc", "drill", "fly", "predict"] as const)
       expect(isTask(step({ kind: k })), k).toBe(true);
   });
-  it("one chip word per task (Manipulation · Exercice · Calcul · Quiz · Vol au simulateur), none for reading", () => {
+  it("one chip word per task, in the glossary (À vous · Calcul · Question · Vol au simulateur), none for reading", () => {
     expect(taskLabel(step({ kind: "explain" }), "fr")).toBeNull();
-    expect(taskLabel(step({ kind: "try" }), "fr")).toBe("Manipulation");
+    expect(taskLabel(step({ kind: "try" }), "fr")).toBe("À vous");
     expect(
       taskLabel(step({ kind: "try", goal: { all: [], graded: false } }), "fr"),
-    ).toBe("Exercice");
+    ).toBe("À vous");
+    expect(
+      taskLabel(step({ kind: "try", goal: { all: [], graded: false } }), "en"),
+    ).toBe("Your turn");
     expect(taskLabel(step({ kind: "calc" }), "fr")).toBe("Calcul");
-    expect(taskLabel(step({ kind: "quiz" }), "en")).toBe("Quiz");
+    expect(taskLabel(step({ kind: "quiz" }), "en")).toBe("Question");
     expect(taskLabel(step({ kind: "fly" }), "fr")).toBe("Vol au simulateur");
     expect(taskLabel(step({ kind: "fly" }), "en")).toBe("Simulator flight");
   });
@@ -57,7 +60,7 @@ describe("the course player says what is true", () => {
     const read = step({ kind: "explain" });
     const ex = step({ kind: "try", goal: { all: [], graded: false } });
     expect(markText(quiz, { visited: true, skipped: true }, "fr")).toBe(
-      "à faire",
+      "sans réponse",
     );
     expect(markText(ex, { visited: true, skipped: true }, "fr")).toBe(
       "à faire",

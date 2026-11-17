@@ -67,6 +67,11 @@ export function scene(
       cockpit: o.cockpit ?? "steam",
       weather: {
         ...(o.wind ? { windDir: o.wind[0], windKt: o.wind[1] } : {}),
+        // the wind the slide states is the wind the student flies, at the scene's altitude too (the sim's default
+        // profile veers and strengthens it with height: 240/20 on the slide read 266/31 at 3,200 ft, audit §16)
+        ...(o.wind && !o.weather?.aloft
+          ? { aloft: [{ altFt: Math.max(1000, fields.altFt ?? 0), dir: o.wind[0], kt: o.wind[1] }] }
+          : {}),
         ...(o.weather ?? {}),
       },
       seed: o.seed ?? 4183,

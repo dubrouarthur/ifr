@@ -360,8 +360,13 @@ describe("course placement", () => {
         () => "club",
       ).home,
     ).toBe("ppl.com");
+    // a course received without a programme is shelved by its tags…
+    expect(
+      coursePlacement({ ...base, shelf: "club", tags: ["vfr", "maths"] }).home,
+    ).toBe("ppl.fpp");
+    // …but my own course saved with « Choisir plus tard » stays in « Mes cours et brouillons » (audit §3)
     expect(coursePlacement({ ...base, tags: ["vfr", "maths"] }).home).toBe(
-      "ppl.fpp",
+      "instructors.mine",
     );
     // a copy of a sample stays where the sample lives
     expect(

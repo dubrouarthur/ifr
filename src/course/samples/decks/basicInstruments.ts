@@ -26,6 +26,8 @@ export const BASIC_INSTRUMENTS_ID = "sample-deck-basic-instruments";
 const scenes = () => ({
   "bi.level": sit("bi.level", "level", "Level 3,000 ft · 100 kt · heading 270"),
   "bi.fly": sit("bi.fly", "level", "Level 3,000 ft · 100 kt · heading 270"),
+  // « Ralentissez dans l’arc blanc »: already a little slow, so 30 % brings the needle into the arc in about 15 s (from 100 kt it took over a minute)
+  "bi.slow": sit("bi.slow", "level", "Level 3,000 ft · 88 kt · heading 270", { iasKt: 88 }),
 });
 
 /** The attitude indicator: nose up into a climb, back to level, then a 20° bank to the right and back. */
@@ -251,24 +253,24 @@ export function basicInstrumentsCourse(): Course {
       rows: [
         {
           text: L(
-            "Speed 70 to 85 kt, held 5 s",
-            "Vitesse 70 à 85 kt, tenue 5 s",
+            "Speed 70 to 85 kt, held 3 s",
+            "Vitesse 70 à 85 kt, tenue 3 s",
           ),
           check: 0,
           readout: "ias",
         },
       ],
       tip: L(
-        "Reduce a little, then wait: the speed takes a few seconds to follow.",
-        "Réduisez un peu, puis attendez : la vitesse met quelques secondes à suivre.",
+        "Bring the power to about 30 % (6 clicks on −), then wait about 15 s: the speed takes a while to follow.",
+        "Mettez la puissance vers 30 % (6 clics sur −), puis attendez une quinzaine de secondes : la vitesse met du temps à suivre.",
       ),
       source: POH2,
       view: SIX,
       alt: L(
-        "Live six instruments, level at 3,000 ft, 100 kt",
-        "Six instruments en direct, en palier à 3 000 ft, 100 kt",
+        "Live six instruments, level at 3,000 ft, 88 kt",
+        "Six instruments en direct, en palier à 3 000 ft, 88 kt",
       ),
-      scene: "bi.level",
+      scene: "bi.slow",
       controls: ["power"],
       assist: { holdAlt: true },
       prompt: L(
@@ -276,14 +278,14 @@ export function basicInstrumentsCourse(): Course {
         "Ralentissez dans l’arc blanc : 70 à 85 kt",
       ),
       goal: [GOAL.ias(70, 85)],
-      holdS: 5,
+      holdS: 3,
       success: L(
         "Under 85 kt: you are in the white arc, where the flaps may come out.",
         "Sous 85 kt : vous êtes dans l’arc blanc, où l’on peut sortir les volets.",
       ),
       hint: L(
-        "Bring the power to about 40 %, then wait.",
-        "Mettez la puissance vers 40 %, puis attendez.",
+        "Bring the power to about 30 % (6 clicks on −), then wait: below 85 kt the needle is in the white arc.",
+        "Mettez la puissance vers 30 % (6 clics sur −), puis attendez : sous 85 kt, l’aiguille est dans l’arc blanc.",
       ),
       notes: L(
         "Hand the controls to one student (« Donner les commandes à un élève ») or let each student try on their own screen. The class watches the needle enter the white arc.",

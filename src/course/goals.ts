@@ -1496,6 +1496,28 @@ export const GOALS: Record<GoalId, GoalDef> = {
   ...NAV,
 };
 export const GOAL_IDS = Object.keys(GOALS) as GoalId[];
+/** goal checks about radio navigation (a station, a radial, a fix, a hold): only these need the navaid readout */
+const NAV_GOAL_IDS = new Set<string>([
+  "obs",
+  "toFrom",
+  "cdiDefl",
+  "gsDefl",
+  "acsScale",
+  "onRadial",
+  "track",
+  "dme",
+  "distTo",
+  "passedFix",
+  "holdEntry",
+  "holdLaps",
+  "cdi",
+  "directTo",
+  "radio",
+]);
+/** Does this goal need the navaid readout (« ARD R-090 · 8,0 NM »)? A speed or attitude exercise does not. Pure. */
+export function goalIsNav(checks: readonly { id: string }[]): boolean {
+  return checks.some((c) => NAV_GOAL_IDS.has(c.id));
+}
 /** the chips the course editor offers (procedures-only checks such as 'switch' are still accepted, listed last) */
 export const COURSE_GOAL_ORDER: GoalId[] = [
   "obs",

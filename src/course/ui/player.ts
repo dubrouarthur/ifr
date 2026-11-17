@@ -27,8 +27,9 @@ import type {
   StageCue,
 } from "../types";
 import type { CourseStore } from "../store";
-import { cockpitBridgeReady, legacyFlyLink } from "../cockpitLink";
+import { cockpitBridgeReady, legacyFlyLink, noteFly } from "../cockpitLink";
 import {
+  courseReturnUrl,
   createHandoff,
   flyUrl,
   handoffStatus,
@@ -41,6 +42,7 @@ import {
   goalSummary,
   goalUnitsNote,
   rowsFor,
+  goalIsNav,
   stageView,
   type GoalState,
 } from "../goals";
@@ -85,7 +87,7 @@ import {
   type CalcUiState,
 } from "./calcStep";
 import { DrillView, type DrillRun } from "./drill";
-import { markText, OutlineSheet, type StepMark } from "./outline";
+import { markText, openText, OutlineSheet, type StepMark } from "./outline";
 import {
   FlyItView,
   flownText,
@@ -138,8 +140,106 @@ export const canvasSlideRenderer: SlideRenderer = (ctx) => {
     setLang: (l) => v.setLang(l),
     destroy: () => v.destroy(),
     sims: v.sims,
+    relayout: () => v.relayout(),
   };
 };
+/** The feedback of a slide's question fits again once it shows, and a wrong answer offers « Réessayer » (audit §14):
+ *  the answers come back, the first try stays recorded. */
+export function wireSlideQuizRetry(host: SlideHost, lang: Lang, changed?: () => void) {
+  const refit = () => requestAnimationFrame(() => host.relayout?.());
+  const reset = (quiz: HTMLElement) => {
+    quiz.classList.remove("answered");
+    for (const o of quiz.querySelectorAll<HTMLElement>(".sl-q-opt")) {
+      o.classList.remove("is-right", "is-wrong");
+      const st = o.querySelector(".sl-q-state");
+      if (st) st.textContent = "";
+    }
+    quiz.querySelector(".sl-q-why")?.replaceChildren();
+    quiz.querySelector(".sl-q-retry")?.remove();
+    refit();
+    quiz.querySelector<HTMLElement>(".sl-q-opt")?.focus({ preventScroll: true });
+    changed?.();
+  };
+  host.el.addEventListener("click", (e) => {
+    const opt = (e.target as Element | null)?.closest?.(".sl-q-opt");
+    const quiz = opt?.closest<HTMLElement>(".sl-quiz");
+    if (!quiz) return;
+    window.setTimeout(() => {
+      if (
+        quiz.querySelector(".sl-q-opt.is-wrong") &&
+        !quiz.querySelector(".sl-q-retry")
+      ) {
+        const b = h(
+          "button",
+          { type: "button", class: "sl-q-retry" },
+          ps("tryAgain", lang),
+        );
+        b.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          reset(quiz);
+        });
+        quiz.querySelector(".sl-q-why")?.append(b);
+      }
+      refit();
+      changed?.();
+    }, 0);
+    // capture: the option's own handler stops the click from bubbling
+  }, true);
+}
+/** A narrow screen shows the slide small: its question's answers again under it, as 44 px buttons that answer on
+ *  the slide (one state, the slide's). Visual help only (aria-hidden): the slide's own buttons stay the accessible
+ *  ones. Null when the slide asks no multiple-choice question. */
+export function slideQuizProxy(
+  step: Step,
+  host: SlideHost,
+  lang: Lang,
+): { el: HTMLElement; sync(): void } | null {
+  const b = step.slide?.blocks.find(
+    (x) => x.kind === "quiz" && x.quiz.kind === "mcq",
+  );
+  if (!b || b.kind !== "quiz" || b.quiz.kind !== "mcq") return null;
+  const q = b.quiz;
+  const slideOpts = () =>
+    [...host.el.querySelectorAll<HTMLElement>(`[data-id="${CSS.escape(b.id)}"] .sl-q-opt`)];
+  const why = h("p", { class: "cp-sq-why" });
+  const retry = btn(ps("tryAgain", lang), "", () =>
+    host.el.querySelector<HTMLElement>(`[data-id="${CSS.escape(b.id)}"] .sl-q-retry`)?.click(),
+  );
+  retry.tabIndex = -1;
+  const opts = q.options.map((o, i) => {
+    const x = h(
+      "button",
+      { type: "button", class: "cp-opt", tabindex: "-1" },
+      h("span", { class: "lt" }, String.fromCharCode(65 + i)),
+      h("span", { class: "ot" }, L(o.text, lang)),
+    );
+    x.addEventListener("click", () => slideOpts()[i]?.click());
+    return x;
+  });
+  const el = h(
+    "div",
+    { class: "cp-slidequiz", "aria-hidden": "true" },
+    h("p", { class: "cp-label" }, L(q.prompt, lang)),
+    h("div", { class: "cp-opts" }, ...opts),
+    why,
+    retry,
+  );
+  const sync = () => {
+    const so = slideOpts();
+    const answered = so.some((x) => x.classList.contains("is-right") || x.classList.contains("is-wrong"));
+    opts.forEach((x, i) => {
+      x.classList.toggle("right", !!so[i]?.classList.contains("is-right"));
+      x.classList.toggle("wrong", !!so[i]?.classList.contains("is-wrong"));
+      x.disabled = answered;
+    });
+    const w = host.el.querySelector(`[data-id="${CSS.escape(b.id)}"] .sl-q-why`);
+    why.textContent = answered ? ((w?.firstChild ? [...w.childNodes].filter((n) => !(n instanceof HTMLButtonElement)).map((n) => n.textContent).join("") : "")) : "";
+    why.hidden = !answered;
+    retry.hidden = !so.some((x) => x.classList.contains("is-wrong"));
+  };
+  sync();
+  return { el, sync };
+}
 export interface SlideHost {
   el: HTMLElement;
   /** Next: consume one reveal (true) or let the player go to the next step (false) */
@@ -149,6 +249,8 @@ export interface SlideHost {
   destroy(): void;
   /** the live situations of the slide (the presenter drives them and mirrors them on the projector) */
   sims?: SceneSims;
+  /** fit the slide's text again (a quiz's feedback appeared) */
+  relayout?(): void;
 }
 export type SlideRenderer = (ctx: SlideContext) => SlideHost;
 
@@ -188,6 +290,46 @@ export function visibleSteps(
       !(o.refresher && s.audience === "intro") &&
       !(o.level && s.levels?.length && !s.levels.includes(o.level)),
   );
+}
+/** The end screen's honest counts (audit §1): only the steps with a task, and only what was really attempted. A
+ *  course walked with « Suivant » alone is « parcouru », never « terminé ». Pure: unit-tested on the real decks. */
+export function courseTally(
+  steps: readonly Step[],
+  marks: Readonly<Record<string, StepMark>>,
+) {
+  const attempted = (s: Step) => {
+    const m = marks[s.id];
+    return !!(
+      m &&
+      (m.answered || m.goalMet || m.calcOk !== undefined || m.drill || m.flown)
+    );
+  };
+  const tasks = steps.filter(isTask);
+  const left = tasks.filter((s) => !attempted(s));
+  const acting = steps.filter(
+    (s) => (s.goal && s.kind === "try") || slideTask(s) === "goal",
+  );
+  const asked = steps.filter(
+    (s) =>
+      stepQuiz(s) ||
+      s.kind === "calc" ||
+      s.kind === "quiz" ||
+      slideTask(s) === "answer",
+  );
+  const flights = steps.filter((s) => s.kind === "fly");
+  return {
+    attempted,
+    tasks,
+    left,
+    allDone: left.length === 0,
+    acting,
+    met: acting.filter((s) => marks[s.id]?.goalMet).length,
+    asked,
+    right: asked.filter((s) => marks[s.id]?.correct || marks[s.id]?.calcOk)
+      .length,
+    flights,
+    flown: flights.filter((s) => marks[s.id]?.flown).length,
+  };
 }
 /** The quiz a step asks (predict / quiz / tap steps carry it in step.quiz). */
 export function stepQuiz(step: Step): Quiz | null {
@@ -286,6 +428,15 @@ export interface PlayerOptions {
   cockpitReady?: boolean;
   /** the editor's preview / Test as student: no store on purpose, so no "storage unavailable" error */
   preview?: boolean;
+  /** the end screen: the course that follows in its programme (null at the end of it) */
+  nextCourse?: (l: Lang) => { title: string; minutes?: number; go(): void } | null;
+  /** the end screen and the top bar: present this course, copy its share link */
+  onPresent?: () => void;
+  onShare?: () => void;
+  /** the end screen's way back as a sentence (« Retour à la bibliothèque », « Retour à LAPL · PPL ») */
+  backPhrase?: (l: Lang) => string;
+  /** the end screen: edit it (a built-in course is duplicated first: « Dupliquer pour modifier ») */
+  onEdit?: { copy: boolean; run(): void };
 }
 
 export class CoursePlayer {
@@ -585,7 +736,8 @@ export class CoursePlayer {
     // one labelled way back, which names where it goes (UX logic §1 rule 2)
     const backWord = this.ctx.briefingOf
       ? ps("backToFlyIt", lang)
-      : (this.o.backLabel?.(lang) ?? ps("library", lang));
+      : (this.o.backLabel?.(lang) ??
+        ps(this.o.preview ? "backToEditing" : "library", lang));
     const back = h(
       "button",
       { type: "button", class: "cp-btn cp-backto" },
@@ -675,7 +827,14 @@ export class CoursePlayer {
           ps("notSaved", lang),
         ),
       );
-    parts.push(prog, ol, seg);
+    // present it to a class, share its link: in reach from any slide (wide screens; the end screen has them too)
+    const shareB = this.o.onShare
+      ? btn(ps("share", lang), "cp-topact", () => this.o.onShare!(), "share")
+      : null;
+    const presentB = this.o.onPresent
+      ? btn(ps("present", lang), "cp-topact", () => this.o.onPresent!(), "present")
+      : null;
+    parts.push(prog, presentB, shareB, ol, seg);
     this.top.replaceChildren(...parts.filter((x): x is HTMLElement => !!x));
   }
 
@@ -1191,6 +1350,8 @@ export class CoursePlayer {
         graded: false,
         success: step.goal?.success,
       };
+    // a speed or attitude exercise: the stage bar does not name a navaid nobody uses
+    this.frame.navLine = !goal?.all.length || goalIsNav(goal.all);
     if (
       !goal ||
       !goal.all.length ||
@@ -1409,10 +1570,14 @@ export class CoursePlayer {
     // a tablet in portrait, a narrow window, 200 % zoom: the 16:9 slide fits the width and its words follow at
     // reading size under it (CSS shows the panel only there; screen readers already read the slide itself)
     this.slideText = h("div", { class: "cp-slidetext", "aria-hidden": "true" });
+    // a question on the slide: its answers again as 44 px buttons under it on a narrow screen (audit §14)
+    this.slideQuiz = slideQuizProxy(step, host, this.lang);
     this.wideCol.append(
       h("div", { class: "cp-canvaswrap" }, host.el),
       this.slideText,
+      ...(this.slideQuiz ? [this.slideQuiz.el] : []),
     );
+    wireSlideQuizRetry(host, this.lang, () => this.slideQuiz?.sync());
     this.syncSlideText();
     this.bottom.append(this.foot);
   }
@@ -1434,6 +1599,7 @@ export class CoursePlayer {
     this.renderTopTicks();
   }
   private slideText: HTMLElement | null = null;
+  private slideQuiz: { el: HTMLElement; sync(): void } | null = null;
   /** the words of the designed slide shown so far, in reading order (the narrow-screen panel under the slide) */
   private syncSlideText() {
     const box = this.slideText;
@@ -1776,6 +1942,8 @@ export class CoursePlayer {
         calc,
       });
       this.persistNow();
+      // the cockpit's loading card names the step and offers « Annuler, revenir au cours » at once (audit §16)
+      noteFly({ token: hd.token, course: L(this.course.title, lang), step: L(step.title, lang), back: courseReturnUrl(this.course.id, step.id) });
       this.navigate(flyUrl(hd.token));
     } catch (e) {
       const msg = e instanceof HandoffCreateError ? L(e.text, lang) : String(e);
@@ -2016,8 +2184,9 @@ export class CoursePlayer {
         : this.revealsOf(step);
     const st = this.state(step);
     const more = n - st.reveal;
+    // always « Suivant »: the build count is its badge (« Suivant · 2/4 »), never a second label (audit §40)
     const nextB = btn(
-      more > 0 ? ps("showMore", lang) : ps("next", lang),
+      ps("next", lang),
       open ? "cp-next" : "primary cp-next",
       () => this.next(),
       "next",
@@ -2103,37 +2272,19 @@ export class CoursePlayer {
     const steps = this.ctx.steps;
     const marks = this.marks();
     // honest counts (UX logic §6): only the steps with a task, and only what was really attempted
-    const attempted = (s: Step) => {
-      const m = marks[s.id];
-      return !!(
-        m &&
-        (m.answered ||
-          m.goalMet ||
-          m.calcOk !== undefined ||
-          m.drill ||
-          m.flown)
-      );
-    };
-    const tasks = steps.filter(isTask);
-    const left = tasks.filter((s) => !attempted(s));
-    const acting = steps.filter(
-      (s) => (s.goal && s.kind === "try") || slideTask(s) === "goal",
-    );
-    const met = acting.filter((s) => marks[s.id]?.goalMet).length;
-    const asked = steps.filter(
-      (s) =>
-        stepQuiz(s) ||
-        s.kind === "calc" ||
-        s.kind === "quiz" ||
-        slideTask(s) === "answer",
-    );
-    const right = asked.filter(
-      (s) => marks[s.id]?.correct || marks[s.id]?.calcOk,
-    ).length;
-    const flights = steps.filter((s) => s.kind === "fly");
-    const flown = flights.filter((s) => marks[s.id]?.flown).length;
+    const {
+      attempted,
+      tasks,
+      left,
+      allDone,
+      acting,
+      met,
+      asked,
+      right,
+      flights,
+      flown,
+    } = courseTally(steps, marks);
     const n = left.length;
-    const allDone = n === 0;
     const tile = (label: string, v: string) =>
       h(
         "div",
@@ -2146,7 +2297,7 @@ export class CoursePlayer {
       const m = marks[s.id];
       const chip = taskChip(s, lang);
       const open = isTask(s) && !attempted(s);
-      const word = open ? ps("todoShort", lang) : markText(s, m, lang);
+      const word = open ? openText(s, lang) : markText(s, m, lang);
       const ok = !!(m?.goalMet || m?.correct || m?.calcOk || m?.flown?.passed);
       const b = h(
         "button",
@@ -2173,14 +2324,6 @@ export class CoursePlayer {
     const titleWord = allDone
       ? ps("courseDone", lang)
       : `${ps("courseWalked", lang)} — ${n === 1 ? ps("exerciseLeft", lang) : ps("exercisesLeft", lang, { n })}`;
-    const back = this.o.onExit
-      ? btn(
-          this.o.backLabel?.(lang) ?? ps("library", lang),
-          "",
-          () => this.o.onExit!(),
-          "back",
-        )
-      : null;
     const actions =
       this.o.preview && this.o.onExit
         ? h(
@@ -2194,26 +2337,7 @@ export class CoursePlayer {
             ),
             btn(ps("startOver", lang), "", () => this.startOver(), "refresh"),
           )
-        : h(
-            "div",
-            { class: "cp-qact" },
-            firstLeft >= 0
-              ? btn(
-                  ps("remaining", lang),
-                  "primary",
-                  () => this.goTo(firstLeft),
-                  "next",
-                  true,
-                )
-              : null,
-            btn(
-              ps("printHandout", lang),
-              firstLeft >= 0 ? "" : "primary",
-              () => this.printHandout(),
-              "print",
-            ),
-            back,
-          );
+        : this.endActions(firstLeft, n);
     this.scroll.append(
       h(
         "div",
@@ -2258,6 +2382,90 @@ export class CoursePlayer {
     );
     this.renderTop();
     this.announce(titleWord);
+  }
+  /** The end screen's one way on: « Finir les exercices (3) » while some are left, else « Cours suivant : … »; the
+   *  memo is secondary, then what an instructor does with the course, and the way back as a link. */
+  private endActions(firstLeft: number, left: number): HTMLElement {
+    const lang = this.lang;
+    let next: ReturnType<NonNullable<PlayerOptions["nextCourse"]>> = null;
+    try {
+      next = this.o.nextCourse?.(lang) ?? null;
+    } catch {
+      next = null;
+    }
+    const nextB = next
+      ? btn(
+          [
+            ps("nextCourse", lang, { t: next.title }),
+            next.minutes ? ps("minutesTotal", lang, { n: next.minutes }) : "",
+          ]
+            .filter(Boolean)
+            .join(" · "),
+          firstLeft >= 0 ? "cp-end-next" : "primary cp-end-next",
+          () => next!.go(),
+          "next",
+          true,
+        )
+      : null;
+    const finish =
+      firstLeft >= 0
+        ? btn(
+            ps("finishTasks", lang, { n: left }),
+            "primary",
+            () => this.goTo(firstLeft),
+            "next",
+            true,
+          )
+        : null;
+    const print = btn(
+      ps("printHandout", lang),
+      finish || nextB ? "" : "primary",
+      () => this.printHandout(),
+      "print",
+    );
+    const main = h("div", { class: "cp-qact" }, finish, nextB, print);
+    const more = [
+      this.o.onPresent
+        ? btn(ps("present", lang), "ghost", () => this.o.onPresent!(), "present")
+        : null,
+      this.o.onShare
+        ? btn(ps("share", lang), "ghost", () => this.o.onShare!(), "share")
+        : null,
+      this.o.onEdit
+        ? btn(
+            this.o.onEdit.copy ? ps("duplicateEdit", lang) : ps("editCourse", lang),
+            "ghost",
+            () => this.o.onEdit!.run(),
+            "copy",
+          )
+        : null,
+    ].filter((x): x is HTMLButtonElement => !!x);
+    const back = this.o.onExit
+      ? h(
+          "button",
+          { type: "button", class: "cp-end-back" },
+          this.o.backPhrase?.(lang) ??
+            (this.o.preview && !this.o.backLabel
+              ? ps("backToEditing", lang)
+              : ps("backToPlace", lang, {
+                  p: this.o.backLabel?.(lang) ?? ps("library", lang),
+                })),
+        )
+      : null;
+    back?.addEventListener("click", () => this.o.onExit!());
+    return h(
+      "div",
+      { class: "cp-end-acts" },
+      main,
+      more.length
+        ? h(
+            "div",
+            { class: "cp-end-more", role: "group", "aria-label": ps("endMore", lang) },
+            ...more,
+          )
+        : null,
+      back,
+    );
   }
   private startOver() {
     this.states.clear();

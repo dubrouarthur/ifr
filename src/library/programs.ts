@@ -44,6 +44,8 @@ export interface ProgramDef {
   level: Level;
   /** the subject a course of this programme lands in when nothing better is known */
   fallback: SubjectId;
+  /** the course a beginner starts with (« Je débute », « Commencer le premier cours »): fixed, never guessed */
+  start?: string;
 }
 
 // ------------------------------------------------------------------ subjects (syllabus order)
@@ -281,21 +283,21 @@ const SUBJECT_ROWS = [
     ["drill", "drills", "check", "test"],
   ),
   S("club", "courses", "03", "Club courses", "Cours du club"),
-  // Instructors
-  S(
-    "instructors",
-    "teach",
-    "01",
-    `Teaching with ${BRAND.name}`,
-    `Enseigner avec ${BRAND.name}`,
-    ["teaching", "teach"],
-  ),
+  // Instructors: their own courses first, then the five-slide « Enseigner avec Wingdeck » (audit §19)
   S(
     "instructors",
     "mine",
-    "02",
+    "01",
     "My courses and drafts",
     "Mes cours et brouillons",
+  ),
+  S(
+    "instructors",
+    "teach",
+    "02",
+    `Teaching with ${BRAND.name}`,
+    `Enseigner avec ${BRAND.name}`,
+    ["teaching", "teach"],
   ),
 ] as const satisfies readonly SubjectRow[];
 
@@ -340,12 +342,13 @@ export const PROGRAMS: readonly ProgramDef[] = [
       fr: "EASA Part-FCL · sur Cessna 172",
     },
     blurb: {
-      en: "The 9 theory subjects, then flying: circuits, failures, navigation.",
-      fr: "Les 9 matières de la théorie, puis le pilotage : tour de piste, pannes, navigation.",
+      en: "The instruments, flight planning and human performance, then flying: handling, failures, navigation.",
+      fr: "Les instruments, la préparation du vol et les performances humaines, puis le pilotage : maniabilité, pannes, navigation.",
     },
     who: { en: "I am learning to fly", fr: "Je débute le pilotage" },
     level: 1,
     fallback: "ppl.prep",
+    start: "sample-deck-basic-instruments",
   },
   {
     id: "night",
@@ -353,8 +356,8 @@ export const PROGRAMS: readonly ProgramDef[] = [
     title: { en: "Night rating", fr: "Qualification vol de nuit" },
     frame: { en: "EASA rating · after the PPL", fr: "Qualification EASA · après le PPL" },
     blurb: {
-      en: "Rules and minima, night vision, navigation and failures at night.",
-      fr: "Règles et minima, vision de nuit, navigation et pannes de nuit.",
+      en: "Night vision and disorientation, navigation and failures at night.",
+      fr: "Vision de nuit et désorientation, navigation et pannes de nuit.",
     },
     who: { en: "I have my PPL", fr: "J’ai mon PPL" },
     level: 2,
@@ -382,8 +385,8 @@ export const PROGRAMS: readonly ProgramDef[] = [
       fr: "EASA ATPL(A) · 13 matières",
     },
     blurb: {
-      en: "The 13 exam subjects, 010 to 090. The first courses are ready.",
-      fr: "Les 13 matières de l’examen, de 010 à 090. Premiers cours disponibles.",
+      en: "Instrumentation, radio navigation, general navigation and human performance: the first of the 13 exam subjects.",
+      fr: "Instrumentation, radionavigation, navigation générale et performances humaines : les premières des 13 matières de l’examen.",
     },
     who: { en: "I am preparing ATPL theory", fr: "Je prépare la théorie ATPL" },
     level: 3,
@@ -404,7 +407,7 @@ export const PROGRAMS: readonly ProgramDef[] = [
   {
     id: "instructors",
     code: { en: "Instructors", fr: "Instructeurs" },
-    title: { en: "For instructors", fr: "Pour les instructeurs" },
+    title: { en: `Teaching with ${BRAND.name}`, fr: `Enseigner avec ${BRAND.name}` },
     frame: {
       en: "Create · present · follow up",
       fr: "Créer · présenter · suivre",

@@ -3,6 +3,7 @@
 // current one underlined with aria-current="page"), the library search, and FR | EN.
 // The same component draws on index.html (Accueil, Simulateur) and academy.html (Bibliothèque and its formation
 // pages), so a place keeps one name and one position everywhere. Pure DOM: no page module is imported here.
+import "../styles/_base.css";
 import "../styles/appbar.css";
 import { BRAND, brandMarkSvg } from "../brand";
 import { h } from "./dom";

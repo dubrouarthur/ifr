@@ -79,10 +79,10 @@ describe("cockpit chrome in French", () => {
     expect(aircraftLabel("steam")).toBe("C172 · instruments classiques");
   });
 
-  // a lesson starts with « Commencer le vol »; a course flight is a hand-over and uses the one vocabulary of
-  // course/handoverWords.ts: « Prendre les commandes », « Reprendre le cours »
-  it("starts a lesson with « Commencer le vol », a course flight with « Prendre les commandes », and the course strip counts the course's steps", () => {
-    expect(t("br.start")).toBe("Commencer le vol");
+  // a lesson and a course flight both hand the aircraft over: the one vocabulary of course/handoverWords.ts,
+  // « Prendre les commandes », « Reprendre le cours » (« Commencer le vol » is retired, audit §27)
+  it("starts a lesson and a course flight with « Prendre les commandes », and the course strip counts the course's steps", () => {
+    expect(t("br.start")).toBe("Prendre les commandes");
     expect(t("cf.start")).toBe("Prendre les commandes");
     expect(t("cf.stepOf", { n: 13, t: 14 })).toBe("Étape 13 sur 14");
     expect(t("cf.backCourseN", { n: 13 })).toBe("Reprendre le cours (étape 13)");

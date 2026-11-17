@@ -36,11 +36,14 @@ import {
   academyRoute,
   BACK_ITEM_KEY,
   courseHomeLine,
+  importedIds,
+  courseShareUrl,
   mountLibrary,
+  nextCourseAfter,
   type AcademyRoute,
   type CourseLibrary,
 } from "../course/ui/library";
-import { isSampleId, sampleCourse } from "../course/samples";
+import { allSamples, isSampleId, sampleCourse } from "../course/samples";
 import {
   playCourse,
   type CoursePlayer,
@@ -202,15 +205,20 @@ function courseFrom(id: string, from?: string): string {
 function backTarget(
   from: string,
   courseId: string,
-): { label: (l: Lang) => string; go: () => void } {
+): { label: (l: Lang) => string; phrase: (l: Lang) => string; go: () => void } {
   if (from === "home")
     return {
       label: (l) => placeName("home", l),
+      phrase: (l) => (l === "fr" ? "Retour à l’accueil" : "Back to Home"),
       go: () => location.assign(PLACE_HREF.home),
     };
   if (isProgramId(from))
     return {
       label: (l) => loc(programDef(from).code, l),
+      phrase: (l) =>
+        l === "fr"
+          ? `Retour à ${loc(programDef(from).code, l)}`
+          : `Back to ${loc(programDef(from).code, l)}`,
       go: () => {
         // the formation page opens with this course's card in view
         try {
@@ -221,7 +229,11 @@ function backTarget(
         go({ k: "library", p: from });
       },
     };
-  return { label: (l) => placeName("lib", l), go: () => go({ k: "library" }) };
+  return {
+    label: (l) => placeName("lib", l),
+    phrase: (l) => (l === "fr" ? "Retour à la bibliothèque" : "Back to the library"),
+    go: () => go({ k: "library" }),
+  };
 }
 /** where a presentation was opened (« edit:<id> »): its « Quitter la présentation » returns there */
 const PRESENT_FROM_KEY = "ifr.presentFrom";
@@ -463,6 +475,7 @@ async function showPlayer(
   const host = h("div", { class: "ga-player" });
   root.append(host);
   let player: CoursePlayer | null = null;
+  let nextOf: ReturnType<typeof nextCourseAfter> | undefined;
   const slideRenderer = academySlideRenderer(store, () => player?.el ?? null);
   const back = backTarget(courseFrom(course.id, o.from), course.id);
   player = playCourse(host, {
@@ -476,9 +489,26 @@ async function showPlayer(
     renderSlide: slideRenderer,
     onExit: () => back.go(),
     backLabel: back.label,
+    backPhrase: back.phrase,
+    // the end screen: the next course of the programme, and what an instructor does with this one
+    nextCourse: (l) => {
+      const n = (nextOf ??= isSampleId(course.id)
+        ? nextCourseAfter(course.id, allSamples())
+        : null);
+      return n
+        ? {
+            title: loc(n.title, l),
+            ...(n.minutes ? { minutes: n.minutes } : {}),
+            go: () => go({ k: "play", id: n.id, ...(o.from ? { from: o.from } : {}) }),
+          }
+        : null;
+    },
+    onPresent: () => go({ k: "present", id: course.id }),
+    onShare: () => void shareCourse(course),
+    ...(store ? { onEdit: { copy: isSampleId(course.id), run: () => go({ k: "edit", id: course.id }) } } : {}),
     context: (l) => {
       try {
-        return courseHomeLine(course, l, courseFrom(course.id, o.from));
+        return courseHomeLine(course, l, courseFrom(course.id, o.from), importedIds().has(course.id));
       } catch {
         return "";
       }
@@ -501,6 +531,23 @@ async function showPlayer(
       if (player && player.step.id !== sid) player.goToId(sid);
     },
   };
+}
+
+/** « Partager »: the course's link copied (a built-in course by its address, my own one encoded), else said plainly. */
+async function shareCourse(course: Course) {
+  const fr = lang === "fr";
+  const r = await courseShareUrl(course, isSampleId(course.id), "academy.html");
+  if (!r.ok) {
+    toast(ct(r.reason === "images" ? "linkImages" : "linkTooBig", lang));
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(r.url);
+    toast(ct("linkCopied", lang));
+  } catch {
+    // no clipboard here (an older browser, a page without the permission): the link itself, to copy by hand
+    toast(fr ? `Lien du cours : ${r.url}` : `Course link: ${r.url}`);
+  }
 }
 
 /** Designed slides in academy: the canvas renderer plus Your turn on the slide's instrument (course/ui/slideTurn.ts). */

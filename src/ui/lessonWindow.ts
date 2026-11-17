@@ -909,9 +909,30 @@ export class LessonWindow {
     this.save();
     this.render();
   }
+  /** a course flight whose goal the course strip already says: the window is its one-line pill for this flight
+   *  only (nothing saved); unfolding it (or the flight ending) gives the pilot's own fold back (audit §15) */
+  private foldedForFlight = false;
+  /** the flight the fold was set for (once per flight: unfolding it stays unfolded) */
+  private foldKey: string | null = null;
+  foldForFlight(key: string | null) {
+    if (key === this.foldKey) return;
+    this.foldKey = key;
+    this.foldedForFlight = key !== null;
+    this.render();
+  }
   setCollapsed(on: boolean) {
     const inside = this.el.contains(document.activeElement);
     this.cancelPeek();
+    if (this.foldedForFlight) {
+      this.foldedForFlight = false;
+      // unfolding the flight's pill: the window opens, the pilot's saved fold is not touched
+      if (!on) {
+        this.closeMenu(false);
+        this.render();
+        if (inside) this.foldBtn.focus({ preventScroll: true });
+        return;
+      }
+    }
     this.st.collapsed = on;
     if (on) this.st.enlarged = false;
     this.closeMenu(false);
@@ -947,6 +968,7 @@ export class LessonWindow {
   }
   private isCollapsed() {
     if (this.emHold()) return true;
+    if (this.foldedForFlight && !this.peek && !this.st.enlarged) return true;
     return (
       !this.peek &&
       !this.st.enlarged &&

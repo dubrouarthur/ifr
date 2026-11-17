@@ -17,6 +17,7 @@ import {
   frTypo,
   inertOthers,
   introWanted,
+  kindsLine,
 } from "../src/ui/intro";
 import {
   INTRO_BEATS,
@@ -51,10 +52,9 @@ const CSS = () => readFileSync("src/styles/ui-landing.css", "utf8");
 
 describe("positioning copy", () => {
   it("says what the product is, in both languages", () => {
-    expect(brandTagline("fr")).toBe(
-      "La plateforme de l’éducation aéronautique",
-    );
-    expect(brandTagline("en")).toBe("The platform for aviation education");
+    // the owner's words: « le deck de slides pour l’aviation » (audit §20)
+    expect(brandTagline("fr")).toBe("Le deck de slides pour l’aviation");
+    expect(brandTagline("en")).toBe("The slide deck for aviation");
     // who makes what: instructors create and teach, students learn, then practise in the simulator
     expect(brandLead("fr")).toBe(
       "Les instructeurs créent de beaux cours avec des instruments en direct et les présentent en salle. Les élèves les apprennent à leur rythme, puis les pratiquent dans le simulateur intégré, avec un résultat et un débriefing.",
@@ -147,17 +147,17 @@ describe("start page: words", () => {
   it("says in one line what Wingdeck is and for whom, centred on slides", () => {
     const { fr, en } = INTRO_COPY;
     expect([fr.eyebrow, en.eyebrow]).toEqual([
-      "Diapositives pour l’aviation",
-      "Slides for aviation",
+      "Diapositives · Instruments · Simulateur",
+      "Slides · Instruments · Simulator",
     ]);
     expect([fr.h1, en.h1]).toEqual([
-      "Des cours d’aviation qui volent",
-      "Aviation courses that fly",
+      "Le deck de slides pour l’aviation",
+      "The slide deck for aviation",
     ]);
-    // create and share, slides, real aviation tools inside
-    expect(fr.lead).toMatch(/^Créez et partagez vos cours en diapositives/);
+    // create, present and share, slides, real aviation tools inside (audit §20)
+    expect(fr.lead).toMatch(/^Créez, présentez et partagez des cours en diapositives/);
     expect(fr.lead).toMatch(/instruments en direct, simulateur de vol, calculs/);
-    expect(en.lead).toMatch(/^Build and share your courses as slides/);
+    expect(en.lead).toMatch(/^Create, present and share courses as slides/);
     // for whom
     expect(fr.who).toMatch(/instructeurs.*aéroclubs.*écoles de pilotage.*élèves/);
     expect(en.who).toMatch(/instructors.*aeroclubs.*flight schools.*students/);
@@ -184,7 +184,7 @@ describe("start page: words", () => {
     expect(fr.skip).toBe("Ne plus afficher cette page au démarrage");
     expect(en.skip).toBe("Don’t show this page at start-up");
     // the page can be found again, and says where
-    expect(fr.again).toMatch(/Accueil.*«\u00a0Voir la présentation\u00a0»/);
+    expect(fr.again).toMatch(/Accueil.*«\u00a0Découvrir Wingdeck\u00a0»/);
     // the honest note
     expect(fr.note).toBe("Entraînement procédural, non certifié FSTD");
     expect(en.note).toBe("Procedural training, not a certified FSTD");
@@ -259,7 +259,8 @@ describe("start page: the model (actions, links, counts)", () => {
       expect(c!.steps.some((s) => s.slide), id).toBe(true);
     }
     expect(fill(INTRO_COPY.fr.slidesN, 10)).toBe("10 diapos");
-    expect(fill(INTRO_COPY.en.itemsN, 64)).toBe("64 items");
+    expect(kindsLine(INTRO_COPY.fr, INTRO_COUNTS.ppl)).toBe("10 cours · 23 vols · 31 check-lists");
+    expect(kindsLine(INTRO_COPY.en, INTRO_COUNTS.atpl)).toBe("8 courses");
   });
   it("the library counts say what the library's landing shows (the live model)", () => {
     const list = libraryItems({
@@ -277,12 +278,16 @@ describe("start page: the model (actions, links, counts)", () => {
       expect(INTRO_COUNTS[p].s, p).toBe(
         s.groups.flatMap((g) => g.subjects).length,
       );
+      // the kinds the page names (audit §41: never « éléments »)
+      expect([INTRO_COUNTS[p].c, INTRO_COUNTS[p].f, INTRO_COUNTS[p].k], p).toEqual([s.kinds.course, s.kinds.sim, s.kinds.proc]);
     }
+    const kinds = (k: string) => list.filter((i) => i.kind === k).length;
+    expect([INTRO_COUNTS.all.c, INTRO_COUNTS.all.f, INTRO_COUNTS.all.k]).toEqual([kinds("course"), kinds("sim"), kinds("proc")]);
     expect(INTRO_COUNTS.club.n).toBe(sh.get("club")!.total);
     // the page prints the counts it holds, never a number of its own
     const src = SRC();
-    expect(src).toMatch(/fill\(C\.itemsN, INTRO_COUNTS\[p\]\.n\)/);
-    expect(src).toMatch(/fill\(C\.itemsN, INTRO_COUNTS\.total\)/);
+    expect(src).toMatch(/kindsLine\(C, INTRO_COUNTS\[p\]\)/);
+    expect(src).toMatch(/kindsLine\(C, INTRO_COUNTS\.all\)/);
     expect(strings(INTRO_COPY).some(([, s]) => /\d{2,}/.test(s))).toBe(false);
   });
 });
@@ -464,7 +469,9 @@ describe("start page: behaviour", () => {
   it("the 3D world does not boot while the page is up", () => {
     const main = readFileSync("src/main.ts", "utf8");
     expect(main).toMatch(/closed: \(\) => bootOutsideWhenIdle\(\)/);
-    expect(main).toMatch(/if \(!intro\.isOpen\) void initOutside\(\)/);
+    // nor under Accueil / Simulateur (audit §17): outsideWanted() = no intro and no Flight Center page
+    expect(main).toMatch(/const outsideWanted = \(\) => !intro\.isOpen && !fc\.isOpen;/);
+    expect(main).toMatch(/if \(outsideWanted\(\)\) void initOutside\(\)/);
   });
   it("Accueil opens on what to do, not on the pitch again", () => {
     const home = readFileSync("src/ui/home.ts", "utf8");

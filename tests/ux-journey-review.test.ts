@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { academyHash, academyRoute, courseHomeLine } from "../src/course/ui/library";
 import { sampleCourse } from "../src/course/samples";
-import { isTeaching, markTeaching } from "../src/library/role";
+import { isTeaching, markTeaching, setTeaching } from "../src/library/role";
 import { HOME_LINKS } from "../src/ui/home";
 
 const read = (p: string) => readFileSync(p, "utf8");
@@ -28,14 +28,25 @@ describe("students and instructors", () => {
     expect(isTeaching()).toBe(false);
     markTeaching();
     expect(isTeaching()).toBe(true);
+    // « Je suis instructeur » off again
+    setTeaching(false);
+    expect(isTeaching()).toBe(false);
+    setTeaching(true);
+    expect(isTeaching()).toBe(true);
   });
   it("the library shows authoring actions to who teaches, never to a student", () => {
     const src = read("src/course/ui/library.ts");
-    // « Créer un cours ici » on an empty subject, and the card's « Plus d’actions » menu
+    // « Créer un cours ici » on an empty subject; the card's « … » menu is for everyone (Ouvrir · Présenter · Copier
+    // le lien, audit §18) and its authoring actions (Dupliquer pour modifier, Exporter) only for who teaches
     expect(src).toMatch(/const create = !own && d\.program !== "instructors" && this\.teaching;/);
-    expect(src).toMatch(/if \(!this\.teaching\) return null;/);
-    // a teaching place marks the browser: the Instructeurs page, Nouveau cours, the editor, the presenter
-    expect(src).toMatch(/if \(p === "instructors"\) markTeaching\(\);/);
+    expect(src).toMatch(/const teach = this\.teaching;/);
+    expect(src).toMatch(/if \(this\.store && teach\)\s*items\.push\(\[\s*e\.sample \? this\.t\("duplicateEdit"\)/);
+    expect(src).toMatch(/if \(teach\) items\.push\(\[this\.t\("export"\)/);
+    // who teaches says so: « Je suis instructeur » on the Instructeurs page (visiting it alone turns nothing on,
+    // audit §18), or a teaching place: Nouveau cours, the editor, the presenter
+    expect(src).not.toMatch(/if \(p === "instructors"\) markTeaching\(\);/);
+    expect(src).toMatch(/role: "switch",\s*checked: isTeaching\(\),/);
+    expect(src).toMatch(/setTeaching\(\(e\.target as HTMLInputElement\)\.checked\);/);
     expect(read("src/learn/main.ts")).toMatch(/r\.k === "edit" \|\| r\.k === "present" \|\| r\.k === "new"\) markTeaching\(\)/);
   });
   it("the slide import is offered only when this build ships it", () => {

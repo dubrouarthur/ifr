@@ -10,9 +10,22 @@ const S = {
     en: "Each programme is shelved by subject, in the order of the official syllabus.",
     fr: "Chaque formation est rangée par matière, dans l’ordre du programme officiel.",
   },
-  eyebrowN: {
-    en: "{n} different items",
-    fr: "{n} éléments différents",
+  // one glossary (audit §41): never « éléments », say what they are
+  coursesReady: { en: "{n} courses ready", fr: "{n} cours prêts" },
+  courseReady1: { en: "1 course ready", fr: "1 cours prêt" },
+  subjectsReady: { en: "{r} of {n} subjects", fr: "{r} matières sur {n}" },
+  flightsN: { en: "{n} flights", fr: "{n} vols" },
+  flight1: { en: "1 flight", fr: "1 vol" },
+  checklistsN: { en: "{n} checklists", fr: "{n} check-lists" },
+  checklist1: { en: "1 checklist", fr: "1 check-list" },
+  readyLine: {
+    en: "Ready: {r} subjects · Being written: {s}",
+    fr: "Prêt : {r} matières · En préparation : {s}",
+  },
+  soonBlock: { en: "Being written", fr: "En préparation" },
+  soonBlockSub: {
+    en: "These subjects of the syllabus have no course yet.",
+    fr: "Ces matières du programme n’ont pas encore de cours.",
   },
   search: {
     en: "Search a course, a lesson, a checklist",
@@ -29,10 +42,17 @@ const S = {
   searchCrumb: { en: "Search", fr: "Recherche" },
   // landing
   continue: { en: "Continue", fr: "Reprendre" },
+  resumeEdit: { en: "Continue editing", fr: "Reprendre la modification" },
   continueSub: { en: "Where you left off", fr: "Là où vous vous êtes arrêté" },
   where: { en: "Where to start?", fr: "Où commencer ?" },
   newHere: { en: `New to ${BRAND.name}?`, fr: `Nouveau sur ${BRAND.name} ?` },
   toolsN: { en: "{n} tools", fr: "{n} outils" },
+  openReceived: { en: "Open a course you received", fr: "Ouvrir un cours reçu" },
+  openReceivedSub: {
+    en: "The course file your instructor sent you. You can also drop it on this page.",
+    fr: "Le fichier de cours envoyé par votre instructeur. Vous pouvez aussi le déposer sur cette page.",
+  },
+  receivedOpened: { en: "Course added to your library", fr: "Cours ajouté à votre bibliothèque" },
   // programme page
   index: { en: "Contents", fr: "Sommaire" },
   // search
@@ -45,8 +65,9 @@ const S = {
     fr: "Rien ne correspond à « {q} »",
   },
   // cards
-  steps: { en: "{n} steps", fr: "{n} étapes" },
-  step1: { en: "1 step", fr: "1 étape" },
+  // a course is a deck: its count is in slides (audit §41 glossary)
+  steps: { en: "{n} slides", fr: "{n} diapos" },
+  step1: { en: "1 slide", fr: "1 diapo" },
   itemsN: { en: "{n} items", fr: "{n} points" },
   min: { en: "{n} min", fr: "{n} min" },
   passed: { en: "Passed", fr: "Réussi" },
@@ -103,6 +124,49 @@ const S = {
     fr: "Fichiers de cours Wingdeck et packs club",
   },
   toolPresent: { en: "Present to a class", fr: "Présenter à une classe" },
+  teachSwitch: { en: "I teach", fr: "Je suis instructeur" },
+  // a course opened from a link or a file someone sent (audit §21)
+  sharedBy: { en: "Shared by {name}", fr: "Partagé par {name}" },
+  // a subject with no course yet but a template for it in « Nouveau cours » (audit §23)
+  soonCircuit: {
+    en: "A template exists: create your circuit course",
+    fr: "Un modèle existe : créez votre cours de tour de piste",
+  },
+  // « Enseigner avec Wingdeck » (Instructeurs › 02): how a course reaches the members and where the results live
+  // (audit §19), in the words of the buttons it names
+  teachLead: {
+    en: "How a course reaches your members, and where their results live.",
+    fr: "Comment un cours arrive à vos élèves, et où vivent leurs résultats.",
+  },
+  teach1: { en: "Choose", fr: "Choisir" },
+  teach1Sub: {
+    en: "A ready course in the Library, or your own: “Duplicate to edit” or “New course”.",
+    fr: "Un cours prêt de la Bibliothèque, ou le vôtre : « Dupliquer pour modifier » ou « Nouveau cours ».",
+  },
+  teach2: { en: "Present", fr: "Présenter" },
+  teach2Sub: {
+    en: "“Present”: one window for the projector, the presenter view with your notes; → or Space to go on.",
+    fr: "« Présenter » : une fenêtre pour le projecteur, la vue présentateur avec vos notes ; → ou Espace pour avancer.",
+  },
+  teach3: { en: "Share", fr: "Partager" },
+  teach3Sub: {
+    en: "“Copy the link” in the course’s “…” menu, or send the course file: the student opens it with “Open a course you received”.",
+    fr: "« Copier le lien » dans le menu « … » du cours, ou envoyez le fichier du cours : l’élève l’ouvre avec « Ouvrir un cours reçu ».",
+  },
+  teach4: { en: "The students fly", fr: "Les élèves volent" },
+  teach4Sub: {
+    en: "“Your turn” on the slide, or “Fly it in the simulator”: “Back to the course” brings the result to the slide.",
+    fr: "« À vous » sur la diapo, ou « Voler dans le simulateur » : « Reprendre le cours » ramène le résultat sur la diapo.",
+  },
+  teach5: { en: "The results stay on the device", fr: "Les résultats restent sur l’appareil" },
+  teach5Sub: {
+    en: "No account: each student finds their progress in their own browser; nothing is sent anywhere.",
+    fr: "Pas de compte : chaque élève retrouve sa progression dans son navigateur ; rien n’est envoyé ailleurs.",
+  },
+  teachSwitchSub: {
+    en: "Shows “Duplicate to edit” on the course cards and “Create the first course” in empty subjects",
+    fr: "Affiche « Dupliquer pour modifier » sur les cours et « Créez le premier cours » dans les matières vides",
+  },
   toolPresentSub: {
     en: "Projector window and presenter notes",
     fr: "Fenêtre projecteur et notes du présentateur",
@@ -214,7 +278,7 @@ const S = {
   fcOpen: { en: "Open the library", fr: "Ouvrir la bibliothèque" },
   // UX logic step B: the library home, the formation pages, search
   resumeBtn: { en: "Resume", fr: "Reprendre" },
-  stepOf: { en: "step {n} of {m}", fr: "étape {n} sur {m}" },
+  stepOf: { en: "slide {n} of {m}", fr: "diapo {n} sur {m}" },
   startWith: { en: "Start with", fr: "Commencer par" },
   continueWith: { en: "Continue with", fr: "Continuer par" },
   forClub: {
@@ -223,14 +287,16 @@ const S = {
   },
   coursesN: { en: "{n} courses", fr: "{n} cours" },
   course1: { en: "1 course", fr: "1 cours" },
+  // the tour is a page to scroll, not a timed minute (audit §20)
   discover: {
-    en: `Discover ${BRAND.name} in 1 minute`,
-    fr: `Découvrir ${BRAND.name} en 1 minute`,
+    en: `Discover ${BRAND.name}`,
+    fr: `Découvrir ${BRAND.name}`,
   },
   doneOf: { en: "{d} of {n} done", fr: "{d} sur {n} terminés" },
+  coursesDoneOf: { en: "{d} of {n} courses done", fr: "{d} sur {n} cours terminés" },
   start: { en: "Start", fr: "Commencer" },
   startLesson: { en: "Start: lesson {n}", fr: "Commencer : leçon {n}" },
-  startCourse: { en: "Start: first course", fr: "Commencer : premier cours" },
+  startCourse: { en: "Start the first course", fr: "Commencer le premier cours" },
   goOn: { en: "Continue", fr: "Continuer" },
   goOnLesson: { en: "Continue: lesson {n}", fr: "Continuer : leçon {n}" },
   inSim: { en: "in the simulator", fr: "au simulateur" },
@@ -249,7 +315,10 @@ const S = {
   },
   soonBare: { en: "Coming to {b}.", fr: "Bientôt dans {b}." },
   soonWord: { en: "soon", fr: "bientôt" },
-  createHere: { en: "Create a course here", fr: "Créer un cours ici" },
+  createHere: {
+    en: "Create the first course of this subject",
+    fr: "Créez le premier cours de cette matière",
+  },
   fromProgram: { en: "From the {p} programme", fr: "Vient de la formation {p}" },
   noneOfKind: {
     en: "Nothing under “{k}” here.",
