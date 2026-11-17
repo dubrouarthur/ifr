@@ -1886,7 +1886,7 @@ export class CoursePlayer {
           h(
             "div",
             { class: "cp-st-ctls" },
-            btn(lang === "fr" ? "Ouvrir le moteur en plein écran" : "Open the engine full screen", "", () => {
+            btn(lang === "fr" ? "Manipuler le moteur" : "Try the engine", "", () => {
               host
                 .querySelector<HTMLButtonElement>(`[data-id="${CSS.escape(b.id)}"] .eng-tools .eng-tool:last-child`)
                 ?.click();
