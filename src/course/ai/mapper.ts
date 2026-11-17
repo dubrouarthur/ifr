@@ -147,7 +147,7 @@ export function situationOf(p: PlanSituation, cx?: MapContext): Situation {
   if (checkSituation(sit).some((i) => i.level === "error")) {
     cx?.warnings.push(
       L(
-        `A situation could not fly as written: the ready situation « ${ready.name.en} » is used instead.`,
+        `A situation could not fly as written: the ready situation “${ready.name.en}” is used instead.`,
         `Une situation n’était pas pilotable telle quelle : la situation prête « ${ready.name.fr ?? ready.name.en} » la remplace.`,
       ),
     );
@@ -777,7 +777,7 @@ export function fitTexts(slide: SlideCanvas, warn?: (t: L10n) => void): void {
       if (cut && warn)
         warn(
           L(
-            `A text was shortened to fit its slide: « ${b.text.en} »`,
+            `A text was shortened to fit its slide: “${b.text.en}”`,
             `Un texte a été raccourci pour tenir dans sa diapo : « ${b.text.fr ?? b.text.en} »`,
           ),
         );

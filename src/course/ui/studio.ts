@@ -26,6 +26,7 @@ import { baseThemeId } from "../canvas/themes";
 import { KINDS } from "./reader";
 import { TEMPLATES, titleOfSlide, tr, type TemplateId } from "./templates";
 import type { DeckStarter } from "./deckStarters";
+import { isExampleSituation } from "./exampleSituation";
 import {
   SIM_CONTENTS,
   mainInstrument,
@@ -482,6 +483,8 @@ export class StudioPanel {
     flyNow = () => S.fly(sceneOfSituation(sit, { base: read.scene }));
     const headName = h("b", {}, sitLabel(sit));
     const headPos = h("span", {}, posLine(sit.pos, lang));
+    // a template's pose flies at the training airfield whatever the course title says: say it is an example
+    const example = isExampleSituation(host.course, read.sceneId);
     const paint = () => {
       headName.textContent = sitLabel(sit);
       headPos.textContent = posLine(sit.pos, lang);
@@ -492,10 +495,22 @@ export class StudioPanel {
         { class: "sim-h" },
         read.own ? T("The situation of the selected element", "La situation de l’élément sélectionné") : T("The flight situation of this slide", "La situation de vol de cette diapo"),
       ),
-      h("div", { class: "sit-head" }, headName, headPos),
+      h(
+        "div",
+        { class: "sit-head" + (example ? " example" : "") },
+        example ? h("i", { class: "sit-ex" }, T("Example situation", "Situation d’exemple")) : null,
+        headName,
+        headPos,
+      ),
       h(
         "p",
         { class: "ce-panel-note" },
+        example
+          ? T(
+              "From the template: set your own airfield and flight below.",
+              "Celle du modèle : réglez votre terrain et votre vol ci-dessous.",
+            ) + " "
+          : "",
         read.own
           ? T("Only this element shows it.", "Seul cet élément la montre.")
           : T("Every instrument of the slide shows it.", "Tous les instruments de la diapo la montrent."),
@@ -1194,6 +1209,8 @@ export interface EmptyStarts {
   /** the empty slide becomes this ready slide of the gallery (samples/exampleSlides.ts); when given, the card
    *  offers the gallery's most useful slides instead of the bare layouts */
   example?(id: string): void;
+  /** a new slide not wanted after all (« Ne pas ajouter · Échap »): no slide is added */
+  cancel?(): void;
 }
 /** The ready slides an empty slide offers first: one per thing the simulator does on a slide, each with a different
  *  instrument (samples/showcaseDecks.ts startSlides): the aircraft flying on a cover, the view from the cockpit, a
@@ -1324,6 +1341,19 @@ export function emptySlideCard(
     on.blank();
   });
   blank.addEventListener("pointerdown", (e) => e.stopPropagation());
+  let cancel: HTMLElement | null = null;
+  if (on.cancel) {
+    cancel = h(
+      "button",
+      { type: "button", class: "ce-link ce-fr-blank ce-fr-cancel", "aria-keyshortcuts": "Escape" },
+      fr ? "Ne pas ajouter · Échap" : "Don’t add · Esc",
+    );
+    cancel.addEventListener("click", (e) => {
+      e.stopPropagation();
+      on.cancel?.();
+    });
+    cancel.addEventListener("pointerdown", (e) => e.stopPropagation());
+  }
   let more: HTMLElement | null = null;
   if (on.more) {
     more = h("button", { type: "button", class: "ce-link ce-fr-blank" }, fr ? "Tous les modèles" : "All templates");
@@ -1361,7 +1391,7 @@ export function emptySlideCard(
     { class: "ce-empty-card ce-fr-card", role: "group", "aria-label": fr ? "Diapo vide" : "Empty slide" },
     h("h2", { class: "ce-empty-t" }, fr ? "Que voulez-vous montrer ?" : "What do you want to show?"),
     grid,
-    h("div", { class: "ce-fr-ft" }, h("span", { class: "ce-fr-links" }, more, blank), keys),
+    h("div", { class: "ce-fr-ft" }, h("span", { class: "ce-fr-links" }, more, blank, cancel), keys),
   );
   return {
     el,

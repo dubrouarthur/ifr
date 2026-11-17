@@ -38,8 +38,10 @@ import { slideCrowded, tidySlide } from "../canvas/placement";
 import {
   DEMO_SCENE_ID,
   demoScene,
+  libraryItem,
   type BlockDraft,
 } from "../canvas/factory";
+import { addedWhere, slideIsBare } from "./newSlide";
 import { compactScene, encodeScene } from "../scene";
 import {
   blockSceneId,
@@ -305,6 +307,8 @@ export class CourseEditor implements InspectorHost {
   private emptyKill: (() => void) | null = null;
   /** slides whose author chose « Partir d’une diapo vide » (the first-run card stays away) */
   private emptyBlank = new Set<string>();
+  /** a « Nouvelle diapo » with nothing chosen yet: Échap or another slide takes it away (newSlide.ts) */
+  private pendingNew: { id: string; prev: number; depth: number } | null = null;
   private startEl: { destroy(): void } | null = null;
   private inspOpen = true;
   private zoom = 1;
@@ -944,10 +948,13 @@ export class CourseEditor implements InspectorHost {
       icon: "dots",
     });
     this.checksBtn.setAttribute("aria-haspopup", "menu");
-    // the labelled way back: the instructor's own courses
-    const back = btn(fr ? "Mes cours" : "My courses", () => this.exit(), {
+    // the labelled way back says where it lands: the library's « Mes cours et brouillons » (Instructeurs)
+    const back = btn(fr ? "Mes cours et brouillons" : "My courses and drafts", () => this.exit(), {
       cls: "sm ce-back-b",
       icon: "back",
+      title: fr
+        ? "Retour à Bibliothèque › Instructeurs › Mes cours et brouillons (le cours est enregistré)"
+        : "Back to Library › Instructors › My courses and drafts (the course is saved)",
     });
     // one way to try the course as a student (from this slide): here, next to Present
     const preview = h(
@@ -1163,7 +1170,7 @@ export class CourseEditor implements InspectorHost {
         return ed.simSelectionId();
       },
       addSim: (kind: SimContentKind) => ed.addSimContent(kind),
-      newSlide: () => ed.addTemplate("slide", { layout: "blank" }),
+      newSlide: () => ed.newSlide(),
     };
   }
   /** Below 1280 px the panel floats over the slide: it closes after an add so the new block shows. */
@@ -1298,6 +1305,9 @@ export class CourseEditor implements InspectorHost {
     // an empty slide takes the ready slide in place (« + Diapo », then a pick of « Que voulez-vous montrer ? »)
     const cur = this.step;
     if (cur?.slide && !cur.slide.blocks.length && !cur.slide.background?.image) {
+      // the « Nouvelle diapo » gets its content: it stays, and the toast says where it went
+      const where = this.pendingNew?.id === cur.id ? addedWhere(this.lang, this.i, this.course.steps.length) : null;
+      if (where) this.pendingNew = null;
       const before = this.course;
       const t = { en: title.en, fr: title.fr ?? title.en };
       this.apply(replaceStep(base, { ...cur, title: t, slide: s2, reader: linearText(s2), ...(cur.notes ? {} : { notes }) }), undefined, {
@@ -1307,7 +1317,7 @@ export class CourseEditor implements InspectorHost {
       this.syncCanvasScenes();
       this.canvasEd?.load(s2);
       this.syncEmpty(s2);
-      this.toast(t2(this.lang, "Slide added", "Diapo ajoutée"), () => {
+      this.toast(where ?? t2(this.lang, "Slide added", "Diapo ajoutée"), () => {
         this.apply(before, undefined, { inspector: true });
         const st = this.step;
         if (st?.slide) this.canvasEd?.load(st.slide);
@@ -1642,7 +1652,8 @@ export class CourseEditor implements InspectorHost {
           h("span", {}, t2(lang, "Add", "Ajouter")),
         );
         // a new slide opens on « Que voulez-vous montrer ? » (the first-run card), « Tous les modèles » beside it
-        b.addEventListener("click", () => this.addTemplate("slide", { layout: "blank" }));
+        // the tile closes the strip: the slide goes at the end, and only stays once something is chosen
+        b.addEventListener("click", () => this.newSlide({ end: true }));
         return b;
       })(),
     );
@@ -1819,35 +1830,37 @@ export class CourseEditor implements InspectorHost {
     const s = this.step;
     const fr = this.lang === "fr";
     const miss = courseMissingFr(this.course);
-    const langSeg = h(
-      "div",
+    // the slides' words in FR or EN (never the app's own language toggle): a labelled dropdown, FR first
+    const missing =
+      miss && this.course.langs.includes("fr")
+        ? fr
+          ? `${miss} manquant${miss > 1 ? "s" : ""}`
+          : `${miss} missing`
+        : "";
+    const langSel = h(
+      "select",
       {
-        class: "ce-seg",
-        role: "radiogroup",
-        "aria-label": fr ? "Langue du contenu" : "Content language",
+        class: "ce-in ce-lang-sel",
+        "aria-label": fr ? "Langue de la diapo" : "Slide language",
       },
-      ...(["en", "fr"] as Lang[]).map((l) => {
-        const b = h(
-          "button",
-          {
-            type: "button",
-            role: "radio",
-            class: this.lang === l ? "on" : "",
-            "aria-checked": this.lang === l ? "true" : "false",
-          },
-          l.toUpperCase(),
-        );
-        if (l === "fr" && miss && this.course.langs.includes("fr"))
-          b.append(
-            h(
-              "span",
-              { class: "ce-tag warn" },
-              fr ? `${miss} manquant${miss > 1 ? "s" : ""}` : `${miss} missing`,
-            ),
-          );
-        b.addEventListener("click", () => this.setLang(l));
-        return b;
+      ...(["fr", "en"] as Lang[]).map((l) => {
+        const o = h("option", { value: l }, l.toUpperCase() + (l === "fr" && missing ? ` · ${missing}` : ""));
+        o.selected = this.lang === l;
+        return o;
       }),
+    ) as HTMLSelectElement;
+    langSel.addEventListener("change", () => this.setLang(langSel.value as Lang));
+    const langSeg = h(
+      "label",
+      {
+        class: "ce-lang",
+        title: fr
+          ? "La langue du texte des diapos (pas celle de l’application)"
+          : "The language of the slides’ text (not the app’s)",
+      },
+      h("span", { class: "ce-lang-l" }, fr ? "Langue de la diapo" : "Slide language"),
+      langSel,
+      missing && this.lang === "en" ? h("span", { class: "ce-tag warn" }, `FR ${missing}`) : null,
     );
     if (!s) {
       this.toolEl.replaceChildren(langSeg);
@@ -1946,7 +1959,8 @@ export class CourseEditor implements InspectorHost {
       const undoB = btn(fr ? "Annuler" : "Undo", () => this.undo(), {
         cls: "sm ghost ce-undo",
         icon: "undo",
-        title: t2(this.lang, `Undo (${modKey()}Z)`, `Annuler (${modKey()}Z)`),
+        // « Annuler » alone also means « cancel »: the tooltip says it undoes the last change
+        title: t2(this.lang, `Undo the last change (${modKey()}Z)`, `Annuler la modification (${modKey()}Z)`),
         disabled: !this.history.canUndo,
       });
       const redoB = btn(fr ? "Rétablir" : "Redo", () => this.redo(), {
@@ -2045,17 +2059,6 @@ export class CourseEditor implements InspectorHost {
           multiB,
           zoomBox,
           h("span", { class: "ce-vsep" }),
-          // the slide's words in EN or FR (not the app's language): say so
-          h(
-            "span",
-            {
-              class: "ce-ctool-l",
-              title: fr
-                ? "La langue du texte des diapos"
-                : "The language of the slides’ text",
-            },
-            fr ? "Texte des diapos" : "Slide text",
-          ),
           langSeg,
           inspB,
         ),
@@ -2237,19 +2240,33 @@ export class CourseEditor implements InspectorHost {
     this.rebuildPreview();
     this.fitDevice();
   }
-  /** The empty-slide card over the canvas (three moves); gone as soon as the slide has a block. */
+  /**
+   * Over an empty slide: « Que voulez-vous montrer ? » (the first-run card); once « Partir d'une diapo vide » is
+   * chosen, light hints on the slide itself (« Cliquez pour ajouter un titre », + Instrument, + Texte, + Question),
+   * never a rail opened by itself. Both go as soon as the slide has a block.
+   */
   private syncEmpty(c: SlideCanvas) {
-    const empty = !c.blocks.length && !c.background?.image && !this.emptyBlank.has(this.step?.id ?? "");
-    if (!empty) {
-      this.emptyKill?.();
-      this.emptyKill = null;
-      this.emptyEl?.remove();
-      this.emptyEl = null;
-      return;
+    const id = this.step?.id ?? "";
+    const bare = slideIsBare(c);
+    const want: "" | "card" | "hints" = !bare ? "" : this.emptyBlank.has(id) ? "hints" : "card";
+    // the « Nouvelle diapo » got its content (or « diapo vide »): it stays, and the toast says where it went
+    if (this.pendingNew?.id === id && want !== "card") {
+      this.pendingNew = null;
+      this.toast(addedWhere(this.lang, this.i, this.course.steps.length));
     }
-    if (this.emptyEl) return;
+    if (this.emptyEl && this.emptyEl.dataset.kind === want) return;
+    this.emptyKill?.();
+    this.emptyKill = null;
+    this.emptyEl?.remove();
+    this.emptyEl = null;
+    if (!want) return;
     const wrap = this.stageArea.querySelector(".ce-canvaswrap");
     if (!wrap) return;
+    if (want === "hints") {
+      this.emptyEl = h("div", { class: "ce-empty-wrap ce-blank-hints", "data-kind": "hints" }, this.blankHints());
+      wrap.append(this.emptyEl);
+      return;
+    }
     const card = emptySlideCard(
       this.lang,
       {
@@ -2274,8 +2291,8 @@ export class CourseEditor implements InspectorHost {
         blank: () => {
           this.emptyBlank.add(this.step?.id ?? "");
           if (this.canvasEd) this.syncEmpty(this.canvasEd.canvas);
-          this.openPanel("text");
         },
+        cancel: this.pendingNew?.id === id ? () => this.dropPending() : undefined,
       },
       {
         theme: this.course.theme,
@@ -2286,8 +2303,50 @@ export class CourseEditor implements InspectorHost {
       },
     );
     this.emptyKill = card.destroy;
-    this.emptyEl = h("div", { class: "ce-empty-wrap" }, card.el);
+    this.emptyEl = h("div", { class: "ce-empty-wrap", "data-kind": "card" }, card.el);
     wrap.append(this.emptyEl);
+  }
+  /** The empty slide's own hints: a title zone to click, then one button per kind of content. */
+  private blankHints(): HTMLElement {
+    const fr = this.lang === "fr";
+    const title = h(
+      "button",
+      { type: "button", class: "ce-bh-title" },
+      fr ? "Cliquez pour ajouter un titre" : "Click to add a title",
+    );
+    title.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const d = libraryItem("text:title")?.make();
+      if (!d || !this.canvasEd) return;
+      // the title sits where a title goes (top left), its words selected: typing replaces them
+      const b = this.canvasEd.add(d, [96 + d.frame.w / 2, 96 + d.frame.h / 2]);
+      this.canvasEd.openText(b.id, { selectAll: true });
+    });
+    const add = (label: string, run: () => void) => {
+      const b = h("button", { type: "button", class: "ce-bh-add" }, h("span", { "aria-hidden": "true" }, "+"), label);
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        run();
+      });
+      return b;
+    };
+    const el = h(
+      "div",
+      { class: "ce-bh", role: "group", "aria-label": fr ? "Diapo vide" : "Empty slide" },
+      title,
+      h(
+        "div",
+        { class: "ce-bh-row" },
+        add(fr ? "Instrument" : "Instrument", () => this.openPanel("instruments")),
+        add(fr ? "Texte" : "Text", () => this.openPanel("text")),
+        add(fr ? "Question" : "Question", () => {
+          const d = libraryItem("interactive:quiz")?.make();
+          if (d) this.canvasEd?.add(d);
+        }),
+      ),
+    );
+    for (const b of el.querySelectorAll("button")) b.addEventListener("pointerdown", (e) => e.stopPropagation());
+    return el;
   }
   /** An instrument-rating or airline course (its first slides may show an ILS); else a VFR course. */
   private ifrCourse(): boolean {
@@ -2617,6 +2676,12 @@ export class CourseEditor implements InspectorHost {
   }
   select(i: number, notify = true) {
     if (i < 0 || i >= this.course.steps.length) return;
+    // another slide picked while the « Nouvelle diapo » still has nothing: it goes away, the pick stays
+    const p = this.pendingNew;
+    if (p && this.course.steps[i].id !== p.id) {
+      const want = this.course.steps[i].id;
+      if (this.dropPending(false)) i = Math.max(0, this.course.steps.findIndex((s) => s.id === want));
+    }
     const changed = i !== this.i;
     this.i = i;
     if (changed) this.reveal = null;
@@ -2639,6 +2704,45 @@ export class CourseEditor implements InspectorHost {
     this.apply(insertStep(r.course, r.step, at), undefined, { centre: false });
     this.select(at);
     this.liveEl.textContent = `${tr(r.step.title, this.lang)}: ${t2(this.lang, "added", "ajouté")}`;
+  }
+  /**
+   * « Ajouter » (the strip's + tile, the Simulateur panel): a new slide showing « Que voulez-vous montrer ? ». It
+   * only stays once a choice is made; Échap, « Annuler » or another slide takes it away, with nothing to undo.
+   */
+  newSlide(o: { end?: boolean } = {}) {
+    this.dropPending(false);
+    const prev = this.i;
+    if (o.end && this.course.steps.length) this.i = this.course.steps.length - 1;
+    this.addTemplate("slide", { layout: "blank" });
+    const s = this.step;
+    if (!s?.slide || !slideIsBare(s.slide) || this.course.steps.length < 2) return;
+    this.pendingNew = { id: s.id, prev, depth: this.history.depth };
+    // the card is drawn again with its « Ne pas ajouter · Échap », and takes the focus (Échap reaches the editor)
+    if (this.emptyEl) this.emptyEl.dataset.kind = "";
+    if (this.canvasEd) this.syncEmpty(this.canvasEd.canvas);
+    this.emptyEl?.querySelector<HTMLElement>(".ce-fr")?.focus({ preventScroll: true });
+  }
+  /** Take the « Nouvelle diapo » away when it still has nothing chosen; true when it went. */
+  private dropPending(reselect = true): boolean {
+    const p = this.pendingNew;
+    this.pendingNew = null;
+    if (!p) return false;
+    const j = this.course.steps.findIndex((s) => s.id === p.id);
+    const s = this.course.steps[j];
+    if (j < 0 || !slideIsBare(s?.slide) || this.emptyBlank.has(p.id)) return false;
+    const back = this.history.discard(p.depth);
+    if (back) {
+      this.course = back;
+      this.changed({ inspector: true, centre: false });
+    } else this.apply(removeStep(this.course, j), undefined, { centre: false, inspector: true });
+    this.thumbs.get(p.id)?.view?.destroy();
+    this.thumbs.delete(p.id);
+    this.liveEl.textContent = t2(this.lang, "No slide added", "Aucune diapo ajoutée");
+    if (reselect) {
+      this.i = -1;
+      this.select(Math.max(0, Math.min(p.prev, this.course.steps.length - 1)));
+    }
+    return true;
   }
   addTemplate(id: TemplateId, o: { layout?: SlideCanvas["layout"] } = {}) {
     const cur = this.step;
@@ -3451,6 +3555,17 @@ export class CourseEditor implements InspectorHost {
   private onKey(e: KeyboardEvent) {
     // the preview player listens on the document: keys typed in the editor stay in the editor
     e.stopPropagation();
+    // Échap on « Que voulez-vous montrer ? » of a new slide: no slide is added
+    if (
+      e.key === "Escape" &&
+      this.pendingNew?.id === this.step?.id &&
+      !this.typing(e.target) &&
+      !document.querySelector(".ce-pop")
+    ) {
+      e.preventDefault();
+      this.dropPending();
+      return;
+    }
     if (
       e.defaultPrevented ||
       this.typing(e.target) ||

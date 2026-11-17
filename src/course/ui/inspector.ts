@@ -3056,7 +3056,7 @@ export class Inspector {
             onClick: () => set([...list, defaultCheck(id)]),
           }));
         popover(add, items, {
-          title: this.t("Checked by the sim", "Vérifié par le simulateur"),
+          title: this.t("Checked automatically", "Vérifié automatiquement"),
           width: 300,
           cls: "scroll",
         });

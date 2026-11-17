@@ -39,3 +39,110 @@
     box-shadow: 0 0 0 5px rgb(31 138 76 / 0.08);
   }
 }
+
+/* « Reprise à la diapo 4 · Recommencer » sits in the top bar's subtitle, never as a toast over the slide (item 53) */
+.pr-resume {
+  color: inherit;
+}
+.pr-resume-b {
+  min-height: 44px;
+  margin: -12px 0;
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--gl-accent, #0b63ce);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+/* every step of the strip is a picture, its kind as a badge; the strip fades where more slides hide */
+.pr-st .pr-st-k.cp-kind {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  max-width: calc(100% - 8px);
+  margin: 0;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  line-height: 16px;
+  background: rgb(255 255 255 / 0.94);
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgb(20 24 31 / 0.18);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.pr-stripwrap {
+  scroll-behavior: smooth;
+}
+.pr-stripwrap.fade-r {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 56px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 56px), transparent);
+}
+.pr-stripwrap.fade-l {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 56px), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - 56px), transparent);
+}
+.pr-stripwrap.fade-l.fade-r {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 56px, #000 calc(100% - 56px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 56px, #000 calc(100% - 56px), transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .pr-stripwrap {
+    scroll-behavior: auto;
+  }
+}
+
+/* driving the demonstration (item 52): its controls scroll, the notes stay in sight right under them and fold */
+@media (min-width: 1001px) {
+  .pr-side.pr-driving {
+    overflow: hidden;
+  }
+  .pr-side.pr-driving > .dm-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+  }
+  .pr-side.pr-driving > .pr-notes {
+    flex: 0 0 auto;
+    max-height: 36%;
+    overflow: auto;
+  }
+  .pr-side.pr-driving > .pr-card:not(.pr-notes) {
+    flex: 0 0 auto;
+  }
+}
+.pr-notes-fold > summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  margin: -10px 0;
+  cursor: pointer;
+  list-style: none;
+}
+.pr-notes-fold > summary::-webkit-details-marker {
+  display: none;
+}
+.pr-notes-fold > summary::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  opacity: 0.6;
+}
+.pr-notes-fold:not([open]) > summary::after {
+  transform: rotate(-45deg);
+}
+.pr-notes-fold > summary h2 {
+  margin: 0;
+}
+/* the demonstration has the one « Pause »: the slide's own pause button steps aside while it is driven */
+.pr-app.pr-demo-on .sl-motion-btn {
+  display: none;
+}

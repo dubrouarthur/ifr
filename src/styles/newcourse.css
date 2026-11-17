@@ -672,3 +672,54 @@
   color: #5d6671;
   font-size: 0.875rem;
 }
+
+/* the starting points (audit item 62): one even grid of 16:9 covers, no double-width card; « Partir d'une
+   description (IA) » is its first card */
+.nc-grid {
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  align-items: stretch;
+}
+.nc-radios {
+  display: contents;
+}
+.nc-card.is-feature {
+  grid-column: auto;
+}
+.nc-card.is-feature .nc-card-t {
+  font-size: inherit;
+}
+button.nc-card {
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+}
+.nc-card-ai {
+  border-style: dashed;
+  border-color: var(--rule-strong);
+  box-shadow: none;
+}
+.nc-card-ai:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.nc-cover-ai {
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.nc-cover.nc-cover-ai > * {
+  position: static;
+  inset: auto;
+}
+@media (max-width: 760px) {
+  .nc-grid {
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  }
+}
+@media (max-width: 560px) {
+  .nc-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

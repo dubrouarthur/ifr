@@ -16,7 +16,8 @@ import {
 } from "./player";
 import { DemoPanel } from "./demoPilot";
 import "../../styles/presenter.css";
-import { btn, L, taskChip } from "./reader";
+import { btn, L, ps, taskChip } from "./reader";
+import { toDesignedSlide } from "./templates";
 import { courseMinutes } from "./outline";
 import { stagePoseOf } from "../scene";
 import { renderThumb } from "../canvas/render";
@@ -70,6 +71,8 @@ const S = {
     "Espace suivant · Échap ferme la démonstration · N écran noir",
   ],
   late: ["behind the plan", "en retard sur le plan"],
+  resumed: ["Resumed at slide {n}", "Reprise à la diapo {n}"],
+  startOver: ["Start over", "Recommencer"],
 } as const;
 const st = (
   k: keyof typeof S,
@@ -120,6 +123,12 @@ export class Presenter {
   private slideHost: SlideHost | null = null;
   private demo: DemoPanel;
   private demoT = 0;
+  /** the presentation picked up where it was left (said in the top bar, never a toast over the slide) */
+  private resumedAt: number | null = null;
+  private resumeObs: MutationObserver | null = null;
+  /** the notes card, folded or not, while the demonstration is driven */
+  private notesOpen = true;
+  private stripWrap: HTMLElement;
 
   constructor(private o: PresenterOptions) {
     this.lang = o.lang;
@@ -142,6 +151,13 @@ export class Presenter {
     });
     const main = h("div", { class: "pr-main" });
     this.strip = h("ol", { class: "pr-strip" });
+    this.stripWrap = h(
+      "nav",
+      { class: "pr-stripwrap", "aria-label": st("strip", this.lang) },
+      this.strip,
+    );
+    // the strip fades at an edge only while more slides hide past it
+    this.stripWrap.addEventListener("scroll", () => this.stripFade(), { passive: true });
     this.el.append(
       this.head,
       h(
@@ -151,11 +167,7 @@ export class Presenter {
           "div",
           { class: "pr-col" },
           main,
-          h(
-            "nav",
-            { class: "pr-stripwrap", "aria-label": st("strip", this.lang) },
-            this.strip,
-          ),
+          this.stripWrap,
         ),
         this.side,
       ),
@@ -214,6 +226,7 @@ export class Presenter {
     this.link.on((m) => {
       if (m.t === "hello") this.sync();
     });
+    this.watchResume(main);
     this.ready = true;
     document.addEventListener("keydown", this.onKey);
     // the deck's keys go before the player's (arrows fly the aircraft instead of turning the page)
@@ -249,6 +262,7 @@ export class Presenter {
     window.clearInterval(this.demoT);
     document.removeEventListener("keydown", this.onKey);
     window.removeEventListener("keydown", this.onDemoKey, true);
+    this.resumeObs?.disconnect();
     this.demo.destroy();
     this.link.post({ t: "bye" });
     this.link.close();
@@ -375,6 +389,32 @@ export class Presenter {
     }
   };
 
+  /**
+   * The player picks the presentation up where it was left and says so in a toast over the slide: the presenter
+   * says it in its top bar instead (« Reprise à la diapo 4 · Recommencer »), the slide stays clear.
+   */
+  private watchResume(main: HTMLElement) {
+    const toast = main.querySelector<HTMLElement>(".cp-toast");
+    if (!toast || typeof MutationObserver === "undefined") return;
+    const check = () => {
+      if (toast.hidden) return;
+      const n = this.player.stepIndex + 1;
+      if (n > 1 && (toast.textContent ?? "").startsWith(ps("resumed", this.lang, { n }))) {
+        toast.hidden = true;
+        this.resumedAt = n - 1;
+        if (this.ready) this.renderHead();
+      }
+    };
+    this.resumeObs = new MutationObserver(check);
+    this.resumeObs.observe(toast, { attributes: true, attributeFilter: ["hidden"], childList: true, subtree: true });
+  }
+  private stripFade() {
+    const w = this.stripWrap;
+    const max = w.scrollWidth - w.clientWidth;
+    w.classList.toggle("fade-l", w.scrollLeft > 4);
+    w.classList.toggle("fade-r", max - w.scrollLeft > 4);
+  }
+
   // ---------------------------------------------------------------- render
   private renderClock() {
     const el = (Date.now() - this.t0) / 1000;
@@ -433,6 +473,25 @@ export class Presenter {
         ),
       ),
     );
+    // picked up where it was left: said here while that slide is on, with the way back to the start
+    if (this.resumedAt !== null && this.resumedAt !== this.player.stepIndex) this.resumedAt = null;
+    let resumed: HTMLElement | null = null;
+    if (this.resumedAt !== null) {
+      const again = h("button", { type: "button", class: "pr-resume-b" }, st("startOver", lang));
+      again.addEventListener("click", () => {
+        this.resumedAt = null;
+        this.player.goTo(0);
+        this.renderHead();
+      });
+      resumed = h(
+        "span",
+        { class: "pr-resume", role: "status" },
+        " · ",
+        st("resumed", lang, { n: this.resumedAt + 1 }),
+        " · ",
+        again,
+      );
+    }
     this.head.replaceChildren(
       btn(st("exit", lang), "", () => this.o.onExit(), "back"),
       h(
@@ -440,7 +499,7 @@ export class Presenter {
         { class: "pr-title" },
         // the page's one h1: the course being presented
         h("h1", { class: "pr-h1" }, L(this.o.course.title, lang)),
-        h("span", { class: "pr-sub" }, this.stepEl, " · ", this.clock),
+        h("span", { class: "pr-sub" }, this.stepEl, " · ", this.clock, resumed),
       ),
       h("span", { class: "pr-sp" }),
       langSeg,
@@ -468,7 +527,21 @@ export class Presenter {
           },
           pic,
           h("span", { class: "pr-st-n num" }, String(i + 1)),
+          // the kind of step (À vous, Question, Vol…) as a badge on its picture
+          (() => {
+            const k = taskChip(s, lang);
+            if (k) k.classList.add("pr-st-k");
+            return k;
+          })(),
         );
+        // every step gets a real picture: a slide as it is, any other step as the slide it would make
+        let shown = s.slide;
+        if (!shown)
+          try {
+            shown = toDesignedSlide(s, c).slide;
+          } catch {
+            shown = undefined;
+          }
         // drawn once the console is on the page (the strip is built before it is mounted)
         let tries = 0;
         const draw = () => {
@@ -479,7 +552,7 @@ export class Presenter {
           }
           {
             try {
-              const v = renderThumb(s.slide!, pic, {
+              const v = renderThumb(shown!, pic, {
                 lang,
                 theme: c.theme,
                 brand: c.brand,
@@ -492,7 +565,7 @@ export class Presenter {
             }
           }
         };
-        if (s.slide) requestAnimationFrame(draw);
+        if (shown) requestAnimationFrame(draw);
         else pic.append(h("span", { class: "pr-st-t" }, L(s.title, lang)));
         b.addEventListener("click", () => this.player.goTo(i));
         return h("li", {}, b);
@@ -507,9 +580,16 @@ export class Presenter {
       b.classList.toggle("on", on);
       if (on) {
         b.setAttribute("aria-current", "step");
-        b.scrollIntoView({ block: "nearest", inline: "nearest" });
+        // the current slide comes into the strip's view (the strip only: the page never scrolls)
+        const w = this.stripWrap;
+        const li = b.parentElement ?? b;
+        const left = li.offsetLeft;
+        const right = left + li.offsetWidth;
+        if (left < w.scrollLeft + 24 || right > w.scrollLeft + w.clientWidth - 24)
+          w.scrollLeft = Math.max(0, left - (w.clientWidth - li.offsetWidth) / 2);
       } else b.removeAttribute("aria-current");
     });
+    this.stripFade();
   }
   private renderSide() {
     const lang = this.lang;
@@ -552,23 +632,36 @@ export class Presenter {
         : h("p", { class: "pr-muted" }, st("end", lang)),
     );
     const notes = cur.notes ? L(cur.notes, lang) : "";
-    const notesCard = h(
-      "section",
-      { class: "pr-card pr-notes" },
-      h("h2", {}, st("notes", lang)),
-      notes
-        ? h(
-            "div",
-            { class: "pr-notes-t" },
-            ...notes.split(/\n+/).map((p) => h("p", {}, p)),
-          )
-        : h("p", { class: "pr-muted" }, st("noNotes", lang)),
-    );
+    const notesBody = notes
+      ? h(
+          "div",
+          { class: "pr-notes-t" },
+          ...notes.split(/\n+/).map((p) => h("p", {}, p)),
+        )
+      : h("p", { class: "pr-muted" }, st("noNotes", lang));
     this.demo.render();
-    const parts: (HTMLElement | null)[] = [this.demo.el, nextCard, notesCard];
+    const driving = this.demo.open;
+    // driving the demonstration keeps the notes in sight, right under its controls, and they fold away
+    let notesCard: HTMLElement;
+    if (driving) {
+      const d = h(
+        "details",
+        { class: "pr-card pr-notes pr-notes-fold" },
+        h("summary", {}, h("h2", {}, st("notes", lang))),
+        notesBody,
+      ) as HTMLDetailsElement;
+      d.open = this.notesOpen;
+      d.addEventListener("toggle", () => (this.notesOpen = d.open));
+      notesCard = d;
+    } else notesCard = h("section", { class: "pr-card pr-notes" }, h("h2", {}, st("notes", lang)), notesBody);
+    this.side.classList.toggle("pr-driving", driving);
+    this.el.classList.toggle("pr-demo-on", driving);
+    const parts: (HTMLElement | null)[] = driving
+      ? [this.demo.el, notesCard, nextCard]
+      : [this.demo.el, nextCard, notesCard];
     if (!this.link.ok)
       parts.push(h("p", { class: "pr-warn" }, st("noChannel", lang)));
-    else
+    else if (!driving)
       parts.push(
         h("p", { class: "pr-muted pr-small" }, st("projectorHint", lang)),
       );

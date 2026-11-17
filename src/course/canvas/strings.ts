@@ -27,7 +27,7 @@ const S = {
   quizSlot: ["Question", "Question"],
   calcSlot: ["Calculation", "Calcul"],
   calcNewNumbers: ["New numbers each try", "Nouveaux chiffres à chaque essai"],
-  checkedBySim: ["Checked by the sim", "Vérifié par le simulateur"],
+  checkedBySim: ["Checked automatically", "Vérifié automatiquement"],
   doThis: ["Do this", "À faire"],
   quizRight: ["Correct", "Juste"],
   quizYours: ["Your answer", "Votre réponse"],

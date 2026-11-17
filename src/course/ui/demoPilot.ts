@@ -52,15 +52,13 @@ const S = {
   level: ["Level off", "Mettre en palier"],
   failure: ["Failure…", "Panne…"],
   failures: ["Failures", "Pannes"],
-  freeze: ["Freeze", "Figer"],
-  unfreeze: ["Resume", "Reprendre"],
   reset: ["Back to the start", "Revenir au départ"],
   replay: ["Replay the animation", "Rejouer l’animation"],
   pause: ["Pause", "Pause"],
-  resume: ["Resume the animation", "Reprendre l’animation"],
+  paused: ["Paused · resume", "En pause · reprendre"],
   give: ["Let a student fly here", "Faire piloter un élève ici"],
   takeBack: ["Take the controls back", "Reprendre les commandes"],
-  yourTurnOpen: ["Open « Your turn »", "Ouvrir « À vous »"],
+  yourTurnOpen: ["Open “Your turn”", "Ouvrir « À vous »"],
   studentLine: [
     "Your turn: the student flies with these controls or the ones on the slide. The projector says so.",
     "À vous : l’élève pilote avec ces commandes ou celles de la diapo. La projection l’affiche.",
@@ -872,38 +870,21 @@ export class DemoDeck {
         },
         { on: this.failOpen },
       ),
+      // one way to pause, whatever moves (the aircraft or the slide's animation), and it shows it is paused
       this.chip(
-        this.frozen ? dw("unfreeze", lang) : dw("freeze", lang),
-        () => this.toggleFreeze(),
+        this.paused ? dw("paused", lang) : dw("pause", lang),
+        () => this.togglePause(),
         {
-          on: this.frozen,
-          ico: this.frozen ? "play" : "timer",
+          on: this.paused,
+          ico: this.paused ? "play" : "timer",
         },
       ),
       this.chip(dw("reset", lang), () => this.reset(), { ico: "refresh" }),
     );
-    if (e.motionSpec) {
-      const st = e.motion?.state;
+    if (e.motionSpec)
       wrap.append(
         this.chip(dw("replay", lang), () => this.replay(), { ico: "play" }),
       );
-      if (st === "playing" || st === "paused")
-        wrap.append(
-          this.chip(
-            st === "paused" ? dw("resume", lang) : dw("pause", lang),
-            () => {
-              const r = this.entry?.motion;
-              if (!r) return;
-              const op = r.state === "paused" ? "resume" : "pause";
-              if (op === "pause") r.pause();
-              else r.resume();
-              this.o.sims.ensureLoop();
-              this.o.onAnim(entryId(this.entry!), op);
-              this.fillChips();
-            },
-          ),
-        );
-    }
     if (!this.failOpen) return wrap;
     const list = h("div", {
       class: "dm-fails",
@@ -929,12 +910,34 @@ export class DemoDeck {
     }
     return h("div", {}, wrap, list);
   }
-  private toggleFreeze() {
+  /** Paused: the aircraft is frozen, or the slide's animation is paused (by this deck or on the slide). */
+  private get paused(): boolean {
+    return this.frozen || this.entry?.motion?.state === "paused";
+  }
+  /** « Pause » / « En pause · reprendre »: the animation while it plays on its own, else the aircraft. */
+  private togglePause() {
     const e = this.entry;
     if (!e) return;
-    if (!this.pilot?.active) this.take();
-    this.frozen = !this.frozen;
-    this.o.sims.run(e, !this.frozen);
+    const r = e.motion;
+    if (this.paused) {
+      if (this.frozen) {
+        this.frozen = false;
+        this.o.sims.run(e, true);
+      }
+      if (r?.state === "paused") {
+        r.resume();
+        this.o.sims.ensureLoop();
+        this.o.onAnim(entryId(e), "resume");
+      }
+    } else if (r?.state === "playing" && !this.pilot?.active) {
+      r.pause();
+      this.o.sims.ensureLoop();
+      this.o.onAnim(entryId(e), "pause");
+    } else {
+      if (!this.pilot?.active) this.take();
+      this.frozen = true;
+      this.o.sims.run(e, false);
+    }
     this.fillChips();
   }
   private reset() {
@@ -1039,7 +1042,7 @@ const P = {
   sim: ["Open the simulator", "Ouvrir le simulateur"],
   simSub: ["The full cockpit, from this situation", "Le poste de pilotage complet, sur cette situation"],
   simNone: [
-    "This slide names no flight situation of the course: choose one in the editor (« Situation de vol »).",
+    "This slide names no flight situation of the course: choose one in the editor (“Flight situation”).",
     "Cette diapo ne nomme pas de situation de vol du cours : choisissez-en une dans l’éditeur (« Situation de vol »).",
   ],
   simOff: [
@@ -1056,11 +1059,11 @@ const P = {
     "Piloter la démonstration : vous virez, montez, changez la puissance ; la projection montre les mêmes instruments.",
   ],
   hint2: [
-    "Open the simulator: the full cockpit on this situation; « Back to the course » brings you back here.",
+    "Open the simulator: the full cockpit on this situation; “Back to the course” brings you back here.",
     "Ouvrir le simulateur : le poste de pilotage sur cette situation ; « Reprendre le cours » vous ramène ici.",
   ],
   hint3: [
-    "Let a student fly here: « Your turn », the student flies at this device.",
+    "Let a student fly here: “Your turn”, the student flies at this device.",
     "Faire piloter un élève ici : « À vous », l’élève pilote sur cet appareil.",
   ],
   gotIt: ["Got it", "Compris"],

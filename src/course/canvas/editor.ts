@@ -33,6 +33,10 @@ import { loc } from "./text";
 import { tx } from "./strings";
 import { blockLabel } from "./blocks";
 import type { BlockDraft } from "./factory";
+import { barSpot, type Rect } from "./barSpot";
+
+/** blocks with words the format bar must not cover (barSpot.ts) */
+const WORDY = new Set<string>(["text", "callout", "quiz", "checklist", "calc", "table"]);
 
 export interface CanvasEditorOptions extends Omit<
   SlideRenderOptions,
@@ -192,6 +196,8 @@ export class CanvasEditor {
   private shown: SlideCanvas;
   private lang: Lang;
   private lastTap: { id: string; t: number } | null = null;
+  /** a press on the text block already selected: on a still release, it opens for typing */
+  private clickEdit: { id: string; x: number; y: number } | null = null;
   private pointer: number | null = null;
   private ro: ResizeObserver | null = null;
   private raf = 0;
@@ -524,8 +530,19 @@ export class CanvasEditor {
       if (kind === "rotate") this.core.beginRotate();
       else if (kind === "from" || kind === "to") this.core.beginArrowEnd(kind);
       else if (kind === "target") this.core.beginTarget();
-      else this.core.beginResize(kind as Handle, p);
+      else {
+        this.core.beginResize(kind as Handle, p);
+        // a thin text line (an eyebrow) is mostly handles: a still click on one still types into the text
+        const one = this.core.single();
+        this.clickEdit =
+          one && (one.kind === "text" || one.kind === "callout") && !one.frame.locked
+            ? { id: one.id, x: e.clientX, y: e.clientY }
+            : null;
+      }
     } else {
+      // the block under the pointer (a text inside a selected group counts as itself)
+      const pre = new Set(this.core.selection);
+      const under = this.hitAt(e.clientX, e.clientY);
       const kind = this.core.pointerDown(p, this.mods(e), 10 / this.view.k);
       // a second tap or click on the same text block opens the text editor (touch has no dblclick)
       if (kind === "move") {
@@ -545,7 +562,16 @@ export class CanvasEditor {
           return;
         }
         this.lastTap = b ? { id: b.id, t: now } : null;
-      }
+        // a click on the text block that was already selected types into it (on release, if it did not move)
+        this.clickEdit =
+          under &&
+          pre.has(under.id) &&
+          !e.shiftKey &&
+          (under.kind === "text" || under.kind === "callout") &&
+          !under.frame.locked
+            ? { id: under.id, x: e.clientX, y: e.clientY }
+            : null;
+      } else this.clickEdit = null;
     }
     if (this.core.gesture) {
       this.pointer = e.pointerId;
@@ -598,8 +624,20 @@ export class CanvasEditor {
     }
     if (e.pointerId !== this.pointer) return;
     this.pointer = null;
+    const ce = this.clickEdit;
+    this.clickEdit = null;
     if (cancelled) this.core.cancel();
     else this.core.pointerUp();
+    if (ce && !cancelled && Math.hypot(e.clientX - ce.x, e.clientY - ce.y) < 6 && this.core.selection.includes(ce.id)) {
+      this.el.classList.remove("is-dragging");
+      try {
+        this.el.releasePointerCapture(e.pointerId);
+      } catch {
+        /* already released */
+      }
+      this.openText(ce.id);
+      return;
+    }
     this.el.classList.remove("is-dragging");
     try {
       this.el.releasePointerCapture(e.pointerId);
@@ -1062,15 +1100,21 @@ export class CanvasEditor {
     const vy0 = host && this.zoom > 1 ? host.scrollTop : 0;
     const vw = host && this.zoom > 1 ? host.clientWidth : this.el.clientWidth;
     const vh = host && this.zoom > 1 ? host.clientHeight : this.el.clientHeight;
-    const [x, y] = this.view.toView([box.x + box.w / 2, box.y]);
     const bw = bar.offsetWidth || 300;
     const bh = bar.offsetHeight || 52;
-    let top = y - bh - 30;
-    if (top < vy0 + 6) top = this.view.toView([0, box.y + box.h])[1] + 18;
-    top = Math.min(top, vy0 + vh - bh - 6);
-    const left = Math.max(vx0 + 6, Math.min(vx0 + vw - bw - 6, x - bw / 2));
+    const rect = (f: { x: number; y: number; w: number; h: number }): Rect => {
+      const [x0, y0] = this.view.toView([f.x, f.y]);
+      const [x1, y1] = this.view.toView([f.x + f.w, f.y + f.h]);
+      return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    };
+    // never over the other words of the slide (a subtitle's bar on the title): above, below, then beside
+    const sel = new Set(this.core.selection);
+    const words = this.core.canvas.blocks
+      .filter((b) => !sel.has(b.id) && !b.hiddenInEditor && WORDY.has(b.kind))
+      .map((b) => rect(b.frame));
+    const { left, top } = barSpot(rect(box), { w: bw, h: bh }, words, { x: vx0, y: vy0, w: vw, h: vh });
     bar.style.left = `${left}px`;
-    bar.style.top = `${Math.max(vy0 + 6, top)}px`;
+    bar.style.top = `${top}px`;
   }
 
   // ---------------------------------------------------------------- popovers of the format bar
@@ -1411,7 +1455,7 @@ export class CanvasEditor {
 
   // ---------------------------------------------------------------- in-place text editing
   /** Edit a text or callout block's words in place (the raw inline syntax: **bold**, *italic*, lists). */
-  openText(id: string) {
+  openText(id: string, o: { selectAll?: boolean } = {}) {
     const b = this.core.canvas.blocks.find((x) => x.id === id);
     if (!b || (b.kind !== "text" && b.kind !== "callout") || b.frame.locked)
       return;
@@ -1459,10 +1503,16 @@ export class CanvasEditor {
       setTimeout(() => this.textEd?.ta === ta && this.closeText(), 0),
     );
     this.drawBar();
-    requestAnimationFrame(() => {
+    // always focus the words (a slow double-click, a click on « Cliquez pour ajouter un titre »): the caret at the
+    // end, or every word selected when they are a placeholder to type over
+    const focus = () => {
+      if (this.textEd?.ta !== ta) return;
       ta.focus({ preventScroll: true });
-      ta.setSelectionRange(ta.value.length, ta.value.length);
-    });
+      if (o.selectAll) ta.select();
+      else ta.setSelectionRange(ta.value.length, ta.value.length);
+    };
+    focus();
+    requestAnimationFrame(focus);
   }
   private placeText() {
     const ed = this.textEd;

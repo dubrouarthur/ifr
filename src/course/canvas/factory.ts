@@ -624,8 +624,8 @@ const INTERACTIVE_ITEMS: LibraryItem[] = [
     id: "interactive:checklist",
     tab: "interactive",
     title: L(
-      "Do this (checked by the sim)",
-      "À faire (vérifié par le simulateur)",
+      "Do this (checked automatically)",
+      "À faire (vérifié automatiquement)",
     ),
     tags: ["checklist", "do this", "goal", "à faire", "your turn"],
     preview: { k: "glyph", glyph: "checklist" },

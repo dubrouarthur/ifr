@@ -1277,6 +1277,20 @@ export class CourseHistory {
     this.lastT = now;
     return true;
   }
+  /** How many undo steps there are (a mark: « is the last push still the newest? »). */
+  get depth(): number {
+    return this.past.length;
+  }
+  /**
+   * Take back the newest push as if it never happened (no redo): a « Nouvelle diapo » left without a choice.
+   * Only when nothing was pushed since the mark `depth` gave; returns the state before it, else null.
+   */
+  discard(depth: number): Course | null {
+    if (depth !== this.past.length || !this.past.length) return null;
+    this.cur = this.past.pop()!;
+    this.lastKey = null;
+    return this.current;
+  }
   /** Replace the current state without an undo step (a save bumped rev / updated / hash). */
   amend(c: Course) {
     this.cur = JSON.stringify(c);

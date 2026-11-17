@@ -320,7 +320,7 @@ export function mountNewCourse(
           {},
           T(
             lang,
-            "Nothing is saved before « Create the course »",
+            "Nothing is saved before “Create the course”",
             "Rien n’est enregistré avant « Créer le cours »",
           ),
         ),
@@ -431,11 +431,43 @@ export function mountNewCourse(
     // ---- the starting points
     const list = startersFor(program);
     if (!list.some((d) => d.id === pick.id)) pick = list[0];
-    const grid = h("div", {
-      class: "nc-grid",
+    // « Partir d'une description (IA) » is the first card of the grid (a button that opens the assistant), then
+    // the templates as one radio group (audit item 62)
+    const radios = h("div", {
+      class: "nc-radios",
       role: "radiogroup",
       "aria-label": T(lang, "Starting point", "Point de départ"),
     });
+    const ai = aiCreateButton({ lang, store: o.store, program, onCreated: o.onCreated });
+    const sparkIco = ai.querySelector("svg");
+    sparkIco?.setAttribute("width", "30");
+    sparkIco?.setAttribute("height", "30");
+    ai.className = "nc-card nc-card-ai";
+    ai.style.marginTop = "";
+    ai.replaceChildren(
+      h("div", { class: "nc-cover nc-cover-ai", "aria-hidden": "true" }, sparkIco),
+      h(
+        "div",
+        { class: "nc-card-b" },
+        h("b", { class: "nc-card-t" }, T(lang, "Start from a description (AI)", "Partir d’une description (IA)")),
+        h(
+          "span",
+          { class: "nc-card-p" },
+          T(
+            lang,
+            "Describe the course in a few lines: the slides are laid out for you, ready to change.",
+            "Décrivez le cours en quelques lignes : les diapos sont mises en page pour vous, prêtes à modifier.",
+          ),
+        ),
+        // what it needs, said before the click: a paid key, about a minute (audit item 42)
+        h(
+          "span",
+          { class: "nc-card-m" },
+          T(lang, "With your Claude key (paid) · about 1 minute", "Avec votre clé Claude (payante) · environ 1 minute"),
+        ),
+      ),
+    );
+    const grid = h("div", { class: "nc-grid" }, ai, radios);
     const cards: HTMLElement[] = [];
     const select = (d: DeckStarter, focus = false) => {
       pick = d;
@@ -504,7 +536,7 @@ export function mountNewCourse(
         }
       });
       cards.push(card);
-      grid.append(card);
+      radios.append(card);
       if (blank) {
         cover.append(
           h("span", { class: "nc-plus" }, svg("M12 5v14M5 12h14", 22)),
@@ -657,21 +689,6 @@ export function mountNewCourse(
             lang,
             "Start from a template that is already laid out: you change the words, the instruments stay live. Everything can be changed afterwards.",
             "Partez d’un modèle déjà mis en page : vous changez les mots, les instruments restent vivants. Tout se modifie ensuite.",
-          ),
-        ),
-        // « Créer avec l’IA » says what it needs before the click: a paid key, about a minute (audit item 42)
-        h(
-          "div",
-          { class: "nc-ai-row" },
-          aiCreateButton({ lang, store: o.store, program, onCreated: o.onCreated }),
-          h(
-            "span",
-            { class: "nc-ai-note" },
-            T(
-              lang,
-              "With your Claude key (paid) · about 1 minute",
-              "Avec votre clé Claude (payante) · environ 1 minute",
-            ),
           ),
         ),
         fields,

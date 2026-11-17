@@ -297,11 +297,11 @@ export class TrayView {
       { class: "ce-panel-note" },
       this.items.length
         ? T(
-            `${this.items.length} capture(s) wait under « Your captures », at the top of this panel.`,
+            `${this.items.length} capture(s) wait under “Your captures”, at the top of this panel.`,
             `${this.items.length} capture(s) vous attendent sous « Vos captures », en haut de ce panneau.`,
           )
         : T(
-            "Your captures will appear at the top of this panel, under « Your captures ».",
+            "Your captures will appear at the top of this panel, under “Your captures”.",
             "Vos captures apparaîtront en haut de ce panneau, sous « Vos captures ».",
           ),
     );

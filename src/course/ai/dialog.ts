@@ -376,7 +376,7 @@ export function openAiAssistant(o: AiAssistantOptions): AiAssistant {
             {},
             T(
               lang,
-              "In « API keys », create a key and copy it (it starts with sk-ant-).",
+              "In “API keys”, create a key and copy it (it starts with sk-ant-).",
               "Dans « API keys », créez une clé et copiez-la (elle commence par sk-ant-).",
             ),
           ),
