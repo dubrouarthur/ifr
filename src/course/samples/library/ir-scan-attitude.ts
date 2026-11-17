@@ -43,6 +43,13 @@ function scenes(): Record<string, SimScene> {
       { pos: AREA, altFt: 3000, hdg: 270, iasKt: 100 },
       { label: "Straight and level · 3,000 ft · heading 270 · 100 KIAS" },
     ),
+    // the « À vous » starts off the numbers (150 ft low, 15° off heading), as an instructor sets it up: the student
+    // has something to fix before holding, and the trimmed aircraft never gets there by itself
+    "sa.off": sceneA1(
+      "sa.off",
+      { pos: AREA, altFt: 2850, hdg: 255, iasKt: 100 },
+      { label: "Off the numbers · 2,850 ft · heading 255 · 100 KIAS" },
+    ),
     "sa.low": sceneA1(
       "sa.low",
       { pos: AREA, altFt: 2900, hdg: 270, iasKt: 110, pitch: -3, vsFpm: -400 },
@@ -308,13 +315,13 @@ export function irScanAttitudeCourse(): Course {
       ],
       view: SIX,
       alt: L(
-        "Live six-pack, 3,000 ft, heading 270, 100 KIAS",
-        "Six instruments en direct, 3 000 ft, cap 270, 100 KIAS",
+        "Live six-pack, 2,850 ft, heading 255, 100 KIAS",
+        "Six instruments en direct, 2 850 ft, cap 255, 100 KIAS",
       ),
-      scene: "sa.level",
+      scene: "sa.off",
       prompt: L(
-        "Your turn: hold 3,000 ft and heading 270 for 60 s",
-        "À vous : tenez 3 000 ft et le cap 270 pendant 60 s",
+        "Your turn: back to 3,000 ft and heading 270, then hold them 60 s",
+        "À vous : revenez à 3 000 ft et au cap 270, puis tenez-les 60 s",
       ),
       controls: ["pitch", "bank", "power"],
       goal: {
@@ -338,8 +345,8 @@ export function irScanAttitudeCourse(): Course {
         "FAA-S-ACS-8C · altitude ±100 ft, cap ±10°",
       ),
       reader: L(
-        "Your turn on the live six-pack: no assist. Hold 3,000 ft and heading 270 for 60 seconds, inside the instrument rating tolerances (altitude ±100 ft, heading ±10°, FAA-S-ACS-8C). Keep the eyes coming back to the attitude indicator and make small, early corrections.",
-        "À vous sur les six instruments en direct, sans aide : tenez 3 000 ft et le cap 270 pendant 60 secondes, dans les tolérances de la qualification (altitude ±100 ft, cap ±10°, FAA-S-ACS-8C). Revenez toujours à l’horizon artificiel et corrigez tôt, et peu.",
+        "Your turn on the live six-pack: no assist. The aircraft is at 2,850 ft on heading 255: climb back to 3,000 ft, turn to 270, then hold them for 60 seconds, inside the instrument rating tolerances (altitude ±100 ft, heading ±10°, FAA-S-ACS-8C). Keep the eyes coming back to the attitude indicator and make small, early corrections.",
+        "À vous sur les six instruments en direct, sans aide : l’avion est à 2 850 ft au cap 255. Remontez à 3 000 ft, prenez le 270, puis tenez-les pendant 60 secondes, dans les tolérances de la qualification (altitude ±100 ft, cap ±10°, FAA-S-ACS-8C). Revenez toujours à l’horizon artificiel et corrigez tôt, et peu.",
       ),
     }),
     // 7 ------------------------------------------------------------------ the radial cross-check and its errors

@@ -224,6 +224,19 @@ const LOW_FINAL: MotionScript = {
     turn: [[0, 0]],
   },
 };
+/** Short final, on the path: 68 kt and the scene's 400 ft/min down held for 10 s (the 3° path at 68 kt is about
+ *  360 ft/min, 5 × the groundspeed, FAA AFH ch. 8; the scene's figure, C172S POH sect. 4 normal approach 60–75 KIAS).
+ *  The needles stay put while the runway grows: what « stabilised » looks like. Replayed in a loop, it ends well above
+ *  the ground (about 590 ft). */
+const ON_PATH_FINAL: MotionScript = {
+  duration: 10,
+  telling: 6,
+  tracks: {
+    ias: [[0, 68]],
+    vs: [[0, -400]],
+    turn: [[0, 0]],
+  },
+};
 /** An airliner turn at 1.5°/s, FL100, 250 kt: about 22° of bank (tan φ = ω·V/g), as the autopilot flies it. */
 const AIRLINER_TURN: MotionScript = {
   duration: 40,
@@ -1756,6 +1769,18 @@ function momentSlide(o: { id: string; title: L10n; items: L10n[]; scene: string;
       T("title", o.title, G.left, G.titleY, 720, 168),
       ...lines(o.items, 720),
       view(`${o.id}.view`, "outside", o.scene, o.alt, 912, 216, 888, 500),
+      // the needles under the view, with the view on the same aircraft: it flies the stabilised final (ON_PATH_FINAL)
+      withMotion(
+        INST(gauge("vsi"), L("Vertical speed, 400 ft/min down", "Variomètre, 400 ft/min en descente"), 1144, 740, 200, 200, {
+          id: `${o.id}.vsi`,
+          scene: o.scene,
+        }),
+        loop({ script: ON_PATH_FINAL }),
+      ),
+      INST(gauge("asi"), L("Airspeed indicator, 68 kt", "Anémomètre, 68 kt"), 1368, 740, 200, 200, {
+        id: `${o.id}.asi`,
+        scene: o.scene,
+      }),
       foot(o.source),
     ],
     o.scene,

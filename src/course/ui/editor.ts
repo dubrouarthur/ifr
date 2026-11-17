@@ -87,6 +87,7 @@ import {
   linearText,
   makeStep,
   moveStep,
+  practiceSceneOf,
   removeStep,
   replaceStep,
   revealsOf,
@@ -98,6 +99,7 @@ import {
   tr,
   type TemplateId,
 } from "./templates";
+import { slideNotes } from "./presenterNotes";
 import {
   ChecksPanel,
   checksForStep,
@@ -182,37 +184,6 @@ const isIpad = () =>
   (/iPad/.test(navigator.userAgent) ||
     (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1));
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
-/** What the presenter does on a ready slide, in the console's own words (« Notes » of the presenter view). */
-function defaultNotes(s: SlideCanvas): { en: string; fr: string } {
-  const bs = s.blocks;
-  const yt = bs.some((b) => !!(b as { yourTurn?: unknown }).yourTurn);
-  const moving = bs.some((b) => b.kind === "instrument" && !!b.motion);
-  const live = bs.some((b) => b.kind === "instrument" || b.kind === "simViewport");
-  const quiz = bs.some((b) => b.kind === "quiz");
-  const en: string[] = [];
-  const fr: string[] = [];
-  if (quiz) {
-    en.push("Let the class answer first, then show the answer and say why.");
-    fr.push("Laissez la classe répondre d’abord, puis montrez la réponse et dites pourquoi.");
-  }
-  if (moving) {
-    en.push("The animation plays by itself; “Replay the animation” in the demonstration deck shows it again.");
-    fr.push("L’animation se joue seule ; « Rejouer l’animation » dans la démonstration la remontre.");
-  }
-  if (live) {
-    en.push("“Fly the demonstration”: heading, altitude and power by hand, the projection follows (try a standard-rate turn).");
-    fr.push("« Piloter la démonstration » : cap, altitude et puissance à la main, la projection suit (essayez un virage standard).");
-  }
-  if (yt) {
-    en.push("“Let a student fly here”: the goal on the slide says when it is done.");
-    fr.push("« Faire piloter un élève ici » : l’objectif de la diapo dit quand c’est réussi.");
-  }
-  if (!en.length) {
-    en.push("Say it in your words; the slide keeps the numbers.");
-    fr.push("Dites-le avec vos mots ; la diapo garde les chiffres.");
-  }
-  return { en: en.join(" "), fr: fr.join(" ") };
-}
 
 /** Re-encode an imported image: WebP (JPEG where the browser cannot write WebP), longest side ≤ 1600 px. */
 export async function encodeImage(
@@ -1302,7 +1273,7 @@ export class CourseEditor implements InspectorHost {
       (b) => b.kind === "text" && (b.style === "display" || b.style === "title") && tr(b.text, "en").trim(),
     );
     if (head && head.kind === "text") title = { en: head.text.en, fr: head.text.fr ?? head.text.en };
-    const notes = defaultNotes(s2);
+    const notes = slideNotes(s2);
     // an empty slide takes the ready slide in place (« + Diapo », then a pick of « Que voulez-vous montrer ? »)
     const cur = this.step;
     if (cur?.slide && !cur.slide.blocks.length && !cur.slide.background?.image) {
@@ -2515,7 +2486,8 @@ export class CourseEditor implements InspectorHost {
       title: s.title,
     });
     const slide = made.step.slide!;
-    if (s.slide.scene) slide.scene = s.slide.scene;
+    // a layout with its own practice situation (the checklist's intercept) keeps it; any other keeps the slide's
+    if (s.slide.scene && !practiceSceneOf(id)) slide.scene = s.slide.scene;
     this.apply(replaceStep(made.course, { ...s, slide }), undefined, {
       inspector: true,
     });

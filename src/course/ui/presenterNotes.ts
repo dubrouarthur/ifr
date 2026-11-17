@@ -10,6 +10,8 @@ import type {
   Lang,
   Quiz,
   ReaderBlock,
+  SlideCanvas,
+  SlideLayoutId,
   Step,
   StepGoal,
 } from "../types";
@@ -153,6 +155,9 @@ export function fallbackNotes(step: Step, lang: Lang): string[] {
   // demo slide showed « Pas de notes pour cette diapo »). A step with one objective or one answer gets the points to
   // say too (interactivity guard: at least two lines to work from), and a reader step (no designed slide) takes its
   // points from the reader.
+  // how to teach with this kind of slide (a layout of the studio), when the step gives less than two lines
+  const teach = step.slide?.layout ? LAYOUT_TEACH[step.slide.layout] : undefined;
+  for (const t of teach ? [teach].flat() : []) if (out.length < 2) push(tx(t, lang));
   if (out.length < 2) {
     const title = plain(tx(step.title, lang));
     /** a point worth saying: a phrase, not a label or the title again */
@@ -203,4 +208,112 @@ function firstSentence(s: string): string {
   if (s.length <= 160) return s;
   const m = /^(.{40,200}?[.!?…])(\s|$)/.exec(s);
   return m ? m[1] : `${s.slice(0, 157).trimEnd()}…`;
+}
+
+/**
+ * How to teach with each kind of slide, for the presenter (the instructor techniques of the FAA Aviation
+ * Instructor's Handbook, ch. 4 « Effective communication » and ch. 5 « The teaching process »: ask before telling,
+ * have the students restate, one idea at a time).
+ */
+const LAYOUT_TEACH: Partial<Record<SlideLayoutId, L10n | L10n[]>> = {
+  cover: {
+    en: "Say in one sentence what the class will be able to do at the end, and how long it takes.",
+    fr: "Dites en une phrase ce que la classe saura faire à la fin, et combien de temps cela prend.",
+  },
+  title: {
+    en: "Say in one sentence what the class will be able to do at the end, and how long it takes.",
+    fr: "Dites en une phrase ce que la classe saura faire à la fin, et combien de temps cela prend.",
+  },
+  section: {
+    en: "Say where we are in the lesson, what was seen, and what this part adds.",
+    fr: "Dites où l’on en est de la leçon, ce qui a été vu, et ce que cette partie ajoute.",
+  },
+  bigNumber: {
+    en: "Ask where the number comes from before you say it, then have a student use it on an example.",
+    fr: "Demandez d’où vient ce chiffre avant de le dire, puis faites-le appliquer par un élève sur un exemple.",
+  },
+  heroDiagram: {
+    en: "Leave the diagram up a few seconds in silence, then ask what the class sees before naming each part.",
+    fr: "Laissez le schéma quelques secondes en silence, puis demandez ce que la classe y voit avant de nommer chaque partie.",
+  },
+  compare: {
+    en: "Ask what changed between the two pictures before you say it: one thing only changes.",
+    fr: "Demandez ce qui a changé entre les deux images avant de le dire : une seule chose change.",
+  },
+  stepByStep: [
+    {
+      en: "Reveal one step at a time, and ask what comes next before each reveal.",
+      fr: "Révélez une étape à la fois, et demandez ce qui vient ensuite avant chaque révélation.",
+    },
+    {
+      en: "At the end, have a student recite the steps in order without the slide, the others check.",
+      fr: "À la fin, faites réciter les étapes dans l’ordre par un élève, sans la diapo ; les autres vérifient.",
+    },
+  ],
+  instrumentNotes: {
+    en: "Point at each callout in turn and ask what the needle says before you read the value.",
+    fr: "Montrez chaque repère à tour de rôle et demandez ce que dit l’aiguille avant de lire la valeur.",
+  },
+  formula: {
+    en: "Write the formula on the board, work the first line with the class, let them do the next one.",
+    fr: "Écrivez la formule au tableau, faites la première ligne avec la classe, laissez-les faire la suivante.",
+  },
+  recap: {
+    en: "Have a student restate each point in their own words before moving on.",
+    fr: "Faites reformuler chaque point par un élève, avec ses mots, avant de passer à la suite.",
+  },
+  ready: {
+    en: "Read the standards aloud: they are the ones of the flight that follows.",
+    fr: "Lisez les critères à voix haute : ce sont ceux du vol qui suit.",
+  },
+  twoColumn: {
+    en: "Take one column at a time, then ask the class for the one difference that matters.",
+    fr: "Prenez une colonne à la fois, puis demandez à la classe la différence qui compte.",
+  },
+  fullBleed: {
+    en: "Leave the picture up a few seconds in silence, then ask what the pilot would do here.",
+    fr: "Laissez l’image quelques secondes en silence, puis demandez ce que ferait le pilote ici.",
+  },
+  calc: {
+    en: "Let them work it out alone for a minute, then compare two answers before showing the solution.",
+    fr: "Laissez-les calculer seuls une minute, puis comparez deux réponses avant de montrer la solution.",
+  },
+};
+
+/** What the presenter does on a new slide (a layout, a ready slide), in the console's own words. Pure. */
+export function slideNotes(s: SlideCanvas): { en: string; fr: string } {
+  const bs = s.blocks;
+  const yt = bs.some((b) => !!(b as { yourTurn?: unknown }).yourTurn);
+  const moving = bs.some((b) => b.kind === "instrument" && !!b.motion);
+  const live = bs.some((b) => b.kind === "instrument" || b.kind === "simViewport");
+  const quiz = bs.some((b) => b.kind === "quiz");
+  const en: string[] = [];
+  const fr: string[] = [];
+  const teach = s.layout ? LAYOUT_TEACH[s.layout] : undefined;
+  if (teach && !quiz && !yt)
+    for (const t of [teach].flat()) {
+      en.push(t.en);
+      fr.push(t.fr ?? t.en);
+    }
+  if (quiz) {
+    en.push("Let the class answer first, then show the answer and say why.");
+    fr.push("Laissez la classe répondre d’abord, puis montrez la réponse et dites pourquoi.");
+  }
+  if (moving) {
+    en.push("The animation plays by itself; “Replay the animation” in the demonstration deck shows it again.");
+    fr.push("L’animation se joue seule ; « Rejouer l’animation » dans la démonstration la remontre.");
+  }
+  if (live) {
+    en.push("“Fly the demonstration”: heading, altitude and power by hand, the projection follows (try a standard-rate turn).");
+    fr.push("« Piloter la démonstration » : cap, altitude et puissance à la main, la projection suit (essayez un virage standard).");
+  }
+  if (yt) {
+    en.push("“Let a student fly here”: the goal on the slide says when it is done.");
+    fr.push("« Faire piloter un élève ici » : l’objectif de la diapo dit quand c’est réussi.");
+  }
+  if (!en.length) {
+    en.push("Say it in your words; the slide keeps the numbers.");
+    fr.push("Dites-le avec vos mots ; la diapo garde les chiffres.");
+  }
+  return { en: en.join(" "), fr: fr.join(" ") };
 }

@@ -80,7 +80,7 @@ export const DECK_STARTERS: readonly DeckStarter[] = [
     presenter: {
       3: L(
         "Have a student recite the five Ts in order while the others check: Turn, Time, Twist, Throttle, Talk (an instructors' memory aid).",
-        "Faites réciter les cinq T dans l’ordre par un élève, les autres vérifient : Virer, Chrono, Tourner, Puissance, Parler (moyen mnémotechnique d’instructeur).",
+        "Faites réciter les 5 T dans l’ordre par un élève, les autres vérifient. Le moyen mnémotechnique se dit en anglais : Turn (virer), Time (chrono), Twist (OBS), Throttle (puissance), Talk (message).",
       ),
     },
     cover: {

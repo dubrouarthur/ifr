@@ -395,7 +395,7 @@ function templateBlocks(id: SlideLayoutId, o: LayoutOptions): SlideBlock[] {
       const items: [string, string][] = [
         ["Anatomy and clearance", "Anatomie et clairance"],
         ["Timing and wind", "Chrono et vent"],
-        ["The five Ts", "Les cinq T"],
+        ["The five Ts", "Les 5 T"],
         ["Fly it at ARD", "En vol à ARD"],
       ];
       const active = 1;
@@ -500,14 +500,15 @@ function templateBlocks(id: SlideLayoutId, o: LayoutOptions): SlideBlock[] {
     // ---------------------------------------------------------------- A7 step sequence (vertical)
     case "stepByStep": {
       const rows: [string, string, string, string][] = [
-        ["Turn", "Virer", "to the outbound or entry heading", "vers le cap d’éloignement ou d’entrée"],
-        ["Time", "Chrono", "start the timer at the fix or abeam", "déclenchez le chrono au repère ou au travers"],
-        ["Twist", "Tourner", "set the inbound course on the OBS", "affichez la route de rapprochement à l’OBS"],
-        ["Throttle", "Puissance", "holding speed, 90 KIAS here", "vitesse d’attente, 90 KIAS ici"],
-        ["Talk", "Parler", "report entering the hold if asked", "annoncez l’entrée en attente si demandé"],
+        // the memory aid only works with the English words: French instructors teach it so, with the meaning beside
+        ["Turn", "Turn (virer)", "to the outbound or entry heading", "vers le cap d’éloignement ou d’entrée"],
+        ["Time", "Time (chrono)", "start the timer at the fix or abeam", "déclenchez le chrono au repère ou au travers"],
+        ["Twist", "Twist (OBS)", "set the inbound course on the OBS", "affichez la route de rapprochement à l’OBS"],
+        ["Throttle", "Throttle (puissance)", "holding speed, 90 KIAS here", "vitesse d’attente, 90 KIAS ici"],
+        ["Talk", "Talk (message)", "report entering the hold if asked", "annoncez l’entrée en attente si demandé"],
       ];
       return [
-        ...header(L("At the holding fix", "Au repère d’attente"), title(o, "The five Ts", "Les cinq T"), 960),
+        ...header(L("At the holding fix", "Au repère d’attente"), title(o, "The five Ts", "Les 5 T"), 960),
         ...rows.flatMap(([he, hf, be, bf], i): SlideBlock[] => {
           const y = 312 + i * 136;
           const g = `t${i + 1}`;
@@ -661,35 +662,45 @@ function templateBlocks(id: SlideLayoutId, o: LayoutOptions): SlideBlock[] {
         T("lead", L("Trust the scan, not the seat of your pants.", "Faites confiance au circuit visuel, pas à vos sensations."), G.left, 920, 1392, 56, { color: "white" }),
       ];
     case "checklist":
+      // A real intercept on the HSI (FAA IFH ch. 9, « Course Interception »: a 30° cut onto the course, then the
+      // turn onto it as the bar comes in). It starts from its own situation (templates.ts PRACTICE_SCENES,
+      // « sc-hsi-turn »: ARD R-278 at 6 NM, heading 160 in HDG mode, OBS 040), so no row is met before the student
+      // acts: set 090 TO, put the bug on 120 to cut in, turn the bug to 090 as the bar comes in, then the bar within
+      // ½ dot on 090 for 5 s (the rows are done in order: a bar only crossing the centre on 120 does not end it,
+      // goals.ts GoalTracker). The heading bug flies the aircraft: the situation has the autopilot in HDG mode.
       return [
-        ...header(L("Your turn", "À vous"), title(o, "Do this on the instrument", "À faire sur l’instrument"), 960),
+        ...header(L("Your turn", "À vous"), title(o, "Intercept the 090 course to ARD", "Interceptez la route 090 vers ARD"), 960),
         {
-          ...base("k", G.left, G.bodyNoLead, 816, 480),
+          ...base("k", G.left, G.bodyNoLead, 816, 560),
           kind: "checklist",
           title: L("Do this", "À faire"),
           rows: [
             { text: L("Set the OBS to 090 with a TO flag", "Affichez 090 à l’OBS, indicateur TO"), check: 0, readout: "obs1" },
-            { text: L("Turn to heading 120", "Prenez le cap 120"), check: 1, readout: "hdg" },
-            { text: L("Bar within 1 dot", "Barre à moins d’un point"), check: 2, readout: "cdiDots" },
+            { text: L("Cut in: heading bug on 120", "Interception : index de cap sur 120"), check: 1, readout: "hdg" },
+            { text: L("The bar moves in: turn the bug to 090", "La barre se rapproche : index sur 090"), check: 2, readout: "hdg" },
+            { text: L("Bar within ½ dot on 090, held 5 s", "Barre à moins d’½ point au 090, tenue 5 s"), check: 3, readout: "cdiDots" },
           ],
         },
-        // the rows tick for real: the student turns the OBS and the heading bug on the slide, the goal is checked
-        // live (a 30° intercept of the 090 course to ARD, FAA IFH ch. 9) and the run ends once it is held 3 s
         INST(HSI, L("HSI, live: OBS and heading bug in the student's hands", "HSI en direct : OBS et index de cap aux mains de l’élève"), 1080, 264, 720, 720, {
           scene: o.scene,
           mode: "live",
           controls: ["obs1", "hdgBug"],
           yourTurn: {
             where: "slide",
-            prompt: L("Set 090 with a TO flag, fly heading 120, centre the bar", "Affichez 090 avec TO, prenez le cap 120, centrez la barre"),
+            prompt: L("Set 090 TO, cut in on 120, turn onto the course as the bar comes in", "Affichez 090 TO, interceptez au 120, virez sur la route quand la barre arrive"),
             controls: ["obs1", "hdgBug"],
+            hint: L(
+              "Start the turn to 090 a little before the bar is centred, as it starts to move faster: the turn takes some ten seconds.",
+              "Commencez le virage vers 090 un peu avant que la barre soit centrée, quand elle se met à accélérer : le virage prend une dizaine de secondes.",
+            ),
             goal: {
               all: [
                 { id: "obs", p: { nav: 1, value: 90, tol: 3 } },
                 { id: "heading", p: { value: 120, tol: 5 } },
-                { id: "cdiDefl", p: { maxDots: 1 } },
+                { id: "heading", p: { value: 90, tol: 5 } },
+                { id: "cdiDefl", p: { maxDots: 0.5 } },
               ],
-              holdS: 3,
+              holdS: 5,
               graded: false,
             },
           },
@@ -710,6 +721,8 @@ function templateBlocks(id: SlideLayoutId, o: LayoutOptions): SlideBlock[] {
                 { id: "toFrom", p: { value: "TO" } },
                 { id: "cdiDefl", p: { maxDots: 0.5 } },
               ],
+              // the bar held centred a moment: the run ends there
+              holdS: 3,
               graded: false,
             },
           },

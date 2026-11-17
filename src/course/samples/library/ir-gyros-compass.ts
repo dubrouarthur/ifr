@@ -53,6 +53,13 @@ function scenes(): Record<string, SimScene> {
       { pos: AREA, altFt: 4000, hdg: 45, iasKt: 95 },
       { label: "Partial panel · heading 045 · 4,000 ft", covers: ["ai", "dg"] },
     ),
+    // the « À vous » finds the aircraft in a gentle descending turn under the covers (what a vacuum failure leaves
+    // when it goes unnoticed, FAA IFH ch. 7): 15° right, 400 ft/min down, 4,150 ft. Left alone it leaves the band.
+    "gc.pp-turn": sceneA1(
+      "gc.pp-turn",
+      { pos: AREA, altFt: 4150, hdg: 45, iasKt: 95, bank: 15, pitch: -2, vsFpm: -400 },
+      { label: "Partial panel · descending turn · 4,150 ft", covers: ["ai", "dg"] },
+    ),
     "gc.vac": sceneA1(
       "gc.vac",
       { pos: AREA, altFt: 4000, hdg: 90, iasKt: 95 },
@@ -365,11 +372,11 @@ export function irGyrosCompassCourse(): Course {
         "Live six-pack with the attitude and heading indicators covered",
         "Six instruments en direct, horizon et cap masqués",
       ),
-      scene: "gc.pp",
+      scene: "gc.pp-turn",
       covers: ["ai", "dg"],
       prompt: L(
-        "Your turn: hold the wings level and 4,000 ft for 45 s",
-        "À vous : tenez les ailes à plat et 4 000 ft pendant 45 s",
+        "Your turn: it is descending in a turn. Wings level, back to 4,000 ft, hold 45 s",
+        "À vous : l’avion descend en virage. Ailes à plat, revenez à 4 000 ft, tenez 45 s",
       ),
       controls: ["pitch", "bank"],
       assist: { holdIas: true },
@@ -394,8 +401,8 @@ export function irGyrosCompassCourse(): Course {
         "FAA IFH ch. 7 · C172S POH sect. 3 : vol en nuages en secours",
       ),
       reader: L(
-        "Your turn with the attitude and heading indicators covered, as after a vacuum failure. Keep the wings level with the turn coordinator (its small aircraft on the horizon line) and the pitch with the altimeter and VSI, for 45 seconds. The stage holds the airspeed (FAA IFH ch. 7; C172S POH section 3).",
-        "À vous avec l’horizon et le conservateur de cap masqués, comme après une panne de dépression. Tenez les ailes à plat à l’indicateur de virage (sa maquette sur la ligne d’horizon) et l’assiette à l’altimètre et au variomètre, pendant 45 secondes. La scène tient la vitesse (FAA IFH ch. 7 ; C172S POH section 3).",
+        "Your turn with the attitude and heading indicators covered, as after a vacuum failure. The aircraft is in a gentle descending turn: level the wings with the turn coordinator (its small aircraft on the horizon line), stop the descent with the altimeter and VSI, back to 4,000 ft, then hold it for 45 seconds. The stage holds the airspeed (FAA IFH ch. 7; C172S POH section 3).",
+        "À vous avec l’horizon et le conservateur de cap masqués, comme après une panne de dépression. L’avion descend en léger virage : mettez les ailes à plat à l’indicateur de virage (sa maquette sur la ligne d’horizon), arrêtez la descente à l’altimètre et au variomètre, revenez à 4 000 ft, puis tenez-le 45 secondes. La scène tient la vitesse (FAA IFH ch. 7 ; C172S POH section 3).",
       ),
     }),
     // 7 ------------------------------------------------------------------ variation and deviation

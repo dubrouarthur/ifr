@@ -5,12 +5,16 @@
 //      at least every 3 steps;
 //  (b) no frozen « live » instrument: a live instrument or a simulator view has student controls on the slide, an
 //      « À vous », or an animation (canvas/motion.ts) to play;
-//  (c) every « À vous » (on a slide, a Try it, a Fly it) has a goal with a tolerance and an end condition;
+//  (c) every « À vous » (on a slide, a Try it, a Fly it) has a goal with a tolerance and an end condition, and is
+//      not already met before the student acts (its situation at rest does not satisfy every check);
 //  (d) every slide with a live block can be driven by the presenter: its situation resolves (the console's
 //      « Piloter la démonstration » deck has an aircraft to fly);
 //  (e) presenter notes on every step, or the console's fallback (« À dire », ui/presenterNotes.ts) builds at least
 //      two points from the slide;
 //  (f) every step has a title, in both languages.
+// Besides the courses, what a creator adds from the studio is checked the same way (every rule but (a), which is
+// about a whole course): each layout of « Mise en page » / « Tous les modèles » made into a step as the studio makes
+// it, and each ready slide « Que voulez-vous montrer ? » offers a new slide (IFR and VFR courses).
 // GUARD_REPORT=<file.md> writes the list of failures per course instead of failing (the report mode).
 import { writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
@@ -29,11 +33,17 @@ import { SAMPLES } from "../src/course/samples";
 import { LIBRARY_COURSES } from "../src/course/samples/library";
 import { AIRFIELD_DECKS, DECKS } from "../src/course/samples/decks";
 import { isStudentAction } from "../src/course/samples/kit";
-import { fallbackNotes } from "../src/course/ui/presenterNotes";
+import { fallbackNotes, slideNotes } from "../src/course/ui/presenterNotes";
 import { DECK_STARTERS, addStarterDeck } from "../src/course/ui/deckStarters";
 import { stripControls } from "../src/course/canvas/controlStrip";
 import { problemFor } from "../src/course/calc";
-import { flyCriteria } from "../src/course/goals";
+import { evaluate, flyCriteria, GoalTracker, stageView } from "../src/course/goals";
+import { LAYOUTS } from "../src/course/canvas/layouts";
+import { linearText, makeStep } from "../src/course/ui/templates";
+import { EMPTY_STARTS, EMPTY_STARTS_VFR } from "../src/course/ui/studio";
+import { showcaseScenes, startSlides } from "../src/course/samples/showcaseDecks";
+import { Sim, type Failures } from "../src/sim/sim";
+import { applyScene } from "../src/course/scene";
 
 type Rule = "a" | "b" | "c" | "d" | "e" | "f";
 interface Issue {
@@ -94,7 +104,16 @@ function sceneMoves(c: Course, b: Inst | View, slide: SlideCanvas): boolean {
   if (!sc) return false;
   if (failing(sc.failures)) return true;
   const p = sc.pose;
-  return p.kind === "fields" && (Math.abs(p.vsFpm ?? 0) >= 100 || Math.abs(p.bank ?? 0) >= 5);
+  if (p.kind === "fields") return Math.abs(p.vsFpm ?? 0) >= 100 || Math.abs(p.bank ?? 0) >= 5;
+  // an exact pose (a capture, a ready situation): ask the flight model
+  try {
+    const sim = new Sim();
+    applyScene(sim, sc);
+    sim.updateAvionics(0);
+    return Math.abs(sim.ac.data.vsFpm) >= 100 || Math.abs(sim.ac.data.rollDeg) >= 5;
+  } catch {
+    return false;
+  }
 }
 
 /** a live block: an instrument that flies (live, or animated), or a simulator view */
@@ -142,6 +161,38 @@ function yourTurnIssues(yt: YourTurn): string[] {
   if (!end) out.push("no end condition (a hold, endWhen or durationS)");
   return out;
 }
+/**
+ * The « À vous » on a slide solves itself: every check of its goal is already true in its situation at rest (the
+ * slide opens on the answer), or — `handsOff` — the goal is met within its hold + 40 s with nobody at the controls
+ * (the aircraft drifts through the answer). A flight in the simulator (`where: "sim"`) is not concerned: its
+ * criteria are graded over the whole run, which starts inside them on purpose (« keep the bar within a dot »).
+ */
+function solvesItself(c: Course, yt: YourTurn, b: Inst | View, slide: SlideCanvas, handsOff: boolean): string | null {
+  if (yt.where === "sim") return null;
+  const sc = c.scenes[yt.scene ?? sceneOf(b, slide) ?? ""];
+  if (!sc || !yt.goal?.all.length) return null;
+  try {
+    const sim = new Sim();
+    applyScene(sim, sc);
+    const failures = b.kind === "instrument" ? b.failures : undefined;
+    for (const [f, on] of Object.entries(failures ?? {}))
+      if (on) sim.setFailure(f as keyof Failures, true);
+    sim.updateAvionics(0);
+    if (yt.goal.all.every((ch) => evaluate(ch, stageView(sim), {})))
+      return "its goal is already met before the student acts";
+    if (!handsOff) return null;
+    const tr = new GoalTracker(yt.goal, "fr");
+    const lim = (yt.goal.holdS ?? 0) + 40;
+    for (let t = 0; t < lim; t += 0.2) {
+      sim.step(0.2);
+      if (tr.update(stageView(sim), 0.2).met)
+        return `its goal is met hands off after ${Math.round(t)} s`;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 /** the problem a calc step poses (its fixed seed, else a sample one): what a linked Try it / Fly it checks */
 function calcProblemOf(c: Course, stepId: string): CalcProblem | undefined {
   const spec = c.steps.find((x) => x.id === stepId)?.calc;
@@ -173,9 +224,10 @@ function flyItIssues(c: Course, f: FlyIt): string[] {
   return out;
 }
 
-function guard(c: Course): Issue[] {
+function guard(c: Course, o: { skip?: readonly Rule[]; handsOff?: boolean } = {}): Issue[] {
   const out: Issue[] = [];
   const add = (rule: Rule, step: Step, msg: string) =>
+    o.skip?.includes(rule) ||
     out.push({
       rule,
       step: `#${c.steps.indexOf(step) + 1} ${step.id} « ${step.title?.fr ?? step.title?.en ?? ""} »`,
@@ -224,9 +276,12 @@ function guard(c: Course): Issue[] {
     }
     if (!slide) continue;
     for (const b of slide.blocks) {
-      if ((b.kind === "instrument" || b.kind === "simViewport") && b.yourTurn)
+      if ((b.kind === "instrument" || b.kind === "simViewport") && b.yourTurn) {
         for (const m of yourTurnIssues(b.yourTurn))
           add("c", s, `« À vous » ${b.id}: ${m}`);
+        const solved = solvesItself(c, b.yourTurn, b, slide, o.handsOff ?? false);
+        if (solved) add("c", s, `« À vous » ${b.id}: ${solved}`);
+      }
       if (!isLive(b, slide)) continue;
       // (b) no frozen live block
       const sc = sceneOf(b, slide);
@@ -281,7 +336,43 @@ interface Entry {
   id: string;
   group: string;
   build: () => Course;
+  /** rules that do not apply (a single slide has no « every 3 steps ») */
+  skip?: Rule[];
+  /** the « À vous » are also flown hands off (what creators start from: the templates, the layouts, the slides) */
+  handsOff?: boolean;
 }
+/** a course of one slide, as the studio adds it: a layout through makeStep (its scene, its practice situation) */
+const layoutCourse = (id: (typeof LAYOUTS)[number]["id"]): Course => {
+  const r = makeStep(blank(`layout-${id}`), "slide", { layout: id });
+  return { ...r.course, steps: [r.step] };
+};
+/** …and a ready slide of « Que voulez-vous montrer ? », with the situations the editor adds with it */
+const startCourse = (id: string): Course => {
+  const ex = startSlides().find((g) => g.id === id);
+  if (!ex) throw new Error(`no start slide ${id}`);
+  const all = showcaseScenes();
+  const used = new Set<string>();
+  const walk = (x: unknown) => {
+    if (!x || typeof x !== "object") return;
+    for (const [k, v] of Object.entries(x as Record<string, unknown>))
+      if (k === "scene" && typeof v === "string") used.add(v);
+      else walk(v);
+  };
+  walk(ex.slide);
+  const scenes = Object.fromEntries([...used].filter((u) => all[u]).map((u) => [u, all[u]]));
+  const slide = JSON.parse(JSON.stringify(ex.slide)) as SlideCanvas;
+  // the editor gives a ready slide the console's notes for its kind (editor.ts addComposedSlide)
+  const step: Step = {
+    id: `st-${id}`,
+    kind: "slide",
+    title: { ...ex.title },
+    slide,
+    reader: linearText(slide),
+    notes: slideNotes(slide),
+  };
+  return { ...blank(`start-${id}`), scenes, steps: [step] };
+};
+const START_IDS = [...new Set([...EMPTY_STARTS, ...EMPTY_STARTS_VFR])];
 const ENTRIES: Entry[] = [
   ...SAMPLES.map(
     (s): Entry => ({
@@ -295,6 +386,26 @@ const ENTRIES: Entry[] = [
       id: `starter:${d.id}`,
       group: "starting template",
       build: () => addStarterDeck(blank(`starter-${d.id}`), d).course,
+      handsOff: true,
+    }),
+  ),
+  ...LAYOUTS.map(
+    (l): Entry => ({
+      id: `layout:${l.id}`,
+      group: "studio layout",
+      build: () => layoutCourse(l.id),
+      // the blank layout has nothing to say yet: its notes are the creator's to write
+      skip: l.id === "blank" ? ["a", "e"] : ["a"],
+      handsOff: true,
+    }),
+  ),
+  ...START_IDS.map(
+    (id): Entry => ({
+      id: `new-slide:${id}`,
+      group: "new-slide suggestion",
+      build: () => startCourse(id),
+      skip: ["a"],
+      handsOff: true,
     }),
   ),
 ];
@@ -306,7 +417,7 @@ if (REPORT) {
     let total = 0;
     const bad: string[] = [];
     for (const e of ENTRIES) {
-      const issues = guard(e.build());
+      const issues = guard(e.build(), e);
       total += issues.length;
       if (!issues.length) continue;
       bad.push(e.id);
@@ -332,7 +443,11 @@ if (REPORT) {
   describe("interactivity guard", () => {
     it("enumerates every built-in course and starting template", () => {
       // the library's own list (every sample, library course, ready deck and briefing) plus every starting template
-      expect(ENTRIES.length).toBe(SAMPLES.length + DECK_STARTERS.length);
+      expect(ENTRIES.length).toBe(
+        SAMPLES.length + DECK_STARTERS.length + LAYOUTS.length + START_IDS.length,
+      );
+      expect(ENTRIES.some((e) => e.id === "layout:checklist")).toBe(true);
+      expect(ENTRIES.some((e) => e.id === "layout:yourTurn")).toBe(true);
       for (const d of [...LIBRARY_COURSES, ...DECKS, ...AIRFIELD_DECKS])
         expect(ENTRIES.some((e) => e.id === d.id), d.id).toBe(true);
       expect(ENTRIES.some((e) => e.group.startsWith("library"))).toBe(true);
@@ -340,7 +455,7 @@ if (REPORT) {
     });
     for (const e of ENTRIES)
       it(`${e.id} keeps the student and the presenter busy`, () => {
-        const issues = guard(e.build()).map(
+        const issues = guard(e.build(), e).map(
           (i) => `(${i.rule}) ${i.step}: ${i.msg}`,
         );
         expect(issues).toEqual([]);

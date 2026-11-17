@@ -1855,8 +1855,12 @@ export class GoalTracker {
       if (this.holdS <= 0) this.metAt = this.t;
       else {
         if (this.holdSet === null) {
-          // the hold starts now, with what the student has at the moment the last row ticks
-          this.holdSet = this.now.map((x, i) => (x ? i : -1)).filter((i) => i >= 0);
+          // the hold starts now, with what the student has at the moment the last row ticks. The rows are done in
+          // their order: a row met earlier and left since (the intercept heading before the roll-out) stays out of
+          // the hold, but a row after the last one held now cannot be skipped (a bar that only crossed the centre
+          // on the intercept heading must come back in before the hold counts)
+          const last = this.now.lastIndexOf(true);
+          this.holdSet = this.now.map((x, i) => (x || i > last ? i : -1)).filter((i) => i >= 0);
           this.heldS = 0;
         } else {
           const holding = this.holdSet.every((i) => this.now[i]);
