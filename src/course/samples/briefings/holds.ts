@@ -5,7 +5,7 @@
 // Sources: FAA AIM 5-3-8 (holding: clearance items, entries, timing, maximum speeds, the 3-minute speed
 // reduction), FAA-H-8083-15B IFH ch. 10 (holding, timing correction), ICAO Doc 8168 PANS-OPS (5° entry
 // tolerance, 230 kt), FAA-S-ACS-8C area III task B.
-import type { Briefing, L10n, SimScene, Step } from "../../types";
+import type { Briefing, L10n, SimScene, SlideBlock, Step } from "../../types";
 import { holdEntry, type HoldEntry } from "../../../nav/holding";
 import { scene } from "../kit";
 import {
@@ -30,6 +30,12 @@ import {
   yourTurnStep,
 } from "./kit";
 import { G as GOAL, INST, QUIZ, T, slideStep } from "../kit";
+
+/** a block one level above the others in its frame (an answer drawn over the question's picture replaces it) */
+const above = (b: SlideBlock): SlideBlock => ({
+  ...b,
+  frame: { ...b.frame, z: (b.frame.z ?? 0) + 1 },
+});
 
 export const HOLD_DIRECT_BRIEFING_ID = "sample-briefing-hold-direct";
 export const HOLD_TEARDROP_BRIEFING_ID = "sample-briefing-hold-teardrop";
@@ -185,10 +191,7 @@ const PLANS: Record<HoldEntry, EntryPlan> = {
         "After the turn the bar is off centre: a heading misses the course.",
         "Après le virage, la barre est décalée : un cap rate l’axe.",
       ),
-      fix: L(
-        "Intercept, centre the bar.",
-        "Interceptez, centrez la barre.",
-      ),
+      fix: L("Intercept, centre the bar.", "Interceptez, centrez la barre."),
     },
     tip: L(
       "Course 050 to ARD · teardrop: heading 060 at ARD, 1:00, then right to intercept 270 · 90 KIAS · 3,000 ft.",
@@ -485,24 +488,27 @@ function holdBriefingFor(entry: HoldEntry): Briefing {
             ),
           },
         ),
-        DIAGRAM(
-          `${x}-entry.you`,
-          holdD(p.crs),
-          L(
-            `The ARD hold with your arrival on ${crs}: ${name.en.toLowerCase()} entry`,
-            `L’attente d’ARD avec votre arrivée au ${crs} : entrée ${name.fr!.toLowerCase()}`,
-          ),
-          G.left,
-          288,
-          960,
-          696,
-          {
-            reveal: { order: 1, when: "answered" },
-            caption: L(
-              "Inbound 270 · right turns · north up",
-              "Rapprochement 270 · virages à droite · nord en haut",
+        // the arrival and its entry, over the sectors (which it replaces) once the right answer is shown
+        above(
+          DIAGRAM(
+            `${x}-entry.you`,
+            holdD(p.crs),
+            L(
+              `The ARD hold with your arrival on ${crs}: ${name.en.toLowerCase()} entry`,
+              `L’attente d’ARD avec votre arrivée au ${crs} : entrée ${name.fr!.toLowerCase()}`,
             ),
-          },
+            G.left,
+            288,
+            960,
+            696,
+            {
+              reveal: { order: 1, when: "answerShown" },
+              caption: L(
+                "Inbound 270 · right turns · north up",
+                "Rapprochement 270 · virages à droite · nord en haut",
+              ),
+            },
+          ),
         ),
         QUIZ(
           `${x}-entry.q`,

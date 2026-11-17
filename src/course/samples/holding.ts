@@ -340,6 +340,11 @@ const holdD = (fix: string, crs?: number, quiet?: boolean) => ({
 const mmss = (s: number) =>
   `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 
+/** a block one level above the others in its frame (an answer drawn over the question's picture replaces it) */
+const above = (b: SlideBlock): SlideBlock => ({
+  ...b,
+  frame: { ...b.frame, z: (b.frame.z ?? 0) + 1 },
+});
 /** A predict-the-entry slide: the sector map with the question beside it; the answer lights up the sector. */
 function entryPredict(o: {
   id: string;
@@ -364,19 +369,22 @@ function entryPredict(o: {
     : { x: GR.left, y: 312, w: 816, h: 672 };
   return [
     ...head(o.eyebrow, o.title),
-    // the answer: the same map with the aircraft and its sector, over the plain one once answered
-    DIAGRAM(
-      `${o.id}.hold`,
-      holdD(o.fix, o.crs),
-      L(
-        `Hold at ${o.fix} with the arrival on heading ${pad3(o.crs)}: ${ENTRY_NAME[e].en.toLowerCase()} entry`,
-        `Attente à ${o.fix} avec l’arrivée au cap ${pad3(o.crs)} : entrée ${F(ENTRY_NAME[e]).toLowerCase()}`,
+    // the answer: the same map with the aircraft and its sector, over the plain one (which it replaces) once the
+    // right answer is shown: never after a first wrong pick, while the student tries again
+    above(
+      DIAGRAM(
+        `${o.id}.hold`,
+        holdD(o.fix, o.crs),
+        L(
+          `Hold at ${o.fix} with the arrival on heading ${pad3(o.crs)}: ${ENTRY_NAME[e].en.toLowerCase()} entry`,
+          `Attente à ${o.fix} avec l’arrivée au cap ${pad3(o.crs)} : entrée ${F(ENTRY_NAME[e]).toLowerCase()}`,
+        ),
+        d.x,
+        d.y,
+        d.w,
+        d.h,
+        { reveal: { order: 1, when: "answerShown" }, caption: mapHint },
       ),
-      d.x,
-      d.y,
-      d.w,
-      d.h,
-      { reveal: { order: 1, when: "answered" }, caption: mapHint },
     ),
     {
       ...DIAGRAM(
@@ -1318,7 +1326,11 @@ const withNotes = (s: Step, notes: L10n): Step => ({ ...s, notes });
 export const TRAINER_GOALS = [50, 180, 300] as const;
 /** The first lap of the timing question: 1:00 outbound with this wind on the nose inbound, at 90 KTAS. */
 export const TIMING_WIND: [number, number] = [270, 10];
-export function timingNumbers(): { in1: number; out2: number; refined: number } {
+export function timingNumbers(): {
+  in1: number;
+  out2: number;
+  refined: number;
+} {
   // what the next laps settle on (the timing slide flies it): the turns drift too, so a little more than the rule
   const auto = flyPath({
     inbound: HOLD.inbound,
