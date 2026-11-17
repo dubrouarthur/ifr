@@ -56,7 +56,8 @@ const poseOf = (sim: Sim | null): Pose => {
     ? {
         lat: s.lat,
         lon: s.lon,
-        altFt: s.altFt,
+        // the eye, not the wheels: lined up on a runway the pilot still sees it ahead
+        altFt: s.altFt + (sim?.cockpitEyeFt ?? 7),
         psi: s.psi,
         theta: s.theta,
         phi: s.phi,
@@ -207,7 +208,18 @@ function drawRunway(
   const z = rw.elevFt ?? elev;
   const P = (a: number, c: number) =>
     project(rwPoint(rw, a, c), z, here, p, focal, cx, cy);
-  const quad = [P(0, -1), P(0, 1), P(1, 1), P(1, -1)];
+  // lined up on the runway (or over it), its near part is under the aircraft: draw it from where it is ahead
+  let a0 = 0;
+  if (!P(0, -1) || !P(0, 1)) {
+    a0 = -1;
+    for (let a = 0.01; a <= 0.98; a += 0.01)
+      if (P(a, -1) && P(a, 1)) {
+        a0 = a;
+        break;
+      }
+    if (a0 < 0) return;
+  }
+  const quad = [P(a0, -1), P(a0, 1), P(1, 1), P(1, -1)];
   if (quad.some((q) => !q)) return;
   const q = quad as [number, number][];
   if (!night) {
@@ -220,7 +232,7 @@ function drawRunway(
     // edge lines, threshold bars and the centre line
     ctx.fillStyle = "#f2f4f5";
     for (const c of [-1, 0.94]) {
-      const edge = [P(0, c), P(0, c + 0.06), P(1, c + 0.06), P(1, c)];
+      const edge = [P(a0, c), P(a0, c + 0.06), P(1, c + 0.06), P(1, c)];
       if (!edge.some((b) => !b)) fillPoly(ctx, edge as [number, number][]);
     }
     for (let i = 0; i < 8; i++) {
@@ -235,6 +247,7 @@ function drawRunway(
       fillPoly(ctx, bar as [number, number][]);
     }
     for (let a = 0.06; a < 0.96; a += 0.06) {
+      if (a < a0) continue;
       const dash = [
         P(a, -0.025),
         P(a, 0.025),

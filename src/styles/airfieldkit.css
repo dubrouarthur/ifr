@@ -1,0 +1,183 @@
+/* « Adapter à mon terrain » (src/course/ui/airfieldKitPanel.ts): one field, one button, the slides it adds. Lives in
+   « Nouveau cours » (light page tokens) and in the studio's « Modèles » panel (narrow): the fallbacks keep it right in
+   both. */
+.afk {
+  --afk-ink: var(--ink, #14181f);
+  --afk-mute: var(--mute, #5d6671);
+  --afk-rule: var(--rule-strong, #cbc7be);
+  --afk-card: var(--card, #fff);
+  --afk-accent: var(--accent, #1d5fd1);
+  --afk-bad: #a8331f;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+  border: 1px solid var(--afk-rule);
+  border-radius: 14px;
+  background: var(--afk-card);
+  color: var(--afk-ink);
+  text-align: left;
+}
+.afk.is-chosen {
+  border-color: var(--afk-accent);
+  box-shadow: 0 0 0 1px var(--afk-accent);
+}
+.afk-h {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.afk-p {
+  margin: 4px 0 0;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--afk-mute);
+  max-width: 68ch;
+}
+.afk-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+}
+.afk-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.afk-input {
+  width: 7.5em;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--afk-rule);
+  border-radius: 10px;
+  background: var(--afk-card);
+  color: var(--afk-ink);
+  font:
+    600 1.0625rem "Inter",
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.afk-input::placeholder {
+  color: #8a929b;
+  font-weight: 500;
+}
+.afk-input[aria-invalid="true"] {
+  border-color: var(--afk-bad);
+}
+.afk-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 10px;
+  border: 1px solid var(--afk-rule);
+  background: var(--afk-card);
+  color: var(--afk-ink);
+  font:
+    600 0.9375rem/1 "Inter",
+    system-ui,
+    sans-serif;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.afk-btn:hover {
+  border-color: #8a929b;
+}
+.afk-btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.afk-input:focus-visible,
+.afk-btn:focus-visible {
+  outline: 2px solid var(--afk-accent);
+  outline-offset: 2px;
+}
+.afk-msg {
+  margin: 0;
+  min-height: 1.2em;
+  font-size: 0.875rem;
+  color: var(--afk-mute);
+}
+.afk-msg:empty {
+  display: none;
+}
+.afk-msg.is-bad {
+  color: var(--afk-bad);
+  font-weight: 600;
+}
+.afk-preview:empty {
+  display: none;
+}
+.afk-thumbs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+.afk-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.afk-th {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--afk-rule);
+  background: #f7f5f0;
+}
+.afk-th > * {
+  position: absolute;
+  inset: 0;
+}
+.afk-cap {
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  color: var(--afk-mute);
+  overflow-wrap: anywhere;
+}
+.afk-cap b {
+  color: var(--afk-ink);
+}
+.afk-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-top: 12px;
+}
+.afk-ready {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--afk-ink);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .afk.is-busy .afk-btn {
+    transition: opacity 0.2s;
+  }
+}
+/* « Nouveau cours »: between the heading of the starting points and the templates */
+.nc-afk {
+  margin: 4px 0 20px;
+}
+/* the studio's « Modèles » panel: narrow, the thumbnails two by two */
+.ce-panel-b > .afk {
+  margin: 0 0 18px;
+  padding: 14px;
+  gap: 10px;
+}
+.ce-panel-b > .afk .afk-thumbs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.ce-panel-b > .afk .afk-p {
+  font-size: 0.8125rem;
+}

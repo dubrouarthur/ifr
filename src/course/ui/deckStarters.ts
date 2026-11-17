@@ -44,6 +44,8 @@ export interface DeckStarter {
   notes?: Partial<Record<number, L10n>>;
   /** what the presenter says, per slide index (the step's presenter notes) */
   presenter?: Partial<Record<number, L10n>>;
+  /** the step's title per slide index, when the slide's own title text is not it (a cover with key figures) */
+  titles?: Partial<Record<number, L10n>>;
   /** the situations its slides show (added to the course with the slides) */
   scenes?: () => Record<string, SimScene>;
   /** the capability its card names (samples/showcaseDecks.ts CAPABILITY) and the slide its card plays */
@@ -316,7 +318,8 @@ export function addStarterDeck(
       const t =
         slide.blocks.find((b) => b.kind === "text" && b.style === "title") ??
         slide.blocks.find((b) => b.kind === "text" && b.style === "display");
-      const title = t && t.kind === "text" ? { ...t.text } : step.title;
+      const named = starter.titles?.[i];
+      const title = named ? { ...named } : t && t.kind === "text" ? { ...t.text } : step.title;
       step = { ...step, title, slide, reader: linearText(slide) };
     }
     // the typed title goes on the cover (its display line, else its title)

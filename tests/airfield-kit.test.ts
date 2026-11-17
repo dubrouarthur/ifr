@@ -113,7 +113,7 @@ describe("airfieldKit", () => {
     const fin = Object.values(k.scenes).find((s) => s.id.endsWith(".final"))!;
     applyScene(sim, fin);
     expect(sim.ac.s.onGround).toBe(false);
-    expect(Math.round(sim.ac.s.altFt)).toBeGreaterThan(1300);
+    expect(Math.round(sim.ac.s.altFt)).toBeGreaterThan(900);
   });
 
   it("the kit becomes a course like any template, and the course validates", async () => {
@@ -133,9 +133,25 @@ describe("airfieldKit", () => {
     expect(c.steps).toHaveLength(6);
     expect(c.title.fr).toBe("Toussus-le-Noble (LFPN)");
     expect(c.steps.every((s) => !!s.notes?.fr)).toBe(true);
+    // each step is named by its slide, the cover by the field (never by a key figure)
+    expect(c.steps.map((s) => s.title.fr)).toEqual(k.slides.map((s) => s.title.fr));
     for (const id of Object.keys(k.scenes)) expect(c.scenes[id]).toBeTruthy();
     const errors = validateCourse(c).filter((i) => i.level === "error");
     expect(errors).toEqual([]);
+  });
+
+  it("added to an existing course (the studio's « Modèles »), the steps keep their titles and notes", async () => {
+    const { airfieldKit } = await import("../src/course/airfieldKit");
+    const { addStarterDeck, BLANK_STARTER } = await import("../src/course/ui/deckStarters");
+    const { buildNewCourse } = await import("../src/course/ui/newCourse");
+    const k = await airfieldKit("LFPN", "en");
+    if (!k.ok) throw new Error(k.message);
+    const base = buildNewCourse({ id: "c", lang: "en", title: "Mine", program: null, subject: null, starter: BLANK_STARTER });
+    const r = addStarterDeck(base, k.starter, { at: 1 });
+    const added = r.course.steps.slice(1);
+    expect(added.map((s) => s.title.en)).toEqual(k.slides.map((s) => s.title.en));
+    expect(added[0].title.en).toBe("Toussus-le-Noble (LFPN)");
+    expect(added.every((s) => !!s.notes?.en)).toBe(true);
   });
 
   it("a field outside France points to the official chart, and its runways are there", async () => {

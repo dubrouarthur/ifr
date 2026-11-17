@@ -30,6 +30,8 @@ import {
   type SubjectId,
 } from "../../library/programs";
 import { aiCreateButton } from "../ai/entry";
+import type { AirfieldKit } from "../airfieldKit";
+import { airfieldKitPanel, type AirfieldKitPanel } from "./airfieldKitPanel";
 import "../../styles/newcourse.css";
 
 // ------------------------------------------------------------------ the formations a course can be filed in
@@ -252,6 +254,11 @@ export function mountNewCourse(
       : null;
   let title = "";
   let pick: DeckStarter = startersFor(program)[0];
+  // « Adapter à mon terrain »: the slides prepared for the instructor's field (a starting point like a template)
+  let kit: AirfieldKit | null = null;
+  let kitPanel: AirfieldKitPanel | null = null;
+  let kitValue = "";
+  const isKit = (d: DeckStarter) => !!kit && d.id === kit.starter.id;
   let busy = false;
   let views: SlideView[] = [];
   /** the playing covers, by template: the typed title shows on them as it is typed */
@@ -274,6 +281,11 @@ export function mountNewCourse(
 
   const render = (focusTitle = false) => {
     for (const v of views.splice(0)) v.destroy();
+    if (kitPanel) {
+      kitValue = kitPanel.value();
+      kitPanel.destroy();
+      kitPanel = null;
+    }
     covers.clear();
     const keepFocus = document.activeElement?.id;
     // ---- focus bar: the labelled way back, where you are, FR | EN
@@ -371,8 +383,8 @@ export function mountNewCourse(
     pSel.addEventListener("change", () => {
       program = pSel.value && isProgramId(pSel.value) ? pSel.value : null;
       subject = null;
-      // the gallery follows the formation, and so does the pick: its starting template
-      pick = startersFor(program)[0];
+      // the gallery follows the formation, and so does the pick: its starting template (the field's slides stay)
+      if (!isKit(pick)) pick = startersFor(program)[0];
       render();
       el.querySelector<HTMLElement>("#nc-prog")?.focus();
     });
@@ -430,7 +442,7 @@ export function mountNewCourse(
 
     // ---- the starting points
     const list = startersFor(program);
-    if (!list.some((d) => d.id === pick.id)) pick = list[0];
+    if (!list.some((d) => d.id === pick.id) && !isKit(pick)) pick = list[0];
     // « Partir d'une description (IA) » is the first card of the grid (a button that opens the assistant), then
     // the templates as one radio group (audit item 62)
     const radios = h("div", {
@@ -478,6 +490,7 @@ export function mountNewCourse(
         c.classList.toggle("on", on);
         if (on && focus) c.focus();
       });
+      kitPanel?.setChosen(isKit(d));
       syncFoot();
     };
     list.forEach((d) => {
@@ -574,6 +587,25 @@ export function mountNewCourse(
       });
     });
     const progName = program ? loc(programDef(program).code, lang) : "";
+
+    // ---- « Adapter à mon terrain »: an ICAO code, the slides of that field as the starting point
+    kitPanel = airfieldKitPanel({
+      lang,
+      idPrefix: "nc-afk",
+      value: kitValue,
+      kit,
+      onReady: (k) => {
+        kit = k;
+        select(k.starter);
+      },
+      readyLine: () =>
+        T(
+          lang,
+          "These slides are the starting point: “Create the course”, below.",
+          "Ces diapos sont le point de départ : « Créer le cours », en bas.",
+        ),
+    });
+    kitPanel.el.classList.add("nc-afk");
 
     // ---- already have slides? (only when the build can import a PDF)
     let importRow: HTMLElement | null = null;
@@ -712,6 +744,7 @@ export function mountNewCourse(
               )
             : null,
         ),
+        kitPanel.el,
         grid,
         sum,
         importRow,
@@ -773,6 +806,7 @@ export function mountNewCourse(
     destroy() {
       for (const v of views.splice(0)) v.destroy();
       views = [];
+      kitPanel?.destroy();
       el.remove();
     },
   };

@@ -7,7 +7,7 @@
 //   1 title        « Toussus-le-Noble (LFPN) », the elevation, the runways, the longest one, a sketch of the runways
 //   2 runways      the runway plan drawn to scale, each end labelled with its number and QFU, the list beside it
 //   3 radio        frequencies and the navaids within 40 NM (bearing and distance from the field)
-//   4 view         the field from a 3 NM final (the slide's « Vue simulateur », placed on that runway)
+//   4 view         the field from a 1.5 NM final (the slide's « Vue simulateur », placed on that runway)
 //   5 your turn    the takeoff from the longest runway in the simulator, its goal checked automatically
 //   6 briefing     what the instructor adds (circuit, entries, local rules), all « à compléter »
 // The situations sit on the real runway (pose: runway + distance): on a slide the field is known through the slide
@@ -38,7 +38,7 @@ export interface AirfieldKit {
   field: RealAirfield;
   /** the six slides, in order, with their titles and what the presenter says */
   slides: { title: L10n; slide: SlideCanvas; notes: L10n }[];
-  /** the situations the slides show (a 3 NM final, the runway for the takeoff) */
+  /** the situations the slides show (a short final, the runway for the takeoff) */
   scenes: Record<string, SimScene>;
   /** the slides as a template: « Nouveau cours » and the studio's « Modèles » add it like any other */
   starter: DeckStarter;
@@ -114,11 +114,12 @@ export function fieldName(raw: string): string {
 }
 const pad3 = (n: number) =>
   String(Math.round(((n % 360) + 360) % 360) || 360).padStart(3, "0");
-const num = (n: number, lang: Lang, digits = 0) =>
-  n.toLocaleString(lang === "fr" ? "fr-FR" : "en-US", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  });
+/** a number as each language writes it: « 1 488 » and « 120,750 » (a space, as the house decks write « 3 000 ft ») / "1,488", "120.750" */
+const num = (n: number, lang: Lang, digits = 0) => {
+  const [i, d] = Math.abs(n).toFixed(digits).split(".");
+  const g = i.replace(/\B(?=(\d{3})+(?!\d))/g, lang === "fr" ? " " : ",");
+  return `${n < 0 ? "−" : ""}${g}${d ? (lang === "fr" ? "," : ".") + d : ""}`;
+};
 const both = (f: (l: Lang) => string): L10n => ({ en: f("en"), fr: f("fr") });
 const meters = (ft: number) => Math.round((ft * 0.3048) / 10) * 10;
 const surface = (s: string, lang: Lang): string => {
@@ -186,10 +187,11 @@ export function runwayPlan(
     maxX = Math.max(...pts.map((p) => p.x));
   const minY = Math.min(...pts.map((p) => p.y)),
     maxY = Math.max(...pts.map((p) => p.y));
-  const m = labels ? 110 : 24;
+  const mx = labels ? 200 : 56,
+    my = labels ? 120 : 56;
   const sc = Math.min(
-    (box.w - 2 * m) / Math.max(0.05, maxX - minX),
-    (box.h - 2 * m) / Math.max(0.05, maxY - minY),
+    (box.w - 2 * mx) / Math.max(0.05, maxX - minX),
+    (box.h - 2 * my) / Math.max(0.05, maxY - minY),
   );
   const cx = box.x + box.w / 2 - ((minX + maxX) / 2) * sc;
   const cy = box.y + box.h / 2 + ((minY + maxY) / 2) * sc;
@@ -240,8 +242,10 @@ export function runwayPlan(
       [a, A, -1],
       [b, B, 1],
     ] as const) {
-      const lx = at.X + dir * ux * 64,
-        ly = at.Y + dir * uy * 64;
+      // far enough along the runway that the label's box (180 × 88) clears its end
+      const off = Math.abs(ux) * 90 + Math.abs(uy) * 44 + 14;
+      const lx = at.X + dir * ux * off,
+        ly = at.Y + dir * uy * off;
       out.push(
         T("heading", L(rw.id, rw.id), lx - 80, ly - 44, 160, 52, {
           id: `${id}.n${rw.id}`,
@@ -339,20 +343,21 @@ export function airfieldKitFrom(f: RealAirfield): AirfieldKit {
   });
   const pairName = ([a, b]: [Runway, Runway]) => `${a.id}/${b.id}`;
 
-  // ---- situations: a 3 NM final to the main runway (the view), lined up on it (the takeoff)
-  const finalAgl = 950;
+  // ---- situations: a short final to the main runway (the view), lined up on it (the takeoff)
+  const finalNm = 1.5;
+  const finalAgl = 480;
   const sFinal = sceneFromFields(
     {
       kind: "fields",
-      pos: { runway: { icao, id: main.id }, distNm: 3 },
+      pos: { runway: { icao, id: main.id }, distNm: finalNm },
       altFt: Math.round(main.elevFt + finalAgl),
       hdg: Math.round(main.heading),
       iasKt: 75,
-      vsFpm: -400,
+      vsFpm: -350,
     },
     {
       id: sid("final"),
-      label: `${icao} · ${main.id} · 3 NM final`,
+      label: `${icao} · ${main.id} · ${finalNm} NM final`,
       cockpit: "steam",
       world,
       seed: 4183,
@@ -773,8 +778,8 @@ export function airfieldKitFrom(f: RealAirfield): AirfieldKit {
           "body",
           both((l) =>
             l === "fr"
-              ? `En finale **${main.id}** à 3 NM, ${num(altFt, l)} ft (environ ${num(finalAgl, l)} ft au-dessus du terrain), au cap ${pad3(main.heading)}.`
-              : `On final for **${main.id}**, 3 NM out, ${num(altFt, l)} ft (about ${num(finalAgl, l)} ft above the field), heading ${pad3(main.heading)}.`,
+              ? `En finale **${main.id}** à ${num(finalNm, l, 1)} NM, ${num(altFt, l)} ft (environ ${num(finalAgl, l)} ft au-dessus du terrain), au cap ${pad3(main.heading)}.`
+              : `On final for **${main.id}**, ${num(finalNm, l, 1)} NM out, ${num(altFt, l)} ft (about ${num(finalAgl, l)} ft above the field), heading ${pad3(main.heading)}.`,
           ),
           G.left,
           352,
@@ -801,8 +806,8 @@ export function airfieldKitFrom(f: RealAirfield): AirfieldKit {
           scene: sFinal.id,
           view: "outside",
           alt: L(
-            `${name} seen from a 3 NM final to runway ${main.id}`,
-            `${name} vu d’une finale à 3 NM de la piste ${main.id}`,
+            `${name} seen from a ${finalNm} NM final to runway ${main.id}`,
+            `${name} vu d’une finale à ${num(finalNm, "fr", 1)} NM de la piste ${main.id}`,
           ),
         },
         foot(src(L("Runway geometry", "Géométrie des pistes")), "k4.foot"),
@@ -1046,6 +1051,7 @@ export function airfieldKitFrom(f: RealAirfield): AirfieldKit {
       ]),
     ),
     presenter: Object.fromEntries(slides.map((s, i) => [i, s.notes])),
+    titles: Object.fromEntries(slides.map((s, i) => [i, s.title])),
     scenes: () =>
       JSON.parse(JSON.stringify(scenes)) as Record<string, SimScene>,
   };

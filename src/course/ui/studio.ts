@@ -26,6 +26,7 @@ import { baseThemeId } from "../canvas/themes";
 import { KINDS } from "./reader";
 import { TEMPLATES, titleOfSlide, tr, type TemplateId } from "./templates";
 import type { DeckStarter } from "./deckStarters";
+import { airfieldKitPanel, type AirfieldKitPanel } from "./airfieldKitPanel";
 import { isExampleSituation } from "./exampleSituation";
 import {
   SIM_CONTENTS,
@@ -269,6 +270,8 @@ export class StudioPanel {
   private views: SlideView[] = [];
   private io: IntersectionObserver | null = null;
   private decks: { destroy(): void } | null = null;
+  /** « Adapter à mon terrain » at the top of « Modèles » */
+  private kitPanel: AirfieldKitPanel | null = null;
   constructor(
     private host: StudioHost,
     private onClose: () => void,
@@ -378,6 +381,8 @@ export class StudioPanel {
     this.io = null;
     this.decks?.destroy();
     this.decks = null;
+    this.kitPanel?.destroy();
+    this.kitPanel = null;
     for (const p of this.simParts.splice(0)) p.destroy();
     this.body.replaceChildren();
   }
@@ -826,6 +831,17 @@ export class StudioPanel {
       });
       return b;
     };
+    // « Adapter à mon terrain »: an ICAO code, six slides of that field added after this one
+    this.kitPanel = airfieldKitPanel({
+      lang,
+      theme,
+      idPrefix: "ce-afk",
+      action: {
+        label: (n) => t2(lang, `Add these ${n} slides`, `Ajouter ces ${n} diapos`),
+        run: (k) => host.addDeck(k.starter, theme),
+      },
+    });
+    parts.push(this.kitPanel.el);
     const pickLayout = (id: SlideLayoutId) => {
       // Templates add a new slide; an empty slide takes it in place (the toolbar's Layout changes a slide)
       const replace = host.onSlide && host.slideEmpty;
