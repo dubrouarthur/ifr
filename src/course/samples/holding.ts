@@ -294,7 +294,10 @@ export function holdingScenes(): Record<string, SimScene> {
       { label: "0.9 NM before ARD · heading 270 · direct entry" },
     ),
     // in the published hold of the flight plan (ARD/H270R1): the Fly-it-in-the-simulator slide
-    "hold.sim": sit("hold.sim", "hold", "ARD hold · inbound 270 · 4,000 ft"),
+    // at 3,000 ft, as in the clearance, the scenes and the Fly it
+    "hold.sim": sit("hold.sim", "hold", "ARD hold · inbound 270 · 3,000 ft", {
+      altFt: 3000,
+    }),
   };
 }
 // ------------------------------------------------------------------ shared step builders
@@ -321,9 +324,9 @@ const ENTRY_SHORT: Record<HoldEntry, L10n> = {
 };
 /** The courses to the fix of each sector of the ARD hold (inbound 270, right turns), for the quiz feedback. */
 const SECTOR: Record<HoldEntry, L10n> = {
-  DIRECT: L("courses 200 to 020", "routes 200 à 020"),
-  TEARDROP: L("courses 020 to 090", "routes 020 à 090"),
-  PARALLEL: L("courses 090 to 200", "routes 090 à 200"),
+  DIRECT: L("headings 200 to 020", "caps 200 à 020"),
+  TEARDROP: L("headings 020 to 090", "caps 020 à 090"),
+  PARALLEL: L("headings 090 to 200", "caps 090 à 200"),
 };
 const holdD = (fix: string, crs?: number, quiet?: boolean) => ({
   kind: "hold" as const,
@@ -366,8 +369,8 @@ function entryPredict(o: {
       `${o.id}.hold`,
       holdD(o.fix, o.crs),
       L(
-        `Hold at ${o.fix} with the arrival on course ${pad3(o.crs)}: ${ENTRY_NAME[e].en.toLowerCase()} entry`,
-        `Attente à ${o.fix} avec l’arrivée au ${pad3(o.crs)} : entrée ${F(ENTRY_NAME[e]).toLowerCase()}`,
+        `Hold at ${o.fix} with the arrival on heading ${pad3(o.crs)}: ${ENTRY_NAME[e].en.toLowerCase()} entry`,
+        `Attente à ${o.fix} avec l’arrivée au cap ${pad3(o.crs)} : entrée ${F(ENTRY_NAME[e]).toLowerCase()}`,
       ),
       d.x,
       d.y,
@@ -438,26 +441,26 @@ function fiveTs(
 ): Step {
   const rows: { heading: L10n; small: L10n }[] = [
     {
-      heading: L("Turn", "Virer"),
+      heading: L("Turn", "Turn · virer"),
       small: L(
         "to the outbound or entry heading",
         "vers le cap d’éloignement ou d’entrée",
       ),
     },
     {
-      heading: L("Time", "Chrono"),
+      heading: L("Time", "Time · chrono"),
       small: L(
         "abeam the fix (teardrop, parallel entry: at the fix)",
         "au travers du repère (entrée décalée, parallèle : au repère)",
       ),
     },
-    { heading: L("Twist", "Tourner"), small: twist },
+    { heading: L("Twist", "Twist · l’OBS"), small: twist },
     {
-      heading: L("Throttle", "Puissance"),
+      heading: L("Throttle", "Throttle · puissance"),
       small: L("holding speed, 90 KIAS here", "vitesse d’attente, 90 KIAS ici"),
     },
     {
-      heading: L("Talk", "Parler"),
+      heading: L("Talk", "Talk · parler"),
       small: L(
         "report entering the hold if asked",
         "annoncez l’entrée en attente si demandé",
@@ -466,16 +469,29 @@ function fiveTs(
   ];
   return slideStep(
     id,
-    L("At the fix: the five Ts", "Au repère : les cinq T"),
+    L("At the fix: the five Ts", "Au repère : les 5 T"),
     slide(
       "stepByStep",
       [
         ...head(
           L("At the holding fix", "Au repère d’attente"),
-          L("The five Ts", "Les cinq T"),
+          L("The five Ts", "Les 5 T, en anglais"),
           960,
         ),
-        ...stepRows(rows, { y: 312, pitch: 132, w: 816 }),
+        ...stepRows(rows, { y: 304, pitch: 112, w: 816 }),
+        // the « À vous » of the instrument, said on the slide (the strip only names its control)
+        T(
+          "small",
+          L(
+            `Your turn: wait for the flag to flip over ARD, then turn right to ${pad3(outbound)} with the bank control.`,
+            `À vous : attendez la bascule du drapeau à la verticale d’ARD, puis virez à droite au ${pad3(outbound)} avec l’inclinaison.`,
+          ),
+          GR.left,
+          872,
+          816,
+          88,
+          { color: "key" },
+        ),
         INST(
           inst,
           L(
@@ -519,7 +535,7 @@ function fiveTs(
         foot(
           L(
             "An instructors’ memory aid; some add a sixth T: Track",
-            "Un aide-mémoire d’instructeur ; certains ajoutent un sixième T : la route",
+            "Un aide-mémoire d’instructeur ; certains ajoutent un sixième T : Track (la route)",
           ),
           960,
         ),
@@ -531,7 +547,7 @@ function fiveTs(
         t: "text",
         text: L(
           "At the fix: Turn, Time, Twist, Throttle, Talk (some instructors add a sixth, Track). The time starts abeam the fix in the hold and on a direct entry; on a teardrop or a parallel entry it starts at the fix. On the slide: wait for the flag to flip over ARD, then turn outbound with the bank pad.",
-          "Au repère : Virer, Chrono, Tourner (l’OBS), Puissance, Parler (certains ajoutent un sixième T, la route). Le chrono part au travers du repère en attente et en entrée directe ; en entrée décalée ou parallèle, il part au repère. Sur la diapo : attendez la bascule du drapeau à la verticale d’ARD, puis virez en éloignement avec les boutons d’inclinaison L / R.",
+          "Au repère, les 5 T, en anglais : Turn (virer), Time (chrono), Twist (l’OBS), Throttle (puissance), Talk (parler) ; certains ajoutent un sixième T, Track (la route). Le chrono part au travers du repère en attente et en entrée directe ; en entrée décalée ou parallèle, il part au repère. Sur la diapo : attendez la bascule du drapeau à la verticale d’ARD, puis virez en éloignement avec les boutons d’inclinaison L / R.",
         ),
       },
     ],
@@ -554,7 +570,7 @@ function clearance(): Step {
         "quote",
         L(
           "“Hold east of ARD on the 090 radial, maintain 3,000, expect further clearance 1430.”",
-          "« Attendez à l’est d’ARD sur le radial 090, maintenez 3000 pieds, autorisation ultérieure prévue à 1430. »",
+          "« Attendez à ARD, radial 090, à l’est, maintenez 3000 pieds, prévoyez autorisation ultérieure à 1430. »",
         ),
         GR.left,
         312,
@@ -571,17 +587,17 @@ function clearance(): Step {
           ),
           options: [
             {
-              text: L("270", "270"),
-              why: L(
-                "Right: on the 090 radial, east of ARD, you fly back to the fix on 270.",
-                "Juste : sur le radial 090, à l’est d’ARD, vous revenez vers le repère au 270.",
-              ),
-            },
-            {
               text: L("090", "090"),
               why: L(
                 "090 is the radial, flown outbound. Inbound you fly its reciprocal.",
                 "090 est le radial, en éloignement. En rapprochement on vole son inverse.",
+              ),
+            },
+            {
+              text: L("270", "270"),
+              why: L(
+                "Right: on the 090 radial, east of ARD, you fly back to the fix on 270.",
+                "Juste : sur le radial 090, à l’est d’ARD, vous revenez vers le repère au 270.",
               ),
             },
             {
@@ -592,10 +608,10 @@ function clearance(): Step {
               ),
             },
           ],
-          answer: 0,
+          answer: 1,
           explain: L(
             "Inbound 270. No turns stated: right turns. EFC 1430.",
-            "Rapprochement 270. Aucun sens donné : virages à droite. EFC 1430.",
+            "Rapprochement 270. Aucun sens donné : virages à droite. Heure prévue d’autorisation ultérieure (EFC) : 1430.",
           ),
         },
         GR.left,
@@ -676,8 +692,8 @@ function threeEntries(): Step {
       {
         t: "text",
         text: L(
-          "Parallel (110° sector), teardrop (70°; ICAO calls it the offset entry) and direct (180°), measured from the inbound course (FAA AIM 5-3-8). Within 5° of a boundary, either entry is acceptable (ICAO PANS-OPS, Doc 8168).",
-          "Parallèle (secteur de 110°), décalée (70° ; la FAA dit « teardrop », la goutte d’eau) et directe (180°), mesurés depuis la route de rapprochement (FAA AIM 5-3-8). À 5° près d’une limite, les deux entrées sont acceptables (OACI PANS-OPS, Doc 8168).",
+          "Parallel (110° sector), teardrop (70°; ICAO calls it the offset entry) and direct (180°), measured from the inbound course (FAA AIM 5-3-8). The sector is read from your arrival heading; in light wind heading and course are the same. Within 5° of a boundary, either entry is acceptable (ICAO PANS-OPS, Doc 8168).",
+          "Parallèle (secteur de 110°), décalée (70° ; la FAA dit « teardrop », la goutte d’eau) et directe (180°), mesurés depuis la route de rapprochement (FAA AIM 5-3-8). Le secteur se lit avec votre cap d’arrivée ; par vent faible, cap ≈ route. À 5° près d’une limite, les deux entrées sont acceptables (OACI PANS-OPS, Doc 8168).",
         ),
       },
     ],
@@ -690,7 +706,7 @@ function caseSlide(id: string, crs: number, diagramLeft: boolean): Step {
   const e = holdEntry(HOLD.inbound, HOLD.turn, crs);
   return slideStep(
     id,
-    L(`Arriving on course ${pad3(crs)}`, `Arrivée au ${pad3(crs)}`),
+    L(`Arriving on heading ${pad3(crs)}`, `Arrivée au cap ${pad3(crs)}`),
     slide(
       "quiz",
       entryPredict({
@@ -699,8 +715,8 @@ function caseSlide(id: string, crs: number, diagramLeft: boolean): Step {
         crs,
         eyebrow: L("Predict", "Prédire"),
         title: L(
-          `You arrive on course ${pad3(crs)}`,
-          `Vous arrivez sur la route ${pad3(crs)}`,
+          `You arrive on heading ${pad3(crs)}`,
+          `Vous arrivez au cap ${pad3(crs)}`,
         ),
         prompt: L(
           "Hold at ARD, inbound 270, right turns. Which entry?",
@@ -713,8 +729,8 @@ function caseSlide(id: string, crs: number, diagramLeft: boolean): Step {
       {
         t: "text",
         text: L(
-          `Arriving on course ${pad3(crs)} to a hold inbound 270 with right turns: ${ENTRY_NAME[e].en.toLowerCase()} entry (FAA AIM 5-3-8). ${ENTRY_HOW[e].en}`,
-          `Arrivée au ${pad3(crs)} sur une attente au 270 par la droite : entrée ${F(ENTRY_NAME[e]).toLowerCase()} (FAA AIM 5-3-8). ${F(ENTRY_HOW[e])}`,
+          `Arriving on heading ${pad3(crs)} to a hold inbound 270 with right turns: ${ENTRY_NAME[e].en.toLowerCase()} entry (FAA AIM 5-3-8). ${ENTRY_HOW[e].en}`,
+          `Arrivée au cap ${pad3(crs)} sur une attente au 270 par la droite : entrée ${F(ENTRY_NAME[e]).toLowerCase()} (FAA AIM 5-3-8). ${F(ENTRY_HOW[e])}`,
         ),
       },
     ],
@@ -770,16 +786,6 @@ function abeam(): Step {
             options: [
               {
                 text: L(
-                  "When the flag flips from FROM to TO",
-                  "Quand le drapeau passe de FROM à TO",
-                ),
-                why: L(
-                  "Right: the flip marks the point abeam the fix.",
-                  "Juste : la bascule marque le travers du repère.",
-                ),
-              },
-              {
-                text: L(
                   "As soon as the wings are level",
                   "Dès que les ailes sont à plat",
                 ),
@@ -795,8 +801,18 @@ function abeam(): Step {
                   "En éloignement, vous êtes à 1 NM de l’axe : la barre reste en butée.",
                 ),
               },
+              {
+                text: L(
+                  "When the flag flips from FROM to TO",
+                  "Quand le drapeau passe de FROM à TO",
+                ),
+                why: L(
+                  "Right: the flip marks the point abeam the fix.",
+                  "Juste : la bascule marque le travers du repère.",
+                ),
+              },
             ],
-            answer: 0,
+            answer: 2,
             explain: L(
               "Abeam = the flag flips. Start the clock then, or wings level if that comes later.",
               "Travers = bascule du drapeau. Top chrono à ce moment, ou ailes à plat si c’est plus tard.",
@@ -883,7 +899,7 @@ function windTry(): Step {
         items: [
           L(
             `Expect a heading near ${inHdg}: about ${d}° into the wind.`,
-            `Attendez-vous à un cap vers ${inHdg} : environ ${d}° face au vent.`,
+            `Attendez-vous à un cap vers ${inHdg} : environ ${d}° côté vent.`,
           ),
         ],
       },
@@ -895,7 +911,7 @@ function windTry(): Step {
             t: "text",
             text: L(
               `That is the inbound correction: ${d}°. Outbound you triple it, still into the wind: 090 − ${3 * d}° = **${outHdg}**.`,
-              `C’est la correction de rapprochement : ${d}°. En éloignement, vous la triplez, toujours face au vent : 090 − ${3 * d}° = **${outHdg}**.`,
+              `C’est la correction de rapprochement : ${d}°. En éloignement, vous la triplez, toujours côté vent : 090 − ${3 * d}° = **${outHdg}**.`,
             ),
           },
         ],
@@ -971,14 +987,14 @@ function mistakes(): Step {
         ),
         fix: L(
           "Outbound, triple it, into the wind.",
-          "En éloignement, triplez-la, face au vent.",
+          "En éloignement, triplez-la, côté vent.",
         ),
       },
     ],
     foot: L("FAA AIM 5-3-8 · FAA IFH ch. 10", "FAA AIM 5-3-8 · FAA IFH ch. 10"),
     reader: L(
       "Three classic mistakes. Choosing the entry at the fix: there is no time left; draw the hold and your arrival three minutes before. Starting the clock too early: timed from the fix and not from abeam, the outbound leg is cut short and so is the inbound leg; start it abeam, when the flag flips. One correction for both legs: outbound with the inbound correction, the two turns drift you across the course; outbound, triple the correction, into the wind (FAA AIM 5-3-8; FAA IFH ch. 10).",
-      "Trois erreurs classiques. Choisir l’entrée au repère : il n’y a plus le temps ; dessinez l’attente et votre arrivée trois minutes avant. Lancer le chrono trop tôt : compté depuis le repère et non depuis le travers, l’éloignement est amputé et le rapprochement aussi ; lancez-le au travers, quand le drapeau bascule. La même correction partout : en éloignement avec la correction du rapprochement, les deux virages vous font traverser l’axe ; en éloignement, triplez la correction, face au vent (FAA AIM 5-3-8 ; FAA IFH ch. 10).",
+      "Trois erreurs classiques. Choisir l’entrée au repère : il n’y a plus le temps ; dessinez l’attente et votre arrivée trois minutes avant. Lancer le chrono trop tôt : compté depuis le repère et non depuis le travers, l’éloignement est amputé et le rapprochement aussi ; lancez-le au travers, quand le drapeau bascule. La même correction partout : en éloignement avec la correction du rapprochement, les deux virages vous font traverser l’axe ; en éloignement, triplez la correction, côté vent (FAA AIM 5-3-8 ; FAA IFH ch. 10).",
     ),
   });
 }
@@ -1005,8 +1021,8 @@ function recap(): Step {
           {
             n: L("×3", "×3"),
             text: L(
-              "the drift correction, outbound",
-              "la correction de dérive, en éloignement",
+              "the drift correction, outbound (1:00 outbound leg)",
+              "la correction de dérive, en éloignement (éloignement d’1 min)",
             ),
             color: "key",
           },
@@ -1021,8 +1037,8 @@ function recap(): Step {
         checksTitle: L("Every hold", "À chaque attente"),
         checks: [
           L(
-            "Entry from your course to the fix",
-            "Entrée selon votre route vers le repère",
+            "Entry from your arrival heading",
+            "Entrée selon votre cap d’arrivée",
           ),
           L("Time from abeam the fix", "Chrono au travers du repère"),
           L(
@@ -1047,8 +1063,8 @@ function recap(): Step {
             "Rapprochement 1:00 jusqu’à 14 000 ft MSL.",
           ),
           L(
-            "Triple the drift correction outbound.",
-            "Triplez la correction de dérive en éloignement.",
+            "Triple the drift correction outbound (for a 1:00 outbound leg; a longer one needs less).",
+            "Triplez la correction de dérive en éloignement (pour 1 min d’éloignement ; plus long, il en faut moins).",
           ),
           L(
             "Maximum 230 kt up to 14,000 ft (ICAO); FAA: 200 KIAS up to 6,000 ft MSL.",
@@ -1072,7 +1088,7 @@ function twist(): Step {
         t: "text",
         text: L(
           "*“Hold east of ARD on the 090 radial.”* You are 8 NM east of ARD, on your way to the fix. Set the **inbound course** of the hold on the OBS, then tap Check.",
-          "*« Attendez à l’est d’ARD sur le radial 090. »* Vous êtes à 8 NM à l’est d’ARD, en route vers le repère. Affichez à l’OBS la **route de rapprochement** de l’attente, puis touchez Vérifier.",
+          "*« Attendez à ARD, radial 090, à l’est. »* Vous êtes à 8 NM à l’est d’ARD, en route vers le repère. Affichez à l’OBS la **route de rapprochement** de l’attente, puis touchez Vérifier.",
         ),
       },
     ],
@@ -1154,7 +1170,8 @@ function flyBriefing(): Step[] {
   const tripled = Math.round(wrap360(90 + side * 3 * drift));
   const wrongSide = Math.round(wrap360(90 - (f.outHdg - 90)));
   const e = holdEntry(HOLD.inbound, HOLD.turn, 270);
-  const opts = [f.outHdg, once, wrongSide];
+  // the right heading last (the answers do not all sit on A)
+  const opts = [once, wrongSide, f.outHdg];
   return [
     step(
       "h-fly.b1",
@@ -1235,22 +1252,22 @@ function flyBriefing(): Step[] {
           options: opts.map((v, i) => ({
             text: L(pad3(v), pad3(v)),
             why:
-              i === 0
+              i === 2
                 ? L(
-                    `Right: about twice the drift, into the wind, held for about ${mmss(f.outS)}.`,
-                    `Juste : environ deux fois la dérive, face au vent, tenue environ ${mmss(f.outS)}.`,
+                    `Right: about twice the drift, into the wind, held for about ${mmss(f.outS)}. ×3 is for a 1:00 outbound leg; here it lasts ${mmss(f.outS)}, so the same drift is made up over more time.`,
+                    `Juste : environ deux fois la dérive, côté vent, tenue environ ${mmss(f.outS)}. ×3 vaut pour 1:00 d’éloignement ; ici il dure ${mmss(f.outS)}, la même dérive se rattrape sur plus de temps.`,
                   )
-                : i === 1
+                : i === 0
                   ? L(
                       "That only holds the 090 track: the two turns drift you south, and you overshoot the inbound course.",
                       "Ce cap tient seulement la route 090 : les deux virages vous déportent au sud et vous dépassez l’axe de rapprochement.",
                     )
                   : L(
                       "Wrong side: correct into the wind, to the left, towards the north.",
-                      "Mauvais côté : corrigez face au vent, à gauche, vers le nord.",
+                      "Mauvais côté : corrigez côté vent, à gauche, vers le nord.",
                     ),
           })),
-          answer: 0,
+          answer: 2,
           explain: L(
             `About ${pad3(f.outHdg)} for about ${mmss(f.outS)}. Tripling ${drift}° would give ${pad3(tripled)}, almost straight into the wind: the ×3 rule is for a one-minute outbound leg. Here the tailwind inbound makes the outbound leg long, so about twice is enough. Then adjust lap by lap.`,
             `Environ ${pad3(f.outHdg)} pendant environ ${mmss(f.outS)}. Tripler ${drift}° donnerait ${pad3(tripled)}, presque face au vent : la règle du ×3 vaut pour un éloignement d’une minute. Ici, le vent dans le dos en rapprochement allonge l’éloignement : environ deux fois suffit. Ajustez ensuite tour après tour.`,
@@ -1301,7 +1318,17 @@ const withNotes = (s: Step, notes: L10n): Step => ({ ...s, notes });
 export const TRAINER_GOALS = [50, 180, 300] as const;
 /** The first lap of the timing question: 1:00 outbound with this wind on the nose inbound, at 90 KTAS. */
 export const TIMING_WIND: [number, number] = [270, 10];
-export function timingNumbers(): { in1: number; out2: number } {
+export function timingNumbers(): { in1: number; out2: number; refined: number } {
+  // what the next laps settle on (the timing slide flies it): the turns drift too, so a little more than the rule
+  const auto = flyPath({
+    inbound: HOLD.inbound,
+    turn: HOLD.turn,
+    tasKt: 90,
+    windDir: TIMING_WIND[0],
+    windKt: TIMING_WIND[1],
+    outS: "auto",
+    laps: 1,
+  });
   const f = flyPath({
     inbound: HOLD.inbound,
     turn: HOLD.turn,
@@ -1312,7 +1339,11 @@ export function timingNumbers(): { in1: number; out2: number } {
     laps: 1,
   });
   const in1 = Math.round(f.inboundS[0] / 5) * 5;
-  return { in1, out2: Math.max(15, 120 - in1) };
+  return {
+    in1,
+    out2: Math.max(15, 120 - in1),
+    refined: Math.round(auto.outS / 5) * 5,
+  };
 }
 
 function cover(): Step {
@@ -1334,7 +1365,7 @@ function cover(): Step {
           sub: L("Entries, timing and wind", "Entrées, chronométrage et vent"),
           lead: L(
             "“Hold east of ARD on the 090 radial.” Pick the entry, start the clock abeam, correct for the wind — then fly it.",
-            "« Attendez à l’est d’ARD sur le radial 090. » Choisir l’entrée, lancer le chrono au travers, corriger le vent — puis la voler.",
+            "« Attendez à ARD, radial 090, à l’est. » Choisir l’entrée, lancer le chrono au travers, corriger le vent — puis la voler.",
           ),
           meta: L(
             "18 steps · about 40 min · you act in 12 of them",
@@ -1453,8 +1484,8 @@ function entryTry(): Step {
           {
             interactive: true,
             caption: L(
-              "Drag the aircraft round the fix, or −10° / +10°",
-              "Déplacez l’avion autour du repère, ou −10° / +10°",
+              "Set the heading (drag the aircraft, or −10° / +10°), then pick the entry",
+              "Réglez le cap (déplacez l’avion, ou −10° / +10°), puis choisissez l’entrée",
             ),
           },
         ),
@@ -1464,16 +1495,16 @@ function entryTry(): Step {
         {
           t: "text",
           text: L(
-            "Set the arrival heading to the fix (drag the aircraft round ARD, or −10° / +10°): the sector it falls in lights up and the aircraft flies its entry. Set 050, 180 and 300 in turn and watch each entry to the end: 050 is in the 70° sector (teardrop), 180 in the 110° sector (parallel), 300 in the 180° sector (direct).",
-            "Réglez le cap d’arrivée vers le repère (déplacez l’avion autour d’ARD, ou −10° / +10°) : son secteur s’allume et l’avion vole l’entrée. Réglez 050, 180 puis 300 et regardez chaque entrée jusqu’au bout : 050 est dans le secteur de 70° (décalée), 180 dans celui de 110° (parallèle), 300 dans celui de 180° (directe).",
+            "Set the arrival heading to the fix (drag the aircraft round ARD, or −10° / +10°), then say which entry it takes: Direct, Teardrop or Parallel. The aircraft waits for your answer; the right one lights the sector and the aircraft flies the entry. Do it for 050, 180 and 300.",
+            "Réglez le cap d’arrivée vers le repère (déplacez l’avion autour d’ARD, ou −10° / +10°), puis dites quelle entrée il demande : Directe, Décalée ou Parallèle. L’avion attend votre réponse ; la bonne allume le secteur et l’avion vole l’entrée. Faites-le pour 050, 180 et 300.",
           ),
         },
       ],
       { kind: "try", minutes: 3, section: "technique" },
     ),
     L(
-      "Hand the slide to a student (or let each one try on their own screen). Before each heading, ask the class to call the entry out loud, then let the aircraft show it. The three rows tick by themselves once each entry has been flown to the fix.",
-      "Confiez la diapo à un élève (ou laissez chacun essayer sur son écran). Avant chaque cap, faites annoncer l’entrée à voix haute par la classe, puis laissez l’avion la montrer. Les trois lignes se cochent toutes seules une fois chaque entrée volée jusqu’au repère.",
+      "Hand the slide to a student (or let each one try on their own screen). For each heading the entry stays hidden until someone picks it: let the class call it out loud first, then pick. A right pick ticks the row and the aircraft flies the entry; a wrong one shows the lines to read again.",
+      "Confiez la diapo à un élève (ou laissez chacun essayer sur son écran). Pour chaque cap, l’entrée reste cachée jusqu’à ce qu’on la choisisse : faites-la annoncer à voix haute par la classe, puis choisissez. Une bonne réponse coche la ligne et l’avion vole l’entrée ; une mauvaise fait ressortir les lignes à relire.",
     ),
   );
 }
@@ -1619,7 +1650,7 @@ function timingSlide(): Step {
 }
 
 function timingQuiz(): Step {
-  const { in1, out2 } = timingNumbers();
+  const { in1, out2, refined } = timingNumbers();
   const err = in1 - 60;
   const title = L(
     `1:00 outbound gave ${mmss(in1)} inbound. Next outbound time?`,
@@ -1641,17 +1672,17 @@ function timingQuiz(): Step {
             ),
             options: [
               {
-                text: L(mmss(out2), mmss(out2)),
-                why: L(
-                  `Right: ${err} s too long inbound, so ${err} s less outbound. Then refine on the next lap.`,
-                  `Juste : ${err} s de trop en rapprochement, donc ${err} s de moins en éloignement. Puis affinez au tour suivant.`,
-                ),
-              },
-              {
                 text: L(mmss(60 + err), mmss(60 + err)),
                 why: L(
                   "The wrong way: a longer outbound leg makes the slow inbound leg longer still.",
                   "Dans le mauvais sens : un éloignement plus long allonge encore le rapprochement, déjà lent.",
+                ),
+              },
+              {
+                text: L(mmss(out2), mmss(out2)),
+                why: L(
+                  `Right: ${err} s too long inbound, so ${err} s less outbound → ${mmss(out2)}. A first correction: the next lap refines it (about ${mmss(refined)}, as on the previous slide), because the turns drift too.`,
+                  `Juste : ${err} s de trop en rapprochement, donc ${err} s de moins en éloignement → ${mmss(out2)}. C’est une première correction : le tour suivant l’affine (≈ ${mmss(refined)}, comme sur la diapo précédente), car les virages dérivent aussi.`,
                 ),
               },
               {
@@ -1662,10 +1693,10 @@ function timingQuiz(): Step {
                 ),
               },
             ],
-            answer: 0,
+            answer: 1,
             explain: L(
-              `Correct the outbound leg by the inbound error, the other way: ${mmss(out2)}.`,
-              `Corrigez l’éloignement de l’écart du rapprochement, en sens inverse : ${mmss(out2)}.`,
+              `Correct the outbound leg by the inbound error, the other way: ${mmss(out2)}. Then refine lap by lap (about ${mmss(refined)} here).`,
+              `Corrigez l’éloignement de l’écart du rapprochement, en sens inverse : ${mmss(out2)}. Puis affinez tour après tour (≈ ${mmss(refined)} ici).`,
             ),
           },
           GR.left,
@@ -1698,8 +1729,8 @@ function timingQuiz(): Step {
       { kind: "quiz", minutes: 2, section: "check" },
     ),
     L(
-      `Let the class answer before anyone taps. The drawing flies the first lap: watch the inbound stopwatch reach about ${mmss(in1)}. Those who choose ${mmss(60 + err)} add the error instead of taking it off: ask them which leg is too long.`,
-      `Laissez la classe répondre avant que quelqu’un touche. Le schéma vole le premier tour : regardez le chrono de rapprochement atteindre environ ${mmss(in1)}. Ceux qui choisissent ${mmss(60 + err)} ajoutent l’écart au lieu de le retirer : demandez-leur quelle branche est trop longue.`,
+      `Let the class answer before anyone taps. The drawing flies the first lap: watch the inbound stopwatch reach about ${mmss(in1)}. Those who choose ${mmss(60 + err)} add the error instead of taking it off: ask them which leg is too long. ${mmss(out2)} is the rule of thumb, a first correction; the previous slide flew about ${mmss(refined)}, what the next lap refines it to (the turns drift too).`,
+      `Laissez la classe répondre avant que quelqu’un touche. Le schéma vole le premier tour : regardez le chrono de rapprochement atteindre environ ${mmss(in1)}. Ceux qui choisissent ${mmss(60 + err)} ajoutent l’écart au lieu de le retirer : demandez-leur quelle branche est trop longue. ${mmss(out2)} est la règle pratique, une première correction ; la diapo précédente volait environ ${mmss(refined)}, ce que le tour suivant affine (les virages dérivent aussi).`,
     ),
   );
 }
@@ -1722,7 +1753,7 @@ function windFly(): Step {
           flyD({ show: ["headings"], windDir: 360, windKt: 25 }, ["wind"]),
           L(
             `The hold at ARD in a north wind of 25 kt: inbound heading ${pad3(270 + drift)}, ${drift}° into the wind; outbound heading ${pad3(outHdg)}, three times that`,
-            `L’attente d’ARD par vent du nord de 25 kt : cap de rapprochement ${pad3(270 + drift)}, ${drift}° face au vent ; cap d’éloignement ${pad3(outHdg)}, trois fois plus`,
+            `L’attente d’ARD par vent du nord de 25 kt : cap de rapprochement ${pad3(270 + drift)}, ${drift}° côté vent ; cap d’éloignement ${pad3(outHdg)}, trois fois plus`,
           ),
           GR.left,
           288,
@@ -1736,38 +1767,46 @@ function windFly(): Step {
             ),
           },
         ),
+        // the rules in words: the numbers are the drawing's, whatever wind the presenter sets
         ...pointRows(
           [
             {
               heading: L(
-                `Inbound: ${drift}° into the wind`,
-                `Rapprochement : ${drift}° face au vent`,
+                "Inbound: the correction that holds the course",
+                "Rapprochement : la correction qui tient l’axe",
               ),
               body: L(
-                "the correction that holds the course to the fix.",
-                "la correction qui tient la route vers le repère.",
+                "into the wind, found on the instrument.",
+                "côté vent, trouvée sur l’instrument.",
               ),
               color: "sel",
             },
             {
               heading: L(
-                `Outbound: 3 × ${drift}° = ${3 * drift}°`,
-                `Éloignement : 3 × ${drift}° = ${3 * drift}°`,
+                "Outbound: 3 × that correction",
+                "Éloignement : 3 × cette correction",
               ),
               body: L(
-                "the two turns drift too: one minute outbound makes up for them.",
-                "les deux virages dérivent aussi : une minute d’éloignement les rattrape.",
+                "the two turns drift too: the outbound leg makes up for them.",
+                "les deux virages dérivent aussi : l’éloignement les rattrape.",
               ),
               color: "key",
             },
+            {
+              heading: L(
+                "For a 1:00 outbound leg",
+                "Pour un éloignement d’1 min",
+              ),
+              body: L(
+                "a longer outbound leg needs less: about × 2.",
+                "un éloignement plus long en demande moins : ≈ × 2.",
+              ),
+            },
           ],
-          { x: 1296, w: 504, pitch: 264, bodyH: 152 },
+          { x: 1296, w: 504, pitch: 224, bodyH: 112 },
         ),
         foot(
-          L(
-            "FAA AIM 5-3-8 · FAA IFH ch. 10 · for a one-minute outbound leg",
-            "FAA AIM 5-3-8 · FAA IFH ch. 10 · pour un éloignement d’une minute",
-          ),
+          L("FAA AIM 5-3-8 · FAA IFH ch. 10", "FAA AIM 5-3-8 · FAA IFH ch. 10"),
           1104,
         ),
       ]),
@@ -1776,7 +1815,7 @@ function windFly(): Step {
           t: "text",
           text: L(
             `Inbound, find the correction that holds the course; outbound, apply three times that correction, into the wind (FAA AIM 5-3-8; FAA IFH ch. 10). With a wind of 360/25 at 90 kt: inbound heading ${pad3(270 + drift)}, outbound heading ${pad3(outHdg)}. Three, because the two turns drift as well and the one-minute outbound leg is the only place to make it up.`,
-            `En rapprochement, trouvez la correction qui tient la route ; en éloignement, appliquez trois fois cette correction, face au vent (FAA AIM 5-3-8 ; FAA IFH ch. 10). Avec un vent 360/25 à 90 kt : cap ${pad3(270 + drift)} en rapprochement, ${pad3(outHdg)} en éloignement. Trois, parce que les deux virages dérivent eux aussi et que la minute d’éloignement est le seul endroit où le rattraper.`,
+            `En rapprochement, trouvez la correction qui tient la route ; en éloignement, appliquez trois fois cette correction, côté vent (FAA AIM 5-3-8 ; FAA IFH ch. 10). Avec un vent 360/25 à 90 kt : cap ${pad3(270 + drift)} en rapprochement, ${pad3(outHdg)} en éloignement. Trois, parce que les deux virages dérivent eux aussi et que la minute d’éloignement est le seul endroit où le rattraper.`,
           ),
         },
       ],
@@ -1784,7 +1823,7 @@ function windFly(): Step {
     ),
     L(
       "Change the wind live with the dial (top right of the drawing): put it on the nose, then from the south. Ask before each change where the racetrack will drift. The headings follow: the outbound correction is always three times the inbound one, into the wind.",
-      "Changez le vent en direct avec le cadran (en haut à droite du schéma) : mettez-le de face, puis du sud. Avant chaque changement, demandez de quel côté l’hippodrome va dériver. Les caps suivent : la correction d’éloignement vaut toujours trois fois celle du rapprochement, face au vent.",
+      "Changez le vent en direct avec le cadran (en haut à droite du schéma) : mettez-le de face, puis du sud. Avant chaque changement, demandez de quel côté l’hippodrome va dériver. Les caps suivent : la correction d’éloignement vaut toujours trois fois celle du rapprochement, côté vent.",
     ),
   );
 }
@@ -1794,12 +1833,12 @@ function simStep(): Step {
     simFlightStep({
       id: "h-sim",
       title: L(
-        "In the simulator: one lap of the ARD hold",
-        "Au simulateur : un tour d’attente à ARD",
+        "In the simulator: the turn at the fix and the outbound leg",
+        "Au simulateur : virage au repère et éloignement",
       ),
       brief: L(
-        "In the published ARD hold (inbound 270, right turns) at 4,000 ft, 2 NM before the fix. Over ARD, turn right to **090**, start the clock abeam, fly **1:00**, turn right and back to the fix.",
-        "Dans l’attente publiée d’ARD (rapprochement 270, virages à droite) à 4 000 ft, à 2 NM du repère. À la verticale d’ARD, virez à droite au **090**, top chrono au travers, volez **1:00**, virez à droite et revenez au repère.",
+        "In the published ARD hold (inbound 270, right turns) at 3,000 ft, 2 NM before the fix. Over ARD, turn right to **090**, start the clock abeam and hold the outbound leg. Then finish the lap: **1:00**, turn right and back to the fix.",
+        "Dans l’attente publiée d’ARD (rapprochement 270, virages à droite) à 3 000 ft, à 2 NM du repère. À la verticale d’ARD, virez à droite au **090**, top chrono au travers et tenez l’éloignement. Puis finissez le tour : **1:00**, virez à droite et revenez au repère.",
       ),
       scene: "hold.sim",
       alt: L(
@@ -1807,15 +1846,15 @@ function simStep(): Step {
         "Le cockpit du simulateur sur la branche de rapprochement de l’attente d’ARD, cap 270",
       ),
       prompt: L(
-        "Cross ARD, turn outbound and hold heading 090 at 4,000 ft",
-        "Passez ARD, virez en éloignement et tenez le cap 090 à 4 000 ft",
+        "Cross ARD, turn outbound and hold heading 090 at 3,000 ft",
+        "Passez ARD, virez en éloignement et tenez le cap 090 à 3 000 ft",
       ),
-      goal: [G.passed(HOLD.fix), G.heading(90, 10), G.alt(3900, 4100)],
+      goal: [G.passed(HOLD.fix), G.heading(90, 10), G.alt(2900, 3100)],
       holdS: 30,
       durationS: 300,
       success: L(
-        "Outbound in the hold: heading 090, 4,000 ft. Finish the lap: one minute, then inbound.",
-        "En éloignement dans l’attente : cap 090, 4 000 ft. Finissez le tour : une minute, puis le rapprochement.",
+        "Outbound in the hold: heading 090, 3,000 ft. Finish the lap: one minute, then inbound.",
+        "En éloignement dans l’attente : cap 090, 3 000 ft. Finissez le tour : une minute, puis le rapprochement.",
       ),
       source: L("FAA AIM 5-3-8", "FAA AIM 5-3-8"),
       notes: L(
@@ -1862,8 +1901,8 @@ export function holdingCourse(): Course {
     withNotes(
       caseSlide("h-case-a", 130, true),
       L(
-        "Arriving on 130: the class answers aloud first. The drawing then shows the sector. Those who say teardrop have read the heading as the position: the aircraft is north-west of the fix, flying south-east.",
-        "Arrivée au 130 : la classe répond à voix haute d’abord. Le schéma montre ensuite le secteur. Ceux qui disent décalée ont lu le cap comme une position : l’avion est au nord-ouest du repère et vole vers le sud-est.",
+        "Arriving on heading 130: the class answers aloud first. The drawing then shows the sector. Those who say teardrop have read the heading as the position: the aircraft is north-west of the fix, flying south-east.",
+        "Arrivée au cap 130 : la classe répond à voix haute d’abord. Le schéma montre ensuite le secteur. Ceux qui disent décalée ont lu le cap comme une position : l’avion est au nord-ouest du repère et vole vers le sud-est.",
       ),
     ),
     demo(),
@@ -1871,7 +1910,7 @@ export function holdingCourse(): Course {
       fiveTs("h-five-ts", "hold.fix", 90, HSI, 270),
       L(
         "Live on the HSI: the student waits for the flag to flip over ARD, then turns right with the bank pad. Say the five Ts with them as they do it.",
-        "En direct sur le HSI : l’élève attend la bascule du drapeau à la verticale d’ARD, puis vire à droite avec les boutons d’inclinaison. Dites les cinq T avec lui pendant qu’il le fait.",
+        "En direct sur le HSI : l’élève attend la bascule du drapeau à la verticale d’ARD, puis vire à droite avec les boutons d’inclinaison. Dites les 5 T avec lui pendant qu’il le fait.",
       ),
     ),
     // timing: the clock abeam, the flag that shows it, a question with a headwind
@@ -1890,7 +1929,7 @@ export function holdingCourse(): Course {
       windTry(),
       L(
         "The student finds the inbound correction on the HSI with the top view: the track must read 270. Then ask: and outbound? Three times, into the wind.",
-        "L’élève trouve la correction de rapprochement sur le HSI avec la vue de dessus : la route doit lire 270. Puis demandez : et en éloignement ? Trois fois plus, face au vent.",
+        "L’élève trouve la correction de rapprochement sur le HSI avec la vue de dessus : la route doit lire 270. Puis demandez : et en éloignement ? Trois fois plus, côté vent.",
       ),
     ),
     // the mistakes, the takeaways, the simulator, the full flight
@@ -1917,7 +1956,7 @@ export function holdingCourse(): Course {
       ),
     ),
   ];
-  return course(
+  const c = course(
     {
       id: HOLDING_ID,
       title: L(
@@ -1936,4 +1975,16 @@ export function holdingCourse(): Course {
     steps,
     holdingScenes(),
   );
+  return { ...c, stepAliases: { ...HOLDING_STEP_ALIASES } };
 }
+/** The steps of the earlier holding course, and the step of this one that took each one's place. */
+export const HOLDING_STEP_ALIASES: Record<string, string> = {
+  "h-drag": "h-entry-try",
+  "h-teardrop-fly": "h-demo",
+  "h-timing-calc": "h-timing-quiz",
+  "h-drill": "h-sim",
+  "h-why": "h-what",
+  "h-anatomy": "h-what",
+  "h-case-b": "h-case-a",
+  "h-case-c": "h-case-a",
+};

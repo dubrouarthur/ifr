@@ -20,11 +20,13 @@ import {
   TRAINER_GOALS,
   outboundHeading,
   timingNumbers,
+  HOLDING_STEP_ALIASES,
   wca,
 } from "../src/course/samples/holding";
 import { validateCourse, missingTranslations } from "../src/course/validate";
 import { GENERATORS, problemFor } from "../src/course/calc";
 import { entrySector, holdEntry } from "../src/nav/holding";
+import { resolveStepId } from "../src/course/ui/player";
 
 // the calc diagrams the stage really draws (stage/calcKinds.ts): anything else would show a placeholder box
 const STAGE_DIAGRAMS = new Set<string>(STAGE_CALC_DIAGRAMS);
@@ -262,6 +264,40 @@ describe("holding content follows holdEntry() (AIM FIG 5-3-8)", () => {
     if (q.quiz.kind !== "mcq") throw new Error("mcq");
     const mm = `${Math.floor(out2 / 60)}:${String(out2 % 60).padStart(2, "0")}`;
     expect(q.quiz.options[q.quiz.answer].text.en).toBe(mm);
+  });
+  it("spreads the right answers of its questions over the letters (not all on A)", () => {
+    const answers: number[] = [];
+    const walk = (s: Step) => {
+      const qs = [s.quiz, ...blocks(s).map((b) => (b.kind === "quiz" ? b.quiz : undefined))];
+      for (const q of qs) if (q?.kind === "mcq") answers.push(q.answer);
+      for (const b of s.flyIt?.briefing ?? []) walk(b);
+    };
+    for (const s of c.steps) walk(s);
+    expect(answers.length).toBeGreaterThanOrEqual(5);
+    expect(new Set(answers).size).toBeGreaterThanOrEqual(3);
+    for (const k of new Set(answers))
+      expect(answers.filter((a) => a === k).length / answers.length).toBeLessThanOrEqual(0.5);
+  });
+  it("the timing question says the rule of thumb is a first correction, refined to what the timing slide flies", () => {
+    const { out2, refined } = timingNumbers();
+    expect(refined).toBeGreaterThan(out2);
+    const q = blocks(c.steps.find((s) => s.id === "h-timing-quiz")!).find(
+      (b) => b.kind === "quiz",
+    ) as Extract<SlideBlock, { kind: "quiz" }>;
+    if (q.quiz.kind !== "mcq") throw new Error("mcq");
+    const mm = (x: number) => `${Math.floor(x / 60)}:${String(x % 60).padStart(2, "0")}`;
+    expect(q.quiz.options[q.quiz.answer].why?.fr).toContain(mm(refined));
+  });
+  it("an id of the earlier holding course lands on the step that took its place", () => {
+    const ids = new Set(c.steps.map((s) => s.id));
+    expect(Object.keys(HOLDING_STEP_ALIASES)).toContain("h-drag");
+    for (const [from, to] of Object.entries(HOLDING_STEP_ALIASES)) {
+      expect(ids.has(from), from).toBe(false);
+      expect(resolveStepId(c, from)).toBe(to);
+      expect(ids.has(to), to).toBe(true);
+    }
+    expect(resolveStepId(c, "h-wind")).toBe("h-wind");
+    expect(resolveStepId(c, "nope")).toBe("nope");
   });
   it("the briefing's entry is the hold-ndb lesson's (inbound 270 R, arriving 045: teardrop)", () => {
     const b = sampleCourse(HOLD_NDB_BRIEFING_ID)!;
