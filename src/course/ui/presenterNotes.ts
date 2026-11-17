@@ -155,6 +155,7 @@ export function fallbackNotes(step: Step, lang: Lang): string[] {
       if (b.task) push((lang === "fr" ? "Tâche : " : "Task: ") + tx(b.task.prompt, lang));
       if (d) push(tx(d.note, lang));
     }
+    if (b.kind === "engine3d") push(tx(ENGINE_NOTE, lang));
   }
   // nothing to fly and nothing to answer (a demo, an explanation): the author's own note on the slide (« En
   // classe : … », only the author sees it), then the slide's points to say, in reading order (re-walk P2: a template
@@ -288,6 +289,16 @@ const LAYOUT_TEACH: Partial<Record<SlideLayoutId, L10n | L10n[]>> = {
 };
 
 /** What the presenter does on a new slide (a layout, a ready slide), in the console's own words. Pure. */
+/** how to teach with a 3D engine (course/engines): the console drives it, the projection follows (diagramMirror) */
+const ENGINE_NOTE: L10n = {
+  en: "Choose a step to pause the cutaway and name its parts; the gauges keep running. Move a lever on your console and have the class read the gauges before you say what happened.",
+  fr: "Choisissez une étape pour figer la coupe et nommer ses pièces ; les jauges continuent. Bougez une manette sur votre console et faites lire les jauges à la classe avant de dire ce qui s’est passé.",
+};
+/** how to teach with a teaching tool (course/tools): the same controls on the console, the projection follows */
+const TOOL_NOTE: L10n = {
+  en: "The tool's controls are on your console too, and the projection follows. Ask the class to predict each change before you make it.",
+  fr: "Les commandes de l’outil sont aussi sur votre console, et la projection suit. Faites prédire chaque changement à la classe avant de le faire.",
+};
 export function slideNotes(s: SlideCanvas): { en: string; fr: string } {
   const bs = s.blocks;
   const yt = bs.some((b) => !!(b as { yourTurn?: unknown }).yourTurn);
@@ -313,6 +324,14 @@ export function slideNotes(s: SlideCanvas): { en: string; fr: string } {
   if (live) {
     en.push("“Fly the demonstration”: heading, altitude and power by hand, the projection follows (try a standard-rate turn).");
     fr.push("« Piloter la démonstration » : cap, altitude et puissance à la main, la projection suit (essayez un virage standard).");
+  }
+  if (bs.some((b) => b.kind === "tool")) {
+    en.push(TOOL_NOTE.en);
+    fr.push(TOOL_NOTE.fr ?? TOOL_NOTE.en);
+  }
+  if (bs.some((b) => b.kind === "engine3d")) {
+    en.push(ENGINE_NOTE.en);
+    fr.push(ENGINE_NOTE.fr ?? ENGINE_NOTE.en);
   }
   if (yt) {
     en.push("“Let a student fly here”: the goal on the slide says when it is done.");

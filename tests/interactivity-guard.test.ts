@@ -13,6 +13,10 @@
 //      one of them more than the slide read aloud (« À dire »): an objective, an answer, a calculation's rule, how
 //      to teach this kind of slide, or the author's note;
 //  (f) every step has a title, in both languages.
+// A teaching tool (course/tools) counts as an interaction when the student gets at least one of its controls, and
+// its task (when it has one) must be reachable from its starting values and not already met; a 3D engine
+// (course/engines) counts when the student gets at least one lever. A still tool or a watch-only engine is a
+// picture, like a diagram.
 // Besides the courses, what a creator adds from the studio is checked the same way (every rule but (a), which is
 // about a whole course): each layout of « Mise en page » / « Tous les modèles » made into a step as the studio makes
 // it, and each ready slide « Que voulez-vous montrer ? » offers a new slide (IFR and VFR courses).
@@ -47,6 +51,8 @@ import { EMPTY_STARTS, EMPTY_STARTS_VFR } from "../src/course/ui/studio";
 import { showcaseScenes, startSlides } from "../src/course/samples/showcaseDecks";
 import { Sim, type Failures } from "../src/sim/sim";
 import { applyScene } from "../src/course/scene";
+import { liveControls, taskCheck, toolDef } from "../src/course/tools/index";
+import { gallerySlides, galleryScenes } from "../src/course/samples/exampleSlides";
 
 type Rule = "a" | "b" | "c" | "d" | "e" | "f";
 interface Issue {
@@ -69,6 +75,9 @@ const BASE_KINDS = new Set([
   "quiz",
   "calc",
   "checklist",
+  // the teaching tools and the 3D engines: interactive only with something for the student's hands (handsOn)
+  "tool",
+  "engine3d",
 ]);
 
 type Inst = Extract<SlideBlock, { kind: "instrument" }>;
@@ -124,9 +133,18 @@ const isLive = (b: SlideBlock, slide: SlideCanvas): b is Inst | View =>
   b.kind === "simViewport" ||
   (b.kind === "instrument" && (b.mode === "live" || animated(b, slide)));
 
+/** a teaching tool the student works (at least one control of theirs), or a 3D engine with levers of theirs */
+function handsOn(b: SlideBlock): boolean {
+  if (b.kind === "tool") {
+    const d = toolDef(b.tool);
+    return !!d && liveControls(d, b).length > 0;
+  }
+  if (b.kind === "engine3d") return b.controls === undefined || b.controls.length > 0;
+  return false;
+}
 function interactive(s: Step): boolean {
   if (isStudentAction(s) || s.flyIt) return true;
-  return !!s.slide?.blocks.some((b) => hasStrip(b) || !BASE_KINDS.has(b.kind));
+  return !!s.slide?.blocks.some((b) => hasStrip(b) || handsOn(b) || !BASE_KINDS.has(b.kind));
 }
 
 /** a check with a tolerance (a band, a ± value, a deviation limit) */
@@ -282,6 +300,17 @@ function guard(c: Course, o: { skip?: readonly Rule[]; handsOff?: boolean } = {}
     }
     if (!slide) continue;
     for (const b of slide.blocks) {
+      // (c) a tool's task: the student can meet it from where it starts, and it is not met before they act
+      if (b.kind === "tool") {
+        const d = toolDef(b.tool);
+        if (!d) add("d", s, `tool ${b.id}: unknown tool ${b.tool}`);
+        else {
+          const t = taskCheck(d, b);
+          if (t === "met") add("c", s, `tool ${b.id}: its task is already met before the student acts`);
+          else if (t === "impossible") add("c", s, `tool ${b.id}: its task cannot be met`);
+          else if (t === "noControl") add("c", s, `tool ${b.id}: the student does not get the task's control`);
+        }
+      }
       if ((b.kind === "instrument" || b.kind === "simViewport") && b.yourTurn) {
         for (const m of yourTurnIssues(b.yourTurn))
           add("c", s, `« À vous » ${b.id}: ${m}`);
@@ -378,6 +407,32 @@ const startCourse = (id: string): Course => {
   };
   return { ...blank(`start-${id}`), scenes, steps: [step] };
 };
+/** …and a ready slide of the gallery (« Modèles »: the teaching tools, the 3D engines…), as the editor adds it */
+const galleryCourse = (id: string): Course => {
+  const ex = gallerySlides().find((g) => g.id === id);
+  if (!ex) throw new Error(`no gallery slide ${id}`);
+  const all = galleryScenes();
+  const used = new Set<string>();
+  const walk = (x: unknown) => {
+    if (!x || typeof x !== "object") return;
+    for (const [k, v] of Object.entries(x as Record<string, unknown>))
+      if (k === "scene" && typeof v === "string") used.add(v);
+      else walk(v);
+  };
+  walk(ex.slide);
+  const scenes = Object.fromEntries([...used].filter((u) => all[u]).map((u) => [u, all[u]]));
+  const slide = JSON.parse(JSON.stringify(ex.slide)) as SlideCanvas;
+  const step: Step = {
+    id: `st-${id}`,
+    kind: "slide",
+    title: { ...ex.title, fr: ex.title.fr ?? ex.title.en },
+    slide,
+    reader: linearText(slide),
+    notes: slideNotes(slide),
+  };
+  return { ...blank(`gallery-${id}`), scenes, steps: [step] };
+};
+const GALLERY_IDS = gallerySlides().map((g) => g.id);
 const START_IDS = [...new Set([...EMPTY_STARTS, ...EMPTY_STARTS_VFR])];
 const ENTRIES: Entry[] = [
   ...SAMPLES.map(
@@ -410,6 +465,15 @@ const ENTRIES: Entry[] = [
       id: `new-slide:${id}`,
       group: "new-slide suggestion",
       build: () => startCourse(id),
+      skip: ["a"],
+      handsOff: true,
+    }),
+  ),
+  ...GALLERY_IDS.map(
+    (id): Entry => ({
+      id: `gallery:${id}`,
+      group: "gallery slide",
+      build: () => galleryCourse(id),
       skip: ["a"],
       handsOff: true,
     }),
@@ -450,8 +514,11 @@ if (REPORT) {
     it("enumerates every built-in course and starting template", () => {
       // the library's own list (every sample, library course, ready deck and briefing) plus every starting template
       expect(ENTRIES.length).toBe(
-        SAMPLES.length + DECK_STARTERS.length + LAYOUTS.length + START_IDS.length,
+        SAMPLES.length + DECK_STARTERS.length + LAYOUTS.length + START_IDS.length + GALLERY_IDS.length,
       );
+      // the ready tool and engine slides of « Modèles » are in
+      expect(ENTRIES.filter((e) => e.id.startsWith("gallery:gx-tool-")).length).toBeGreaterThanOrEqual(11);
+      expect(ENTRIES.filter((e) => e.id.startsWith("gallery:gx-engine-")).length).toBeGreaterThanOrEqual(4);
       expect(ENTRIES.some((e) => e.id === "layout:checklist")).toBe(true);
       expect(ENTRIES.some((e) => e.id === "layout:yourTurn")).toBe(true);
       for (const d of [...LIBRARY_COURSES, ...DECKS, ...AIRFIELD_DECKS])
@@ -562,6 +629,29 @@ describe("interactivity guard rules", () => {
     expect(guard(c).some((i) => i.rule === "c")).toBe(false);
     c.steps = [turn([{ id: "heading", p: { value: 120, tol: 5 } }, { id: "altBand", p: { min: 3800, max: 4200 } }])];
     expect(guard(c, { handsOff: true }).some((i) => i.rule === "c" && /already met|hands off/.test(i.msg))).toBe(true);
+  });
+  it("counts a tool or an engine the student works, not a still one, and flags a tool task met at rest", () => {
+    const frame = { x: 0, y: 0, w: 1200, h: 700, z: 1 };
+    const one = (b: SlideBlock): Step =>
+      step({ notes: { en: "n", fr: "n" }, slide: { size: { w: 1920, h: 1080 }, blocks: [b] } });
+    const run = (b: SlideBlock) => {
+      const c = blank("x");
+      c.steps = [one(b), one(b), one(b)];
+      return guard(c);
+    };
+    const wing = { id: "t", kind: "tool", tool: "wing", frame } as const;
+    expect(run({ ...wing }).some((i) => i.rule === "a")).toBe(false);
+    expect(run({ ...wing, controls: [] }).some((i) => i.rule === "a")).toBe(true);
+    const eng = { id: "e", kind: "engine3d", engine: "piston", frame } as const;
+    expect(run({ ...eng }).some((i) => i.rule === "a")).toBe(false);
+    expect(run({ ...eng, controls: [] }).some((i) => i.rule === "a")).toBe(true);
+    // the wing's own task (find the critical angle, about 18° flaps up) started on the answer
+    const task = { prompt: { en: "p", fr: "p" }, key: "alpha" };
+    expect(run({ ...wing, p: { alpha: 18 }, task }).some((i) => i.rule === "c" && /already met/.test(i.msg))).toBe(
+      true,
+    );
+    expect(run({ ...wing, p: { alpha: 4 }, task }).some((i) => i.rule === "c")).toBe(false);
+    expect(run({ ...wing, controls: ["ias"], task }).some((i) => i.rule === "c" && /control/.test(i.msg))).toBe(true);
   });
   it("does not count notes that only read the slide aloud", () => {
     const c = blank("x");
