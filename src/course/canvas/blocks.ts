@@ -56,8 +56,10 @@ export { fitFloor, HINT_H, slidePalette } from "./metrics";
 import { holdFootText } from "../../train/diagram";
 import type { DiagramHub } from "./diagramMirror";
 import { problemFor, checkAnswer } from "../calc/index";
-import { engineSnapshot, mountEngine, type EngineHandle } from "../engines/view";
+import type { EngineHandle } from "../engines/view";
 import { ENGINE_NAME, tl } from "../engines/sim";
+/** the 3D engines load with three.js only when a slide shows one (the academy never loads WebGL otherwise) */
+const engineView = () => import("../engines/view");
 import { UNIT_LABEL } from "../calc/text";
 
 export type SlideMode = "play" | "edit" | "thumb";
@@ -1647,62 +1649,66 @@ function engine3dBlock(b: Of<"engine3d">, env: BlockEnv): BlockView {
   const el = mk("div", "sl-b sl-engine");
   el.style.setProperty("--eng-fs", `${ENGINE_FS}px`);
   const name = b.alt ? loc(b.alt, env.lang) : tl(ENGINE_NAME[b.engine], env.lang);
+  const tag = mk("span", "sl-engine-tag", name);
+  el.append(tag);
+  let gone = false;
   if (env.mode === "thumb") {
     // a thumbnail never opens a WebGL context of its own: one shared still picture per engine
     el.classList.add("thumb");
     el.setAttribute("role", "img");
     el.setAttribute("aria-label", name);
-    let url: string | null = null;
-    try {
-      url = engineSnapshot(b.engine, b.stage ?? 0, 640, 360);
-    } catch {
-      url = null;
-    }
-    if (url) {
-      const img = mk("img", "sl-engine-shot");
-      img.alt = "";
-      img.src = url;
-      el.append(img);
-    }
-    el.append(mk("span", "sl-engine-tag", name));
-    return { el, block: b, destroy: () => el.remove() };
+    engineView()
+      .then((m) => {
+        if (gone) return;
+        const url = m.engineSnapshot(b.engine, b.stage ?? 0, 640, 360);
+        if (!url) return;
+        const img = mk("img", "sl-engine-shot");
+        img.alt = "";
+        img.src = url;
+        el.prepend(img);
+      })
+      .catch(() => {});
+    return { el, block: b, destroy: () => ((gone = true), el.remove()) };
   }
   let h: EngineHandle | null = null;
   let unhub: (() => void) | undefined;
-  try {
-    h = mountEngine(el, {
-      kind: b.engine,
-      lang: env.lang,
-      controls: b.controls,
-      set: b.set,
-      stage: b.stage,
-      labels: b.labels,
-      slow: b.slow,
-      // the editor shows a still cutaway and lets the slide take the pointer
-      still: env.mode === "edit",
-      inert: env.mode === "edit",
-      onChange: () => env.diagrams?.changed(b.id),
-    });
-    // the presenter's levers and steps, mirrored on the projector (canvas/diagramMirror.ts)
-    const hh = h;
-    unhub = env.diagrams?.add(b.id, {
-      live: () => {
-        const s = hh.state();
-        return { spec: { engine: b.engine }, paused: !s.playing, x: s };
-      },
-      follow: (st) => {
-        const x = st.x as Partial<ReturnType<EngineHandle["state"]>> | undefined;
-        if (x && typeof x === "object") hh.set(x);
-      },
-    });
-  } catch {
-    el.append(mk("span", "sl-engine-tag", name));
-  }
+  engineView()
+    .then((m) => {
+      if (gone) return;
+      tag.remove();
+      h = m.mountEngine(el, {
+        kind: b.engine,
+        lang: env.lang,
+        controls: b.controls,
+        set: b.set,
+        stage: b.stage,
+        labels: b.labels,
+        slow: b.slow,
+        // the editor shows a still cutaway and lets the slide take the pointer
+        still: env.mode === "edit",
+        inert: env.mode === "edit",
+        onChange: () => env.diagrams?.changed(b.id),
+      });
+      // the presenter's levers and steps, mirrored on the projector (canvas/diagramMirror.ts)
+      const hh = h;
+      unhub = env.diagrams?.add(b.id, {
+        live: () => {
+          const s = hh.state();
+          return { spec: { engine: b.engine }, paused: !s.playing, x: s };
+        },
+        follow: (st) => {
+          const x = st.x as Partial<ReturnType<EngineHandle["state"]>> | undefined;
+          if (x && typeof x === "object") hh.set(x);
+        },
+      });
+    })
+    .catch(() => {});
   return {
     el,
     block: b,
     layout: () => h?.resize(),
     destroy: () => {
+      gone = true;
       unhub?.();
       h?.destroy();
       el.remove();

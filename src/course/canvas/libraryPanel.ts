@@ -3,7 +3,6 @@
 // drawn once by the cockpit renderers, icons and diagrams recolour to the slide theme. Tap a tile to add it to
 // the middle of the slide, or drag it onto the slide (pointer events: mouse, pen and finger; on touch a drag
 // starts with a sideways move or a short hold, so the list still scrolls).
-import { engineSnapshot } from "../engines/view";
 import type { Lang, SlideTheme, ThemeId } from "../types";
 import {
   LIBRARY_TABS,
@@ -347,15 +346,17 @@ export class LibraryPanel {
       case "engine": {
         // the engine itself, a still from the one shared renderer (drawn when the panel opens, never one per tile)
         el.classList.add("is-engine");
-        requestAnimationFrame(() => {
-          const url = engineSnapshot(p.engine, 0, 320, 200);
-          if (!url) return;
-          const img = mk("img");
-          img.alt = "";
-          img.draggable = false;
-          img.src = url;
-          el.replaceChildren(img);
-        });
+        void import("../engines/view")
+          .then((m) => {
+            const url = m.engineSnapshot(p.engine, 0, 320, 200);
+            if (!url) return;
+            const img = mk("img");
+            img.alt = "";
+            img.draggable = false;
+            img.src = url;
+            el.replaceChildren(img);
+          })
+          .catch(() => {});
         el.innerHTML = GLYPHS.viewport ?? "";
         break;
       }

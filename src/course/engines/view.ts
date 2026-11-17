@@ -217,9 +217,11 @@ export function mountEngine(
   // ---- DOM
   const root = mk(
     "div",
-    `eng eng-${kind}${still ? " still" : ""}${o.inert ? " inert" : ""}`,
+    `eng eng-${kind}${still ? " still" : ""}${o.inert ? " inert" : ""}${o.wheelZoom ? " big" : ""}`,
   );
   root.setAttribute("role", "group");
+  // in the slide editor the engine is a picture: no focus, no clicks (the editor selects the block)
+  if (o.inert) (root as HTMLElement & { inert?: boolean }).inert = true;
   root.setAttribute("aria-label", tl(ENGINE_NAME[kind], lang));
   const stageBox = mk("div", "eng-view");
   const canvas = mk("canvas", "eng-cv");
@@ -237,8 +239,10 @@ export function mountEngine(
   const capT = mk("b", "eng-cap-t");
   const capX = mk("span", "eng-cap-x");
   cap.append(capN, capT, capX);
+  // the bar over the picture: the steps and play on the left, names and full screen on the right
+  const top = mk("div", "eng-top");
   const tools = mk("div", "eng-tools");
-  stageBox.append(canvas, labelsBox, cap, tools);
+  stageBox.append(canvas, labelsBox, cap, top);
   const panel = mk("div", "eng-panel");
   root.append(stageBox, panel);
   host.append(root);
@@ -397,6 +401,7 @@ export function mountEngine(
   tr.append(prev);
   if (!still) tr.append(playB, slowB);
   tr.append(next);
+  top.append(tr, tools);
   const chips = mk("div", "eng-steps");
   chips.setAttribute("role", "group");
   chips.setAttribute("aria-label", w("steps", lang));
@@ -406,7 +411,7 @@ export function mountEngine(
     chips.append(b);
     return b;
   });
-  panel.append(tr, chips);
+  panel.append(chips);
   const foot = mk(
     "p",
     "eng-foot",
@@ -443,10 +448,12 @@ export function mountEngine(
   let pitch = model.view.pitch;
   let radius = model.view.radius;
   const placeCamera = () => {
+    // a tall box (a phone): step back so the whole engine stays in the picture
+    const R = radius * Math.max(1, 1.5 / Math.max(0.3, camera.aspect)) ** 0.9;
     camera.position.set(
-      target.x + radius * Math.cos(pitch) * Math.sin(yaw),
-      target.y + radius * Math.sin(pitch),
-      target.z + radius * Math.cos(pitch) * Math.cos(yaw),
+      target.x + R * Math.cos(pitch) * Math.sin(yaw),
+      target.y + R * Math.sin(pitch),
+      target.z + R * Math.cos(pitch) * Math.cos(yaw),
     );
     camera.lookAt(target);
   };
@@ -533,13 +540,10 @@ export function mountEngine(
       renderer?.setSize(pw, ph, false);
       camera.aspect = cw / ch;
       camera.updateProjectionMatrix();
+      placeCamera();
     }
     if (k !== pxScale) for (const l of labels) l.w = l.h = 0;
     pxScale = k;
-    root.classList.toggle(
-      "narrow",
-      cw < 560 / Math.max(0.2, k) && cw / ch < 1.25,
-    );
     return true;
   };
   const shown = (o: THREE.Object3D | null): boolean => {
@@ -568,7 +572,7 @@ export function mountEngine(
     }
     // the step's parts first, then the nearest: a name that cannot find room is left out (never on another)
     const order = [...labels].sort((a, b) => Number(b.on) - Number(a.on) || a.z - b.z);
-    const placed: Box[] = [boxOf(cap), boxOf(tools)];
+    const placed: Box[] = [boxOf(cap), boxOf(top)];
     const gap = 4;
     for (const l of order) {
       // the step's parts are always named; « Tous les noms » names the rest
@@ -787,13 +791,25 @@ export function mountEngine(
     document.addEventListener("visibilitychange", onVis);
     offs.push(() => document.removeEventListener("visibilitychange", onVis));
   }
+  // a narrow box (a phone): the picture over the panel, the steps and play move down into the panel
+  const layoutMode = () => {
+    const narrow = root.clientWidth > 0 && root.clientWidth < 760;
+    if (narrow === root.classList.contains("narrow")) return;
+    root.classList.toggle("narrow", narrow);
+    if (narrow) panel.prepend(tr);
+    else top.prepend(tr);
+    for (const l of labels) l.w = l.h = 0;
+  };
+  layoutMode();
   let ro: ResizeObserver | null = null;
   if (typeof ResizeObserver === "function") {
     ro = new ResizeObserver(() => {
+      layoutMode();
       dirty = true;
       kick();
     });
     ro.observe(stageBox);
+    ro.observe(root);
   }
 
   // ---- full screen: the same engine, big, in its own layer (Échap closes; the levers come back to the slide)
@@ -809,6 +825,7 @@ export function mountEngine(
     try {
       const cs = getComputedStyle(root);
       for (const v of [
+        "--sl-font-body",
         "--sl-bg",
         "--sl-text",
         "--sl-accent",

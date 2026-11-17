@@ -15,7 +15,6 @@ import {
   cylZ,
   type EngineFrame,
   type EngineModel,
-  type EngineStage,
   type Mats,
   type PartLabel,
 } from "./kit";
@@ -28,6 +27,8 @@ import {
   valves,
   type Stroke,
 } from "./model";
+import { PISTON_STAGES } from "./stages";
+export { PISTON_STAGES };
 import type { L10n } from "../types";
 
 const L = (en: string, fr: string): L10n => ({ en, fr });
@@ -57,71 +58,6 @@ interface Cyl {
   sparkLo: THREE.Mesh;
 }
 
-export const PISTON_STAGES: EngineStage[] = [
-  {
-    id: "intake",
-    name: L("Intake", "Admission"),
-    text: L(
-      "The intake valve is open and the piston goes down: it draws the fuel-air mixture into the cylinder.",
-      "La soupape d’admission est ouverte, le piston descend : il aspire le mélange air-essence dans le cylindre.",
-    ),
-    focus: ["intakeValve", "piston", "intake"],
-  },
-  {
-    id: "compression",
-    name: L("Compression", "Compression"),
-    text: L(
-      "Both valves are closed and the piston comes up: it squeezes the mixture. The spark comes just before the top.",
-      "Les deux soupapes sont fermées, le piston remonte : il comprime le mélange. L’étincelle jaillit juste avant le haut.",
-    ),
-    focus: ["piston", "plugs"],
-  },
-  {
-    id: "power",
-    name: L("Power", "Combustion"),
-    text: L(
-      "The mixture burns and pushes the piston down: the only stroke that gives work. The rod turns the crankshaft.",
-      "Le mélange brûle et repousse le piston : le seul temps moteur. La bielle fait tourner le vilebrequin.",
-    ),
-    focus: ["plugs", "rod", "crank"],
-  },
-  {
-    id: "exhaust",
-    name: L("Exhaust", "Échappement"),
-    text: L(
-      "The exhaust valve opens and the piston comes up: it pushes the burnt gases out to the exhaust.",
-      "La soupape d’échappement s’ouvre, le piston remonte : il chasse les gaz brûlés vers l’échappement.",
-    ),
-    focus: ["exhaustValve", "exhaust"],
-  },
-  {
-    id: "ignition",
-    name: L("Dual ignition", "Double allumage"),
-    text: L(
-      "Two magnetos, two plugs per cylinder: each magneto makes its own spark, with no battery. At the run-up, one magneto at a time: a small rpm drop shows both work.",
-      "Deux magnétos, deux bougies par cylindre : chaque magnéto produit sa propre étincelle, sans batterie. Au point fixe, une magnéto à la fois : une petite chute de régime montre que les deux fonctionnent.",
-    ),
-    focus: ["magL", "magR", "plugs"],
-  },
-  {
-    id: "carb",
-    name: L("Carburettor and mixture", "Carburateur et mélange"),
-    text: L(
-      "The air speeds up in the venturi and draws fuel through the jet. The throttle valve sets how much mixture goes in; the mixture control sets how much fuel for that air.",
-      "L’air accélère dans le venturi et aspire l’essence par le gicleur. Le papillon dose la quantité de mélange ; la commande de mélange dose l’essence pour cet air.",
-    ),
-    focus: ["carb", "throttleValve", "mixtureNeedle"],
-  },
-  {
-    id: "carbHeat",
-    name: L("Carburettor heat", "Réchauffage carburateur"),
-    text: L(
-      "The venturi cools the air: ice can form, even at +20 °C in humid air. Carburettor heat takes warm air from round the exhaust: the rpm drops a little, then rises if ice melts.",
-      "Le venturi refroidit l’air : du givre peut se former, même à +20 °C en air humide. Le réchauffage prend de l’air chaud autour de l’échappement : le régime baisse un peu, puis remonte si du givre fond.",
-    ),
-    focus: ["heatValve", "muffler", "airFilter"],
-  },
-];
 
 export function buildPiston(mats: Mats): EngineModel {
   const root = new THREE.Group();

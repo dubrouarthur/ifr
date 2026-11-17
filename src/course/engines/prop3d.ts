@@ -13,63 +13,17 @@ import {
   cylX,
   type EngineFrame,
   type EngineModel,
-  type EngineStage,
   type Mats,
   type PartLabel,
 } from "./kit";
 import { flyweightTilt } from "./model";
+import { PROP_STAGES } from "./stages";
+export { PROP_STAGES };
 import type { L10n } from "../types";
 
 const L = (en: string, fr: string): L10n => ({ en, fr });
 const DEG = Math.PI / 180;
 
-export const PROP_STAGES: EngineStage[] = [
-  {
-    id: "overview",
-    name: L("Constant-speed propeller", "Hélice à vitesse constante"),
-    text: L(
-      "The throttle sets the manifold pressure, the propeller lever sets the rpm. The governor changes the blade angle to hold that rpm whatever the power.",
-      "La manette des gaz règle la pression d’admission, la manette d’hélice règle le régime. Le régulateur change le pas des pales pour tenir ce régime, quelle que soit la puissance.",
-    ),
-    focus: ["blades", "governor"],
-  },
-  {
-    id: "flyweights",
-    name: L("Flyweights", "Masselottes"),
-    text: L(
-      "Driven by the engine, the flyweights lean out as the rpm rises (centrifugal force) and in as it falls. The speeder spring pushes against them.",
-      "Entraînées par le moteur, les masselottes s’écartent quand le régime monte (force centrifuge) et se referment quand il baisse. Le ressort de consigne s’y oppose.",
-    ),
-    focus: ["flyweights", "spring"],
-  },
-  {
-    id: "spring",
-    name: L("Speeder spring and lever", "Ressort de consigne et manette"),
-    text: L(
-      "The propeller lever squeezes the speeder spring more or less: that is the rpm asked for. More spring, more rpm before the flyweights win.",
-      "La manette d’hélice comprime plus ou moins le ressort de consigne : c’est le régime demandé. Plus de ressort, plus de régime avant que les masselottes ne l’emportent.",
-    ),
-    focus: ["spring", "lever"],
-  },
-  {
-    id: "pilotValve",
-    name: L("Pilot valve and oil", "Distributeur et huile"),
-    text: L(
-      "On speed the pilot valve covers its ports. Overspeed lifts it one way, underspeed the other: oil moves the hub's piston and the blade angle changes until the rpm is back.",
-      "En régime, le distributeur obture ses orifices. La survitesse le déplace dans un sens, la sous-vitesse dans l’autre : l’huile déplace le piston du moyeu et le pas change jusqu’au retour du régime.",
-    ),
-    focus: ["pilotValve", "oil", "hub"],
-  },
-  {
-    id: "order",
-    name: L("Lever order", "Ordre des manettes"),
-    text: L(
-      "To add power: rpm first (propeller), then manifold pressure (throttle). To reduce: throttle first, then propeller. Never a high manifold pressure at a low rpm.",
-      "Pour augmenter la puissance : d’abord le régime (hélice), puis la pression d’admission (gaz). Pour réduire : d’abord les gaz, puis l’hélice. Jamais de forte pression d’admission à bas régime.",
-    ),
-    focus: ["lever", "governor"],
-  },
-];
 
 export function buildProp(mats: Mats): EngineModel {
   const root = new THREE.Group();

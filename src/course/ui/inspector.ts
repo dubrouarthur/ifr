@@ -3,6 +3,9 @@
 // Block | Slide | Goal | Notes for designed slides (the selected block's fields, the layout and theme pickers).
 // Author texts are edited in the language of the editor's EN / FR switch, with a "FR missing" badge.
 // Also the small DOM kit the editor and the tray share (segments, chips, switches, fields, popover menus).
+import { ENGINE_CONTROLS, ENGINE_KINDS, ENGINE_NAME, controlName, tl } from "../engines/sim";
+import { ENGINE_STAGES } from "../engines/stages";
+import type { EngineKind } from "../types";
 import { blockKindLabel } from "../canvas/strings";
 import type {
   Annotation,
@@ -5350,6 +5353,58 @@ export class Inspector {
           ),
         );
         break;
+      case "engine3d": {
+        // the 3D engine (course/engines): which engine, the step it opens on, the levers the student may move
+        const L = this.lang;
+        const levers = ENGINE_CONTROLS[b.engine];
+        const on = new Set(b.controls ?? levers);
+        out.push(
+          group(T("3D engine", "Moteur 3D"), [
+            field(
+              T("Engine", "Moteur"),
+              selectIn<EngineKind>(
+                ENGINE_KINDS.map((k) => ({ value: k, label: tl(ENGINE_NAME[k], L) })),
+                b.engine,
+                (v) =>
+                  setB((x) => {
+                    const y = x as typeof b;
+                    y.engine = v;
+                    delete y.controls;
+                    delete y.stage;
+                    delete y.set;
+                  }),
+              ),
+            ),
+            field(
+              T("Opens on the step", "S’ouvre sur l’étape"),
+              selectIn<number>(
+                ENGINE_STAGES[b.engine].map((s, k) => ({ value: k, label: `${k + 1}. ${tl(s.name, L)}` })),
+                b.stage ?? 0,
+                (v) => setB((x) => (v ? ((x as typeof b).stage = v) : delete (x as typeof b).stage)),
+              ),
+            ),
+            field(
+              T("The student's controls", "Commandes de l’élève"),
+              chips(
+                levers.map((c) => ({ value: c, label: tl(controlName(c, b.engine), L), on: on.has(c) })),
+                (c, yes) =>
+                  setB((x) => {
+                    const y = x as typeof b;
+                    const next = levers.filter((k) => (k === c ? yes : on.has(k)));
+                    if (next.length === levers.length) delete y.controls;
+                    else y.controls = next;
+                  }),
+                { label: T("The student's controls", "Commandes de l’élève") },
+              ),
+            ),
+            sw(!!b.slow, (v) => setB((x) => (v ? ((x as typeof b).slow = true) : delete (x as typeof b).slow)), T("Start in slow motion", "Démarrer au ralenti")),
+            sw(!!b.labels, (v) => setB((x) => (v ? ((x as typeof b).labels = true) : delete (x as typeof b).labels)), T("Name every part", "Nommer toutes les pièces"), {
+              sub: T("Otherwise only the parts of the step shown", "Sinon seulement les pièces de l’étape affichée"),
+            }),
+          ]),
+        );
+        break;
+      }
       case "checklist": {
         const checks = this.host.step.goal?.all ?? [];
         out.push(

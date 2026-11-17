@@ -17,11 +17,12 @@ import {
   cylX,
   type EngineFrame,
   type EngineModel,
-  type EngineStage,
   type FlowPath,
   type Mats,
   type PartLabel,
 } from "./kit";
+import { TURBOFAN_STAGES, TURBOPROP_STAGES } from "./stages";
+export { TURBOFAN_STAGES, TURBOPROP_STAGES };
 import type { L10n } from "../types";
 
 const L = (en: string, fr: string): L10n => ({ en, fr });
@@ -56,62 +57,6 @@ const C = {
 };
 
 // ------------------------------------------------------------------ the turbofan
-export const TURBOFAN_STAGES: EngineStage[] = [
-  {
-    id: "fan",
-    name: L("Fan and by-pass", "Soufflante et flux secondaire"),
-    text: L(
-      "The fan moves a large mass of air. About five times more air goes round the core than through it (by-pass ratio 5.1:1): this cold stream gives most of the thrust.",
-      "La soufflante met en mouvement une grande masse d’air. Environ cinq fois plus d’air contourne le cœur qu’il n’en traverse (taux de dilution 5,1:1) : ce flux froid donne l’essentiel de la poussée.",
-    ),
-    focus: ["fan", "bypass"],
-  },
-  {
-    id: "compressors",
-    name: L("LP and HP compressors", "Compresseurs BP et HP"),
-    text: L(
-      "In the core, the low-pressure compressor (on the fan's shaft, N1) then the high-pressure compressor (its own shaft, N2) raise the pressure stage after stage.",
-      "Dans le cœur, le compresseur basse pression (sur l’arbre de la soufflante, N1) puis le compresseur haute pression (son propre arbre, N2) font monter la pression étage après étage.",
-    ),
-    focus: ["lpc", "hpc"],
-  },
-  {
-    id: "combustor",
-    name: L("Combustion chamber", "Chambre de combustion"),
-    text: L(
-      "Fuel is sprayed into the annular chamber and burns continuously, at constant pressure: the gas leaves much hotter and faster.",
-      "Le carburant est injecté dans la chambre annulaire et brûle en continu, à pression constante : le gaz en sort beaucoup plus chaud et plus rapide.",
-    ),
-    focus: ["combustor"],
-  },
-  {
-    id: "turbines",
-    name: L("HP and LP turbines", "Turbines HP et BP"),
-    text: L(
-      "The HP turbine drives the HP compressor (N2). The LP turbine drives the fan and the LP compressor (N1) through a shaft inside the HP shaft. EGT is measured after them.",
-      "La turbine HP entraîne le compresseur HP (N2). La turbine BP entraîne la soufflante et le compresseur BP (N1) par un arbre logé dans l’arbre HP. L’EGT se mesure après elles.",
-    ),
-    focus: ["hpt", "lpt", "shafts"],
-  },
-  {
-    id: "nozzle",
-    name: L("Nozzle and thrust", "Tuyère et poussée"),
-    text: L(
-      "The hot core stream and the cold by-pass stream leave through their nozzles. Thrust grows steeply with N1: the last per cent of N1 gives a lot.",
-      "Le flux chaud du cœur et le flux froid secondaire sortent par leurs tuyères. La poussée croît vite avec le N1 : les derniers pour cent de N1 comptent beaucoup.",
-    ),
-    focus: ["nozzle", "bypass"],
-  },
-  {
-    id: "reversers",
-    name: L("Thrust reversers", "Inverseurs de poussée"),
-    text: L(
-      "On the ground only: the aft cowl slides back, blocker doors close the by-pass duct and the cascades send the fan's air forward. Only the cold stream is reversed.",
-      "Au sol seulement : le capot arrière recule, des volets obturent le canal secondaire et les grilles renvoient l’air de la soufflante vers l’avant. Seul le flux froid est inversé.",
-    ),
-    focus: ["reverser", "cascades"],
-  },
-];
 
 export function buildTurbofan(mats: Mats): EngineModel {
   const root = new THREE.Group();
@@ -517,62 +462,6 @@ export function buildTurbofan(mats: Mats): EngineModel {
 }
 
 // ------------------------------------------------------------------ the free-turbine turboprop
-export const TURBOPROP_STAGES: EngineStage[] = [
-  {
-    id: "inlet",
-    name: L("Air intake", "Entrée d’air"),
-    text: L(
-      "The air comes in through the intake and its screen, then turns into the compressor.",
-      "L’air entre par l’entrée d’air et sa grille de protection, puis s’engage dans le compresseur.",
-    ),
-    focus: ["inlet"],
-  },
-  {
-    id: "compressor",
-    name: L("Compressor", "Compresseur"),
-    text: L(
-      "Axial stages then a centrifugal stage compress the air. The compressor turns with the gas generator turbine: their speed is Ng.",
-      "Des étages axiaux puis un étage centrifuge compriment l’air. Le compresseur tourne avec la turbine du générateur de gaz : leur vitesse est le Ng.",
-    ),
-    focus: ["compressor"],
-  },
-  {
-    id: "combustor",
-    name: L("Combustion chamber", "Chambre de combustion"),
-    text: L(
-      "Fuel burns continuously in the annular chamber. ITT, between the two turbines, is the temperature to watch at start and at high power.",
-      "Le carburant brûle en continu dans la chambre annulaire. L’ITT, entre les deux turbines, est la température à surveiller au démarrage et à forte puissance.",
-    ),
-    focus: ["combustor", "itt"],
-  },
-  {
-    id: "ggTurbine",
-    name: L("Gas generator turbine", "Turbine du générateur de gaz"),
-    text: L(
-      "This turbine takes just enough energy to drive the compressor. With the compressor and the chamber it makes the gas generator (Ng).",
-      "Cette turbine prélève juste assez d’énergie pour entraîner le compresseur. Avec lui et la chambre, elle forme le générateur de gaz (Ng).",
-    ),
-    focus: ["ggTurbine"],
-  },
-  {
-    id: "freeTurbine",
-    name: L("Free turbine", "Turbine libre"),
-    text: L(
-      "The free turbine has no mechanical link with the compressor: the gas alone drives it. It turns the propeller through its own shaft (Np).",
-      "La turbine libre n’a aucun lien mécanique avec le compresseur : seul le gaz l’entraîne. Elle fait tourner l’hélice par son propre arbre (Np).",
-    ),
-    focus: ["freeTurbine", "shaft"],
-  },
-  {
-    id: "gearbox",
-    name: L("Reduction gearbox and propeller", "Réducteur et hélice"),
-    text: L(
-      "The reduction gearbox brings the turbine's very high speed down to the propeller's. The governor holds Np; the torque gauge reads the power.",
-      "Le réducteur ramène la très grande vitesse de la turbine à celle de l’hélice. Le régulateur tient le Np ; le couplemètre indique la puissance.",
-    ),
-    focus: ["gearbox", "prop"],
-  },
-];
 
 export function buildTurboprop(mats: Mats): EngineModel {
   const root = new THREE.Group();
