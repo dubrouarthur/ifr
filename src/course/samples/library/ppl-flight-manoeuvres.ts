@@ -118,7 +118,7 @@ function loadToolStep(id: string): Step {
   slide.blocks.forEach((b, i) => {
     b.id = b.kind === "tool" ? `${id}.tool` : `${id}.b${i}`;
     if (b.kind === "tool") b.task = toolTaskData(def);
-    if (b.kind === "text" && b.style === "eyebrow") b.text = L("Load factor · your turn", "Facteur de charge · à vous");
+    if (b.kind === "text" && b.style === "eyebrow") b.text = L("Load factor", "Facteur de charge");
     if (b.kind === "text" && b.style === "title") b.text = title;
   });
   return slideStep(
