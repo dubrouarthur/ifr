@@ -118,10 +118,13 @@ export interface SlideContext {
   /** an event on the slide: « answered », « quizRight » / « quizWrong », « goalMet »… (the step's marks) */
   onEvent?(when: string): void;
 }
-/** The default slide renderer: the canvas package's SlideView in play mode. */
-export const canvasSlideRenderer: SlideRenderer = (ctx) => {
+/** A slide renderer: the canvas package's SlideView in play mode, with `extra` options (the projector's mirror). */
+export const slideRendererWith =
+  (extra: { mirror?: boolean } = {}): SlideRenderer =>
+  (ctx) => {
   const el = h("div", { class: "cp-slide" });
   const v = renderSlide(ctx.step.slide, el, {
+    ...extra,
     mode: "play",
     lang: ctx.lang,
     theme: ctx.course.theme,
@@ -147,6 +150,8 @@ export const canvasSlideRenderer: SlideRenderer = (ctx) => {
     relayout: () => v.relayout(),
   };
 };
+/** The default slide renderer: the canvas package's SlideView in play mode. */
+export const canvasSlideRenderer: SlideRenderer = slideRendererWith();
 /** The feedback of a slide's question fits again once it shows, and a wrong answer offers « Réessayer » (audit §14):
  *  the answers come back, the first try stays recorded. */
 export function wireSlideQuizRetry(host: SlideHost, lang: Lang, changed?: () => void) {

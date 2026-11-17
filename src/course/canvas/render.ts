@@ -70,6 +70,8 @@ export interface SlideRenderOptions {
   onEvent?: (when: string) => void;
   /** presenter console: presenterOnly blocks show */
   presenter?: boolean;
+  /** the projector: the class watches the instructor fly, a control strip shows its values only */
+  mirror?: boolean;
   /** play: reveals already shown (default 0) */
   reveal?: number;
   /** padding around the slide in CSS px (default 0) */
@@ -184,6 +186,12 @@ export class SlideView {
     }
     this.revealN = o.mode === "play" ? (o.reveal ?? 0) : Infinity;
     this.el = mk("div", `sl-view sl-mode-${o.mode}`);
+    // a thumbnail is a picture: its controls (a strip's buttons, « Réinitialiser ») are neither announced twice nor
+    // reached with Tab, and a click goes to the host (the filmstrip's button)
+    if (o.mode === "thumb") {
+      this.el.setAttribute("inert", "");
+      this.el.setAttribute("aria-hidden", "true");
+    }
     this.root = mk("div", "sl-slide");
     this.root.style.width = `${SLIDE_W}px`;
     this.root.style.height = `${SLIDE_H}px`;
@@ -225,6 +233,7 @@ export class SlideView {
       slideScene: this.slide.scene,
       step: this.o.step,
       presenter: this.o.presenter,
+      mirror: this.o.mirror,
       scale: () => this.k,
       assetUrl: this.o.assetUrl,
       calcProblem: this.o.calcProblem,

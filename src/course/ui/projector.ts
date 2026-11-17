@@ -4,7 +4,7 @@
 import type { Course, Lang } from "../types";
 import { h } from "../../ui/dom";
 import {
-  canvasSlideRenderer,
+  slideRendererWith,
   playCourse,
   type CoursePlayer,
   type SlideHost,
@@ -73,7 +73,8 @@ export class Projector {
     this.wait = h("div", { class: "pj-wait", role: "status" });
     this.badge = h("div", { class: "pj-demo", hidden: true, role: "status" });
     this.el.append(main, this.badge, this.blackEl, this.wait);
-    const inner = o.renderSlide ?? canvasSlideRenderer;
+    // the class watches: a slide's control strip shows its values, « L'instructeur pilote », no button
+    const inner = o.renderSlide ?? slideRendererWith({ mirror: true });
     const renderSlide: SlideRenderer = (ctx) => {
       const host = inner(ctx);
       this.slideHost = host;

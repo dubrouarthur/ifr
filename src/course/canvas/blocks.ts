@@ -110,6 +110,8 @@ export interface BlockEnv {
   slideScene?: string;
   step?: Step;
   presenter?: boolean;
+  /** the projector (SlideRenderOptions.mirror) */
+  mirror?: boolean;
   scale(): number;
   assetUrl?: (id: string) => string | null | Promise<string | null>;
   calcProblem?: (stepId: string) => CalcProblem | null;
@@ -885,7 +887,8 @@ function instrumentBlock(b: Of<"instrument">, env: BlockEnv): BlockView {
       lang: env.lang,
       sim: () => inst.sim,
       pilot,
-      interactive: env.mode !== "thumb",
+      interactive: env.mode !== "thumb" && !env.mirror,
+      mirror: !!env.mirror,
       changed: (c) => {
         if (editing) {
           // the author's try: a knob only redraws the frozen instrument, a flying control starts the clock
