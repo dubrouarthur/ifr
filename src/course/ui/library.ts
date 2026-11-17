@@ -22,7 +22,7 @@
 import type { Course, CourseProgress, L10n, Lang, Step } from "../types";
 import type { CourseIndexEntry, CourseStore } from "../store";
 import { h } from "../../ui/dom";
-import { agoText, ct, ctSteps, loc, type CourseStringKey } from "../i18n";
+import { agoText, ct, loc, type CourseStringKey } from "../i18n";
 import { SAMPLES, allSamples, isSampleId, sampleCourse } from "../samples";
 import type { Procedure, ProcCategory } from "../../train/procedureTypes";
 import {
@@ -53,6 +53,7 @@ import {
   isNewcomer,
   lessonRank,
   programOf,
+  presentGroups,
   programView,
   searchView,
   shelves,
@@ -225,6 +226,8 @@ export function academyHash(r: AcademyRoute): string {
 }
 /** The library card to bring back into view after a course (sessionStorage, read once): « course:<id> ». */
 export const BACK_ITEM_KEY = "ifr.lib.backItem";
+/** the formation last browsed (« Présenter à une classe » opens on it, audit §54) */
+export const LAST_PROGRAM_KEY = "ifr.lib.lastProgram";
 /** The share link of a built-in course: its own address (every device has it), short enough for a message. */
 export const sampleShareUrl = (
   id: string,
@@ -775,12 +778,51 @@ export class CourseLibrary {
     if (e.key === "Escape" && this.searchIn.value) {
       e.preventDefault();
       this.clearSearch();
-    } else if (e.key === "Enter") {
-      // results are live: Enter only takes the keyboard to them
+    } else if (e.key === "Enter" || e.key === "ArrowDown") {
+      // Enter opens the first result (it is highlighted), ↓ takes the keyboard to it; ↑ / ↓ then move (audit §56)
       e.preventDefault();
-      this.body.querySelector<HTMLElement>("a[href], button")?.focus();
+      this.flushSearch();
+      const first = this.searchHits()[0];
+      if (!first) return;
+      if (e.key === "Enter") first.click();
+      else first.focus();
     }
   };
+  /** the typed text not yet drawn (the short pause while typing): drawn now, so Enter acts on what is shown */
+  private flushSearch() {
+    if (this.searchIn.value === this.st.q) return;
+    window.clearTimeout(this.searchTimer);
+    this.st = { ...this.st, q: this.searchIn.value };
+    if (!this.st.q.trim()) this.st.wide = false;
+    this.renderView(false);
+  }
+  /** the results that open something: the courses, flights and check-lists first (what was looked for), then the
+   *  subjects that match */
+  private searchHits(): HTMLElement[] {
+    if (!this.st.q.trim()) return [];
+    return [
+      ...this.body.querySelectorAll<HTMLElement>(".lb-res .lb-hit"),
+      ...this.body.querySelectorAll<HTMLElement>(".lb-subj-hit"),
+    ];
+  }
+  /** ↑ / ↓ between the results while the focus is on one of them */
+  private readonly onResultKey = (e: KeyboardEvent) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    const hits = this.searchHits();
+    const i = hits.indexOf(e.target as HTMLElement);
+    if (i < 0) return;
+    e.preventDefault();
+    const next = e.key === "ArrowDown" ? hits[i + 1] : i === 0 ? this.o.searchInput ?? this.searchIn : hits[i - 1];
+    next?.focus();
+  };
+  /** the first result is the one Enter opens: it says so */
+  private markFirstHit() {
+    const hits = this.searchHits();
+    hits.forEach((x, k) => {
+      x.classList.toggle("is-first", k === 0);
+      if (k === 0) x.dataset.enter = this.lang === "fr" ? "Entrée ↵" : "Enter ↵";
+    });
+  }
 
   constructor(private o: LibraryOptions) {
     this.lang = o.lang;
@@ -827,6 +869,7 @@ export class CourseLibrary {
     this.headX = h("div", { class: "lb-head-x" });
     this.banner = h("div", { class: "gl-banners" });
     this.body = h("div", { class: "lb-body" });
+    this.body.addEventListener("keydown", this.onResultKey);
     this.toastEl = h("div", {
       class: "gl-toast",
       role: "status",
@@ -1274,6 +1317,14 @@ export class CourseLibrary {
     const asked = this.st.p && !this.st.q ? this.st.s : null;
     if (!this.o.entry) this.renderHead();
     this.renderBody();
+    this.markFirstHit();
+    // a formation (not the instructors' or the club's own page) is the one the picker opens on next
+    if (this.st.p && this.st.p !== "instructors" && this.st.p !== "club")
+      try {
+        localStorage.setItem(LAST_PROGRAM_KEY, this.st.p);
+      } catch {
+        /* private mode */
+      }
     if (top) {
       this.moved = false;
       this.scrollTop();
@@ -2152,6 +2203,19 @@ export class CourseLibrary {
       "div",
       { class: "lb-tools-row" },
       v.total ? this.kindSeg(v.kinds) : null,
+      // filtered: what the filter hides is one click away (audit §55)
+      v.total && this.st.kind !== "all"
+        ? h(
+            "p",
+            { class: "lb-filter-chip" },
+            h("span", {}, this.lang === "fr" ? `Filtre : ${this.L(KIND_FILTER[this.st.kind])}` : `Filter: ${this.L(KIND_FILTER[this.st.kind])}`),
+            h(
+              "button",
+              { class: "lb-link b", type: "button", onclick: () => this.setKind("all", null) },
+              this.lang === "fr" ? "Tout afficher" : "Show everything",
+            ),
+          )
+        : null,
       !own && subs.length > 1
         ? h(
             "p",
@@ -2260,7 +2324,15 @@ export class CourseLibrary {
   /** A subject's count in the Sommaire: what it draws under the filter, or « bientôt ». */
   private countEl(x: ShelfSubject, cls: string): HTMLElement {
     const n = x.shown ?? x.n;
-    if (x.n) return h("span", { class: `${cls} num${n ? "" : " is-zero"}` }, String(n));
+    // filtered away: « — », greyed, never a « 0 » that reads like an empty subject (audit §55)
+    if (x.n && !n)
+      return h(
+        "span",
+        { class: `${cls} num is-zero is-filtered`, title: this.lang === "fr" ? "Rien sous ce filtre" : "Nothing under this filter" },
+        h("span", { "aria-hidden": "true" }, "—"),
+        h("span", { class: "gl-sr" }, this.lang === "fr" ? "rien sous ce filtre" : "nothing under this filter"),
+      );
+    if (x.n) return h("span", { class: `${cls} num` }, String(n));
     if (x.subject.id === "club.courses" || x.subject.id === "instructors.mine")
       return h("span", { class: `${cls} num is-zero` }, "0");
     // the five steps of « Enseigner avec Wingdeck » are on the page: no count, no « bientôt »
@@ -2300,7 +2372,7 @@ export class CourseLibrary {
                 h(
                   "button",
                   {
-                    class: `lb-rail-s${x.n ? "" : " light"}${x.subject.id === this.st.s ? " on" : ""}`,
+                    class: `lb-rail-s${(x.shown ?? x.n) ? "" : " light"}${x.subject.id === this.st.s ? " on" : ""}`,
                     type: "button",
                     "data-subject": x.subject.id,
                     ...(x.subject.id === this.st.s
@@ -2346,7 +2418,7 @@ export class CourseLibrary {
           "option",
           { value: x.subject.id, selected: x.subject.id === this.st.s },
           `${this.s("contentsAt", { s: `${this.subjNum(x.subject)} ${this.L(x.subject.title)}` })}${
-            x.n ? ` · ${x.shown ?? x.n}` : ` · ${this.s("soonWord")}`
+            x.n ? ` · ${(x.shown ?? x.n) || "—"}` : ` · ${this.s("soonWord")}`
           }`,
         ),
       ),
@@ -3743,41 +3815,102 @@ export class CourseLibrary {
       );
     }
   }
+  /** « Présenter à une classe » (audit §54): a search field, then the courses by formation and subject with their
+   *  first slide; the formation last browsed comes first and open, the others one click away. */
   private pickPresent() {
     const l = this.lang;
-    const list = h(
-      "div",
-      { class: "gl-pick" },
-      ...this.items
-        .filter((i) => i.kind === "course")
-        .map((i) => {
-          const id = i.open.id;
-          return h(
-            "button",
-            {
-              class: "gl-pick-row",
-              type: "button",
-              onclick: () => {
-                this.closeDialog();
-                this.go({ k: "present", id });
-              },
-            },
-            h("b", {}, loc(i.title, l)),
-            h(
-              "small",
-              {},
-              [
-                this.homeLabel(i.home),
-                i.count ? ctSteps(i.count.n, l) : "",
-                i.minutes ? this.t("minutes", { n: i.minutes }) : "",
-              ]
-                .filter(Boolean)
-                .join(" · "),
-            ),
-          );
-        }),
+    const fr = l === "fr";
+    let last: ProgramId | null = this.st.p === "instructors" || this.st.p === "club" ? null : this.st.p;
+    try {
+      const v = localStorage.getItem(LAST_PROGRAM_KEY);
+      if (!last && v && isProgramId(v)) last = v;
+    } catch {
+      /* no storage: the syllabus order */
+    }
+    const groups = presentGroups(this.items, last);
+    const row = (i: LibItem) => {
+      const id = i.open.id;
+      const cover = h("span", { class: "lb-cover gl-pick-cov", "aria-hidden": "true" });
+      cover.dataset.key = i.key;
+      this.observeCover(cover);
+      return h(
+        "button",
+        {
+          class: "gl-pick-row has-cov",
+          type: "button",
+          "data-q": `${loc(i.title, "fr")} ${loc(i.title, "en")}`.toLowerCase(),
+          onclick: () => {
+            this.closeDialog();
+            this.go({ k: "present", id });
+          },
+        },
+        cover,
+        h(
+          "span",
+          { class: "gl-pick-t" },
+          h("b", {}, loc(i.title, l)),
+          h(
+            "small",
+            {},
+            [i.count ? (fr ? `${i.count.n} diapos` : `${i.count.n} slides`) : "", i.minutes ? this.t("minutes", { n: i.minutes }) : ""]
+              .filter(Boolean)
+              .join(" · "),
+          ),
+        ),
+      );
+    };
+    const blocks = groups.map((g, k) =>
+      h(
+        "details",
+        { class: "gl-pick-g", open: k === 0 },
+        h(
+          "summary",
+          {},
+          h("span", {}, this.L(programDef(g.program).code)),
+          h("span", { class: "num gl-pick-n" }, String(g.subjects.reduce((n, x) => n + x.items.length, 0))),
+        ),
+        ...g.subjects.map((x) =>
+          h(
+            "div",
+            { class: "gl-pick-s" },
+            h("p", { class: "gl-pick-sh" }, `${subjectDef(x.subject).n} ${this.L(subjectDef(x.subject).title)}`),
+            ...x.items.map(row),
+          ),
+        ),
+      ),
     );
+    const none = h("p", { class: "gl-pick-none", hidden: true }, fr ? "Aucun cours ne correspond." : "No course matches.");
+    const q = h("input", {
+      class: "gl-pick-q",
+      type: "search",
+      placeholder: fr ? "Chercher un cours…" : "Find a course…",
+      "aria-label": fr ? "Chercher un cours" : "Find a course",
+      "data-autofocus": "",
+      oninput: () => {
+        const v = (q as HTMLInputElement).value.trim().toLowerCase();
+        let shown = 0;
+        for (const b of blocks) {
+          let inG = 0;
+          for (const s of b.querySelectorAll<HTMLElement>(".gl-pick-s")) {
+            let inS = 0;
+            for (const r of s.querySelectorAll<HTMLElement>(".gl-pick-row")) {
+              const hit = !v || (r.dataset.q ?? "").includes(v);
+              r.hidden = !hit;
+              if (hit) inS++;
+            }
+            s.hidden = !inS;
+            inG += inS;
+          }
+          b.hidden = !inG;
+          if (v && inG) (b as HTMLDetailsElement).open = true;
+          shown += inG;
+        }
+        none.hidden = shown > 0;
+      },
+    }) as HTMLInputElement;
+    const list = h("div", { class: "gl-pick gl-pick-present" }, q, ...blocks, none);
     this.showDialog(this.t("pickCourse"), list, []);
+    requestAnimationFrame(() => q.focus());
   }
 
   // ---------------------------------------------------------------- menus

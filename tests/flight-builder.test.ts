@@ -22,7 +22,8 @@ const C = async () => import('../src/train/circuits');
 describe('templates (training region)', () => {
   it('every template builds a valid flight that runs', async () => {
     const { TEMPLATES, validate, circuitToExercise } = await C();
-    expect(TEMPLATES.map((t) => t.name)).toEqual(['Hold over a VOR', 'ILS with missed approach and hold', 'Partial panel NDB', 'Cross-country with SID/STAR', 'ACS mock checkride']);
+    // a VFR flight first (audit §57), then the instrument-rating templates
+    expect(TEMPLATES.map((t) => t.name)).toEqual(['Local VFR flight', 'Hold over a VOR', 'ILS with missed approach and hold', 'Partial panel NDB', 'Cross-country with SID/STAR', 'ACS mock checkride']);
     for (const t of TEMPLATES) {
       const c = t.build({ airport: 'PARD', dest: 'MSVL' });
       expect(c, t.name).toBeTruthy();

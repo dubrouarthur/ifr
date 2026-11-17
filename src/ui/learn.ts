@@ -94,6 +94,7 @@ function setModalTitle(m: Modal, title: string) {
 }
 import { lang as uiLang } from './i18n';
 import type { BriefingSource, DeckStage } from '../course/ui/briefingDeck';
+import { howToFlyBlock } from './howToFly';
 
 export interface Progress {
   passed: boolean;
@@ -506,6 +507,10 @@ export class BriefingModal extends Modal {
     clear(this.foot);
     const segs = d ? d.segments((i) => { d.go(i, i < d.index ? Infinity : 0); this.renderBar(); }) : h('div', { class: 'ds-segs' });
     const last = !!d && d.atEnd;
+    // « Comment piloter » on the last page of every briefing (audit §25), right above « Prendre les commandes »
+    const htf = this.body.querySelector(':scope > .htf');
+    if (last && !htf) this.body.append(howToFlyBlock());
+    else if (!last && htf) htf.remove();
     const quick = !!this.opts.quick;
     const needQuiz = !!d && !d.gatesDone && !quick;
     const ex = this.run?.ex;
@@ -601,6 +606,7 @@ export class BriefingModal extends Modal {
     } else if (run.rt.hold) {
       this.body.append(h('div', { class: 'diagram', html: holdDiagramSvg(run.rt.hold.inbound, run.rt.hold.turn, run.rt.hold.fix.ident) }));
     }
+    this.body.append(howToFlyBlock());
     const needQuiz = !!q && this.answered === null;
     const restart = this.seed !== null;
     this.foot.append(

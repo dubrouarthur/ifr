@@ -188,17 +188,15 @@ export class Launcher extends Modal {
     clear(this.body);
     clear(this.foot);
     const best = store.get<Record<string, { score: number; grade: string }>>('ifr.best', {});
+    const fr = uiLang() === 'fr';
     this.body.append(
+      // an h2 in the UI language, no third-party product names (audit §63)
       h('div', { class: 'hero' },
         h('div', {},
-          h('h1', {}, 'Fly real IFR. In your browser.'),
-          h('p', {}, 'A G1000-style glass cockpit with a GFC700-class autopilot, every approach type — ILS, LOC, back course, VOR/DME, NDB, RNAV LPV and LNAV/VNAV — generated approach plates, joystick support and a scored debrief after every flight.'),
-        ),
-        h('div', { class: 'feat' },
-          h('div', {}, h('b', {}, '7 approach types'), 'Precision, APV and non-precision, with holds and missed approaches.'),
-          h('div', {}, h('b', {}, 'Charts'), 'Approach plates & airport diagrams with own-ship.'),
-          h('div', {}, h('b', {}, 'Joystick ready'), 'Yokes, HOTAS, gamepads — auto-detect mapping.'),
-          h('div', {}, h('b', {}, 'Debrief'), 'ACS-style scoring, track & profile replay.'),
+          h('h2', {}, fr ? 'Choisissez votre vol' : 'Choose your flight'),
+          h('p', {}, fr
+            ? 'Un cockpit à écrans de vol et pilote automatique, tous les types d’approche (ILS, LOC, VOR/DME, NDB, RNAV), des cartes d’approche générées, les manettes de jeu et un débriefing après chaque vol.'
+            : 'A glass cockpit with an autopilot, every approach type (ILS, LOC, VOR/DME, NDB, RNAV), generated approach plates, game controller support and a debrief after every flight.'),
         ),
       ),
     );

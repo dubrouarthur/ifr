@@ -388,7 +388,7 @@ export const PROGRAMS: readonly ProgramDef[] = [
       en: "Instrumentation, radio navigation, general navigation and human performance: the first of the 13 exam subjects.",
       fr: "Instrumentation, radionavigation, navigation générale et performances humaines : les premières des 13 matières de l’examen.",
     },
-    who: { en: "I am preparing ATPL theory", fr: "Je prépare la théorie ATPL" },
+    who: { en: "I am preparing the ATPL", fr: "Je prépare l’ATPL" },
     level: 3,
     fallback: "atpl.010",
   },

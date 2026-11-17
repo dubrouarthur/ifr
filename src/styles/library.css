@@ -2178,7 +2178,13 @@
   font-size: 1rem;
   font-weight: 650;
 }
+/* one header grid for the four cards (audit §59): the description holds three lines, so the counts line up */
 .lb-pc-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: calc(0.875rem * 1.45 * 3);
   font-size: 0.875rem;
   line-height: 1.45;
   color: var(--lb-ink-2);
@@ -2835,4 +2841,143 @@
 .lb-grid.is-one > .lb-card > .lb-card-b {
   justify-content: center;
   padding: 20px 24px;
+}
+
+/* search: the first result is the one Enter opens (audit §56) */
+.lb-hit.is-first,
+.lb-subj-hit.is-first {
+  box-shadow: inset 0 0 0 2px var(--lb-accent);
+}
+.lb-subj-hit.is-first {
+  border-color: var(--lb-accent);
+}
+.lb-hit.is-first::after,
+.lb-subj-hit.is-first::after {
+  content: attr(data-enter);
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  right: 88px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--lb-accent);
+  color: var(--lb-accent-ink);
+  font: 600 12px/1.5 var(--gl-font, system-ui);
+  pointer-events: none;
+}
+.lb-subj-hit.is-first {
+  position: relative;
+}
+.lb-subj-hit.is-first::after {
+  top: 6px;
+  right: 6px;
+  transform: none;
+}
+
+/* a formation page: the filter stays in reach while the subjects scroll (audit §55) */
+.lb-prog > .lb-tools-row {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding-top: 12px;
+  margin-top: -12px;
+  background: var(--lb-bg, #f8f7f4);
+}
+.lb-prog .lb-rail {
+  top: 84px;
+}
+.lb-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 4px 6px 4px 12px;
+  border-radius: 999px;
+  background: rgb(29 95 209 / 0.08);
+  color: var(--lb-ink-2);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.lb-filter-chip .lb-link {
+  min-height: 36px;
+  padding: 0 10px;
+}
+.lb-rail-c.is-filtered {
+  color: var(--lb-mute);
+}
+/* a narrow screen keeps its one sticky line, the Sommaire select: the filter scrolls with the page */
+.lb.is-narrow .lb-prog > .lb-tools-row {
+  position: static;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+/* « Présenter à une classe » (audit §54): search, then formation › subject, each course with its first slide */
+.gl-pick-present {
+  gap: 10px;
+}
+.gl-pick-q {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--gl-line-strong, #c9c6bd);
+  border-radius: 10px;
+  font: inherit;
+  background: #fff;
+}
+.gl-pick-g {
+  border: 1px solid var(--gl-line, #e2e0d9);
+  border-radius: 12px;
+  background: var(--gl-surface, #fff);
+}
+.gl-pick-g > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 14px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.gl-pick-n {
+  color: var(--gl-muted, #5d6671);
+  font-weight: 500;
+}
+.gl-pick-s {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 10px 12px;
+}
+.gl-pick-sh {
+  margin: 4px 4px 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--gl-muted, #5d6671);
+}
+.gl-pick-row.has-cov {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+.gl-pick-row.has-cov .gl-pick-t {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.gl-pick-cov.lb-cover {
+  flex: none;
+  width: 96px;
+  height: 54px;
+  aspect-ratio: auto;
+  border: 1px solid var(--gl-line, #e2e0d9);
+  border-radius: 6px;
+}
+.gl-pick-cov .lb-noslide b {
+  font-size: 9px;
+}
+.gl-pick-none {
+  margin: 8px 4px;
+  color: var(--gl-muted, #5d6671);
 }

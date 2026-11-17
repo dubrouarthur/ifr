@@ -1080,6 +1080,8 @@ export interface FlightTemplate {
   id: string;
   name: string;
   desc: string;
+  /** the shelf it is listed on in « Préparer un vol » (audit §57): VFR first, then IFR (instrument rating level, the default) */
+  rules?: 'vfr' | 'ifr';
   build(o?: TemplateCtx): Circuit | null;
 }
 
@@ -1129,6 +1131,28 @@ const base = (id: string, name: string, description: string, start: CircuitStart
 export const currentWorld = (): 'real' | 'training' => (currentRegion() ? 'real' : 'training');
 
 export const TEMPLATES: FlightTemplate[] = [
+  {
+    // a first flight is VFR (audit §57): take off, fly to the nearest VOR and back, in clear weather, no procedure
+    id: 't-vfrlocal',
+    rules: 'vfr',
+    name: 'Local VFR flight',
+    desc: 'Take off in clear weather from Mistral Valley, fly to the nearest VOR and come back to land, at your own pace.',
+    build(o = {}) {
+      const dep = pickAirport(o.airport ?? 'MSVL', (i) => (AIRPORTS.find((a) => a.icao === i)?.runways.length ?? 0) > 0);
+      if (!dep) return null;
+      const apt = AIRPORTS.find((a) => a.icao === dep)!;
+      const v = NAVAIDS.filter((n) => (n.type === 'VOR' || n.type === 'VORDME') && findFix(n.ident)).sort((a, b) => distanceNm(a, apt) - distanceNm(b, apt))[0];
+      const start = runwayStart(dep, undefined) as Extract<CircuitStart, { type: 'runway' }>;
+      const alt = Math.max(3500, roundAlt(apt.elevFt + 2500));
+      const legs: CircuitLeg[] = v ? [{ type: 'fix', ident: v.ident, alt }] : [];
+      return base('t-vfrlocal', `${dep} · VFR`, `Take off from ${dep}${v ? `, fly to ${v.ident} at ${alt} ft and back` : ''}, in clear weather.`, { ...start, initialAlt: alt }, legs, {
+        dep,
+        dest: dep,
+        cruise: alt,
+        weather: { ceilingFt: 12000, visibilitySm: 10, windDir: 270, windKt: 5, turbulence: 0.05 },
+      });
+    },
+  },
   {
     id: 't-vorhold',
     name: 'Hold over a VOR',

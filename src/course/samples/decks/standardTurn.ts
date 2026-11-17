@@ -9,6 +9,7 @@ import { G as GOAL, course } from "../kit";
 import {
   L,
   SIX,
+  easaFirst,
   coverStep,
   diagramStep,
   gauge,
@@ -176,7 +177,7 @@ export function standardTurnCourse(): Course {
         "Turn on the clock, roll out on the heading, never stare at one needle.",
         "Virer au chrono, sortir sur le cap, ne jamais fixer une seule aiguille.",
       ),
-      source: L("FAA IFH ch. 4 and 6", "FAA IFH ch. 4 et 6"),
+      source: easaFirst(L("FAA IFH ch. 4 and 6", "FAA IFH ch. 4 et 6")),
       view: SIX,
       alt: L(
         "Six instruments in a climbing turn to the right",
@@ -206,9 +207,11 @@ export function standardTurnCourse(): Course {
           "Sortir de virage à 5° près du cap",
         ),
       ],
-      source: L(
-        "FAA IFH ch. 4 · EASA Part-FCL IR",
-        "FAA IFH ch. 4 · EASA Part-FCL IR",
+      source: easaFirst(
+        L(
+          "FAA IFH ch. 4 · EASA Part-FCL IR",
+          "FAA IFH ch. 4 · EASA Part-FCL IR",
+        ),
       ),
       view: gauge("tc"),
       alt: L(
@@ -253,7 +256,7 @@ export function standardTurnCourse(): Course {
         },
       ],
       answer: 1,
-      source: IFH4,
+      source: easaFirst(IFH4),
       view: gauge("tc"),
       alt: L(
         "Turn coordinator on the standard-rate mark",
@@ -296,7 +299,7 @@ export function standardTurnCourse(): Course {
           ),
         },
       ],
-      source: IFH4,
+      source: easaFirst(IFH4),
       g: "tc",
       alt: L(
         "Turn coordinator in a standard-rate turn",
@@ -339,9 +342,11 @@ export function standardTurnCourse(): Course {
           ),
         },
       ],
-      source: L(
-        "FAA IFH ch. 6 · timed turns",
-        "FAA IFH ch. 6 · virages chronométrés",
+      source: easaFirst(
+        L(
+          "FAA IFH ch. 6 · timed turns",
+          "FAA IFH ch. 6 · virages chronométrés",
+        ),
       ),
       view: SIX,
       alt: L(
@@ -382,9 +387,11 @@ export function standardTurnCourse(): Course {
         "Wing on the mark, count 15 seconds, level the wings. Altitude and speed are held for you.",
         "L’aile sur le repère, comptez 15 secondes, ailes à plat. Altitude et vitesse sont tenues pour vous.",
       ),
-      source: L(
-        "FAA IFH ch. 6 · timed turns",
-        "FAA IFH ch. 6 · virages chronométrés",
+      source: easaFirst(
+        L(
+          "FAA IFH ch. 6 · timed turns",
+          "FAA IFH ch. 6 · virages chronométrés",
+        ),
       ),
       view: SIX,
       alt: L(
@@ -442,9 +449,11 @@ export function standardTurnCourse(): Course {
           ),
         },
       ],
-      source: L(
-        "FAA IFH ch. 4 · bank for standard rate",
-        "FAA IFH ch. 4 · inclinaison du taux standard",
+      source: easaFirst(
+        L(
+          "FAA IFH ch. 4 · bank for standard rate",
+          "FAA IFH ch. 4 · inclinaison du taux standard",
+        ),
       ),
       view: SIX,
       alt: L(
@@ -482,9 +491,11 @@ export function standardTurnCourse(): Course {
           dot: { g: "hsi", at: [0.78, -0.78], moment: "on" },
         },
       ],
-      source: L(
-        "FAA AFH ch. 3 · FAA IFH ch. 6",
-        "FAA AFH ch. 3 · FAA IFH ch. 6",
+      source: easaFirst(
+        L(
+          "FAA AFH ch. 3 · FAA IFH ch. 6",
+          "FAA AFH ch. 3 · FAA IFH ch. 6",
+        ),
       ),
       view: gauge("hsi"),
       alt: L(
@@ -529,7 +540,7 @@ export function standardTurnCourse(): Course {
         },
       ],
       answer: 1,
-      source: IFH4,
+      source: easaFirst(IFH4),
       view: gauge("ai"),
       alt: L(
         "Attitude indicator: the bank grows with the speed",
@@ -573,7 +584,7 @@ export function standardTurnCourse(): Course {
           dot: { g: "tc", at: [0.78, -0.78], moment: "tc" },
         },
       ],
-      source: IFH6,
+      source: easaFirst(IFH6),
       view: SIX,
       alt: L(
         "Six instruments in a climbing turn to the right",
@@ -616,7 +627,7 @@ export function standardTurnCourse(): Course {
           ),
         },
       ],
-      source: IFH6,
+      source: easaFirst(IFH6),
       view: SIX,
       alt: L(
         "Six instruments: a small bank and a slow sink creep in",
@@ -656,9 +667,11 @@ export function standardTurnCourse(): Course {
         "Heading 090 and 3,000 ft held 10 seconds.",
         "Cap 090 et 3 000 ft tenus 10 secondes.",
       ),
-      source: L(
-        "FAA AFH ch. 3 · level turns",
-        "FAA AFH ch. 3 · virages en palier",
+      source: easaFirst(
+        L(
+          "FAA AFH ch. 3 · level turns",
+          "FAA AFH ch. 3 · virages en palier",
+        ),
       ),
       notes: L(
         "Show it first if you like: « Ouvrir le simulateur », then « Reprendre le cours ».",
@@ -695,9 +708,11 @@ export function standardTurnCourse(): Course {
           ),
         ],
       ],
-      source: L(
-        "FAA IFH ch. 4 and 6 · AFH ch. 3",
-        "FAA IFH ch. 4 et 6 · AFH ch. 3",
+      source: easaFirst(
+        L(
+          "FAA IFH ch. 4 and 6 · AFH ch. 3",
+          "FAA IFH ch. 4 et 6 · AFH ch. 3",
+        ),
       ),
       scene: "st.level",
       notes: L(

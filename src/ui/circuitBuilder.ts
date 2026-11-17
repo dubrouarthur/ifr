@@ -254,6 +254,7 @@ const PRESET_FR: Record<string, [string, string]> = {
   "p-valley": ["Boucle de Mistral Valley", "En vol à l’ouest de MSVL : RNAV 03 LNAV/VNAV et remise de gaz, attente à MSV, VOR/DME 21 par l’arc DME 10 jusqu’à l’atterrissage."],
   "p-pp": ["Circuit en panel partiel (test)", "À la main. L’AHRS / la dépression tombe en panne après 3 minutes : attente non standard à gauche à KEDDY, puis l’ILS 27 sur les instruments de secours."],
   "p-cross": ["Aller-retour PARD → MSVL → PARD", "Vers Mistral Valley pour l’ILS 03 et sa remise de gaz, retour par TOBEY pour l’ILS 27 avec une panne de glide en finale."],
+  "t-vfrlocal": ["Vol local VFR", "Décollez de Mistral Valley par beau temps, rejoignez le VOR le plus proche et revenez vous poser, à votre rythme."],
   "t-vorhold": ["Attente sur un VOR", "En vol à 10 NM : rejoignez le VOR, entrez et volez deux attentes standard (l’entrée est notée)."],
   "t-ilsmissed": ["ILS avec remise de gaz et attente", "L’ILS (la meilleure approche de précision) jusqu’aux minima, la remise de gaz publiée et son attente."],
   "t-ppndb": ["NDB en panel partiel", "Instruments classiques, à la main : l’horizon tombe en panne après deux minutes, puis une approche classique."],
@@ -264,7 +265,7 @@ const presetName = (id: string, en: string) => (lang() === "fr" ? (PRESET_FR[id]
 const presetDesc = (id: string, en: string) => (lang() === "fr" ? (PRESET_FR[id]?.[1] ?? en) : en);
 
 registerStrings("en", {
-  "fbd.lib": "Failure drills",
+  "fbd.lib": "Failures (instructor)",
   "fbd.libClub": "Club drill",
   "fbd.tab": "Drill",
   "fbd.where": "Where",
@@ -354,6 +355,8 @@ registerStrings("en", {
   "fb.import": "Import…",
   "fb.exportAll": "Export all",
   "fb.templates": "Templates",
+  "fb.vfr": "VFR",
+  "fb.ifr": "IFR · instrument rating",
   "fb.mine": "My flights",
   "fb.tabFlight": "Flight · {n} leg",
   "fb.tabFlights": "Flight · {n} legs",
@@ -391,7 +394,7 @@ registerStrings("en", {
   "fb.profHint": "Planned altitudes · MEA · SID/STAR constraints · glidepath and minimums",
 });
 registerStrings("fr", {
-  "fbd.lib": "Exercices de panne",
+  "fbd.lib": "Pannes (instructeur)",
   "fbd.libClub": "Exercice du club",
   "fbd.tab": "Exercice",
   "fbd.where": "Où",
@@ -480,6 +483,8 @@ registerStrings("fr", {
   "fb.import": "Importer…",
   "fb.exportAll": "Exporter",
   "fb.templates": "Modèles",
+  "fb.vfr": "VFR",
+  "fb.ifr": "IFR · niveau IR",
   "fb.mine": "Mes vols",
   "fb.tabFlight": "Route · {n} branche",
   "fb.tabFlights": "Route · {n} branches",
@@ -1363,9 +1368,12 @@ export class CircuitBuilder extends Modal {
     if (drillFirst) this.libList.append(...drillNodes);
     // templates: built for the flight's airport (real world or training region)
     const tpls = TEMPLATES.filter((t) => match(`${t.name} ${t.desc}`));
-    this.libList.append(sec(t("fb.templates"), TEMPLATES.length));
-    for (const t of tpls)
-      this.libList.append(
+    // VFR first (a first flight in clear weather), then the instrument-rating templates (audit §57)
+    const tplNodes = (list: typeof tpls, head: string, n: number) => {
+      if (!n) return;
+      this.libList.append(sec(head, n));
+      for (const t of list)
+        this.libList.append(
         h(
           "button",
           {
@@ -1375,6 +1383,21 @@ export class CircuitBuilder extends Modal {
               this.guard(() => {
                 const real = this.c.world === "real";
                 const at = this.icaos()[0] || (real ? homeAirport() : "");
+                // the VFR first flight needs no choice: with no departure picked it is built at Mistral Valley, in
+                // the training region (audit §57)
+                if (t.rules === "vfr" && real && !this.icaos()[0] && !this.regionOk()) {
+                  const c = t.build({});
+                  if (c) {
+                    this.c = c;
+                    this.sourceId = null;
+                    this.dirty = true;
+                    this.selLeg = null;
+                    this.routeDraft = null;
+                    this.routeMsg = null;
+                    this.render();
+                    return;
+                  }
+                }
                 if (real && !this.regionOk()) {
                   this.c = this.blank("real", at);
                   this.pendingTemplate = t.id;
@@ -1411,6 +1434,9 @@ export class CircuitBuilder extends Modal {
           h("small", {}, presetDesc(t.id, t.desc)),
         ),
       );
+    };
+    tplNodes(tpls.filter((x) => x.rules === "vfr"), t("fb.vfr"), TEMPLATES.filter((x) => x.rules === "vfr").length);
+    tplNodes(tpls.filter((x) => x.rules !== "vfr"), t("fb.ifr"), TEMPLATES.filter((x) => x.rules !== "vfr").length);
     // the club's drills are listed with the drills above
     const all = all0.filter((c) => !c.drill);
     const mine = all.filter((c) =>

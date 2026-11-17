@@ -635,3 +635,28 @@ export function searchView(
 
 /** The kind families, in filter order (re-exported for the page). */
 export { KIND_ORDER };
+
+/** « Présenter à une classe » (audit §54): the courses grouped by formation, then subject, in syllabus order; the
+ *  formation last browsed first. Pure. */
+export interface PresentGroup {
+  program: ProgramId;
+  subjects: { subject: SubjectId; items: LibItem[] }[];
+}
+export function presentGroups(items: readonly LibItem[], first: ProgramId | null = null): PresentGroup[] {
+  const courses = items.filter((i) => i.kind === "course").sort(compareInLibrary);
+  const byProg = new Map<ProgramId, PresentGroup>();
+  for (const i of courses) {
+    const p = programOf(i);
+    const g = byProg.get(p) ?? { program: p, subjects: [] };
+    byProg.set(p, g);
+    const last = g.subjects[g.subjects.length - 1];
+    if (last?.subject === i.home) last.items.push(i);
+    else g.subjects.push({ subject: i.home, items: [i] });
+  }
+  const order = PROGRAMS.map((d) => d.id);
+  return [...byProg.values()].sort(
+    (a, b) =>
+      (a.program === first ? -1 : 0) - (b.program === first ? -1 : 0) ||
+      order.indexOf(a.program) - order.indexOf(b.program),
+  );
+}

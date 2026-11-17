@@ -28,6 +28,7 @@ import type {
 } from "../types";
 import type { CourseStore } from "../store";
 import { cockpitBridgeReady, legacyFlyLink, noteFly } from "../cockpitLink";
+import { lastFlyHandoff, leftUnfinished } from "./flyLeft";
 import {
   courseReturnUrl,
   createHandoff,
@@ -293,6 +294,12 @@ export function visibleSteps(
 }
 /** The end screen's honest counts (audit §1): only the steps with a task, and only what was really attempted. A
  *  course walked with « Suivant » alone is « parcouru », never « terminé ». Pure: unit-tested on the real decks. */
+/** The goal rows tick only once the student has the controls (audit §47): under the « À vous » card (briefed) and
+ *  during a Show me demo they stay neutral, even when the frozen situation already meets a row. Pure. */
+export function goalRowsLive(handoverActive: boolean, state: string): boolean {
+  return !handoverActive || (state !== "briefed" && state !== "demo");
+}
+
 export function courseTally(
   steps: readonly Step[],
   marks: Readonly<Record<string, StepMark>>,
@@ -654,6 +661,7 @@ export class CoursePlayer {
       marks: this.marks(),
       current: this.summaryOn ? -1 : this.i,
       onJump: (i) => this.goTo(i),
+      onLang: (l) => this.setLang(l),
     });
     this.outline.open(this.el);
   }
@@ -771,6 +779,8 @@ export class CoursePlayer {
         { class: "cp-count num" },
         ps("stepOf", lang, { n, total: steps.length }),
       ),
+      // a phone: « 2/10 » over the thin bar (audit §44)
+      h("span", { class: "cp-count-s num", "aria-hidden": "true" }, `${n}/${steps.length}`),
       h(
         "span",
         {
@@ -1471,7 +1481,7 @@ export class CoursePlayer {
     const step = this.step;
     if (!step || this.summaryOn) return;
     const st = this.state(step);
-    if (e.k === "frame" && this.tracker && this.trackerGoal && !st.goalMet) {
+    if (e.k === "frame" && this.tracker && this.trackerGoal && !st.goalMet && goalRowsLive(this.frame.handover.active, this.frame.handover.state)) {
       const g = this.tracker.update(this.view(), e.dt);
       this.rowT += e.dt;
       const sig = g.rows
@@ -1879,6 +1889,14 @@ export class CoursePlayer {
         ) {
           if (s.status === "flown") attempt = s.attempt;
           else status = s.status === "notFinished" ? "notFinished" : "pending";
+        }
+      }
+      else if (store.listHandoffs) {
+        // back without the token: the step's last flight, if it was opened and left without a result, still says so
+        const hd = lastFlyHandoff(await store.listHandoffs(), this.course.id, step.id);
+        if (leftUnfinished(hd, attempt)) {
+          const s = await handoffStatus(store, hd!.token, this.profileId);
+          if (s.status === "notFinished") status = "notFinished";
         }
       }
       if (attempt && status === "brief") status = "flown";

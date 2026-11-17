@@ -76,6 +76,11 @@ const canvas = (
   blocks,
 });
 const foot = (t: L10n): SlideBlock => T("foot", t, G.left, G.foot, 1080, 32);
+/** A course of the EASA PPL(A) programme cites the EASA syllabus first, its FAA handbook as « voir aussi » (audit §46). */
+export const easaFirst = (src: L10n): L10n => ({
+  en: `EASA PPL(A) syllabus · see also ${src.en}`,
+  fr: `Programme EASA PPL(A) · voir aussi ${src.fr ?? src.en}`,
+});
 const text = (t: L10n) => ({ t: "text" as const, text: t });
 const both = (parts: L10n[]): L10n => ({
   en: parts.map((p) => p.en).join(" "),

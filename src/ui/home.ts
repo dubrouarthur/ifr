@@ -53,22 +53,18 @@ export const HOME_COPY = {
   present: { fr: "Présenter", en: "Present" },
   fly: { fr: "Voler", en: "Fly" },
   flyLine: {
-    fr: "Le simulateur seul : un vol rapide en un clic, ou un vol que vous préparez.",
-    en: "The simulator on its own: a quick flight in one click, or a flight you plan.",
+    fr: "Le simulateur seul : un vol rapide, ou un vol que vous préparez.",
+    en: "The simulator on its own: a quick flight, or a flight you plan.",
   },
   flyWho: {
     fr: "Sans cours, à votre rythme",
     en: "No course, at your own pace",
   },
   flyGo: { fr: "Ouvrir le simulateur", en: "Open the simulator" },
-  // a free VFR flight in clear weather, at once (audit §24): no IFR procedure for a first flight
+  // a free VFR flight in clear weather (audit §24); its short briefing (goal, « Comment piloter ») comes first (§31)
   flyQuick: {
-    fr: "Ou voler librement, en un clic",
-    en: "Or fly freely, in one click",
-  },
-  flyPhoto: {
-    fr: "Avion-école quadriplace · tableau classique ou écrans de vol",
-    en: "Four-seat trainer · classic panel or glass panel",
+    fr: "Ou voler librement",
+    en: "Or fly freely",
   },
   newHere: { fr: "Nouveau sur Wingdeck ?", en: "New to Wingdeck?" },
   newHereLine: {
@@ -120,8 +116,8 @@ export const HOME_COPY = {
   simEyebrow: { fr: "Simulateur", en: "Simulator" },
   simTitle: { fr: "Lancer un vol", en: "Start a flight" },
   simLead: {
-    fr: "Le simulateur seul, sans cours : un vol rapide en un clic, ou un vol que vous préparez vous-même.",
-    en: "The simulator on its own, no course: a quick flight in one click, or a flight you plan yourself.",
+    fr: "Le simulateur seul, sans cours : un vol rapide, ou un vol que vous préparez vous-même.",
+    en: "The simulator on its own, no course: a quick flight, or a flight you plan yourself.",
   },
   quick: { fr: "Vol rapide", en: "Quick flight" },
   quickLine: {
@@ -149,8 +145,8 @@ export const HOME_COPY = {
   },
   recent: { fr: "Vos derniers vols", en: "Your last flights" },
   recentEmpty: {
-    fr: "Vos vols apparaîtront ici. Commencez par un vol rapide : il ne faut qu’un clic.",
-    en: "Your flights will show here. Start with a quick flight: it takes one click.",
+    fr: "Vos vols apparaîtront ici. Commencez par un vol rapide, juste au-dessus.",
+    en: "Your flights will show here. Start with a quick flight, just above.",
   },
   lessons: {
     fr: "Leçons et entraînements au simulateur",
@@ -410,6 +406,10 @@ export function homeView(o: HomeHooks): HomeView {
     const learnFront = h("div", { class: "wd-cover wd-s1" });
     const learnBack = h("div", { class: "wd-cover wd-s2" });
     const teachCover = h("div", { class: "wd-cover" });
+    // Voler shows a slide with a live instrument, like the two other doors (audit §60), not a photo
+    const simCover = h("div", { class: "wd-cover" });
+    // « Créer un cours » is the one filled button of the doors (audit §60): Wingdeck is where courses are made
+    const teachBtn = "wd-btn primary";
     const door = (
       cls: string,
       vis: HTMLElement,
@@ -444,23 +444,6 @@ export function homeView(o: HomeHooks): HomeView {
       "ul",
       { class: "wd-doors" },
       door(
-        "learn",
-        h("div", { class: "wd-stack" }, learnBack, learnFront),
-        I.cap,
-        "wd-d-learn",
-        T("learn"),
-        T("learnLine"),
-        T("learnWho"),
-        navLink(
-          "wd-btn primary",
-          HOME_LINKS.library,
-          o.nav,
-          T("learnGo"),
-          icon(I.arrow),
-        ),
-        navLink("wd-link wd-door-alt", HOME_LINKS.ppl, o.nav, T("learnFirst")),
-      ),
-      door(
         "teach",
         h(
           "div",
@@ -476,14 +459,14 @@ export function homeView(o: HomeHooks): HomeView {
         // a course of my own is waiting: the door continues it, and « Créer un cours » becomes the quiet link
         editing
           ? navLink(
-              "wd-btn wd-edit-go",
+              `${teachBtn} wd-edit-go`,
               editHref(editing.id),
               o.nav,
               icon(I.edit),
               T("resumeEdit"),
             )
           : navLink(
-              "wd-btn",
+              teachBtn,
               HOME_LINKS.newCourse,
               o.nav,
               icon(I.plus),
@@ -504,12 +487,25 @@ export function homeView(o: HomeHooks): HomeView {
             ),
       ),
       door(
-        "sim",
-        h(
-          "div",
-          { class: "wd-simvis" },
-          h("span", { class: "wd-simtag" }, T("flyPhoto")),
+        "learn",
+        h("div", { class: "wd-stack" }, learnBack, learnFront),
+        I.cap,
+        "wd-d-learn",
+        T("learn"),
+        T("learnLine"),
+        T("learnWho"),
+        navLink(
+          "wd-btn",
+          HOME_LINKS.library,
+          o.nav,
+          T("learnGo"),
+          icon(I.arrow),
         ),
+        navLink("wd-link wd-door-alt", HOME_LINKS.ppl, o.nav, T("learnFirst")),
+      ),
+      door(
+        "sim",
+        h("div", { class: "wd-simvis" }, h("div", { class: "wd-scr" }, simCover)),
         I.plane,
         "wd-d-sim",
         T("fly"),
@@ -542,6 +538,7 @@ export function homeView(o: HomeHooks): HomeView {
     cover(learnFront, { product: "p-asi" });
     cover(learnBack, { course: "sample-maths-vfr" });
     cover(teachCover, { course: "sample-holding" });
+    cover(simCover, { course: "sample-deck-standard-turn-scan" });
     return list;
   };
   const newHere = () =>

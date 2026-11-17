@@ -24,6 +24,8 @@ import { InstructorDrawer, HistoryModal } from './ui/instructor';
 import { LearnModal, BriefingModal, HoldDrillModal } from './ui/learn';
 import { createResultSheet, ResultObserver, buildReport, type ResultOpenOpts } from './ui/result';
 import { DebriefView } from './ui/result/debrief';
+import { FlightDoneCard, endsLight } from './ui/result/flightDone';
+import { FlightStartCard } from './ui/howToFly';
 import { debriefOpen, type ExerciseCtx, type FlightCtx } from './ui/result/debriefSource';
 import { computeDebrief } from './sim/recorder';
 import { COCKPIT_HASH, FlightCenter } from './ui/flightcenter';
@@ -511,7 +513,8 @@ function backToTraining() {
   charts.refresh?.();
 }
 const fc = new FlightCenter({
-  flyScenario: (sc, wx, a) => { backToTraining(); startScenario(sc, wx, a); },
+  // every flight picked on Accueil, Simulateur or in the library starts on its minimal briefing (audit §31)
+  flyScenario: (sc, wx, a) => { backToTraining(); startScenario(sc, wx, a); briefQuick(sc); },
   briefExercise: (ex, path, quick) => { backToTraining(); pickExercise(ex, path, !!quick); },
   openPaths: () => learn.open(),
   openDrill: () => drill.open(),
@@ -746,6 +749,18 @@ function startScenario(sc: Scenario, wx: WxPreset, a: AssessSettings = launcher.
   maybeTour();
   chromeAfterStart();
 }
+/** the minimal briefing of a scenario flight (audit §31): goal, « Comment piloter », « Prendre les commandes »; the
+ *  aircraft waits paused, and « Annuler » goes back to the place that flew it */
+const startCard = new FlightStartCard();
+function briefQuick(sc: Scenario) {
+  sim.paused = true;
+  startCard.show({
+    title: scenarioName(sc),
+    goal: scenarioDesc(sc),
+    onStart: () => { if (sim.paused) togglePause(); },
+    onCancel: () => { const r = fc.returnTo; fc.returnTo = null; fc.showPlace(r?.view.type === 'sim' ? 'sim' : 'home', r?.focus); },
+  });
+}
 function maybeTour() {
   if (!store.get('ifr.tour.v1', false)) setTimeout(() => { if (!Modal.anyOpen()) startTour(); }, 900);
 }
@@ -882,7 +897,31 @@ function endFlight() {
     else lesson.abort();
     return;
   }
-  openDebrief();
+  endOrDebrief();
+}
+/** « Vol terminé » (audit §28): a flight outside a course, with nothing graded, ends on one short card (time,
+ *  track, « Un autre vol » · « Reprendre le vol » · « Voir les cours », the debrief one link away); a course flight,
+ *  an exercise or a graded approach keep the full debrief */
+const flightDone = new FlightDoneCard();
+function endOrDebrief() {
+  const db = computeDebrief(sim.rec, sim.av.minimums);
+  const fromCourse = !!courseBridge?.handoff;
+  if (!endsLight({ fromCourse, exercise: !!lesson || !!sim.rec.lesson, graded: db.graded })) { openDebrief(); return; }
+  sim.paused = true;
+  debriefShown = true;
+  saveFlightRecord(sim);
+  const sc = sim.scenario;
+  const again = () => { debriefShown = false; endTimer = -60; };
+  flightDone.show({
+    title: sc && sc.id !== 'lesson' ? scenarioName(sc) : tr('course.freeFlight'),
+    durationSec: Math.max(db.durationSec, flownS),
+    samples: sim.rec.samples,
+    onResume: () => { again(); if (sim.paused) togglePause(); },
+    onAnother: () => fc.showPlace('sim'),
+    onCourses: () => location.assign('academy.html#library'),
+    onDetail: () => openDebrief(),
+    onDismiss: again,
+  });
 }
 document.addEventListener('click', (e) => { if (!flightMenu.contains(e.target as Node)) flightMenu.classList.remove('open'); });
 const moreItem = (ic: string, label: string, kbd: string, fn: () => void) =>
@@ -2156,6 +2195,10 @@ const stickDot = h('i', {});
 const stick = h('div', { class: 'pd-yoke', role: 'img', 'aria-label': tr('Yoke and rudder position. Drag to fly.'), title: tr('Yoke position — drag here to fly with the mouse or a touch screen') }, h('span', { class: 'pd-cross' }), stickDot);
 const rudderBar = h('div', { class: 'pd-rudder', title: tr('Rudder ( , and . )') }, h('i', {}));
 stick.append(rudderBar); // the rudder is drawn along the pad's lower edge (pointer-events: none)
+// on a touch screen the pad says what it is: « Manche » (audit §25)
+const syncYokeLabel = () => { stick.dataset.label = uiLang() === 'fr' ? 'Manche' : 'Yoke'; };
+syncYokeLabel();
+onLangChange(syncYokeLabel);
 const brakeLight = h('span', { class: 'pd-brk', role: 'status', 'aria-label': tr('Wheel brakes'), title: tr('Wheel brakes (hold Space)') }, h('i', {}), 'BRK');
 const joyDot = h('span', { class: 'pd-joy-dot' });
 const joyLbl = h('span', { class: 'pd-chip-l' }, tr('ped.controller'));
@@ -3072,7 +3115,7 @@ function frameBody(now: number) {
   // auto debrief at the end of a flight
   if (!debriefShown && !sim.ac.s.crashed && !courseBridge?.capturing && sim.rec.touchdown && sim.ac.s.onGround && sim.ac.data.gsKt < 2) {
     endTimer += dt;
-    if (endTimer > 1.5) openDebrief();
+    if (endTimer > 1.5) endOrDebrief();
   }
 
   const smokeOp = Math.min(0.72, Math.max(0, (sim.sys?.smokeLevel ?? 0) - 0.03) * 1.05).toFixed(2);

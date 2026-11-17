@@ -261,11 +261,12 @@
 
 /* ------------------------------------------------------------------ 1. hero */
 .intro .intro-hero {
-  padding: 40px 0 88px;
+  /* a fuller hero (audit §61) */
+  padding: 96px 0;
 }
 .intro .intro-hero-grid {
   display: grid;
-  grid-template-columns: minmax(340px, 4.5fr) 7.5fr;
+  grid-template-columns: minmax(340px, 5fr) 7fr;
   grid-template-areas: "txt fig" "more fig";
   grid-template-rows: auto 1fr;
   column-gap: 56px;
@@ -292,7 +293,7 @@
   margin-bottom: 16px;
 }
 .intro h1 {
-  font-size: clamp(2.5rem, 1.6rem + 2.4vw, 3.75rem);
+  font-size: clamp(44px, 4.4vw, 64px);
   line-height: 1.04;
   letter-spacing: -0.03em;
   font-weight: 700;
@@ -669,12 +670,13 @@
 .intro.intro-motion .intro-stage {
   transition: box-shadow 0.3s var(--ease);
 }
+/* the live slide arrives quickly and never washed out (audit §61) */
 .intro.intro-motion .intro-on {
-  animation: intro-fade 0.4s var(--ease) both;
+  animation: intro-fade 0.2s var(--ease) both;
 }
 @keyframes intro-fade {
   from {
-    opacity: 0.4;
+    opacity: 0.75;
   }
   to {
     opacity: 1;
@@ -766,5 +768,14 @@
   }
   .intro .intro-lead {
     font-size: 1.0625rem;
+  }
+}
+
+/* touch: every control of the page and of the live slides is a 44 px target (audit §61) */
+@media (pointer: coarse) {
+  .intro button,
+  .intro .intro-lang button {
+    min-height: 44px;
+    min-width: 44px;
   }
 }
