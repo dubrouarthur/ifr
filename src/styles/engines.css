@@ -278,8 +278,12 @@
   column-gap: 0.6em;
   align-items: center;
 }
-.eng:not(.narrow) .eng-c > .eng-toggle {
+.eng:not(.narrow) .eng-c > .eng-toggle,
+.eng:not(.narrow) .eng-c-magnetos .eng-seg {
   grid-column: 1 / -1;
+}
+.eng:not(.narrow) .eng-c-magnetos .eng-c-n {
+  margin-bottom: 0.2em;
 }
 .eng:not(.narrow) .eng-c-n {
   margin: 0;
