@@ -205,8 +205,11 @@ export const propTool: ToolDef = {
       2.5,
       "8 6",
     );
-    arc(150, 0, b, c.text, `β ${num(st.beta, 1, lang)}°`, 8);
-    if (st.phi > 0.5) arc(100, 0, phi, c.sel, `φ ${num(st.phi, 1, lang)}°`, 8);
+    // β and φ close together (cruise, a dive): β's label goes above its arc end, φ's below, never on each other
+    const close = Math.abs(st.beta - st.phi) < 6;
+    arc(150, 0, b, c.text, `β ${num(st.beta, 1, lang)}°`, close ? -8 : 8);
+    if (st.phi > 0.5)
+      arc(100, 0, phi, c.sel, `φ ${num(st.phi, 1, lang)}°`, close ? 34 : 8);
     s.text(40, 520, `α = β − φ = ${num(st.alpha, 1, lang)}°`, {
       size: 28,
       weight: 700,
@@ -283,10 +286,7 @@ export const propTool: ToolDef = {
     );
     const word =
       st.state === "stalled"
-        ? L(
-            "Blade near its stall: little thrust",
-            "Pale proche du décrochage : peu de traction",
-          )
+        ? L("Blade stalled: little thrust", "Pale décrochée : peu de traction")
         : st.state === "windmill"
           ? L(
               "Negative angle: the propeller is driven by the air",

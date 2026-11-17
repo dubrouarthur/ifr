@@ -29,8 +29,8 @@ const SOURCES: Record<ToolId, L10n> = {
     "Source · règlement européen Part-NCO.OP.125 : réserve VFR 30 min de jour, 45 min de nuit",
   ),
   carbIce: L(
-    "Source · FAA PHAK ch. 7, carburetor icing",
-    "Source · FAA PHAK ch. 7, givrage du carburateur",
+    "Sources · FAA PHAK ch. 7, carburetor icing · UK CAA Safety Sense 14, piston engine icing (power)",
+    "Sources · FAA PHAK ch. 7, givrage du carburateur · UK CAA Safety Sense 14, givrage moteur (puissance)",
   ),
   fronts: L(
     "Sources · Met Office, fronts · FAA Aviation Weather Handbook ch. 11 · orders of magnitude",
@@ -45,8 +45,8 @@ const SOURCES: Record<ToolId, L10n> = {
     "Source · FAA PHAK ch. 7, l’hélice · un modèle pédagogique (1,9 m, section à 75 % du rayon)",
   ),
   mach: L(
-    "Sources · ICAO standard atmosphere (Doc 7488) · simple sweep theory",
-    "Sources · atmosphère type OACI (Doc 7488) · théorie simple de l’aile en flèche",
+    "Sources · ICAO standard atmosphere (Doc 7488) · simple sweep theory (overstates the gain)",
+    "Sources · atmosphère type OACI (Doc 7488) · théorie simple de la flèche (surestime le gain)",
   ),
   pressurisation: L(
     "Sources · EASA CS 25.841 · FAA AC 61-107B (useful consciousness)",

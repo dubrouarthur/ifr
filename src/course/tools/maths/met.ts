@@ -5,8 +5,11 @@
 //   • FAA PHAK ch. 7 "Carburetor icing": "if the temperature is between −7 °C (20 °F) and 21 °C (70 °F) with visible
 //     moisture or high humidity, the pilot should be constantly on the alert for carburetor ice"; "carburetor ice
 //     could occur on a warm day at temperatures as high as 38 °C (100 °F) and humidity as low as 50 percent".
-//     High humidity is taken as RH ≥ 80 %. The UK CAA Safety Sense 14 chart draws the same picture in finer zones;
-//     the tool keeps the two PHAK statements, so it never claims a finer threshold than its source.
+//     High humidity is taken as RH ≥ 80 %;
+//   • the power: UK CAA Safety Sense Leaflet 14 "Piston engine icing" (its icing chart): in the humid band the risk
+//     is serious at any power, in the warmer, drier band it is serious with descent power (throttle closed) and
+//     lighter at cruise power. The tool keeps the PHAK thresholds above for the two bands and takes only that
+//     power split from SS14, so it never claims a finer threshold than its sources.
 // Fronts (cross-section): orders of magnitude from the Met Office "Fronts" fact sheet and FAA Aviation Weather
 // Handbook (FAA-H-8083-28) ch. 11: a warm front slopes about 1:150 and its cloud shield reaches 1,000 km ahead
 // (Ci, then Cs, As, then Ns and the rain belt within about 300 km); a cold front is steeper (about 1:80), with

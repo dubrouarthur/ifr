@@ -5,8 +5,12 @@
 //   • speed of sound a = 38.967 √T(K) kt (661.5 kt at 15 °C); M = TAS / a (FAA Airplane Flying Handbook ch. 15
 //     "Transition to jet-powered airplanes", ATPL 081 06);
 //   • simple sweep theory: only the component of the flow normal to the leading edge counts, M⊥ = M cos Λ, so the
-//     critical Mach number rises about as 1 / cos Λ (Anderson, Introduction to Flight §5.16). The straight wing's
-//     critical Mach 0.70 is a teaching assumption;
+//     critical Mach number rises about as 1 / cos Λ (Anderson, Introduction to Flight §5.16). Simple sweep theory
+//     overstates the gain (a real swept wing gains noticeably less, Anderson §5.16); the drawing says so. The straight
+//     wing's critical Mach 0.70 is a teaching assumption;
+//   • above the critical Mach the shocks are weak and the drag only starts to rise: airliners cruise there, below
+//     the drag-divergence Mach number, which lies a little above the critical Mach (Anderson §5.10). MDD = MCRIT +
+//     0.06 (in the Mach normal to the leading edge) is a teaching assumption;
 //   • cabin altitude ≤ 8,000 ft at the maximum operating altitude in normal operation (EASA CS 25.841(a));
 //   • time of useful consciousness after a rapid decompression, seated at rest (FAA AC 61-107B, table 1):
 //     FL 250 3–5 min, FL 300 1–2 min, FL 350 30–60 s, FL 400 15–20 s.
@@ -29,6 +33,8 @@ export const speedOfSoundKt = (tempC: number): number =>
 
 // ------------------------------------------------------------------ Mach and sweep
 export const MCRIT_STRAIGHT = 0.7;
+/** the drag-divergence margin above the critical Mach (teaching assumption, see the header) */
+export const MDD_MARGIN = 0.06;
 export interface MachState {
   tempC: number;
   aKt: number;
@@ -37,7 +43,9 @@ export interface MachState {
   machNormal: number;
   /** the critical Mach number of the swept wing */
   mcrit: number;
-  verdict: "subsonic" | "transonic" | "supersonic";
+  /** subsonic: under MCRIT; transonic: weak shocks, drag starts to rise (normal in cruise); divergence: past MDD,
+   *  drag rises steeply, buffet; supersonic: the flow square to the wing is supersonic */
+  verdict: "subsonic" | "transonic" | "divergence" | "supersonic";
 }
 export function machState(
   ft: number,
@@ -59,9 +67,11 @@ export function machState(
     verdict:
       machNormal >= 1
         ? "supersonic"
-        : machNormal > MCRIT_STRAIGHT
-          ? "transonic"
-          : "subsonic",
+        : machNormal > MCRIT_STRAIGHT + MDD_MARGIN
+          ? "divergence"
+          : machNormal > MCRIT_STRAIGHT
+            ? "transonic"
+            : "subsonic",
   };
 }
 

@@ -141,6 +141,24 @@ export const fuelTool: ToolDef = {
       `${tr(L("tanks", "réservoirs"), lang)} ${num(USABLE_L, 0, lang)} L`,
       { size: 20, fill: c.muted, anchor: "end" },
     );
+    // the legend beside the title: every part of the bar named, even when it is too short to hold its word
+    {
+      let lx = 330;
+      for (const [color, name] of [
+        [c.muted, tr(L("taxi", "roulage"), lang)],
+        [c.accent, tr(L("trip", "étape"), lang)],
+        [c.key, `${tr(L("reserve", "réserve"), lang)} ${st.reserveMin} min`],
+        [c.nav, tr(L("extra", "supplément"), lang)],
+      ] as const) {
+        s.rect(lx, y - 66, 22, 22, {
+          fill: color,
+          "fill-opacity": 0.85,
+          rx: 5,
+        });
+        s.text(lx + 30, y - 55, name, { size: 20, fill: c.ink2, mid: true });
+        lx += 30 + name.length * 11 + 28;
+      }
+    }
     const segs: [number, number, string, string][] = [];
     let at = 0;
     const seg = (l: number, color: string, name: string) => {
@@ -242,10 +260,11 @@ export const fuelTool: ToolDef = {
     });
     // the endurance
     const ex = T(st.enduranceMin);
-    s.line(ex, ty - 60, ex, ty + 50, st.verdict === "ok" ? c.nav : c.stop, 4);
+    // its label above the axis (clear of the hour labels), under it when it would meet the title
+    s.line(ex, ty - 60, ex, ty + 20, st.verdict === "ok" ? c.nav : c.stop, 4);
     s.text(
       ex,
-      ty + 80,
+      ex < 360 ? ty + 80 : ty - 70,
       `${tr(L("dry tanks", "réservoirs secs"), lang)} ${FMT[lang].dur(st.enduranceMin)}`,
       {
         size: 22,

@@ -298,20 +298,19 @@ export const radioNavTool: ToolDef = {
       `${tr(L("1 dot =", "1 point ="), lang)} ${VOR_DEG_PER_DOT}°`,
       { size: 22, fill: c.muted, anchor: "middle" },
     );
-    // past full scale the needle is against its stop: the degrees it shows are no longer the deviation
     const side = st.raw > 0 ? L("right", "à droite") : L("left", "à gauche");
-    const dots = Math.round(Math.abs(st.dots));
+    // past full scale the needle is against its stop: the degrees it shows are no longer the deviation
     const needle = st.centred
       ? tr(L("centred", "centrée"), lang)
       : Math.abs(st.raw) > VOR_FULL_SCALE
-        ? tr(
-            L(
-              `full scale ${side.en} (> ${VOR_FULL_SCALE}°)`,
-              `en butée ${side.fr} (> ${VOR_FULL_SCALE}°)`,
-            ),
-            lang,
-          )
-        : `${Math.round(Math.abs(st.raw))}° · ${dots} ${tr(dots > 1 ? L("dots", "points") : L("dot", "point"), lang)} ${tr(side, lang)}`;
+        ? `> ${VOR_FULL_SCALE}° ${tr(side, lang)}`
+        : `${Math.round(Math.abs(st.raw))}° ${tr(side, lang)}`;
+    const dots = Math.round(Math.abs(st.dots));
+    const needleSay = st.centred
+      ? needle
+      : Math.abs(st.raw) > VOR_FULL_SCALE
+        ? tr(L(`full scale ${side.en}`, `en butée ${side.fr}`), lang)
+        : `${needle}, ${dots} ${tr(dots > 1 ? L("dots", "points") : L("dot", "point"), lang)}`;
     return {
       svg: s.toString(),
       readouts: [
@@ -321,7 +320,7 @@ export const radioNavTool: ToolDef = {
         ro(L("Needle", "Aiguille"), needle, st.centred ? "ok" : undefined),
         ro(L("ADF bearing", "Gisement ADF"), `${hdg(st.rb)}°`),
       ],
-      say: `R-${hdg(st.radial)}, OBS ${hdg(o)}, ${st.flag}, ${tr(L("needle", "aiguille"), lang)} ${needle}; ${tr(L("ADF bearing", "gisement"), lang)} ${hdg(st.rb)}°.`,
+      say: `R-${hdg(st.radial)}, OBS ${hdg(o)}, ${st.flag}, ${tr(L("needle", "aiguille"), lang)} ${needleSay}; ${tr(L("ADF bearing", "gisement"), lang)} ${hdg(st.rb)}°.`,
     };
   },
 };

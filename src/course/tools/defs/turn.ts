@@ -69,8 +69,8 @@ export const turnTool: ToolDef = {
   ],
   sweep: { key: "bank", from: 0, to: 75, s: 8 },
   note: L(
-    "Bank the aeroplane: to stay level the lift must hold up the weight AND pull the aeroplane round, so the wing works harder: n = 1 / cos φ, 2 g at 60°. The stall speed rises as √n: 53 kt wings level becomes 75 kt at 60° (CAS). Then slow down at 60° and watch the point leave the envelope on the stall side. Ask: why does VA fall when the aeroplane is lighter?",
-    "Inclinez : pour tenir le palier, la portance doit porter le poids ET tirer l’avion dans le virage, l’aile travaille plus : n = 1 / cos φ, 2 g à 60°. La vitesse de décrochage croît comme √n : 53 kt ailes à plat deviennent 75 kt à 60° (Vc). Puis ralentissez à 60° et regardez le point sortir du domaine côté décrochage. Demandez : pourquoi VA baisse-t-elle quand l’avion est plus léger ?",
+    "Bank the aeroplane: to stay level the lift must hold up the weight AND pull the aeroplane round, so the wing works harder: n = 1 / cos φ, 2 g at 60°. The stall speed rises as √n: 53 kt wings level becomes 75 kt at 60° (CAS; the airspeed indicator shows 48 and 68 kt IAS, the flight manual gives both). Then slow down at 60° and watch the point leave the envelope on the stall side. Ask: why does VA fall when the aeroplane is lighter?",
+    "Inclinez : pour tenir le palier, la portance doit porter le poids ET tirer l’avion dans le virage, l’aile travaille plus : n = 1 / cos φ, 2 g à 60°. La vitesse de décrochage croît comme √n : 53 kt ailes à plat deviennent 75 kt à 60° (Vc ; l’anémomètre indique 48 et 68 kt Vi, le manuel de vol donne les deux). Puis ralentissez à 60° et regardez le point sortir du domaine côté décrochage. Demandez : pourquoi VA baisse-t-elle quand l’avion est plus léger ?",
   ),
   task: {
     prompt: L(
@@ -109,26 +109,35 @@ export const turnTool: ToolDef = {
     // the fin, perpendicular to the wing
     s.line(ox + 26 * sa, oy - 26 * ca, ox + 70 * sa, oy - 70 * ca, c.text, 7);
     // the forces: weight down (1 g = 95), lift along the fin (n g), its components dashed
-    const g1 = 80;
-    // drawn up to 3 g (the figure keeps clear of the chart); the legend gives the exact value
-    const nLen = Math.min(st.n, 3) * g1;
+    // past 3 g the whole figure (weight AND lift) shrinks, so the vertical part of lift still equals the weight;
+    // the legend gives the exact value
+    const g1 = 80 * Math.min(1, 3 / st.n);
+    const nLen = st.n * g1;
     const tx = ox + nLen * sa;
     const ty = oy - nLen * ca;
     s.line(ox, oy, ox, oy - g1, c.accent, 3, "8 6");
     s.line(ox, oy - g1, tx, ty, c.accent, 3, "8 6");
     s.arrow(ox, oy, tx, ty, c.accent, 6, 22);
     s.arrow(ox, oy, ox, oy + g1, c.text, 6, 22);
-    s.text(tx + 8 * sa + 6, ty - 8 * ca - 4, lang === "fr" ? "Rz" : "L", {
-      size: 28,
-      weight: 700,
-      fill: c.accent,
-      halo: c.bg,
-    });
-    s.text(ox + 14, oy + g1 + 4, lang === "fr" ? "P" : "W", {
+    // the labels off the lines: lift's beyond its tip on the low-wing side, weight's on the high-wing side
+    s.text(
+      tx + 16 * ca + 6 * sa,
+      ty + 16 * sa - 6 * ca,
+      lang === "fr" ? "Rz" : "L",
+      {
+        size: 28,
+        weight: 700,
+        fill: c.accent,
+        halo: c.bg,
+        mid: true,
+      },
+    );
+    s.text(ox - 14, oy + g1 + 4, lang === "fr" ? "P" : "W", {
       size: 28,
       weight: 700,
       fill: c.text,
       halo: c.bg,
+      anchor: "end",
     });
     // the legend, under the figure
     const ly0 = 500;
@@ -150,19 +159,23 @@ export const turnTool: ToolDef = {
       { size: 22, fill: c.accent },
     );
     // the bank angle
+    // the bank angle: between the horizon and the lowered wing (clear of the forces above)
     if (p.bank > 0) {
-      const R = 120;
+      const R = 110;
       s.path(
-        `M${ox} ${oy - R} A${R} ${R} 0 0 1 ${ox + R * sa} ${oy - R * ca}`,
-        { stroke: c.key, "stroke-width": 5 },
+        `M${ox + R} ${oy} A${R} ${R} 0 0 1 ${ox + R * ca} ${oy + R * sa}`,
+        {
+          stroke: c.key,
+          "stroke-width": 5,
+        },
       );
-      s.text(ox - 16, oy - R - 14, `φ ${num(p.bank, 0, lang)}°`, {
-        size: 28,
-        weight: 700,
-        fill: c.key,
-        anchor: "end",
-        halo: c.bg,
-      });
+      const h = phi / 2;
+      s.text(
+        ox + (R + 18) * Math.cos(h),
+        oy + (R + 18) * Math.sin(h) + 10,
+        `φ ${num(p.bank, 0, lang)}°`,
+        { size: 28, weight: 700, fill: c.key, halo: c.bg },
+      );
     }
     s.text(
       20,
@@ -211,7 +224,9 @@ export const turnTool: ToolDef = {
         halo: c.bg,
       });
     };
-    tick(va, "VA", c.key);
+    // the POH VA (KIAS) on the CAS axis: IAS ≈ CAS within about 2 kt at these speeds (POH §5 "Airspeed
+    // calibration"), so the tick and the readout give the same figure
+    tick(st.vaKias, "VA", c.key);
     tick(VN.vno, "VNO", c.muted, 26);
     tick(VN.vne, "VNE", c.stop);
     s.text(pl.X(158), pl.Y(VN.nPos) + 30, `+${num(VN.nPos, 1, lang)} g`, {
@@ -263,8 +278,15 @@ export const turnTool: ToolDef = {
           st.verdict === "overload" ? "stop" : "key",
         ),
         ro(
-          L("Stall speed in this turn", "Décrochage dans ce virage"),
-          `${num(st.vsTurnKcas, 0, lang)} kt`,
+          L("Stall in this turn (kt)", "Décrochage dans ce virage (kt)"),
+          // the POH table in both: CAS (the V-n diagram) and IAS (what the airspeed indicator shows)
+          tr(
+            L(
+              `${num(st.vsTurnKcas, 0, lang)} CAS · ${num(st.vsTurnKias, 0, lang)} IAS`,
+              `${num(st.vsTurnKcas, 0, lang)} Vc · ${num(st.vsTurnKias, 0, lang)} Vi`,
+            ),
+            lang,
+          ),
           st.verdict === "stall" ? "stop" : undefined,
         ),
         ro(
@@ -277,7 +299,7 @@ export const turnTool: ToolDef = {
           p.bank > 0 ? `${num(st.radiusFt * 0.3048, 0, lang)} m` : "—",
         ),
       ],
-      say: `${tr(L("Bank", "Inclinaison"), lang)} ${num(p.bank, 0, lang)}°, n ${num(st.n, 2, lang)} g, ${tr(L("stall at", "décrochage à"), lang)} ${num(st.vsTurnKcas, 0, lang)} kt: ${tr(word, lang)}.`,
+      say: `${tr(L("Bank", "Inclinaison"), lang)} ${num(p.bank, 0, lang)}°, n ${num(st.n, 2, lang)} g, ${tr(L("stall at", "décrochage à"), lang)} ${num(st.vsTurnKias, 0, lang)} kt ${tr(L("IAS", "Vi"), lang)}: ${tr(word, lang)}.`,
     };
   },
 };

@@ -113,7 +113,7 @@ export const machTool: ToolDef = {
         ? c.accent
         : st.verdict === "transonic"
           ? c.key
-          : c.stop;
+          : c.stop; // past the drag divergence, or supersonic
     s.poly(
       [
         [rx, ry],
@@ -173,6 +173,18 @@ export const machTool: ToolDef = {
       `${tr(L("critical Mach", "Mach critique"), lang)} ≈ ${num(MCRIT_STRAIGHT, 2, lang)} / cos Λ`,
       { size: 22, fill: c.muted, anchor: "middle" },
     );
+    s.text(
+      rx,
+      535,
+      tr(
+        L(
+          "simple sweep theory: it overstates the gain",
+          "théorie simple de la flèche : surestime le gain",
+        ),
+        lang,
+      ),
+      { size: 20, fill: c.muted, anchor: "middle", italic: true },
+    );
     // ---------------------------------------------------------------- the speed of sound against the altitude
     const pl = plot(600, 60, 970, 450, [560, 680], [0, 45000]);
     axes(s, pl, c, {
@@ -212,15 +224,20 @@ export const machTool: ToolDef = {
           )
         : st.verdict === "transonic"
           ? L(
-              "Above the critical Mach: shock waves on the wing",
-              "Au-delà du Mach critique : ondes de choc sur l’aile",
+              "Transonic: weak shocks, drag rising (normal in cruise)",
+              "Transsonique : chocs faibles, traînée en hausse (normal en croisière)",
             )
-          : L(
-              "Supersonic flow square to the wing",
-              "Écoulement supersonique perpendiculaire à l’aile",
-            );
+          : st.verdict === "divergence"
+            ? L(
+                "Past the drag divergence: drag soars, buffet",
+                "Divergence de traînée : la traînée s’envole, tremblement",
+              )
+            : L(
+                "Supersonic flow square to the wing",
+                "Écoulement supersonique perpendiculaire à l’aile",
+              );
     s.text(500, 580, tr(word, lang), {
-      size: 26,
+      size: 24,
       weight: 700,
       fill: tone,
       anchor: "middle",
@@ -233,7 +250,11 @@ export const machTool: ToolDef = {
         ro(
           L("Mach square to the wing", "Mach normal au bord d’attaque"),
           num(st.machNormal, 2, lang),
-          st.verdict === "subsonic" ? "ok" : "stop",
+          st.verdict === "subsonic"
+            ? "ok"
+            : st.verdict === "transonic"
+              ? "warn"
+              : "stop",
         ),
         ro(L("Critical Mach", "Mach critique"), num(st.mcrit, 2, lang)),
       ],

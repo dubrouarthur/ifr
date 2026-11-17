@@ -186,7 +186,7 @@ export const carbIceTool: ToolDef = {
     });
     // ---------------------------------------------------------------- the chart: temperature × relative humidity
     const pl = plot(520, 60, 970, 470, [-10, 40], [0, 100]);
-    // the zones (PHAK): serious at any power; reduced-power risk up to 38 °C and 50 %
+    // the zones: PHAK thresholds; serious at any power, or with the throttle closed up to 38 °C and 50 % (CAA SS14)
     const zone = (
       t0: number,
       t1: number,
@@ -223,7 +223,7 @@ export const carbIceTool: ToolDef = {
     s.text(
       pl.X(29.5),
       pl.Y(64),
-      tr(L("reduced power", "puissance réduite"), lang),
+      tr(L("throttle closed", "gaz réduits"), lang),
       { size: 20, weight: 700, fill: c.key, anchor: "middle", halo: c.bg },
     );
     // the day
@@ -234,12 +234,21 @@ export const carbIceTool: ToolDef = {
       stroke: c.bg,
       "stroke-width": 4,
     });
-    s.text(px + 18, py - 14, `${num(p.t, 0, lang)}/${num(td, 0, lang)}`, {
-      size: 24,
-      weight: 700,
-      fill: c.text,
-      halo: c.bg,
-    });
+    // the day's label beside its point, under it near the top (clear of the axis title), left of it on the right
+    const hi = py < pl.Y(85);
+    const onRight = px > pl.X(30);
+    s.text(
+      px + (onRight ? -18 : 18),
+      py + (hi ? 36 : -14),
+      `${num(p.t, 0, lang)}/${num(td, 0, lang)}`,
+      {
+        size: 24,
+        weight: 700,
+        fill: c.text,
+        halo: c.bg,
+        anchor: onRight ? "end" : "start",
+      },
+    );
     const word =
       risk === "serious"
         ? L(

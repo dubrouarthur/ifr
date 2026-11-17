@@ -142,6 +142,7 @@ import {
 } from "./deckStarters";
 import { exampleScenes } from "../canvas/examples";
 import { showcaseScenes, startSlide } from "../samples/showcaseDecks";
+import { toolSlides } from "../samples/toolSlides";
 import type { SlideLayoutId, ThemeId } from "../types";
 import "../../styles/course-editor.css";
 import "../../styles/course-studio.css";
@@ -827,8 +828,22 @@ export class CourseEditor implements InspectorHost {
     if (this.canvasEd?.core.full) {
       const at = this.i;
       this.canvasEd.run({ k: "undo" });
-      this.addTemplate("slide", { layout: "blank" });
-      this.canvasEd?.add(d);
+      // a teaching tool gets the slide « Modèles » gives it: its subject, its title, its sources (never a bare
+      // drawing without a question); the tool as the rail offered it (its starting values, no task)
+      const tool = d.kind === "tool" ? d : undefined;
+      const ready = tool ? toolSlides().find((t) => t.tool === tool.tool) : undefined;
+      if (tool && ready) {
+        const slide = clone(ready.slide);
+        for (const x of slide.blocks)
+          if (x.kind === "tool") {
+            delete x.task;
+            x.p = { ...(tool.p ?? {}) };
+          }
+        this.addComposedSlide(slide, ready.title);
+      } else {
+        this.addTemplate("slide", { layout: "blank" });
+        this.canvasEd?.add(d);
+      }
       const made = this.i;
       this.toastActions(
         t2(this.lang, "No room on that slide: added on a new slide.", "Plus de place sur cette diapo : ajouté sur une nouvelle diapo."),

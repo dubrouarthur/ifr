@@ -500,7 +500,7 @@ export const wingTool: ToolDef = {
           "critical",
         ),
         ro(
-          L("Stall speed (1 g)", "Vitesse de décrochage (1 g)"),
+          L("Stall speed (1 g, CAS)", "Vitesse de décrochage (1 g, Vc)"),
           `${num(st.vs, 0, lang)} kt`,
           p.ias < st.vs ? "stop" : undefined,
         ),

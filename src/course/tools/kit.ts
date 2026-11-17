@@ -26,6 +26,8 @@ export interface ToolParam {
   signed?: boolean;
   /** headings: three digits (005) */
   heading?: boolean;
+  /** the same value in a second unit after it (US gal · L): value × k, whole numbers */
+  also?: { unit: string; k: number };
 }
 export type Tone = "ok" | "warn" | "stop" | "key" | "sel" | "plain";
 export interface ToolReadout {
@@ -148,9 +150,13 @@ export function paramText(p: ToolParam, v: number, lang: Lang): string {
   const d = p.digits ?? stepDigits(p.step);
   const n = p.signed ? signed(v, d, lang) : num(v, d, lang);
   if (!p.unit) return n;
-  return p.unit === "°" || p.unit === "%"
-    ? `${n}${p.unit === "%" ? " %" : "°"}`
-    : `${n} ${p.unit}`;
+  const main =
+    p.unit === "°" || p.unit === "%"
+      ? `${n}${p.unit === "%" ? " %" : "°"}`
+      : `${n} ${p.unit}`;
+  return p.also
+    ? `${main} · ${num(v * p.also.k, 0, lang)} ${p.also.unit}`
+    : main;
 }
 export const clampParam = (p: ToolParam, v: number): number => {
   if (p.wrap) {

@@ -2,8 +2,9 @@
 // from the datum), and the CG envelope with the take-off point, the landing point and the fuel burnt between them.
 // Maths and sources: ../maths/massBalance.ts (POH C172S §6 arms and CG limits; sample empty weight).
 import { massBalance, WB } from "../maths/massBalance";
+import { L_PER_USGAL } from "../maths/perf";
 import { c172sEnvelope } from "../../stage/diagramMath";
-import { L, lerpMap, num, ro, Svg, tr, type ToolDef } from "../kit";
+import { L, lerpMap, num, ro, signed, Svg, tr, type ToolDef } from "../kit";
 import { axes, plot } from "../plot";
 
 export const massBalanceTool: ToolDef = {
@@ -58,6 +59,7 @@ export const massBalanceTool: ToolDef = {
       max: 53,
       step: 1,
       unit: "gal",
+      also: { unit: "L", k: L_PER_USGAL },
     },
     {
       key: "burn",
@@ -66,6 +68,7 @@ export const massBalanceTool: ToolDef = {
       max: 40,
       step: 1,
       unit: "gal",
+      also: { unit: "L", k: L_PER_USGAL },
     },
   ],
   defaults: { front: 340, rear: 0, bag: 20, fuel: 40, burn: 15 },
@@ -345,9 +348,11 @@ export const massBalanceTool: ToolDef = {
           `${num(ld.cg, 1, lang)} in`,
           ld.normal ? "ok" : "stop",
         ),
+        // what is left before the maximum mass (2,550 lb, said on the chart): negative is too heavy
         ro(
-          L("Maximum mass", "Masse maximale"),
-          `${num(WB.maxTakeoffLb, 0, lang)} lb`,
+          L("Mass margin", "Marge de masse"),
+          `${signed(WB.maxTakeoffLb - to.weight, 0, lang)} lb`,
+          to.weight > WB.maxTakeoffLb ? "stop" : "ok",
         ),
       ],
       say: `${tr(L("Take-off", "Décollage"), lang)} ${num(to.weight, 0, lang)} lb, ${tr(L("CG", "centrage"), lang)} ${num(to.cg, 1, lang)} in: ${tr(verdict, lang)}.`,

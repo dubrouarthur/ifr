@@ -259,7 +259,9 @@ describe("atmosphere, Mach, pressurisation", () => {
       6,
     );
     expect(m.mcrit).toBeGreaterThan(0.7);
-    expect(machState(37000, 470, 0).verdict).toBe("transonic");
+    // a straight wing at M 0.82: past the drag divergence; swept 25° (airliner cruise): transonic, weak shocks
+    expect(machState(37000, 470, 0).verdict).toBe("divergence");
+    expect(machState(37000, 470, 25).verdict).toBe("transonic");
     expect(machState(37000, 470, 35).verdict).toBe("subsonic");
   });
   it("cabin altitude and differential", () => {
