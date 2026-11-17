@@ -17,13 +17,14 @@ import {
 import { isStudentAction } from "../src/course/samples/kit";
 import { STAGE_CALC_DIAGRAMS } from "../src/course/stage/calcKinds";
 import {
-  TEARDROP_DRAG,
+  TRAINER_GOALS,
   outboundHeading,
+  timingNumbers,
   wca,
 } from "../src/course/samples/holding";
 import { validateCourse, missingTranslations } from "../src/course/validate";
 import { GENERATORS, problemFor } from "../src/course/calc";
-import { holdEntry } from "../src/nav/holding";
+import { entrySector, holdEntry } from "../src/nav/holding";
 
 // the calc diagrams the stage really draws (stage/calcKinds.ts): anything else would show a placeholder box
 const STAGE_DIAGRAMS = new Set<string>(STAGE_CALC_DIAGRAMS);
@@ -151,9 +152,9 @@ describe("step counts and mix", () => {
     expect(c.steps.at(-1)!.kind).toBe("fly");
     expect(count(c, "try")).toBeGreaterThanOrEqual(3);
   });
-  it("Holding has 20 steps (slides first), an inline briefing and a Your turn on a slide", () => {
+  it("Holding has 18 steps (slides first), an inline briefing, a Your turn on a slide and the hold flown on the slide", () => {
     const c = sampleCourse(HOLDING_ID)!;
-    expect(c.steps).toHaveLength(20);
+    expect(c.steps).toHaveLength(18);
     const fly = c.steps.at(-1)!;
     expect(fly.flyIt!.briefing!.length).toBeGreaterThanOrEqual(2);
     expect(
@@ -163,6 +164,26 @@ describe("step counts and mix", () => {
         ),
       ),
     ).toBe(true);
+    // a flight in the simulator from the published hold, before the full lesson
+    expect(
+      c.steps.some((s) =>
+        blocks(s).some(
+          (b) => b.kind === "simViewport" && b.yourTurn?.where === "sim",
+        ),
+      ),
+    ).toBe(true);
+    expect(c.scenes["hold.sim"].plan?.idents).toEqual(["ARD/H270R1"]);
+    // the entries trainer: the student sets the heading, goals checked on the slide
+    const trainer = blocks(c.steps.find((s) => s.id === "h-entry-try")!).find(
+      (b) => b.kind === "diagram",
+    ) as Extract<SlideBlock, { kind: "diagram" }>;
+    expect(trainer.interactive).toBe(true);
+    if (trainer.d?.kind !== "calc" || trainer.d.calc.kind !== "holdFly")
+      throw new Error("holdFly");
+    expect(trainer.d.calc.drag).toEqual(["crs"]);
+    expect(trainer.d.calc.goals).toEqual([...TRAINER_GOALS]);
+    // presenter notes on every step
+    for (const s of c.steps) expect(s.notes?.fr, s.id).toBeTruthy();
   });
   it.each([
     [MATHS_IFR_ID, 14],
@@ -221,13 +242,26 @@ describe("holding content follows holdEntry() (AIM FIG 5-3-8)", () => {
       );
     }
   });
-  it("the drag goal sits wholly in the teardrop sector", () => {
-    for (
-      let r = TEARDROP_DRAG.radial - TEARDROP_DRAG.tol;
-      r <= TEARDROP_DRAG.radial + TEARDROP_DRAG.tol;
-      r++
-    )
-      expect(holdEntry(270, "R", (r + 180) % 360)).toBe("TEARDROP");
+  it("the trainer's three headings are one per sector, each well inside it", () => {
+    const got = TRAINER_GOALS.map((h) => entrySector(270, "R", h));
+    expect(got.map((x) => x.entry).sort()).toEqual([
+      "DIRECT",
+      "PARALLEL",
+      "TEARDROP",
+    ]);
+    for (const x of got) expect(x.margin).toBeGreaterThanOrEqual(20);
+  });
+  it("the timing question corrects the outbound leg by the inbound error, the other way", () => {
+    const { in1, out2 } = timingNumbers();
+    // a headwind inbound: the inbound leg is long, the next outbound leg shorter
+    expect(in1).toBeGreaterThan(60);
+    expect(out2).toBe(60 - (in1 - 60));
+    const q = blocks(
+      sampleCourse(HOLDING_ID)!.steps.find((s) => s.id === "h-timing-quiz")!,
+    ).find((b) => b.kind === "quiz") as Extract<SlideBlock, { kind: "quiz" }>;
+    if (q.quiz.kind !== "mcq") throw new Error("mcq");
+    const mm = `${Math.floor(out2 / 60)}:${String(out2 % 60).padStart(2, "0")}`;
+    expect(q.quiz.options[q.quiz.answer].text.en).toBe(mm);
   });
   it("the briefing's entry is the hold-ndb lesson's (inbound 270 R, arriving 045: teardrop)", () => {
     const b = sampleCourse(HOLD_NDB_BRIEFING_ID)!;
