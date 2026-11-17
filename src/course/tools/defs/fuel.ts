@@ -77,10 +77,6 @@ export const fuelTool: ToolDef = {
       label: L("Long leg, day", "Longue étape, jour"),
       p: { fuel: 150, trip: 180, night: 0 },
     },
-    {
-      label: L("Same at night", "Même de nuit"),
-      p: { fuel: 150, trip: 180, night: 1 },
-    },
   ],
   note: L(
     "Build the fuel from the bottom: start-up and taxi, the trip at the planned flow, then the VFR reserve (30 minutes by day, 45 by night, at normal cruise). What is left is extra, for a diversion or a headwind. Change the flow (rich mixture, a climb, a stronger headwind) and watch the reserve get eaten first. Ask: if you land with less than the reserve, what went wrong in the plan?",
@@ -96,7 +92,7 @@ export const fuelTool: ToolDef = {
     tol: 2.5,
   },
   view: { w: 1000, h: 600 },
-  frame: { w: 1680, h: 768 },
+  frame: { w: 1680, h: 736 },
   draw(p, cx) {
     const { c, lang } = cx;
     const st = fuelPlan({

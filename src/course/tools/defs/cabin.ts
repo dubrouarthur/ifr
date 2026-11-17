@@ -75,7 +75,7 @@ export const cabinTool: ToolDef = {
     "Le fuselage est une enceinte sous pression : la cabine est tenue à 8 000 ft d’altitude-pression au plus (CS 25.841) pendant que l’air extérieur se raréfie. La différence pousse vers l’extérieur sur chaque centimètre carré : la structure admet un différentiel maximal. Montez : le différentiel grandit jusqu’à son maximum, puis la cabine doit monter avec l’avion. Puis perdez-la : à FL 350 il reste 30 à 60 secondes de conscience utile (FAA AC 61-107B). Demandez : pourquoi les masques tombent-ils, et pourquoi mettre le sien d’abord ?",
   ),
   view: { w: 1000, h: 600 },
-  frame: { w: 1680, h: 768 },
+  frame: { w: 1680, h: 736 },
   draw(p, cx) {
     const { c, lang } = cx;
     const st = cabin(p.alt, p.target, p.dp);

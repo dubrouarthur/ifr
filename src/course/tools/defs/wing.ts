@@ -198,7 +198,7 @@ export const wingTool: ToolDef = {
     tol: 1,
   },
   view: { w: 1000, h: 600 },
-  frame: { w: 1680, h: 768 },
+  frame: { w: 1680, h: 736 },
   animated: true,
   draw(p, cx) {
     const { c, lang } = cx;

@@ -80,10 +80,6 @@ export const massBalanceTool: ToolDef = {
       p: { front: 360, rear: 340, bag: 40, fuel: 53 },
     },
     {
-      label: L("Four adults, 25 gal", "Quatre adultes, 25 gal"),
-      p: { front: 360, rear: 340, bag: 40, fuel: 25 },
-    },
-    {
       label: L("Solo, full tanks", "Solo, pleins faits"),
       p: { front: 170, rear: 0, bag: 0, fuel: 53 },
     },
@@ -93,7 +89,7 @@ export const massBalanceTool: ToolDef = {
     "Chargez quatre adultes et les pleins : le point passe au-dessus de la masse maximale ; on enlève du carburant, pas des passagers, et on vérifie que la réserve tient. Puis mettez du poids à l’arrière et en soute : le centre de gravité recule vers sa limite, l’avion devient moins stable et la sortie de décrochage plus difficile. La consommation fait descendre le point et l’avance un peu : vérifiez aussi le point à l’atterrissage.",
   ),
   view: { w: 1000, h: 600 },
-  frame: { w: 1680, h: 768 },
+  frame: { w: 1680, h: 736 },
   draw(p, cx) {
     const { c, lang } = cx;
     const st = massBalance({

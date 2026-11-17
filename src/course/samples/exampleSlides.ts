@@ -28,12 +28,14 @@ import { DEFAULT_GRID } from "../canvas/geom";
 import { G, INST, L, MARK, SHAPE, T, onInstrument } from "../canvas/layouts";
 import { CHECKLIST, QUIZ, SAMPLE_AUTHOR, SAMPLE_DATE } from "./kit";
 import type { Course, Step } from "../types";
+import { toolSlides } from "./toolSlides";
 
 // ------------------------------------------------------------------ the groups of the gallery
-export type GalleryGroup = "start" | "ppl" | "nav" | "ifr" | "engage";
+export type GalleryGroup = "start" | "ppl" | "tools" | "nav" | "ifr" | "engage";
 export const GALLERY_GROUPS: { id: GalleryGroup; title: L10n }[] = [
   { id: "start", title: L("Getting started", "Commencer") },
   { id: "ppl", title: L("PPL flying", "Pilotage PPL") },
+  { id: "tools", title: L("Teaching tools", "Outils pédagogiques") },
   { id: "nav", title: L("Navigation", "Navigation") },
   { id: "ifr", title: L("IFR", "IFR") },
   { id: "engage", title: L("Get the students involved", "Faire participer") },
@@ -1552,6 +1554,7 @@ export function gallerySlides(): GallerySlide[] {
     objectives(),
     recap(),
     ...pplSlides(),
+    ...toolSlides().map((t): GallerySlide => ({ id: t.id, group: "tools", title: t.title, what: t.what, slide: t.slide })),
     ...navSlides(),
     ...ifrSlides(),
     ...engageSlides(),

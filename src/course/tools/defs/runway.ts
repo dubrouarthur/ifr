@@ -120,19 +120,23 @@ export const runwayTool: ToolDef = {
     base: 500,
     runway: 900,
   },
-  controls: ["mode", "elev", "oat", "wind", "surface"],
+  controls: ["elev", "oat", "wind", "surface"],
   presets: [
     {
       label: L("Summer, up high", "Été en altitude"),
-      p: { elev: 3000, oat: 35, wind: 0, surface: 0 },
+      p: { mode: 0, elev: 3000, oat: 35, wind: 0, surface: 0 },
     },
     {
       label: L("Wet grass, tailwind", "Herbe mouillée, vent arrière"),
       p: { surface: 2, wind: -5 },
     },
     {
-      label: L("Winter at the coast", "Hiver au bord de mer"),
-      p: { elev: 0, oat: 2, wind: 15, surface: 0 },
+      label: L("Landing", "Atterrissage"),
+      p: { mode: 1 },
+    },
+    {
+      label: L("Take-off", "Décollage"),
+      p: { mode: 0 },
     },
   ],
   sweep: { key: "oat", from: 0, to: 40, s: 8 },
@@ -141,7 +145,7 @@ export const runwayTool: ToolDef = {
     "Partez du chiffre du manuel de vol et ajoutez la journée : l’altitude et la chaleur raréfient l’air (altitude-densité), un vent arrière ou l’herbe mouillée allongent la course, une pente montante aussi. Les facteurs se multiplient. Puis le coefficient de sécurité (×1,33 au décollage, ×1,43 à l’atterrissage, CAA Safety Sense 7). Demandez : un après-midi chaud sur une piste en herbe en altitude, vous partez ? Que changez-vous : carburant, passagers, heure ?",
   ),
   view: { w: 1000, h: 600 },
-  frame: { w: 1680, h: 792 },
+  frame: { w: 1680, h: 736 },
   draw(p, cx) {
     const { c, lang } = cx;
     const mode = Math.round(p.mode) === 1 ? "landing" : "takeoff";

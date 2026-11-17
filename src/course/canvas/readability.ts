@@ -483,6 +483,7 @@ export function slideReadability(
   const CONTENT = new Set([
     "text",
     "diagram",
+    "tool",
     "instrument",
     "quiz",
     "calc",

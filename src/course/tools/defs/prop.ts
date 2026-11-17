@@ -72,7 +72,7 @@ export const propTool: ToolDef = {
     "La pale est une petite aile qui tourne : elle reçoit un vent relatif fait de sa rotation et de la vitesse de l’avion. Un calage fixe ne convient qu’à une vitesse : au lâcher des freins la pale attaque l’air sous un grand angle (près du décrochage, peu de traction), en piqué presque plus (le moteur s’emballe). Une hélice à pas variable tourne ses pales pour garder une petite incidence au régime choisi : petit pas au décollage, grand pas en croisière. Demandez : pourquoi plein petit pas avant l’atterrissage ?",
   ),
   view: { w: 1000, h: 600 },
-  frame: { w: 1680, h: 768 },
+  frame: { w: 1680, h: 736 },
   draw(p, cx) {
     const { c, lang } = cx;
     const variable = Math.round(p.mode) === 1;

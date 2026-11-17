@@ -16,6 +16,21 @@ const FILES = [
   "src/course/airfieldKit.ts",
   "src/course/ui/airfieldKitPanel.ts",
   "src/library/programs.ts",
+  "src/course/canvas/toolBlock.ts",
+  "src/course/samples/toolSlides.ts",
+  "src/course/tools/kit.ts",
+  "src/course/tools/defs/wing.ts",
+  "src/course/tools/defs/turn.ts",
+  "src/course/tools/defs/massBalance.ts",
+  "src/course/tools/defs/runway.ts",
+  "src/course/tools/defs/fuel.ts",
+  "src/course/tools/defs/carbIce.ts",
+  "src/course/tools/defs/fronts.ts",
+  "src/course/tools/defs/radioNav.ts",
+  "src/course/tools/defs/prop.ts",
+  "src/course/tools/defs/mach.ts",
+  "src/course/tools/defs/cabin.ts",
+  "src/course/ui/studio.ts",
 ];
 const BRAND = /G1000|Garmin|Cessna|Jeppesen/;
 /** the string literals of a source file, comments dropped */

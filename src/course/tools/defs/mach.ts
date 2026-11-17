@@ -87,7 +87,7 @@ export const machTool: ToolDef = {
     tol: 0.4,
   },
   view: { w: 1000, h: 600 },
-  frame: { w: 1680, h: 768 },
+  frame: { w: 1680, h: 736 },
   draw(p, cx) {
     const { c, lang } = cx;
     const st = machState(p.alt, p.tas, p.sweep);

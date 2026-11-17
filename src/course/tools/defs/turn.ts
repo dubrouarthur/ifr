@@ -82,7 +82,7 @@ export const turnTool: ToolDef = {
     tol: 2,
   },
   view: { w: 1000, h: 600 },
-  frame: { w: 1680, h: 768 },
+  frame: { w: 1680, h: 736 },
   draw(p, cx) {
     const { c, lang } = cx;
     const st = turnState(p.bank, p.v, p.w);

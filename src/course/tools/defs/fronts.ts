@@ -79,7 +79,7 @@ export const frontsTool: ToolDef = {
     "Laissez venir le front chaud : d’abord des cirrus un jour à l’avance, puis le ciel s’épaissit (cirrostratus, le halo autour du soleil), s’abaisse (altostratus), et la pluie commence sous le nimbostratus, longue et continue ; derrière le front, stratus bas et bruine dans le secteur chaud. Puis passez au front froid : pentu, rapide, une ligne étroite de cumulonimbus avec averses fortes et rafales, puis éclaircies et averses dans l’air froid. Demandez : lequel est le pire pour un pilote VFR, et pourquoi ?",
   ),
   view: { w: 1000, h: 600 },
-  frame: { w: 1680, h: 768 },
+  frame: { w: 1680, h: 736 },
   draw(p, cx) {
     const { c, lang } = cx;
     const kind: FrontKind = Math.round(p.kind) === 1 ? "cold" : "warm";

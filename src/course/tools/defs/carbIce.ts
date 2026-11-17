@@ -68,7 +68,7 @@ export const carbIceTool: ToolDef = {
     "Placez la température et le point de rosée du METAR (12/09) sur le diagramme : proches veut dire air humide, et entre −7 °C et +21 °C l’air humide givre le carburateur à toute puissance. L’air accélère dans le venturi, sa pression et sa température baissent, l’essence s’évapore et le refroidit encore : la glace se forme sur le papillon. Gaz réduits (descente), le risque s’étend aux journées chaudes. Demandez : pourquoi le réchauffage carburateur avant de réduire, et pourquoi le régime baisse d’abord quand on le tire ?",
   ),
   view: { w: 1000, h: 600 },
-  frame: { w: 1680, h: 768 },
+  frame: { w: 1680, h: 736 },
   draw(p, cx) {
     const { c, lang } = cx;
     const td = Math.min(p.td, p.t);

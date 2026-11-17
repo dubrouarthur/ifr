@@ -86,7 +86,7 @@ export const radioNavTool: ToolDef = {
     tol: 1,
   },
   view: { w: 1000, h: 600 },
-  frame: { w: 1680, h: 768 },
+  frame: { w: 1680, h: 736 },
   draw(p, cx) {
     const { c, lang } = cx;
     const st = radioState(p.radial, p.obs, p.hdg);

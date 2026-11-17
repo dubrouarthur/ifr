@@ -42,6 +42,13 @@ describe("the gallery of ready slides", () => {
       const list = insts(s.slide.blocks);
       const moving = list.filter((b) => b.motion);
       if (s.id === "gx-recap" || s.group === "engage") continue;
+      // a teaching tool moves by the student's hand: a live tool with controls on the slide (course/tools)
+      if (s.group === "tools") {
+        const tools = s.slide.blocks.filter((b) => b.kind === "tool");
+        expect(tools.length, s.id).toBe(1);
+        expect(tools.every((b) => b.kind === "tool" && b.controls === undefined), s.id).toBe(true);
+        continue;
+      }
       expect(moving.length, s.id).toBeGreaterThan(0);
       for (const b of moving) {
         expect(motionIssues(b.motion), s.id).toEqual([]);
