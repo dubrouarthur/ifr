@@ -2,7 +2,7 @@
 import { h, clear, fmtTime } from './dom';
 import { svgIcon, I } from './icons';
 import { FAILURE_LABELS, type Failures, type Sim } from '../sim/sim';
-import { WX_PRESETS, Modal } from './modals';
+import { WX_PRESETS, Modal, wxName } from './modals';
 import { confirmAction } from './confirm';
 import { evaluateAcs, computeDebrief } from '../sim/recorder';
 import { FAILURE_GROUPS, FAILURE_LABELS_EN, FAILURE_LABELS_FR, type FailureKey } from '../sim/systemsTypes';
@@ -360,7 +360,7 @@ export class InstructorDrawer {
       h('button', { class: 'btn', onclick: () => { sim.ap.hdgBug = Math.round(Math.random() * 35) * 10 || 360; this.toast(t('ios.sim.vectorToast', { h: String(sim.ap.hdgBug).padStart(3, '0') })); } }, t('ios.sim.vector')),
     ));
     this.body.append(sec(t('ios.wx.head')));
-    this.body.append(h('div', { class: 'ios-row' }, ...WX_PRESETS.slice(1).map((w) => h('button', { class: 'btn', onclick: () => { Object.assign(sim.weather, w.wx); sim.rec.log(sim.time, 'info', `Weather: ${w.name}`); this.toast(`Weather → ${w.name}`); } }, w.name))));
+    this.body.append(h('div', { class: 'ios-row' }, ...WX_PRESETS.slice(1).map((w) => h('button', { class: 'btn', onclick: () => { Object.assign(sim.weather, w.wx); sim.rec.log(sim.time, 'info', `Weather: ${w.name}`); this.toast(`${t('ios.wx.head')} → ${wxName(w)}`); } }, wxName(w)))));
     this.body.append(sec(t('ios.traps.head')));
     const trap = (label: string, on: () => boolean, set: (v: boolean) => void, log: string) => {
       const b = h('button', { class: 'btn', 'aria-pressed': String(on()) }, label);

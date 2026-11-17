@@ -664,7 +664,7 @@ describe("reader rules", () => {
       text: "Hello",
       fallback: false,
     });
-    expect(ps("stepOf", "fr", { n: 3, total: 12 })).toBe("Étape 3 sur 12");
+    expect(ps("stepOf", "fr", { n: 3, total: 12 })).toBe("Diapo 3 sur 12");
     // every exercise on an instrument is « À vous » (one glossary, audit §41)
     expect(kindLabel("try", "fr")).toBe("À vous");
     expect(stepMeta(step({ kind: "calc", minutes: 3 }), "en")).toBe(

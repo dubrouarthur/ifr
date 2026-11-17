@@ -880,6 +880,13 @@
 .ce-st-add {
   flex: none;
   list-style: none;
+  /* « + Ajouter » stays in sight at the strip's right end, however many slides (re-walk P2) */
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  padding-left: 10px;
+  background: linear-gradient(to right, transparent, var(--ce-strip-bg, var(--surface)) 10px);
+  box-shadow: 24px 0 0 0 var(--ce-strip-bg, var(--surface));
 }
 .ce-addtile {
   width: 112px;

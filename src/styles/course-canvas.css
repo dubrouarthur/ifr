@@ -1048,6 +1048,10 @@ button.sl-q-opt.is-right:hover {
 .sl-row.current .sl-row-v {
   color: var(--sl-accent);
 }
+/* met earlier, out of the band now: the tick stays, the value is no longer « good » */
+.sl-row.done.drift .sl-row-v {
+  color: var(--sl-muted);
+}
 .sl-row.done .sl-tick {
   border-color: var(--sl-ok);
   background: var(--sl-ok);

@@ -13,7 +13,7 @@ import { AXIS_LABELS, BUTTON_LABELS, AxisDetector, type AxisName, type ButtonAct
 import { distanceNm } from '../nav/geo';
 import type { Lang, ProcedureResult } from '../train/procedureTypes';
 import { FAILURE_LABELS_EN, FAILURE_LABELS_FR } from '../sim/systemsTypes';
-import { lang as uiLang, onLangChange } from './i18n';
+import { lang as uiLang, onLangChange, registerStrings, t as wxT } from './i18n';
 
 /** the base dialog's close button name, in the UI language */
 const closeLabel = () => (uiLang() === 'fr' ? 'Fermer' : 'Close');
@@ -168,6 +168,22 @@ export const WX_PRESETS: WxPreset[] = [
   { id: 'xwind', name: 'Gusty crosswind', desc: '18G28 kt, moderate chop', wx: { ceilingFt: 1100, visibilitySm: 3, windKt: 18, gustKt: 28, turbulence: 0.45 } },
   { id: 'storm', name: 'Rough day', desc: 'OVC 600, 1 SM, turbulence', wx: { ceilingFt: 600, visibilitySm: 1, windKt: 22, gustKt: 32, turbulence: 0.7 } },
 ];
+
+// the presets in French (keyed by their English text, like the cockpit's words): every list that shows them says
+// them in the UI language (instructor station, Préparer un vol, the circuit builder)
+registerStrings('fr', {
+  'Scenario default': 'Météo du scénario', 'As briefed': 'Comme au briefing',
+  'Clear, 10 SM, calm': 'Dégagé, 10 SM, calme',
+  'Marginal VFR': 'VFR marginal', 'OVC 2500, 5 SM': 'OVC 2500, 5 SM',
+  'Low IMC': 'IMC basse', 'OVC 800, 2 SM': 'OVC 800, 2 SM',
+  'At minimums': 'Aux minima', 'OVC 280, ½ SM fog': 'OVC 280, ½ SM, brouillard',
+  'Below minimums': 'Sous les minima', 'OVC 150 — fly the miss': 'OVC 150 — remise de gaz',
+  'Gusty crosswind': 'Vent de travers en rafales', '18G28 kt, moderate chop': '18G28 kt, turbulence modérée',
+  'Rough day': 'Journée agitée', 'OVC 600, 1 SM, turbulence': 'OVC 600, 1 SM, turbulence',
+});
+/** a weather preset's name and its line, in the UI language */
+export const wxName = (p: WxPreset): string => wxT(p.name);
+export const wxDesc = (p: WxPreset): string => wxT(p.desc);
 
 // ----------------------------------------------------------------- launcher
 export class Launcher extends Modal {

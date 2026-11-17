@@ -37,10 +37,11 @@ describe("students and instructors", () => {
   it("the library shows authoring actions to who teaches, never to a student", () => {
     const src = read("src/course/ui/library.ts");
     // « Créer un cours ici » on an empty subject; the card's « … » menu is for everyone (Ouvrir · Présenter · Copier
-    // le lien, audit §18) and its authoring actions (Dupliquer pour modifier, Exporter) only for who teaches
+    // le lien, audit §18). « Dupliquer pour modifier » is on every card too (re-walk P2: it hid behind « Je suis
+    // instructeur »); Exporter stays for who teaches
     expect(src).toMatch(/const create = !own && d\.program !== "instructors" && this\.teaching;/);
     expect(src).toMatch(/const teach = this\.teaching;/);
-    expect(src).toMatch(/if \(this\.store && teach\)\s*items\.push\(\[\s*e\.sample \? this\.t\("duplicateEdit"\)/);
+    expect(src).toMatch(/if \(this\.store\)\s*items\.push\(\[\s*e\.sample \? this\.t\("duplicateEdit"\)/);
     expect(src).toMatch(/if \(teach\) items\.push\(\[this\.t\("export"\)/);
     // who teaches says so: « Je suis instructeur » on the Instructeurs page (visiting it alone turns nothing on,
     // audit §18), or a teaching place: Nouveau cours, the editor, the presenter

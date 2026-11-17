@@ -121,8 +121,8 @@ export async function generatePlan(
       ok: false,
       reason: "key",
       message: L(
-        "Enter a Claude API key first",
-        "Saisissez d’abord une clé API Claude",
+        "Enter an API key first",
+        "Saisissez d’abord une clé API",
       ),
     };
   let sdk: SdkModule | null = null;
@@ -218,8 +218,8 @@ export async function verifyKey(
     return {
       ok: false,
       message: L(
-        "This does not look like a Claude API key (sk-ant-…)",
-        "Ce n’est pas une clé API Claude (sk-ant-…)",
+        "This does not look like a valid API key (sk-ant-…)",
+        "Ce n’est pas une clé API valide (sk-ant-…)",
       ),
     };
   try {

@@ -78,10 +78,10 @@ export const HOME_COPY = {
   // returning
   welcome: { fr: "Bon retour", en: "Welcome back" },
   kindCourse: { fr: "Cours", en: "Course" },
-  stepOf: { fr: "Étape {n} sur {t}", en: "Step {n} of {t}" },
+  stepOf: { fr: "Diapo {n} sur {t}", en: "Slide {n} of {t}" },
   left: { fr: "≈ {m} min restantes", en: "≈ {m} min left" },
   nextStep: { fr: "Vous reprenez à", en: "You pick up at" },
-  resume: { fr: "Reprendre à l’étape {n}", en: "Resume at step {n}" },
+  resume: { fr: "Reprendre à la diapo {n}", en: "Resume at slide {n}" },
   restart: { fr: "Recommencer", en: "Start again" },
   loading: { fr: "Chargement de votre cours…", en: "Loading your course…" },
   also: { fr: "Aussi en cours", en: "Also in progress" },
@@ -576,6 +576,9 @@ export function homeView(o: HomeHooks): HomeView {
   ) => {
     clearCovers();
     root.classList.add("is-return");
+    const ownDraft = !!(r && editing && editing.id === r.id);
+    // the hero's one filled button (either branch below)
+    const goCls = "wd-btn primary wd-resume-go";
     const cv = h("div", {
       class: "wd-cover wd-resume-cv",
       "aria-hidden": "true",
@@ -612,23 +615,32 @@ export function homeView(o: HomeHooks): HomeView {
             : "",
         ),
         h("p", { class: "wd-next" }, T("nextStep"), h("b", {}, r.stepTitle)),
-        h(
-          "div",
-          { class: "wd-resume-acts" },
-          navLink(
-            "wd-btn primary wd-resume-go",
-            playHref(r.id, r.stepId),
-            o.nav,
-            icon(I.play, 16),
-            T("resume", { n: r.index + 1 }),
-          ),
-          navLink(
-            "wd-link",
-            playHref(r.id, r.firstStepId),
-            o.nav,
-            T("restart"),
-          ),
-        ),
+        // the author's own draft: what they were doing is writing it, so « Reprendre la modification » leads and
+        // reading it is the quiet link (re-walk P2: two « Reprendre » for one course)
+        ownDraft
+          ? h(
+              "div",
+              { class: "wd-resume-acts" },
+              navLink(goCls, editHref(r.id), o.nav, T("resumeEdit")),
+              navLink("wd-link", playHref(r.id, r.stepId), o.nav, T("resume", { n: r.index + 1 })),
+            )
+          : h(
+              "div",
+              { class: "wd-resume-acts" },
+              navLink(
+                goCls,
+                playHref(r.id, r.stepId),
+                o.nav,
+                icon(I.play, 16),
+                T("resume", { n: r.index + 1 }),
+              ),
+              navLink(
+                "wd-link",
+                playHref(r.id, r.firstStepId),
+                o.nav,
+                T("restart"),
+              ),
+            ),
       );
       cover(cv, { course: r.id });
     } else
@@ -685,7 +697,7 @@ export function homeView(o: HomeHooks): HomeView {
           navLink("wd-link", playHref(assigned.id), o.nav, T("open")),
         ),
       );
-    if (editing)
+    if (editing && !ownDraft)
       rows.push(
         h(
           "li",

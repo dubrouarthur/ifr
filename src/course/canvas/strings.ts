@@ -33,6 +33,7 @@ const S = {
   quizYours: ["Your answer", "Votre réponse"],
   quizWrong: ["Wrong · your answer", "Faux · votre réponse"],
   quizRightAnswer: ["Right answer", "Bonne réponse"],
+  quizNotThis: ["Not this one: try again.", "Pas celle-ci : réessayez."],
   answeredInPlayer: ["Answered in the player", "Répondu dans le lecteur"],
   textTooLong: ["Text too long", "Texte trop long"],
   answer: ["Answer", "Réponse"],

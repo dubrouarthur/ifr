@@ -51,7 +51,8 @@ const S = {
   notFlown: ["not flown", "pas fait"],
   liveInstrument: ["Live instrument", "Instrument en direct"],
   language: ["Language", "Langue"],
-  stepOf: ["Step {n} of {total}", "Étape {n} sur {total}"],
+  // one glossary (audit item 41): a course is made of « diapos », everywhere (player, presenter, projector, cards)
+  stepOf: ["Slide {n} of {total}", "Diapo {n} sur {total}"],
   next: ["Next", "Suivant"],
   back: ["Previous", "Précédent"],
   revealNext: ["Next point", "Point suivant"],
@@ -64,7 +65,7 @@ const S = {
   briefing: ["Briefing", "Briefing"],
   backToFlyIt: ["Back to Fly it", "Retour au vol"],
   notSaved: ["Not saved on this device", "Non enregistré sur cet appareil"],
-  resumed: ["Resumed at step {n}", "Reprise à l’étape {n}"],
+  resumed: ["Resumed at slide {n}", "Reprise à la diapo {n}"],
   startOver: ["Start over", "Recommencer"],
   enMarker: ["EN", "EN"],
   enMarkerTitle: [
@@ -72,8 +73,8 @@ const S = {
     "Pas encore traduit : affiché en anglais",
   ],
   stepAnnounce: [
-    "Step {n} of {total}: {title}",
-    "Étape {n} sur {total} : {title}",
+    "Slide {n} of {total}: {title}",
+    "Diapo {n} sur {total} : {title}",
   ],
   // reader
   aboutMin: ["about {n} min", "environ {n} min"],
@@ -280,7 +281,7 @@ const S = {
   ],
   addHandout: ["Add to my summary sheet", "Ajouter à mon mémo"],
   inHandout: ["In my summary sheet", "Dans mon mémo"],
-  stepN: ["Step {n}", "Étape {n}"],
+  stepN: ["Slide {n}", "Diapo {n}"],
   start: ["Start", "Départ"],
   radios: ["Radios", "Radios"],
   panel: ["Panel", "Tableau"],
@@ -289,7 +290,7 @@ const S = {
   at: ["at {t}", "à {t}"],
   // outline + summary
   minutesTotal: ["{n} min", "{n} min"],
-  stepsCount: ["{n} steps", "{n} étapes"],
+  stepsCount: ["{n} slides", "{n} diapos"],
   current: ["current", "en cours"],
   courseDone: ["Course complete", "Cours terminé"],
   courseDoneSub: [

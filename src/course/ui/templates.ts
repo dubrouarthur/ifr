@@ -355,6 +355,38 @@ const T_TITLE: Record<TemplateId, L10n> = {
   slide: L("New slide", "Nouvelle diapo"),
 };
 
+/** The words of a slide's title block (the first « title » or « display » text, top first), plain, one line. */
+function titleText(slide: SlideCanvas | undefined): L10n | null {
+  const t = (slide?.blocks ?? [])
+    .filter((b): b is Extract<SlideBlock, { kind: "text" }> => b.kind === "text" && (b.style === "title" || b.style === "display") && !b.editorOnly && !b.presenterOnly)
+    .sort((a, b) => a.frame.y - b.frame.y)[0];
+  if (!t) return null;
+  const plain = (x: string | undefined) =>
+    (x ?? "").replace(/[*_`#>]/g, "").replace(/\s+/g, " ").trim().slice(0, 90);
+  const en = plain(t.text.en);
+  const fr = plain(t.text.fr);
+  if (!en && !fr) return null;
+  return { en: en || fr, ...(fr ? { fr } : {}) };
+}
+/** A slide is named after its title (re-walk P2: « Nouvelle diapo » stayed in the filmstrip, the player and the end
+ *  screen after the author typed a title): the new name when the step still has the default name, or the name it got
+ *  from the old title; null when the author renamed it, or when there is no title text. Pure. */
+export function slideNameFromTitle(
+  step: Pick<Step, "title" | "slide">,
+  next: SlideCanvas,
+): L10n | null {
+  const was = titleText(step.slide);
+  const same = (a: L10n, b: L10n | null) => !!b && a.en === b.en && (a.fr ?? "") === (b.fr ?? "");
+  const auto =
+    step.title.en === T_TITLE.slide.en ||
+    step.title.fr === T_TITLE.slide.fr ||
+    same(step.title, was);
+  if (!auto) return null;
+  const now = titleText(next);
+  if (!now || same(step.title, now)) return null;
+  return now;
+}
+
 /**
  * A new step from a template, with the course it needs (a starter scene may be added). Pure: ids come from `gen`.
  */

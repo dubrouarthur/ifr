@@ -82,5 +82,21 @@ export function fallbackNotes(step: Step, lang: Lang): string[] {
     if (yt?.goal) push(goalLine(yt.goal, lang));
     if (b.kind === "quiz") push(quizLine(b.quiz, lang));
   }
+  // nothing to fly and nothing to answer (a demo, an explanation): the author's own note on the slide (« En
+  // classe : … », only the author sees it), then the slide's points to say, in reading order (re-walk P2: a template
+  // demo slide showed « Pas de notes pour cette diapo »)
+  if (!out.length) {
+    const blocks = [...(step.slide?.blocks ?? [])].sort((a, b) => a.frame.y - b.frame.y || a.frame.x - b.frame.x);
+    for (const b of blocks)
+      if (b.kind === "text" && b.editorOnly) push(plain(tx(b.text, lang)));
+    const points: string[] = [];
+    for (const b of blocks) {
+      if (b.editorOnly || b.presenterOnly) continue;
+      if (b.kind === "text" && (b.style === "body" || b.style === "heading")) points.push(plain(tx(b.text, lang)));
+      else if (b.kind === "callout") points.push(plain(tx(b.text, lang)));
+      else if (b.kind === "checklist") for (const r of b.rows) points.push(plain(tx(r.text, lang)));
+    }
+    for (const p of points.filter(Boolean).slice(0, 3)) push((lang === "fr" ? "À dire : " : "Say: ") + p);
+  }
   return out;
 }

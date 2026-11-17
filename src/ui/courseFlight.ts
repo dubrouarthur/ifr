@@ -64,9 +64,9 @@ registerStrings("en", {
   "cf.panel.airliner": "Instrument panel for this flight: airliner PFD / ND",
   "cf.lessonFor": "This lesson is a step of the course",
   "cf.kCourse": "Course",
-  "cf.stepOf": "Step {n} of {t}",
+  "cf.stepOf": "Slide {n} of {t}",
   "cf.backingQ": "Back to the course…",
-  "cf.backCourseN": `${hw("backToCourse", "en")} (step {n})`,
+  "cf.backCourseN": `${hw("backToCourse", "en")} (slide {n})`,
 });
 registerStrings("fr", {
   "cf.capturing": "Capture pour",
@@ -118,9 +118,9 @@ registerStrings("fr", {
   "cf.panel.airliner": "Tableau de bord de ce vol : PFD / ND de ligne",
   "cf.lessonFor": "Cette leçon est une étape du cours",
   "cf.kCourse": "Cours",
-  "cf.stepOf": "Étape {n} sur {t}",
+  "cf.stepOf": "Diapo {n} sur {t}",
   "cf.backingQ": "Vous reprenez le cours…",
-  "cf.backCourseN": `${hw("backToCourse", "fr")} (étape {n})`,
+  "cf.backCourseN": `${hw("backToCourse", "fr")} (diapo {n})`,
 });
 
 export const l10n = (t: L10n | undefined): string =>
@@ -474,7 +474,7 @@ export class CourseFlightUi {
                 this.held = false;
                 this.render(this.last);
               }),
-              btn("danger", tr("cf.leave"), tr("cf.backCourseTip"), () => {
+              btn("primary", tr("cf.leave"), tr("cf.backCourseTip"), () => {
                 this.confirming = false;
                 this.held = false;
                 this.act.backToCourse();

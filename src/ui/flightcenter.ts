@@ -7,7 +7,7 @@ import { h, clear, store } from "./dom";
 import { LESSON_META, LESSON_ORDER } from "../library/meta";
 import { CLASSIFICATION } from "../library/classification";
 import { programDef, subjectDef } from "../library/programs";
-import { Modal, WX_PRESETS, type WxPreset } from "./modals";
+import { Modal, WX_PRESETS, wxDesc, wxName, type WxPreset } from "./modals";
 import {
   CATEGORIES,
   MINE_SUB as MINE,
@@ -3533,7 +3533,7 @@ export class FlightCenter extends Modal {
             h(
               "option",
               { value: k, selected: w === this.wx },
-              `${w.name} — ${w.desc}`,
+              `${wxName(w)} — ${wxDesc(w)}`,
             ),
           ),
         ),

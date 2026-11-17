@@ -2190,3 +2190,35 @@ select.ce-in {
   font: 500 12.5px/1.35 var(--font);
   color: var(--text-2);
 }
+
+/* ------------------------------------------------------------ 44 px hit areas on the frequent controls (WCAG 2.2
+   target size, re-walk P2): the drawing keeps its size, the hit area around it grows */
+.ce-radio::before,
+.ce-sw::before {
+  content: "";
+  position: absolute;
+  inset: -11px;
+}
+.ce-sw::before {
+  inset: -11px -3px;
+}
+.ce-link {
+  min-height: 44px;
+}
+.ce-btn.ic {
+  min-width: 44px;
+  min-height: 44px;
+}
+.ce-in.num {
+  min-height: 44px;
+}
+/* the slide bar under the stage (« Dupliquer », « Déplacer avant / après », « Plus »): the top bar's 44 px */
+.ce-stepbar .ce-btn {
+  min-height: 44px;
+}
+/* a note only the author sees: its own look in « Éléments de la diapo » */
+.ce-layer-k.is-note {
+  width: 96px;
+  line-height: 1.25;
+  color: #8a5a00;
+}

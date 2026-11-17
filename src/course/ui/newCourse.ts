@@ -463,7 +463,7 @@ export function mountNewCourse(
         h(
           "span",
           { class: "nc-card-m" },
-          T(lang, "With your Claude key (paid) · about 1 minute", "Avec votre clé Claude (payante) · environ 1 minute"),
+          T(lang, "With your AI assistant key (paid) · about 1 minute", "Avec votre clé d’assistant IA (payante) · environ 1 minute"),
         ),
       ),
     );

@@ -236,6 +236,8 @@ export interface AskOptions {
   yt: YourTurn | undefined;
   /** a navigation instrument (HSI, VOR, RMI): the bar and the OBS come first */
   nav?: boolean;
+  /** the one instrument on the slide (« ai », « asi »…): only goals it can show are offered */
+  gauge?: string;
   /** store the goal; `controls`: what the student needs for it (ticked on the instrument) */
   apply(
     yt: YourTurn | undefined,
@@ -263,7 +265,7 @@ export function askGroup(
   let yt = o.yt;
   const draw = () => {
     const sit = live.sit;
-    const list = sentencesFor(o.where, sit, !!o.nav);
+    const list = sentencesFor(o.where, sit, !!o.nav, o.gauge);
     if (!yt && o.autoPick && list.length) {
       const g = list[0];
       // after the panel is drawn: the goal is stored like a click on the first sentence
@@ -354,8 +356,8 @@ export function askGroup(
       note(
         o.where === "slide"
           ? T(
-              "The student presses “Take the controls” on the slide; the simulator checks the goal live.",
-              "L’élève appuie sur « Prendre les commandes » sur la diapo ; le simulateur vérifie l’objectif en direct.",
+              "The “Goal” list on the slide ticks itself while the student flies the instrument.",
+              "La liste « Objectif » de la diapo se coche toute seule pendant que l’élève manie l’instrument.",
             )
           : T(
               "The student presses “Fly in the simulator”, flies it, then comes back to the course with the result.",

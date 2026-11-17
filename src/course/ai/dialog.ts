@@ -281,14 +281,14 @@ export function openAiAssistant(o: AiAssistantOptions): AiAssistant {
           false,
           T(
             lang,
-            "This does not look like a Claude API key (sk-ant-…).",
-            "Ce n’est pas une clé API Claude (sk-ant-…).",
+            "This does not look like a valid API key (sk-ant-…).",
+            "Ce n’est pas une clé API valide (sk-ant-…).",
           ),
         );
       check.disabled = true;
       setStatus(
         true,
-        T(lang, "Checking with Anthropic…", "Vérification auprès d’Anthropic…"),
+        T(lang, "Checking the key…", "Vérification de la clé…"),
       );
       const r = await verifyKey(k, o.clientFactory);
       check.disabled = false;
@@ -336,8 +336,8 @@ export function openAiAssistant(o: AiAssistantOptions): AiAssistant {
       head(
         T(
           lang,
-          "Creates slides with Claude, using your own API key",
-          "Crée des diapos avec Claude, avec votre propre clé API",
+          "Creates slides with the AI assistant, using your own API key",
+          "Crée des diapos avec l’assistant IA, avec votre propre clé API",
         ),
       ),
       h(
@@ -397,8 +397,8 @@ export function openAiAssistant(o: AiAssistantOptions): AiAssistant {
           { class: "ai-note" },
           T(
             lang,
-            "The key is sent only to Anthropic’s API, from your browser. It is kept for this session only, unless you tick the box below.",
-            "La clé est envoyée uniquement à l’API d’Anthropic, depuis votre navigateur. Elle n’est gardée que pour cette session, sauf si vous cochez la case ci-dessous.",
+            "The key is sent only to that provider’s API, from your browser. It is kept for this session only, unless you tick the box below.",
+            "La clé est envoyée uniquement à l’API de ce fournisseur, depuis votre navigateur. Elle n’est gardée que pour cette session, sauf si vous cochez la case ci-dessous.",
           ),
         ),
         h(
@@ -595,8 +595,8 @@ export function openAiAssistant(o: AiAssistantOptions): AiAssistant {
             )
           : T(
               lang,
-              "Create a course with Claude",
-              "Créer un cours avec Claude",
+              "Create a course with the AI assistant",
+              "Créer un cours avec l’assistant IA",
             ),
       ),
       h(
@@ -664,7 +664,7 @@ export function openAiAssistant(o: AiAssistantOptions): AiAssistant {
     for (const t of titles) list.append(h("li", {}, t));
     return [
       head(
-        T(lang, "Claude is preparing your slides", "Claude prépare vos diapos"),
+        T(lang, "The assistant is preparing your slides", "L’assistant prépare vos diapos"),
       ),
       h(
         "div",

@@ -4326,6 +4326,26 @@ html.ga-doc body {
     border-radius: 12px;
     color: var(--text);
   }
+  /* a slide that sends the student to the simulator: the way to fly is a 44 px button here, the last result its own
+     line above it; the slide's own bubble would cover its tiny button (re-walk P1) */
+  .cp-slidetext .cp-st-fly {
+    align-self: flex-start;
+    min-height: 44px;
+    font-size: 16px;
+  }
+  .cp-slidetext .cp-st-ytres {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.45;
+    color: var(--text-2, #3a4654);
+  }
+  .cp-body[data-layout="canvas"] .sl-yt-result {
+    display: none;
+  }
+  /* one « Voler dans le simulateur » per screen: the 44 px one in the card (it presses the slide's own) */
+  .cp-body[data-layout="canvas"] .sl-hud-btn.sl-yourturn.is-sim {
+    display: none;
+  }
   .cp-slidetext .cp-rich p,
   .cp-slidetext .cp-rich li {
     font-size: 16px;
@@ -4790,9 +4810,11 @@ html.ga-doc body {
 
 /* a question on a slide: « Réessayer » after a wrong answer, in the feedback line (44 CSS px at any slide scale) */
 .sl-quiz .sl-q-retry {
-  display: inline-flex;
+  /* its own line, aligned with the answers (re-walk P2) */
+  display: flex;
+  width: fit-content;
   align-items: center;
-  margin-left: calc(16px * var(--q, 1));
+  margin: calc(12px * var(--q, 1)) 0 0;
   min-height: calc(44px / var(--sl-k, 1));
   padding: 0 calc(24px * var(--q, 1));
   border-radius: 10px;
@@ -4807,11 +4829,16 @@ html.ga-doc body {
   outline: 3px solid var(--sl-cyan, #1d5fd1);
   outline-offset: 2px;
 }
-/* the same answers under a small slide (phone, portrait tablet): 44 px buttons; hidden where the slide is big */
+/* the same answers under a small slide (a phone): 44 px buttons; hidden where the slide is readable (a tablet in
+   portrait reads the slide's own answers: never the question twice, re-walk P2). The small slide's answers are then
+   only a picture: the card's are the ones to tap */
 .cp-slidequiz {
   display: none;
 }
-@media (max-aspect-ratio: 1/1), (max-width: 900px) {
+@media (max-width: 600px) {
+  .cp-body[data-layout="canvas"] .sl-quiz .sl-q-opt {
+    pointer-events: none;
+  }
   .cp-body[data-layout="canvas"] .cp-slidequiz {
     display: flex;
     flex-direction: column;

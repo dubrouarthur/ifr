@@ -317,6 +317,8 @@ export function yourTurnSlideRenderer(o: YourTurnRendererOptions): SlideRenderer
       line.classList.remove("ok");
       line.textContent = leftFlightLine(f, hw("flyInSim", lang), lang);
       line.hidden = false;
+      // it says itself, then gets out of the way (the text card under a small slide keeps it)
+      hideT = window.setTimeout(() => (line.hidden = true), 8000);
       for (const b of el.querySelectorAll<HTMLElement>(".sl-yourturn")) {
         b.dataset.result = "notyet";
         b.dataset.resultText = lang === "fr" ? "vol interrompu" : "stopped";

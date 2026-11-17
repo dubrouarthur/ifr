@@ -84,8 +84,8 @@ describe("cockpit chrome in French", () => {
   it("starts a lesson and a course flight with « Prendre les commandes », and the course strip counts the course's steps", () => {
     expect(t("br.start")).toBe("Prendre les commandes");
     expect(t("cf.start")).toBe("Prendre les commandes");
-    expect(t("cf.stepOf", { n: 13, t: 14 })).toBe("Étape 13 sur 14");
-    expect(t("cf.backCourseN", { n: 13 })).toBe("Reprendre le cours (étape 13)");
+    expect(t("cf.stepOf", { n: 13, t: 14 })).toBe("Diapo 13 sur 14");
+    expect(t("cf.backCourseN", { n: 13 })).toBe("Reprendre le cours (diapo 13)");
     expect(t("cf.backingQ")).toBe("Vous reprenez le cours…");
   });
 

@@ -102,7 +102,7 @@ describe("the one vocabulary", () => {
     setLang("fr");
     expect(t("cf.start")).toBe("Prendre les commandes");
     expect(t("cf.backCourse")).toBe("Reprendre le cours");
-    expect(t("cf.backCourseN", { n: 3 })).toBe("Reprendre le cours (étape 3)");
+    expect(t("cf.backCourseN", { n: 3 })).toBe("Reprendre le cours (diapo 3)");
     expect(t("cf.briefK")).toContain("À vous");
     setLang("en");
     expect(t("cf.start")).toBe("Take the controls");

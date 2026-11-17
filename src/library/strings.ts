@@ -127,6 +127,8 @@ const S = {
   teachSwitch: { en: "I teach", fr: "Je suis instructeur" },
   // a course opened from a link or a file someone sent (audit §21)
   sharedBy: { en: "Shared by {name}", fr: "Partagé par {name}" },
+  // the same, when the sender never typed a name (never « Partagé par Vous » on the student's device)
+  receivedByLink: { en: "Received by link", fr: "Reçu par lien" },
   // a subject with no course yet but a template for it in « Nouveau cours » (audit §23)
   soonCircuit: {
     en: "A template exists: create your circuit course",
@@ -164,8 +166,8 @@ const S = {
     fr: "Pas de compte : chaque élève retrouve sa progression dans son navigateur ; rien n’est envoyé ailleurs.",
   },
   teachSwitchSub: {
-    en: "Shows “Duplicate to edit” on the course cards and “Create the first course” in empty subjects",
-    fr: "Affiche « Dupliquer pour modifier » sur les cours et « Créez le premier cours » dans les matières vides",
+    en: "Shows “Create the first course” in empty subjects and the export of courses",
+    fr: "Affiche « Créez le premier cours » dans les matières vides et l’export des cours",
   },
   toolPresentSub: {
     en: "Projector window and presenter notes",

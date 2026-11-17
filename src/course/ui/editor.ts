@@ -90,6 +90,7 @@ import {
   removeStep,
   replaceStep,
   revealsOf,
+  slideNameFromTitle,
   stepBarText,
   stepFromTray,
   toDesignedSlide,
@@ -2196,7 +2197,9 @@ export class CourseEditor implements InspectorHost {
           if (!final) return;
           const st = this.step;
           if (!st || st.id !== this.canvasFor) return;
-          this.apply(replaceStep(this.course, { ...st, slide: c }), this.groupKey, {
+          // a slide still named « Nouvelle diapo » takes its title's words (filmstrip, player, end screen)
+          const named = slideNameFromTitle(st, c);
+          this.apply(replaceStep(this.course, { ...st, slide: c, ...(named ? { title: named } : {}) }), this.groupKey, {
             centre: false,
             inspector:
               this.inspector.currentTab === "block" &&
@@ -2209,6 +2212,16 @@ export class CourseEditor implements InspectorHost {
           this.sel = blocks;
           // with a rail panel open, the properties show over the slide's edge only while something is selected
           this.bodyEl.classList.toggle("has-sel", blocks.length > 0);
+          // an element picked (or just added from Instruments, Questions…) while a rail panel is open: the panel
+          // closes, as in a slide tool, so the slide refits beside the properties and is never cut under them
+          // (re-walk P1). The simulator panel stays: it follows the selection.
+          if (
+            blocks.length &&
+            this.studio.open &&
+            this.studio.tab !== "cockpit" &&
+            window.matchMedia?.("(min-width: 1366px) and (max-width: 1919px)").matches
+          )
+            this.closePanel();
           if (this.studio.tab === "cockpit" && was !== this.simSelectionId()) this.studio.refresh();
           if (
             this.inspector.currentTab !== "block" &&
@@ -2320,7 +2333,7 @@ export class CourseEditor implements InspectorHost {
       if (!d || !this.canvasEd) return;
       // the title sits where a title goes (top left), its words selected: typing replaces them
       const b = this.canvasEd.add(d, [96 + d.frame.w / 2, 96 + d.frame.h / 2]);
-      this.canvasEd.openText(b.id, { selectAll: true });
+      this.canvasEd.openText(b.id, { selectAll: true, placeholder: true });
     });
     const add = (label: string, run: () => void) => {
       const b = h("button", { type: "button", class: "ce-bh-add" }, h("span", { "aria-hidden": "true" }, "+"), label);

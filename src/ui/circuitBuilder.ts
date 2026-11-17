@@ -11,7 +11,7 @@
 // openDrill(templateId | circuit) opens it from the Flight Center; `builder.openProcedure` (set by main.ts) opens
 // the club procedure editor from a failure card.
 import { h, clear, store } from "./dom";
-import { Modal, WX_PRESETS } from "./modals";
+import { Modal, WX_PRESETS, wxDesc, wxName } from "./modals";
 import { confirmAction } from "./confirm";
 import { svgIcon, I } from "./icons";
 import {
@@ -4362,7 +4362,7 @@ export class CircuitBuilder extends Modal {
               [
                 ["", "Custom"],
                 ...WX_PRESETS.slice(1).map(
-                  (p) => [p.id, `${p.name}: ${p.desc}`] as [string, string],
+                  (p) => [p.id, `${wxName(p)}: ${wxDesc(p)}`] as [string, string],
                 ),
               ],
               (v) => {

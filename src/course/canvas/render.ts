@@ -438,9 +438,10 @@ export class SlideView {
       for (const e of els) {
         const [ax, ay] = (e.dataset.at ?? "0.5,0.5").split(",").map(Number);
         const [gx, gy] = (e.dataset.origin ?? "0.5,0.5").split(",").map(Number);
-        // inset by 16 px from the block's edge when anchored on it
-        const inx = ax === 1 ? -16 : ax === 0 ? 16 : 0;
-        const iny = ay === 1 ? -16 : ay === 0 ? 16 : 0;
+        // inset by 16 px from the block's edge when anchored on it; an item hung outside the edge (its origin on
+        // the far side) keeps 8 px of air instead
+        const inx = ax === 1 ? (gx === 0 ? 8 : -16) : ax === 0 ? (gx === 1 ? -8 : 16) : 0;
+        const iny = ay === 1 ? (gy === 0 ? 8 : -16) : ay === 0 ? (gy === 1 ? -8 : 16) : 0;
         e.style.left = `${this.ox + (f.x + ax * f.w) * this.k + inx}px`;
         e.style.top = `${this.oy + (f.y + ay * f.h) * this.k + iny}px`;
         e.style.transform = `translate(${-gx * 100}%, ${-gy * 100}%)`;

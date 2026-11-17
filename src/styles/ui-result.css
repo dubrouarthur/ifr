@@ -10,7 +10,7 @@ body.touch .modal-bg.rs-bg {
   padding: 10px 12px;
 }
 .modal.rs {
-  --rs-tap: 36px;
+  --rs-tap: 44px;
   --rs-bad-bg: color-mix(in srgb, var(--bad) 8%, var(--surface));
   --rs-bad-line: color-mix(in srgb, var(--bad) 26%, var(--surface));
   --rs-good-bg: color-mix(in srgb, var(--good) 10%, var(--surface));

@@ -81,6 +81,10 @@ export class History<T> {
     this.lastKey = null;
     return this.value;
   }
+  /** Forget the steps that could be redone (an undo that is not a step of its own: a placeholder taken back). */
+  dropRedo() {
+    this.future = [];
+  }
   /** Replace everything (a slide loaded from elsewhere). */
   reset(value: T) {
     this.past = [];

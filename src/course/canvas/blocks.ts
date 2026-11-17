@@ -46,6 +46,7 @@ import {
   type StripPlan,
 } from "./controlStrip";
 import { DEMO_SCENE_ID } from "./factory";
+import { evaluate as evalGoal, stageView } from "../goals";
 import { registerReplay, type MotionRun } from "./motion";
 import { tx, blockKindLabel } from "./strings";
 import {
@@ -875,10 +876,13 @@ function instrumentBlock(b: Of<"instrument">, env: BlockEnv): BlockView {
   let unMotion: (() => void) | null = null;
   if (run && env.mode === "play" && b.motion) {
     const item = motionButton(env, run, () => inst.invalidate());
-    item.at = plan
+    // outside the instrument, by its lower-left corner (re-walk P2: it sat on the altimeter's bezel); a block
+    // against the slide's left edge keeps it inside, in the drawing's corner
+    const room = b.frame.x >= 72;
+    item.at = room ? [0, 1] : plan
       ? [(plan.inst.x + 8) / b.frame.w, (plan.inst.y + plan.inst.h - 8) / b.frame.h]
       : [0, 1];
-    item.origin = [0, 1];
+    item.origin = room ? [1, 1] : [0, 1];
     hud.push(item);
     unMotion = item.off;
   }
@@ -1154,6 +1158,24 @@ function quizBlock(b: Of<"quiz">, env: BlockEnv): BlockView {
             e.stopPropagation();
             if (el.classList.contains("answered")) return;
             el.classList.add("answered");
+            // a first wrong answer marks only the chosen one: the student tries again before seeing the right one
+            // (re-walk P2); a second wrong answer, or a right one, shows it
+            const tries = Number(el.dataset.wrong ?? "0") + (i === q.answer ? 0 : 1);
+            el.dataset.wrong = String(tries);
+            const reveal = i === q.answer || tries >= 2;
+            if (!reveal) {
+              list.querySelectorAll(".sl-q-opt").forEach((x, j) => {
+                x.classList.toggle("is-wrong", j === i);
+                const state = x.querySelector(".sl-q-state");
+                if (state) state.textContent = j === i ? `✗ ${tx("quizWrong", env.lang)}` : "";
+              });
+              const verdict = mk("b", "", `${tx("quizWrong", env.lang).split(" · ")[0]}. `);
+              why.replaceChildren(verdict, richFragment(o.why ? loc(o.why, env.lang) : tx("quizNotThis", env.lang), { lang: env.lang }));
+              why.classList.remove("is-reserve");
+              env.fire("answered");
+              env.fire("quizWrong");
+              return;
+            }
             list.querySelectorAll(".sl-q-opt").forEach((x, j) => {
               x.classList.toggle("is-right", j === q.answer);
               x.classList.toggle("is-wrong", j === i && i !== q.answer);
@@ -1380,11 +1402,28 @@ function checklistBlock(b: Of<"checklist">, env: BlockEnv): BlockView {
   });
   inner.append(list);
   const sim = () => env.sims.get(env.slideScene ?? DEMO_SCENE_ID)?.sim ?? null;
+  // the goal each row stands for (the slide's « À vous », else the step's): a row met earlier keeps its tick, but its
+  // value turns neutral once the aircraft has left the band again (re-walk P2: « 64 kt » in green under « 70 à 85 »)
+  const goalChecks =
+    env.step?.slide?.blocks.map((k) => ("yourTurn" in k ? k.yourTurn?.goal.all : undefined)).find((g) => g?.length) ??
+    env.step?.goal?.all ??
+    [];
   const tick = () => {
     const s = sim();
-    for (const x of rows)
+    let view: ReturnType<typeof stageView> | null = null;
+    for (const x of rows) {
       if (x.r.readout && s)
         x.v.textContent = readoutText(s, x.r.readout, env.lang) ?? "";
+      const c = x.r.check !== undefined ? goalChecks[x.r.check] : undefined;
+      if (s && c && x.li.classList.contains("done")) {
+        try {
+          view ??= stageView(s);
+          x.li.classList.toggle("drift", !evalGoal(c, view));
+        } catch {
+          x.li.classList.remove("drift");
+        }
+      } else x.li.classList.remove("drift");
+    }
   };
   tick();
   let met: readonly boolean[] = [];

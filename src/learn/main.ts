@@ -505,6 +505,7 @@ async function showPlayer(
     },
     onPresent: () => go({ k: "present", id: course.id }),
     onShare: () => void shareCourse(course),
+    received: !isSampleId(course.id) && importedIds().has(course.id),
     ...(store ? { onEdit: { copy: isSampleId(course.id), run: () => go({ k: "edit", id: course.id }) } } : {}),
     context: (l) => {
       try {

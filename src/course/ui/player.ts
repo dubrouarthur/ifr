@@ -29,6 +29,7 @@ import type {
 import type { CourseStore } from "../store";
 import { cockpitBridgeReady, legacyFlyLink, noteFly } from "../cockpitLink";
 import { lastFlyHandoff, leftUnfinished } from "./flyLeft";
+import { hw } from "../handoverWords";
 import {
   courseReturnUrl,
   createHandoff,
@@ -166,8 +167,10 @@ export function wireSlideQuizRetry(host: SlideHost, lang: Lang, changed?: () => 
     const quiz = opt?.closest<HTMLElement>(".sl-quiz");
     if (!quiz) return;
     window.setTimeout(() => {
+      // « Réessayer » only while the right answer is still hidden (once shown, a retry would be pointless)
       if (
         quiz.querySelector(".sl-q-opt.is-wrong") &&
+        !quiz.querySelector(".sl-q-opt.is-right") &&
         !quiz.querySelector(".sl-q-retry")
       ) {
         const b = h(
@@ -236,7 +239,8 @@ export function slideQuizProxy(
     const w = host.el.querySelector(`[data-id="${CSS.escape(b.id)}"] .sl-q-why`);
     why.textContent = answered ? ((w?.firstChild ? [...w.childNodes].filter((n) => !(n instanceof HTMLButtonElement)).map((n) => n.textContent).join("") : "")) : "";
     why.hidden = !answered;
-    retry.hidden = !so.some((x) => x.classList.contains("is-wrong"));
+    retry.hidden =
+      !so.some((x) => x.classList.contains("is-wrong")) || so.some((x) => x.classList.contains("is-right"));
   };
   sync();
   return { el, sync };
@@ -298,6 +302,45 @@ export function visibleSteps(
  *  during a Show me demo they stay neutral, even when the frozen situation already meets a row. Pure. */
 export function goalRowsLive(handoverActive: boolean, state: string): boolean {
   return !handoverActive || (state !== "briefed" && state !== "demo");
+}
+
+/** The marks a student earned on earlier visits, rebuilt from the stored attempts (re-walk P0: a trip to the simulator
+ *  or a reload must not wipe « fait » / « juste »). A slide's « À vous » is stored under « <step>~yt~<block> » and
+ *  counts for its slide. A flight stopped before the end is not « flown ». Pure: unit-tested. */
+export function marksFromAttempts(
+  attempts: readonly AttemptRecord[],
+): Record<string, StepMark> {
+  const out: Record<string, StepMark> = {};
+  for (const a of attempts) {
+    const id = a.stepId.split("~")[0];
+    const m = (out[id] ??= { visited: true });
+    switch (a.kind) {
+      case "answer":
+        m.answered = true;
+        if (a.correct) m.correct = true;
+        break;
+      case "calc":
+        m.answered = true;
+        m.calcOk = !!a.correct || !!m.calcOk;
+        if (a.correct) m.correct = true;
+        break;
+      case "try":
+        if (a.goalMet && !a.skipped) m.goalMet = true;
+        break;
+      case "yourTurn":
+        if (a.goalMet || a.yourTurn?.result.met) m.goalMet = true;
+        break;
+      case "drill":
+        if (a.drill && (!m.drill || a.drill.correct > m.drill.correct))
+          m.drill = { correct: a.drill.correct, count: a.drill.count };
+        break;
+      case "fly":
+        if (a.fly && !a.fly.ungraded)
+          m.flown = { passed: a.fly.passed || !!m.flown?.passed };
+        break;
+    }
+  }
+  return out;
 }
 
 export function courseTally(
@@ -440,6 +483,9 @@ export interface PlayerOptions {
   /** the end screen and the top bar: present this course, copy its share link */
   onPresent?: () => void;
   onShare?: () => void;
+  /** a course received by link: the top bar keeps only Sommaire and the language (Présenter and Partager stay on the
+   *  end screen, for the instructor who also received it) */
+  received?: boolean;
   /** the end screen's way back as a sentence (« Retour à la bibliothèque », « Retour à LAPL · PPL ») */
   backPhrase?: (l: Lang) => string;
   /** the end screen: edit it (a built-in course is duplicated first: « Dupliquer pour modifier ») */
@@ -535,8 +581,48 @@ export class CoursePlayer {
       : -1;
     this.i = Math.max(0, idx);
     this.show(true);
+    void this.rehydrate();
     if (idx < 0) void this.resume();
     if (o.token) void this.backFromCockpit(o.token);
+  }
+  /** Earlier visits' results come back (the store keeps every attempt): « fait », « juste », the « Suivant » rule and
+   *  the end screen read them, so a trip to the simulator or a reload never asks the student to redo their work. */
+  private async rehydrate() {
+    const store = this.store;
+    if (!store) return;
+    try {
+      const atts = await store.listAttempts({
+        courseId: this.course.id,
+        profileId: this.profileId,
+      });
+      if (this.destroyed || !atts.length) return;
+      const ids = new Set(this.course.steps.map((s) => s.id));
+      for (const [id, m] of Object.entries(marksFromAttempts(atts))) {
+        if (!ids.has(id)) continue;
+        let st = this.states.get(id);
+        if (!st) {
+          st = { reveal: 0, mark: {} };
+          this.states.set(id, st);
+        }
+        const cur = st.mark;
+        cur.visited ||= m.visited;
+        cur.answered ||= m.answered;
+        cur.correct ||= m.correct;
+        if (m.calcOk !== undefined) cur.calcOk = !!cur.calcOk || m.calcOk;
+        cur.goalMet ||= m.goalMet;
+        if (m.goalMet) st.goalMet = true;
+        if (m.drill && (!cur.drill || m.drill.correct > cur.drill.correct)) cur.drill = m.drill;
+        if (m.flown && !cur.flown) cur.flown = m.flown;
+        if (cur.goalMet || cur.answered || cur.flown || cur.drill || cur.calcOk !== undefined) delete cur.skipped;
+      }
+      if (this.summaryOn) this.showSummary();
+      else {
+        this.syncFoot();
+        this.renderTopTicks();
+      }
+    } catch {
+      /* storage error: this visit's marks only */
+    }
   }
 
   // ---------------------------------------------------------------- public
@@ -838,10 +924,10 @@ export class CoursePlayer {
         ),
       );
     // present it to a class, share its link: in reach from any slide (wide screens; the end screen has them too)
-    const shareB = this.o.onShare
+    const shareB = this.o.onShare && !this.o.received
       ? btn(ps("share", lang), "cp-topact", () => this.o.onShare!(), "share")
       : null;
-    const presentB = this.o.onPresent
+    const presentB = this.o.onPresent && !this.o.received
       ? btn(ps("present", lang), "cp-topact", () => this.o.onPresent!(), "present")
       : null;
     parts.push(prog, presentB, shareB, ol, seg);
@@ -1603,8 +1689,12 @@ export class CoursePlayer {
     } else if (when === "quizWrong" || when === "calcWrong") m.answered = true;
     else if (when === "goalMet" || when === "yourTurnDone") m.goalMet = true;
     else return;
+    // a right answer after a wrong one is kept too (the end screen and the next visit say « juste »)
     if (when === "quizRight" || when === "quizWrong")
-      this.record(step, { kind: "answer", correct: when === "quizRight" });
+      this.record(step, { kind: "answer", correct: when === "quizRight" }, when === "quizRight");
+    // a slide's « À vous » met is kept too: back from the simulator or after a reload it still reads « fait »
+    if (when === "goalMet" || when === "yourTurnDone")
+      this.record(step, { kind: "try", goalMet: true });
     this.persistSoon();
     this.renderTopTicks();
   }
@@ -1678,6 +1768,27 @@ export class CoursePlayer {
         );
       }
     }
+    // a slide that sends the student to the simulator: under a small slide, the way to fly is a 44 px button here and
+    // the last result is its own line (re-walk P1: on a phone the slide's button was tiny and under the status bubble)
+    const sim = slide.blocks.find(
+      (b) => "yourTurn" in b && b.yourTurn && !b.presenterOnly && b.yourTurn.where === "sim",
+    );
+    if (sim) {
+      const status = host.querySelector(".sl-yt-result")?.textContent?.trim();
+      if (status) out.push(h("p", { class: "cp-st-ytres" }, status));
+      const go = h(
+        "button",
+        { type: "button", class: "cp-btn primary cp-st-fly", tabindex: "-1" },
+        hw("flyInSim", lang),
+      );
+      go.addEventListener("click", () =>
+        (
+          host.querySelector<HTMLElement>(`[data-id="${CSS.escape(sim.id)}"] .sl-yourturn`) ??
+          host.querySelector<HTMLElement>(".sl-yourturn")
+        )?.click(),
+      );
+      out.push(go);
+    }
     const sig = out.map((e) => e.className + e.textContent).join("|");
     if (sig !== box.dataset.sig) {
       box.dataset.sig = sig;
@@ -1686,7 +1797,7 @@ export class CoursePlayer {
     box.hidden = !out.length;
     if (
       this.slideTextTimer === null &&
-      slide.blocks.some((b) => b.kind === "text" && b.bind)
+      slide.blocks.some((b) => (b.kind === "text" && b.bind) || b === sim)
     )
       this.slideTextTimer = window.setInterval(() => {
         if (this.slideText?.offsetParent) this.syncSlideText();

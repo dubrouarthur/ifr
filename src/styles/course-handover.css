@@ -415,6 +415,7 @@
   position: relative;
 }
 .sl-yt-result {
+  pointer-events: none;
   position: absolute;
   left: 50%;
   bottom: 10px;
@@ -438,14 +439,12 @@
 .sl-yt-result.ok::before {
   content: "✓ ";
 }
-.sl-yourturn[data-result]::after {
-  content: "· " attr(data-result-text);
-  margin-left: 6px;
-  font-weight: 600;
-}
+/* the button keeps its own words (« Voler dans le simulateur », « Agrandir »): the status is the line above, never
+   glued into the label (re-walk P1); a met exercise only adds a tick */
 .sl-yourturn[data-result="ok"]::after {
-  content: "· " attr(data-result-text) " ✓";
-  color: #0b5c3d;
+  content: "✓";
+  margin-left: 6px;
+  font-weight: 700;
 }
 
 /* Fly it: where the button leads and how to come back */

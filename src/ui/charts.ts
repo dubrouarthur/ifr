@@ -69,14 +69,16 @@ type App =
 type FitMode = "width" | "page";
 type Cat = "REF" | "DEP" | "ARR" | "APP";
 
-const APPS: [App, string][] = [
-  ["charts", "Charts"],
-  ["airport", "Airport"],
-  ["navlog", "NavLog"],
-  ["weather", "Weather"],
-  ["checklists", "Checklists"],
-  ["clearance", "Clearance"],
+const APPS_L: [App, string, string][] = [
+  ["charts", "Charts", "Cartes"],
+  ["airport", "Airport", "Aérodrome"],
+  ["navlog", "NavLog", "Log de nav"],
+  ["weather", "Weather", "Météo"],
+  ["checklists", "Checklists", "Check-lists"],
+  ["clearance", "Clearance", "Clairance"],
 ];
+/** the EFB's tabs in the UI language (FR: « Cartes · Aérodrome · Log de nav · Météo · Check-lists · Clairance ») */
+const appsNow = (): [App, string][] => APPS_L.map(([id, en, fr]) => [id, lang() === "fr" ? fr : en]);
 /** chart categories, in the order Navigraph and Jeppesen pilots read them */
 const CATS: { id: Cat; label: string; name: string; tip: string }[] = [
   {
@@ -415,7 +417,7 @@ export class ChartsDrawer {
 
   private renderApps() {
     clear(this.appBar);
-    for (const [id, label] of APPS)
+    for (const [id, label] of appsNow())
       this.appBar.append(
         h(
           "button",
@@ -529,8 +531,8 @@ export class ChartsDrawer {
     } else {
       this.headIdx.style.display = "none";
       this.headTitle.textContent = charts
-        ? "Charts"
-        : APPS.find((a) => a[0] === this.app)![1];
+        ? appsNow()[0][1]
+        : appsNow().find((a) => a[0] === this.app)![1];
       this.headMeta.textContent =
         this.app === "checklists"
           ? "C172 normal procedures"

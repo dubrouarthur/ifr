@@ -164,6 +164,75 @@ const ICONS: Record<string, string> = {
   device: "M5 3h14v18H5z M11 18h2",
   lock: "M7 11h10v9H7z M9 11V8a3 3 0 0 1 6 0v3",
 };
+/** The « OBJECTIF » rows of a slide's « À vous » (re-walk P1): when an instrument (or a sim view) carries a goal done
+ *  on the slide and no checklist on the slide shows goal rows yet, one is added beside the instrument, its rows
+ *  bound to the goal's checks so the player ticks them live. It follows the goal when the goal changes, and goes
+ *  when « À vous » is turned off. A checklist the author wrote is never touched. Mutates `slide`; pure otherwise. */
+export function syncGoalChecklist(slide: SlideCanvas, blockId: string): void {
+  const x = slide.blocks.find((k) => k.id === blockId);
+  if (!x) return;
+  const autoId = `${blockId}-goal`;
+  const auto = slide.blocks.find((k) => k.id === autoId && k.kind === "checklist");
+  const yt = "yourTurn" in x ? x.yourTurn : undefined;
+  const checks = yt && yt.where === "slide" ? yt.goal.all : [];
+  if (!checks.length) {
+    if (auto) slide.blocks = slide.blocks.filter((k) => k !== auto);
+    return;
+  }
+  const rows = checks.map((c, i) => ({ text: { en: goalLabel(c, "en"), fr: goalLabel(c, "fr") }, check: i }));
+  if (auto && auto.kind === "checklist") {
+    auto.rows = rows;
+    return;
+  }
+  // the author's own goal list wins
+  if (slide.blocks.some((k) => k.kind === "checklist" && k.rows.some((r) => r.check !== undefined))) return;
+  const f = x.frame;
+  const W = 1920;
+  const H = 1080;
+  const m = 120;
+  const h = Math.min(96 + rows.length * 72, 520);
+  // the free place nearest the instrument: beside it (either side), else under it, else the bottom band; the one that
+  // covers the least of the slide's other blocks wins (the author can move it)
+  // the instrument counts too, with its control strip under it (about 150 px)
+  const others = [
+    ...slide.blocks.filter((k) => k.id !== autoId && k.id !== blockId && !k.editorOnly && !k.presenterOnly),
+    { frame: { ...f, h: f.h + 150 } },
+  ];
+  const cover = (r: { x: number; y: number; w: number; h: number }) =>
+    others.reduce((a, k) => {
+      const o = k.frame;
+      const ix = Math.max(0, Math.min(r.x + r.w, o.x + o.w) - Math.max(r.x, o.x));
+      const iy = Math.max(0, Math.min(r.y + r.h, o.y + o.h) - Math.max(r.y, o.y));
+      return a + ix * iy;
+    }, 0);
+  const cands: { x: number; y: number; w: number; h: number }[] = [];
+  const leftW = f.x - 48 - m;
+  const rightX = f.x + f.w + 48;
+  const rightW = W - m - rightX;
+  for (let y = m; y + h <= H - 72; y += 24) {
+    if (rightW >= 420) cands.push({ x: rightX, y, w: Math.min(rightW, 760), h });
+    if (leftW >= 420) cands.push({ x: m, y, w: Math.min(leftW, 760), h });
+  }
+  cands.push({ x: Math.max(m, f.x), y: Math.min(f.y + f.h + 24, H - 72 - h), w: Math.max(420, Math.min(f.w, W - 2 * m)), h });
+  cands.push({ x: m, y: H - 72 - h, w: 760, h });
+  let best = cands[0];
+  let bestS = Infinity;
+  for (const c of cands) {
+    const sc = cover(c) * 1000 + Math.abs(c.y - f.y);
+    if (sc < bestS) {
+      bestS = sc;
+      best = c;
+    }
+  }
+  const frame = { ...best, z: (f.z ?? 1) + 1 };
+  slide.blocks.push({
+    id: autoId,
+    frame,
+    kind: "checklist",
+    title: { en: "Goal", fr: "Objectif" },
+    rows,
+  } as SlideBlock);
+}
 export function ico(
   name: keyof typeof ICONS | string,
   cls = "ce-i",
@@ -2953,9 +3022,15 @@ export class Inspector {
   /** A list of goal checks with their parameter fields, and the catalogue to add from. */
   private checksEditor(
     list: GoalCheck[],
-    set: (l: GoalCheck[], render?: boolean, key?: string) => void,
+    set0: (l: GoalCheck[], render?: boolean, key?: string) => void,
     o: { acs?: Criterion[]; setAcs?: (c: Criterion[]) => void } = {},
   ): HTMLElement {
+    // commits read the list as it is now (two parameters typed one after the other both stay)
+    let latest = list;
+    const set = (l: GoalCheck[], render?: boolean, key?: string) => {
+      latest = l;
+      set0(l, render, key);
+    };
     const el = h("div", { class: "ce-checks-ed" });
     list.forEach((c, i) => {
       const def = goalDef(c);
@@ -2967,7 +3042,7 @@ export class Inspector {
         .filter((pd) => !pd.showIf || pd.showIf(p as never))
         .map((pd) => {
           const upd = (v: unknown) => {
-            const next = clone(list);
+            const next = clone(latest);
             const np = ((next[i] as { p?: Record<string, unknown> }).p ??= {});
             if (v === undefined || v === "") delete np[pd.name];
             else np[pd.name] = v;
@@ -3022,7 +3097,7 @@ export class Inspector {
           h("i", { class: "ce-co-n" }, String(i + 1)),
           lab,
           h("span", { class: "ce-sp" }),
-          btn("", () => set(list.filter((_, j) => j !== i)), {
+          btn("", () => set(latest.filter((_, j) => j !== i)), {
             icon: "x",
             cls: "ic",
             title: this.t("Remove", "Retirer"),
@@ -3053,7 +3128,7 @@ export class Inspector {
           .slice(0, 24)
           .map((id) => ({
             label: tr(GOALS[id].name, this.lang),
-            onClick: () => set([...list, defaultCheck(id)]),
+            onClick: () => set([...latest, defaultCheck(id)]),
           }));
         popover(add, items, {
           title: this.t("Checked automatically", "Vérifié automatiquement"),
@@ -3184,8 +3259,14 @@ export class Inspector {
   // ================================================================ Calc
   private calcEditor(
     spec: CalcSpec,
-    set: (c: CalcSpec, render?: boolean, key?: string) => void,
+    set0: (c: CalcSpec, render?: boolean, key?: string) => void,
   ): Kid[] {
+    // commits read the spec as it is now (two fields typed one after the other both stay)
+    let latest = spec;
+    const set = (c: CalcSpec, render?: boolean, key?: string) => {
+      latest = c;
+      set0(c, render, key);
+    };
     const def = getGenerator(spec.generatorId);
     const lang = this.lang;
     const groups = (["ifr", "vfr"] as const).map((cat) => ({
@@ -3202,9 +3283,9 @@ export class Inspector {
         selectIn<CalcGeneratorId>(groups, spec.generatorId, (id) =>
           set({
             ...defaultCalc(id),
-            showSolution: spec.showSolution,
-            showRuleOfThumb: spec.showRuleOfThumb,
-            showFormula: spec.showFormula,
+            showSolution: latest.showSolution,
+            showRuleOfThumb: latest.showRuleOfThumb,
+            showFormula: latest.showFormula,
           }),
         ),
         def
@@ -3222,12 +3303,12 @@ export class Inspector {
             { class: "ce-grid2" },
             ...params.map((p) =>
               this.paramField(p, spec.params?.[p.key], (v) => {
-                const next = { ...(spec.params ?? {}) };
+                const next = { ...(latest.params ?? {}) };
                 if (v === undefined) delete next[p.key];
                 else next[p.key] = v;
                 set(
                   {
-                    ...spec,
+                    ...latest,
                     params: Object.keys(next).length ? next : undefined,
                   },
                   false,
@@ -3238,7 +3319,7 @@ export class Inspector {
           ),
           linkBtn(
             this.t("Back to the defaults", "Revenir aux valeurs par défaut"),
-            () => set({ ...spec, params: undefined }),
+            () => set({ ...latest, params: undefined }),
             { disabled: !spec.params },
           ),
         ]),
@@ -3260,7 +3341,7 @@ export class Inspector {
           fixed,
           (f) =>
             set({
-              ...spec,
+              ...latest,
               seed: f ? newSeed() : undefined,
               ...(f ? { retry: false } : {}),
             }),
@@ -3277,7 +3358,7 @@ export class Inspector {
                   (v) =>
                     v !== undefined &&
                     set(
-                      { ...spec, seed: Math.max(0, Math.round(v)) },
+                      { ...latest, seed: Math.max(0, Math.round(v)) },
                       false,
                       "seed",
                     ),
@@ -3286,13 +3367,13 @@ export class Inspector {
               ),
               btn(
                 this.t("Draw new numbers", "Tirer d’autres chiffres"),
-                () => set({ ...spec, seed: newSeed() }),
+                () => set({ ...latest, seed: newSeed() }),
                 { cls: "sm" },
               ),
             )
           : sw(
               spec.retry !== false,
-              (on) => set({ ...spec, retry: on ? undefined : false }),
+              (on) => set({ ...latest, retry: on ? undefined : false }),
               this.t(
                 "Offer “New numbers” after an attempt",
                 "Proposer « Nouveaux chiffres » après un essai",
@@ -3323,7 +3404,7 @@ export class Inspector {
               this.t("Tolerance ±", "Tolérance ±"),
               numIn(
                 spec.tolerance,
-                (v) => set({ ...spec, tolerance: v }, false, "tol"),
+                (v) => set({ ...latest, tolerance: v }, false, "tol"),
                 {
                   ph: fmtNum(Number(asked.tolerance.toPrecision(3)), this.lang),
                   unit: tr(UNIT_LABEL[asked.unit], lang),
@@ -3341,7 +3422,7 @@ export class Inspector {
                     spec.unit ?? problem.unit,
                     (u) =>
                       set({
-                        ...spec,
+                        ...latest,
                         unit: u === problem!.unit ? undefined : u,
                       }),
                   ),
@@ -3363,23 +3444,23 @@ export class Inspector {
                 { value: "never" as const, label: this.t("Never", "Jamais") },
               ],
               spec.showSolution ?? "onCheck",
-              (v) => set({ ...spec, showSolution: v }),
+              (v) => set({ ...latest, showSolution: v }),
               { full: true },
             ),
           ),
           sw(
             spec.showRuleOfThumb !== false,
-            (on) => set({ ...spec, showRuleOfThumb: on ? undefined : false }),
+            (on) => set({ ...latest, showRuleOfThumb: on ? undefined : false }),
             this.t("Show the rule of thumb", "Montrer la règle pratique"),
           ),
           sw(
             spec.showFormula !== false,
-            (on) => set({ ...spec, showFormula: on ? undefined : false }),
+            (on) => set({ ...latest, showFormula: on ? undefined : false }),
             this.t("Show the exact formula", "Montrer la formule exacte"),
           ),
           sw(
             (spec.stage ?? "generator") === "generator",
-            (on) => set({ ...spec, stage: on ? undefined : "none" }),
+            (on) => set({ ...latest, stage: on ? undefined : "none" }),
             this.t(
               "Diagram or live instrument on the stage",
               "Schéma ou instrument en direct sur la scène",
@@ -3999,8 +4080,16 @@ export class Inspector {
   // ================================================================ Quiz
   private quizEditor(
     q: Quiz,
-    set: (q: Quiz, render?: boolean, key?: string) => void,
+    set0: (q: Quiz, render?: boolean, key?: string) => void,
   ): Kid[] {
+    // every field commits from the quiz as it is NOW, never as it was when the inspector drew it: typing the question,
+    // then an answer's « Pourquoi », keeps both (re-walk P0: the second field used to put the old question back)
+    let latest: Quiz = q;
+    const now = <T extends Quiz>(_t: T): T => latest as T;
+    const set = (nq: Quiz, render?: boolean, key?: string) => {
+      latest = nq;
+      set0(nq, render, key);
+    };
     const kinds: Opt<Quiz["kind"]>[] = [
       { value: "mcq", label: this.t("Choice", "Choix") },
       { value: "numeric", label: this.t("Number", "Nombre") },
@@ -4022,7 +4111,7 @@ export class Inspector {
         this.l10n(
           this.t("Question (optional)", "Question (facultative)"),
           q.prompt,
-          (v) => set({ ...q, prompt: v }, false, "q.prompt"),
+          (v) => set({ ...now(q), prompt: v }, false, "q.prompt"),
           {
             multi: true,
             rows: 2,
@@ -4032,7 +4121,7 @@ export class Inspector {
       );
       out.push(
         ...this.calcEditor(q.calc, (c, render = true, key) =>
-          set({ ...q, calc: c }, render, key),
+          set({ ...now(q), calc: c }, render, key),
         ),
       );
       return out;
@@ -4041,7 +4130,7 @@ export class Inspector {
       this.l10n(
         this.t("Question", "Question"),
         q.prompt,
-        (v) => set({ ...q, prompt: v } as Quiz, false, "q.prompt"),
+        (v) => set({ ...now(q), prompt: v } as Quiz, false, "q.prompt"),
         { multi: true, rows: 2 },
       ),
     );
@@ -4054,7 +4143,7 @@ export class Inspector {
           "aria-checked": q.answer === i ? "true" : "false",
           "aria-label": this.t("Correct answer", "Bonne réponse"),
         });
-        radio.addEventListener("click", () => set({ ...q, answer: i }));
+        radio.addEventListener("click", () => set({ ...now(q), answer: i }));
         out.push(
           h(
             "div",
@@ -4069,8 +4158,8 @@ export class Inspector {
                 (v) =>
                   set(
                     {
-                      ...q,
-                      options: q.options.map((x, j) =>
+                      ...now(q),
+                      options: now(q).options.map((x, j) =>
                         j === i ? { ...x, text: v } : x,
                       ),
                     },
@@ -4084,8 +4173,8 @@ export class Inspector {
                 (v) =>
                   set(
                     {
-                      ...q,
-                      options: q.options.map((x, j) =>
+                      ...now(q),
+                      options: now(q).options.map((x, j) =>
                         j === i ? { ...x, why: v } : x,
                       ),
                     },
@@ -4101,11 +4190,11 @@ export class Inspector {
               "",
               () =>
                 set({
-                  ...q,
-                  options: q.options.filter((_, j) => j !== i),
+                  ...now(q),
+                  options: now(q).options.filter((_, j) => j !== i),
                   answer: Math.max(
                     0,
-                    q.answer > i ? q.answer - 1 : q.answer === i ? 0 : q.answer,
+                    now(q).answer > i ? now(q).answer - 1 : now(q).answer === i ? 0 : now(q).answer,
                   ),
                 }),
               {
@@ -4121,14 +4210,14 @@ export class Inspector {
       out.push(
         linkBtn(
           this.t("+ Add an option", "+ Ajouter une option"),
-          () => set({ ...q, options: [...q.options, { text: { en: "" } }] }),
+          () => set({ ...now(q), options: [...now(q).options, { text: { en: "" } }] }),
           { disabled: q.options.length >= 6 },
         ),
       );
       out.push(
         sw(
           !!q.poll,
-          (on) => set({ ...q, poll: on || undefined }),
+          (on) => set({ ...now(q), poll: on || undefined }),
           this.t("Class poll", "Sondage en classe"),
           {
             sub: this.t(
@@ -4147,21 +4236,21 @@ export class Inspector {
             this.t("Answer", "Réponse"),
             numIn(
               q.answer,
-              (v) => v !== undefined && set({ ...q, answer: v }, false, "q.a"),
+              (v) => v !== undefined && set({ ...now(q), answer: v }, false, "q.a"),
             ),
           ),
           field(
             "±",
             numIn(
               q.tol,
-              (v) => v !== undefined && set({ ...q, tol: v }, false, "q.t"),
+              (v) => v !== undefined && set({ ...now(q), tol: v }, false, "q.t"),
             ),
           ),
           field(
             this.t("Unit", "Unité"),
             textIn(
               q.unit ?? "",
-              (v) => set({ ...q, unit: v || undefined }, false, "q.u"),
+              (v) => set({ ...now(q), unit: v || undefined }, false, "q.u"),
               { ph: "ft/min" },
             ),
           ),
@@ -4175,14 +4264,14 @@ export class Inspector {
             { class: "ce-row tight" },
             this.l10n(`${i + 1}`, it, (v) =>
               set(
-                { ...q, items: q.items.map((x, j) => (j === i ? v : x)) },
+                { ...now(q), items: now(q).items.map((x, j) => (j === i ? v : x)) },
                 false,
                 `q.i${i}`,
               ),
             ),
             btn(
               "",
-              () => set({ ...q, items: q.items.filter((_, j) => j !== i) }),
+              () => set({ ...now(q), items: now(q).items.filter((_, j) => j !== i) }),
               { icon: "x", cls: "ic", disabled: q.items.length <= 2 },
             ),
           ),
@@ -4199,7 +4288,7 @@ export class Inspector {
       );
       out.push(
         linkBtn(this.t("+ Add an item", "+ Ajouter un élément"), () =>
-          set({ ...q, items: [...q.items, { en: "" }] }),
+          set({ ...now(q), items: [...now(q).items, { en: "" }] }),
         ),
       );
     } else if (q.kind === "tap") {
@@ -4220,7 +4309,7 @@ export class Inspector {
           byAnn,
           (v) =>
             set({
-              ...q,
+              ...now(q),
               target: v
                 ? { annotation: anns[0].id }
                 : { pane: 0, rect: [384, 288, 256, 192] },
@@ -4236,17 +4325,18 @@ export class Inspector {
               label: `${a.type === "callout" ? a.n : "○"} ${tr((a as { text?: L10n }).text ?? { en: a.id }, this.lang)}`,
             })),
             q.target.annotation,
-            (v) => set({ ...q, target: { annotation: v } }),
+            (v) => set({ ...now(q), target: { annotation: v } }),
           ),
         );
       else {
         const r = q.target.rect;
         const upd = (k: number, v: number | undefined) => {
-          if (v === undefined || !("rect" in q.target)) return;
-          const nr = [...q.target.rect] as typeof r;
+          const cur = now(q);
+          if (v === undefined || !("rect" in cur.target)) return;
+          const nr = [...cur.target.rect] as typeof r;
           nr[k] = v;
           set(
-            { ...q, target: { pane: q.target.pane, rect: nr } },
+            { ...cur, target: { pane: cur.target.pane, rect: nr } },
             false,
             `q.r${k}`,
           );
@@ -4276,7 +4366,7 @@ export class Inspector {
     } else if (q.kind === "fly") {
       out.push(
         this.checksEditor(q.answer, (l, render = true, key) =>
-          set({ ...q, answer: l }, render, key),
+          set({ ...now(q), answer: l }, render, key),
         ),
       );
       out.push(
@@ -4293,7 +4383,7 @@ export class Inspector {
       this.l10n(
         this.t("Explanation", "Explication"),
         q.explain,
-        (v) => set({ ...q, explain: v } as Quiz, false, "q.ex"),
+        (v) => set({ ...now(q), explain: v } as Quiz, false, "q.ex"),
         { multi: true, rows: 3 },
       ),
     );
@@ -5483,6 +5573,7 @@ export class Inspector {
       const x = next.blocks.find((k) => k.id === b.id);
       if (!x || x.kind !== "simViewport") return;
       f(x);
+      syncGoalChecklist(next, x.id);
       this.host.setSlide(next);
       if (render) this.render();
     };
@@ -5567,6 +5658,9 @@ export class Inspector {
       const x = next.blocks.find((k) => k.id === b.id);
       if (!x || x.kind !== "instrument") return;
       f(x);
+      // « À vous » chosen here: its goal shows on the slide as the template's does (« OBJECTIF · Vérifié
+      // automatiquement », ticked live), so the student sees what to do (re-walk P1)
+      syncGoalChecklist(next, x.id);
       this.host.setSlide(next);
       if (render) this.render();
     };
@@ -5666,6 +5760,7 @@ export class Inspector {
             where: "slide",
             yt: b.yourTurn,
             nav,
+            ...(b.view.kind === "gauge" ? { gauge: b.view.gauge } : {}),
             scene: b.scene,
             autoPick: !b.yourTurn && this.takeAutoGoal(b.id),
             apply: (yt, controls, render) =>
@@ -5764,8 +5859,8 @@ export class Inspector {
         : state === "explore"
           ? T("The student turns the controls under the instrument, freely.", "L’élève manie les commandes sous l’instrument, librement.")
           : T(
-              "The student presses “Take the controls” and must reach a goal; the simulator checks it.",
-              "L’élève appuie sur « Prendre les commandes » et doit tenir un objectif ; le simulateur vérifie.",
+              "The student uses the controls under the instrument to reach the goal shown on the slide; it is checked live.",
+              "L’élève utilise les commandes sous l’instrument pour atteindre l’objectif affiché sur la diapo ; il est vérifié en direct.",
             );
     const body: Kid[] = [
       seg(
@@ -6116,10 +6211,15 @@ export class Inspector {
           const row = h(
             "button",
             { type: "button", class: `ce-layer${sel.has(b.id) ? " on" : ""}` },
+            // a note only the author sees (« L’avion vole vraiment ici… »): said so, never a plain « TEXTE »
             h(
               "span",
-              { class: "ce-layer-k" },
-              blockKindLabel(b.kind, this.lang),
+              { class: `ce-layer-k${b.editorOnly ? " is-note" : ""}` },
+              b.editorOnly
+                ? this.t("Note · only you see it", "Note · visible par vous seul")
+                : b.presenterOnly
+                  ? this.t("Presenter only", "Présentateur seul")
+                  : blockKindLabel(b.kind, this.lang),
             ),
             h("span", { class: "ce-layer-n" }, blockLabel(b, this.lang)),
             b.reveal

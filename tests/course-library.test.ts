@@ -249,10 +249,10 @@ describe("kind mix and thumbnails", () => {
 
 describe("UI strings", () => {
   it("fills placeholders and plurals", () => {
-    expect(ct("continueAt", "en", { n: 6 })).toBe("Continue at step 6");
-    expect(ct("continueAt", "fr", { n: 6 })).toBe("Reprendre à l’étape 6");
+    expect(ct("continueAt", "en", { n: 6 })).toBe("Continue at slide 6");
+    expect(ct("continueAt", "fr", { n: 6 })).toBe("Reprendre à la diapo 6");
     expect(ctSteps(1, "en")).toBe("1 step");
-    expect(ctSteps(12, "en")).toBe("12 steps");
+    expect(ctSteps(12, "en")).toBe("12 slides");
     expect(ctSteps(1, "fr")).toBe("1 étape");
     expect(ctSteps(0, "fr")).toBe("0 étape");
   });

@@ -1396,6 +1396,58 @@ html body.touch .topbar .view-dock.view-dock {
     border-radius: 8px;
   }
 }
+/* the same folded bar whenever the full row does not fit (a tablet in portrait, a narrow window): main.ts sets
+   body.tb-compact by measuring the bar, so Pause and Plus never leave the screen (re-walk P1) */
+body.tb-compact .menu .phone-only {
+  display: flex;
+}
+body.tb-compact .menu .menu-h.phone-only {
+  display: block;
+}
+html body.tb-compact .topbar {
+  gap: 4px;
+  padding: 6px 6px;
+}
+html body.tb-compact .topbar .tb-views,
+html body.tb-compact .topbar .tb-efb,
+html body.tb-compact .topbar .tb-ios,
+html body.tb-compact .topbar .tb-cdu,
+html body.tb-compact .topbar .tb-rule {
+  display: none;
+}
+html body.tb-compact .topbar .tb-home .logo {
+  display: none;
+}
+html body.tb-compact .topbar .tb-home .lbl,
+html body.tb-compact .topbar .tb-pause .lbl,
+html body.tb-compact .topbar .tb-more .lbl {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+html body.tb-compact .topbar .tb-home,
+html body.tb-compact .topbar .tb-pause,
+html body.tb-compact .topbar .tb-more {
+  min-width: 44px;
+  min-height: 44px;
+  justify-content: center;
+  padding-inline: 10px;
+}
+html body.tb-compact .topbar .scn-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+html body.tb-compact .topbar .tb-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+html body.tb-compact .topbar .tb-sim .tb-pause {
+  border-radius: 8px;
+}
 /* the calm phone note: the simulator flies best on a larger screen; the courses work here */
 .phone-note {
   position: fixed;
@@ -1478,3 +1530,10 @@ body.touch .pd-yoke::after { content: attr(data-label); position: absolute; left
 .modal.brief-deck:has(> .body > .htf) { width: min(1280px, calc(100vw - 64px), calc((100dvh - 168px - 62px) * 16 / 9)); }
 .modal.brief-deck:has(> .body > .htf[open]) { width: min(1280px, calc(100vw - 64px), calc((100dvh - 168px - 150px) * 16 / 9)); }
 .modal.brief-deck > .body > .htf .htf-list { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); column-gap: 28px; }
+
+/* a touch screen has no keyboard shortcuts, keyboard sensitivity or controllers to set: Plus keeps what can be used */
+@media (pointer: coarse) {
+  .menu .fine-only {
+    display: none;
+  }
+}

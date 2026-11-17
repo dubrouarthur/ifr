@@ -961,13 +961,14 @@ moreMenu.append(
   moreItem(I.restart, 'Restart the flight', '', () => restartFlight()),
   moreItem(I.flag, 'End and debrief', '', () => endFlight()),
   menuHead('Help'),
-  moreItem(I.keyboard, 'Keyboard shortcuts', '?', () => help.open()),
+  // keyboard and controller items: only where there is a keyboard or a mouse (ui-shell.css hides .fine-only on touch)
+  (() => { const b = moreItem(I.keyboard, 'Keyboard shortcuts', '?', () => help.open()); b.classList.add('fine-only'); return b; })(),
   moreItem(I.help, 'Explain instruments', 'F1', () => toggleExplain()),
   moreItem(I.compass, 'Guided tour', '', () => startTour()),
   menuHead('Settings'),
   moreItem(I.gear, 'Settings', '', () => settings.open()),
-  moreItem(I.joystick, 'Controllers', '', () => joyModal.open()),
-  sensItem,
+  (() => { const b = moreItem(I.joystick, 'Controllers', '', () => joyModal.open()); b.classList.add('fine-only'); return b; })(),
+  (sensItem.classList.add('fine-only'), sensItem),
   soundItem,
   afcsItem,
   autoHideItem,
@@ -1018,8 +1019,12 @@ function phoneNotice() {
   const wasPaused = sim.paused;
   sim.paused = true;
   syncPauseBtn();
-  const close = () => { note.remove(); if (!wasPaused && sim.paused) togglePause(); };
-  const stay = h('button', { class: 'btn primary', type: 'button', onclick: close }, fr ? 'Continuer ici' : 'Carry on here');
+  // a course flight waits for « Prendre les commandes » on its briefing: « Continuer ici » only closes the note and
+  // leaves that take-off to the student (re-walk P2: it used to start the flight); then the briefing's button is the
+  // one filled button
+  const briefed = new URLSearchParams(location.search).has('fly');
+  const close = () => { note.remove(); if (!wasPaused && sim.paused && !briefed) togglePause(); };
+  const stay = h('button', { class: briefed ? 'btn' : 'btn primary', type: 'button', onclick: close }, fr ? 'Continuer ici' : 'Carry on here');
   const note = h('div', { class: 'phone-note', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'phone-note-t' },
     h('b', { id: 'phone-note-t' }, fr ? 'Le simulateur se pilote mieux sur tablette ou ordinateur' : 'The simulator flies best on a tablet or a computer'),
     h('p', {}, fr
@@ -2302,6 +2307,33 @@ document.addEventListener('pointerdown', (e) => { if (!pdPop.hidden && !pdPop.co
 window.addEventListener('resize', () => closePdPop());
 
 document.getElementById('app')!.append(topbar, cockpit, sysHost, footer);
+// the top bar folds into « ← · titre · Pause · Plus » whenever its full row does not fit — a tablet in portrait, a
+// narrow window, the Pause that appears at take-off — so Pause and Plus (« Terminer et débriefer », Accueil) never
+// leave the screen (re-walk P1: the phone rule alone missed tablets). View, EFB and Instructor move into Plus.
+{
+  let fitting = false;
+  const fitTopbar = () => {
+    if (fitting) return;
+    fitting = true;
+    const b = document.body;
+    b.classList.remove('tb-compact');
+    const scn = topbar.querySelector<HTMLElement>('.scn-wrap');
+    const last = topbar.querySelector<HTMLElement>('.tb-actions')?.lastElementChild as HTMLElement | null;
+    const over = topbar.scrollWidth > topbar.clientWidth + 1 ||
+      (!!last && last.getBoundingClientRect().right > topbar.getBoundingClientRect().right + 1) ||
+      (!!scn && scn.getBoundingClientRect().width < 140);
+    b.classList.toggle('tb-compact', over);
+    fitting = false;
+  };
+  const ro = new ResizeObserver(() => fitTopbar());
+  ro.observe(topbar);
+  const acts = topbar.querySelector('.tb-actions');
+  if (acts) {
+    ro.observe(acts);
+    new MutationObserver(() => fitTopbar()).observe(acts, { subtree: true, attributes: true, attributeFilter: ['hidden', 'class', 'style'] });
+  }
+  fitTopbar();
+}
 onLangChange(() => {
   footer.querySelectorAll<HTMLElement>('.pd-cap[data-i18n]').forEach((e) => (e.textContent = tr(e.dataset.i18n!)));
   sysBtnLbl.textContent = tr('ped.switches');

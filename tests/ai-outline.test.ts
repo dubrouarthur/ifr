@@ -25,8 +25,10 @@ describe("the AI dialog's words", () => {
   const dlg = readFileSync("src/course/ai/dialog.ts", "utf8");
   const nc = readFileSync("src/course/ui/newCourse.ts", "utf8");
   it("says the key is paid and how long it takes, under the button, in both languages", () => {
-    expect(nc).toContain("Avec votre clé Claude (payante) · environ 1 minute");
-    expect(nc).toContain("With your Claude key (paid) · about 1 minute");
+    expect(nc).toContain("Avec votre clé d’assistant IA (payante) · environ 1 minute");
+    expect(nc).toContain("With your AI assistant key (paid) · about 1 minute");
+    // no third-party brand name in the UI (owner rule); the key step names the provider once, to get a key
+    expect(nc).not.toMatch(/Claude|Anthropic/);
   });
   it("guides the key in three numbered steps with « Ouvrir la Console »", () => {
     expect(dlg).toMatch(/class: "ai-steps"/);

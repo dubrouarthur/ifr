@@ -1574,12 +1574,13 @@ export const GOAL_SENTENCES: GoalSentence[] = [
   },
   {
     id: "bank30",
-    text: () =>
+    // the situation's own bank (a 45° steep turn asks for 45°), else the classic 30°
+    text: (s) =>
       L(
-        "Hold a 30° ± 5° turn for 10 s",
-        "Tenir un virage à 30° ± 5° pendant 10 s",
+        `Hold a ${turnBank(s)}° ± 5° turn for 10 s`,
+        `Tenir un virage à ${turnBank(s)}° ± 5° pendant 10 s`,
       ),
-    checks: () => [{ id: "bankBand", p: { min: 25, max: 35 } }],
+    checks: (s) => [{ id: "bankBand", p: { min: turnBank(s) - 5, max: turnBank(s) + 5 } }],
     holdS: 10,
     controls: ["bank", "pitch"],
     where: ["slide", "sim"],
@@ -1674,11 +1675,39 @@ export function sentenceOf(
 }
 
 /** The sentences that suit an instrument and a situation, the most natural first. */
+/** The bank a turn goal asks for: the situation's, rounded to 5°, when it is a real turn (20° to 60°); else 30°. */
+export function turnBank(s: Pick<Situation, "bank">): number {
+  const b = Math.round(Math.abs(s.bank) / 5) * 5;
+  return b >= 20 && b <= 60 ? b : 30;
+}
+/** What one instrument on a slide can show: its goals first, and never a goal it cannot show (no OBS or CDI goal on an
+ *  attitude indicator: re-walk P1). Unknown or many-instrument views keep the whole list. */
+const GAUGE_GOALS: Record<string, string[]> = {
+  ai: ["bank30", "climb500", "descend500", "holdHeading"],
+  "pfd.attitude": ["bank30", "climb500", "descend500", "holdHeading"],
+  asi: ["holdSpeed"],
+  alt: ["holdAlt", "climb500", "descend500"],
+  vsi: ["climb500", "descend500", "holdAlt"],
+  tc: ["bank30", "turnTo", "holdHeading"],
+  "pfd.tapes": ["holdSpeed", "holdAlt", "climb500", "descend500"],
+};
 export function sentencesFor(
   where: "slide" | "sim",
   sit: Situation,
   navInstrument = false,
+  gauge?: string,
 ): GoalSentence[] {
+  const only = gauge ? GAUGE_GOALS[gauge] : undefined;
+  if (only) {
+    const pool = GOAL_SENTENCES.filter((g) => g.where.includes(where));
+    const own = only.map((id) => pool.find((g) => g.id === id)).filter((g): g is GoalSentence => !!g);
+    // the situation still picks among the instrument's own goals (a 45° turn on the horizon asks for the bank)
+    const lead =
+      Math.abs(sit.bank) >= 20 ? "bank30" : sit.vsFpm >= 200 ? "climb500" : sit.vsFpm <= -200 ? "descend500" : "";
+    const i = own.findIndex((g) => g.id === lead);
+    if (i > 0) own.unshift(...own.splice(i, 1));
+    if (own.length) return own;
+  }
   const list = GOAL_SENTENCES.filter((g) => g.where.includes(where));
   const onIls = sit.pos.kind === "ils";
   const first = (ids: string[]) => [

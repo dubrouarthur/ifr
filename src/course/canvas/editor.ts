@@ -192,7 +192,7 @@ export class CanvasEditor {
   private hover: HTMLDivElement;
   private marq: HTMLDivElement;
   private live: HTMLDivElement;
-  private textEd: { id: string; ta: HTMLTextAreaElement } | null = null;
+  private textEd: { id: string; ta: HTMLTextAreaElement; ph?: { text: string; depth: number } } | null = null;
   private shown: SlideCanvas;
   private lang: Lang;
   private lastTap: { id: string; t: number } | null = null;
@@ -1455,7 +1455,7 @@ export class CanvasEditor {
 
   // ---------------------------------------------------------------- in-place text editing
   /** Edit a text or callout block's words in place (the raw inline syntax: **bold**, *italic*, lists). */
-  openText(id: string, o: { selectAll?: boolean } = {}) {
+  openText(id: string, o: { selectAll?: boolean; placeholder?: boolean } = {}) {
     const b = this.core.canvas.blocks.find((x) => x.id === id);
     if (!b || (b.kind !== "text" && b.kind !== "callout") || b.frame.locked)
       return;
@@ -1470,7 +1470,11 @@ export class CanvasEditor {
     );
     ta.spellcheck = true;
     ta.lang = this.lang;
-    this.textEd = { id, ta };
+    this.textEd = {
+      id,
+      ta,
+      ...(o.placeholder ? { ph: { text: ta.value, depth: this.core.history.depth.undo } } : {}),
+    };
     this.el.append(ta);
     this.placeText();
     ta.addEventListener("input", () => {
@@ -1561,6 +1565,21 @@ export class CanvasEditor {
     if (!ed) return;
     this.textEd = null;
     ed.ta.remove();
+    // a block made from « Cliquez pour ajouter un titre » and left without typing: it goes, the hint comes back,
+    // and it is no undo step (re-walk P2: « Titre de la diapo » stayed on the slide as real text)
+    if (ed.ph) {
+      const cur = this.core.canvas.blocks.find((x) => x.id === ed.id);
+      const words = cur && (cur.kind === "text" || cur.kind === "callout") ? ((this.lang === "fr" ? cur.text.fr : cur.text.en) ?? "") : "";
+      if (!cur || !words.trim() || words === ed.ph.text) {
+        let guard = 20;
+        while (this.core.history.depth.undo >= ed.ph.depth && guard-- > 0 && this.core.canvas.blocks.some((x) => x.id === ed.id))
+          if (!this.core.run({ k: "undo" })) break;
+        this.core.history.dropRedo();
+        this.o.onChange?.(this.core.canvas, true);
+        this.schedule();
+        return;
+      }
+    }
     this.core.history.seal();
     this.o.onChange?.(this.core.canvas, true);
     this.schedule();

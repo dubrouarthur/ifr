@@ -202,10 +202,23 @@ export function courseHomeLine(course: Course, lang: Lang, from?: string, receiv
       ? place.also.find((s) => subjectDef(s).program === from)
       : undefined;
   const d = subjectDef(lent ?? place.home);
-  const line = `${loc(programDef(d.program).code, lang)} › ${loc(d.title, lang)}`;
-  // a course someone sent: who shared it, then where it is filed (audit §21)
-  const by = received && !sample ? course.author?.name?.trim() : "";
-  return by ? `${lt("sharedBy", lang, { name: by })} · ${line}` : line;
+  // a subject the author never chose (« Choisir plus tard ») is not named: the programme alone (re-walk P1: the
+  // student saw a subject guessed from the template)
+  const chose = sample || !!course.subject || !!lent || !!course.sample;
+  const line = chose
+    ? `${loc(programDef(d.program).code, lang)} › ${loc(d.title, lang)}`
+    : course.program
+      ? loc(programDef(d.program).code, lang)
+      : received
+        ? ""
+        : `${loc(programDef(d.program).code, lang)} › ${loc(d.title, lang)}`;
+  // a course someone sent: who shared it, then where it is filed (audit §21). The default author (« Vous », « You »)
+  // is the sender's own placeholder, never a name: the student reads « Reçu par lien »
+  const name = course.author?.name?.trim() ?? "";
+  const typed = !!name && !/^(vous|you)$/i.test(name);
+  if (!received || sample) return line;
+  const who = typed ? lt("sharedBy", lang, { name }) : lt("receivedByLink", lang);
+  return line ? `${who} · ${line}` : who;
 }
 export function academyHash(r: AcademyRoute): string {
   const e = encodeURIComponent;
@@ -3925,7 +3938,8 @@ export class CourseLibrary {
         () => this.go({ k: "present", id: e.id }),
       ]);
     items.push([this.t("shareLink"), () => void this.shareLink(e)]);
-    if (this.store && teach)
+    // « Dupliquer pour modifier » on every card, without a switch to find first (re-walk P2)
+    if (this.store)
       items.push([
         e.sample ? this.t("duplicateEdit") : this.t("edit"),
         () => void this.edit(e),

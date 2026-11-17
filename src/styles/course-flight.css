@@ -83,7 +83,9 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  height: 32px;
+  /* 44 px like every target on the main paths (WCAG 2.2 target size, re-walk P2) */
+  height: 44px;
+  min-width: 44px;
   padding: 0 11px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.16);
