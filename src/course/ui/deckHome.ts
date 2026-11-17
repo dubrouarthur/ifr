@@ -17,8 +17,9 @@ import {
   type LibraryEntry,
 } from "./library";
 import { loc } from "../i18n";
+import { isTask } from "./reader";
 import type { Course, CourseProgress, Lang, SlideCanvas, Step } from "../types";
-import { coursePlacement } from "../../library/sources";
+import { coursePlacement, isOwnCourse } from "../../library/sources";
 import { programDef, subjectDef } from "../../library/programs";
 import { courseCover } from "../../library/covers";
 
@@ -81,6 +82,8 @@ export interface HomeData {
   resume: HomeResume | null;
   /** an assigned course other than the resumed one (« À faire ») */
   assigned: HomeCourse | null;
+  /** the course of my own edited last (« Reprendre la modification », audit §3) */
+  editing?: HomeCourse | null;
 }
 
 /** Where a course lives, as words: its formation › its subject. */
@@ -100,11 +103,24 @@ function homeOf(e: LibraryEntry, l: Lang): { home: string; program: string } {
   }
 }
 
-/** The pure part of homeData: the course to resume (left part-way, past its first step) and an assignment. */
+/** The steps of a course whose task (À vous, Question, Calcul, Vol au simulateur) has no attempt yet. Pure. */
+export function openTaskSteps(
+  course: Pick<Course, "steps">,
+  attempts: readonly { stepId: string }[],
+): string[] {
+  // a slide's « À vous » is recorded under its own id (« <step>~yt~<block> »): it counts for its slide
+  const tried = new Set(attempts.map((a) => a.stepId.split("~")[0]));
+  return course.steps.filter((s) => isTask(s) && !tried.has(s.id)).map((s) => s.id);
+}
+
+/** The pure part of homeData: the course to resume (left part-way, past its first step) and an assignment.
+ *  `open`: per course, its steps with a task not done yet. A course is part-way while one is left, whatever the step
+ *  the student stopped on (the last step is often the simulator flight: audit §12). */
 export function pickResume(
   list: readonly LibraryEntry[],
   last: { id: string; stepId?: string } | null,
   l: Lang,
+  open?: ReadonlyMap<string, readonly string[]>,
 ): HomeData {
   const c = continueTarget(list, last);
   let resume: HomeResume | null = null;
@@ -118,8 +134,9 @@ export function pickResume(
       course.steps.findIndex((s) => s.id === stepId),
     );
     const total = course.steps.length;
-    // left part-way: past the first step and not on the last one
-    if (stepId && index >= 1 && index < total - 1) {
+    // left part-way: past the first step, and not on the last one unless a task is still to do
+    const tasksLeft = (open?.get(e.id)?.length ?? 0) > 0;
+    if (stepId && index >= 1 && (index < total - 1 || tasksLeft)) {
       const where = homeOf(e, l);
       const mins = e.minutes ?? course.minutes;
       resume = {
@@ -143,9 +160,13 @@ export function pickResume(
       x.id !== resume?.id &&
       (!x.progress || x.progress.index < x.progress.total - 1),
   );
+  const ed = list
+    .filter(isOwnCourse)
+    .sort((x, y) => (x.updated < y.updated ? 1 : -1))[0];
   return {
     resume,
     assigned: a ? { id: a.id, title: loc(a.title, l), ...homeOf(a, l) } : null,
+    editing: ed ? { id: ed.id, title: loc(ed.title, l), ...homeOf(ed, l) } : null,
   };
 }
 
@@ -196,7 +217,22 @@ export async function homeData(o: {
     imported: importedIds(),
     progress,
   });
-  return pickResume(list, last, o.lang);
+  // the course to resume: its tasks not done yet (one course, so one read)
+  const open = new Map<string, string[]>();
+  if (last) {
+    const c = list.find((x) => x.id === last.id)?.course;
+    if (c)
+      try {
+        const atts = await store.listAttempts({
+          courseId: c.id,
+          profileId: o.profileId ?? "local",
+        });
+        open.set(c.id, openTaskSteps(c, atts));
+      } catch {
+        /* no attempts: the position alone decides */
+      }
+  }
+  return pickResume(list, last, o.lang, open);
 }
 
 // ------------------------------------------------------------------ covers

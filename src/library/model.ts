@@ -401,6 +401,11 @@ export interface Shelf {
   /** what the formation page draws, card for card (= the sum of its subjects) */
   total: number;
   done: number;
+  /** the same cards by kind: slide courses, simulator flights, check-lists (audit §4: « 10 cours · 23 vols ») */
+  kinds: Record<LibKind | "all", number>;
+  /** subjects with something to open, and all the subjects of the syllabus */
+  ready: number;
+  subjects: number;
   groups: { group: SubjectGroup | null; subjects: ShelfSubject[] }[];
 }
 /** The formations of the landing, each with the counts its page shows (programView, unfiltered). */
@@ -414,8 +419,26 @@ export function shelves(list: readonly LibItem[]): Shelf[] {
       if (!row) groups.push((row = { group: g, subjects: [] }));
       row.subjects.push(s);
     }
-    return { program: p, total: v.total, done: v.done, groups };
+    const cov = coverage(v);
+    return {
+      program: p,
+      total: v.total,
+      done: v.done,
+      kinds: v.kinds,
+      ready: cov.ready,
+      subjects: cov.subjects,
+      groups,
+    };
   });
+}
+/** How much of a syllabus is ready (audit §4): subjects with something to open, subjects still « en préparation ». */
+export function coverage(v: Pick<ProgramView, "index">): {
+  ready: number;
+  soon: number;
+  subjects: number;
+} {
+  const ready = v.index.filter((x) => x.n > 0).length;
+  return { ready, soon: v.index.length - ready, subjects: v.index.length };
 }
 
 // ------------------------------------------------------------------ a programme page

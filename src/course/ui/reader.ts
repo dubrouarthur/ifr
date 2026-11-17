@@ -27,6 +27,8 @@ const S = {
   // top bar, footer, navigation
   backToLibrary: ["Back to the library", "Retour à la bibliothèque"],
   library: ["Library", "Bibliothèque"],
+  // the editor's student preview goes back to the editor (audit §34)
+  backToEditing: ["Back to editing", "Retour à l’éditeur"],
   backToEditor: ["Back to the editor", "Retour à l’éditeur"],
   reader: ["Lesson text", "Texte de la leçon"],
   outline: ["Contents", "Sommaire"],
@@ -45,13 +47,14 @@ const S = {
   right: ["right", "juste"],
   wrong: ["wrong", "faux"],
   todoShort: ["to do", "à faire"],
+  unanswered: ["no answer", "sans réponse"],
+  notFlown: ["not flown", "pas fait"],
   liveInstrument: ["Live instrument", "Instrument en direct"],
   language: ["Language", "Langue"],
   stepOf: ["Step {n} of {total}", "Étape {n} sur {total}"],
   next: ["Next", "Suivant"],
   back: ["Previous", "Précédent"],
   revealNext: ["Next point", "Point suivant"],
-  showMore: ["Show more", "Afficher la suite"],
   moreLeft: ["{n} more on this step", "encore {n} sur cette étape"],
   hint: ["A hint", "Un indice"],
   hideHint: ["Hide hint", "Masquer l’indice"],
@@ -295,9 +298,17 @@ const S = {
   ],
   goalsMet: ["Goals met", "Objectifs atteints"],
   answeredRight: ["Answered right", "Bonnes réponses"],
-  skippedSteps: ["Steps skipped", "Étapes sautées"],
+  skippedSteps: ["Exercises to do", "Exercices à faire"],
   flights: ["Flights", "Vols"],
   printHandout: ["Print the summary sheet", "Imprimer le mémo"],
+  finishTasks: ["Finish the exercises ({n})", "Finir les exercices ({n})"],
+  nextCourse: ["Next course: {t}", "Cours suivant : {t}"],
+  backToPlace: ["Back to {p}", "Retour à {p}"],
+  present: ["Present", "Présenter"],
+  share: ["Share", "Partager"],
+  duplicateEdit: ["Duplicate to edit", "Dupliquer pour modifier"],
+  editCourse: ["Edit", "Modifier"],
+  endMore: ["With this course", "Avec ce cours"],
   handoutTitle: ["Summary sheet", "Mémo"],
   myAnswer: ["My answer: {a}", "Ma réponse : {a}"],
 } as const satisfies Record<string, readonly [string, string]>;
@@ -351,8 +362,9 @@ export const KINDS: Record<StepKind, KindInfo> = {
   explain: { cls: "explain", label: ["Explain", "Explication"], acts: false },
   predict: { cls: "predict", label: ["Predict", "Prédire"], acts: true },
   watch: { cls: "watch", label: ["Watch", "Regarder"], acts: false },
-  try: { cls: "try", label: ["Try it", "Manipulation"], acts: true },
-  tap: { cls: "try", label: ["Exercise", "Exercice"], acts: true },
+  // every exercise on an instrument is « À vous » (the one glossary, audit §41)
+  try: { cls: "try", label: ["Your turn", "À vous"], acts: true },
+  tap: { cls: "try", label: ["Your turn", "À vous"], acts: true },
   quiz: { cls: "quiz", label: ["Quiz", "Quiz"], acts: true },
   fly: {
     cls: "fly",
@@ -394,30 +406,46 @@ export function isTask(step: Step): boolean {
   if (step.kind === "try") return !!step.goal;
   return true;
 }
-/** The learner-side word of a step's task (UX logic §2): Manipulation · Exercice · Calcul · Quiz · Vol au
- *  simulateur; a reading step has none (null). */
-export function taskLabel(step: Step, lang: Lang): string | null {
-  const fr = lang === "fr";
+/** What kind of task a step asks, in the one glossary (audit §41): « À vous » for every exercise on an instrument,
+ *  « Question », « Calcul », « Vol au simulateur »; null for a reading step. A designed slide is read by its blocks. */
+export type TaskWord = "yourTurn" | "question" | "calc" | "flight";
+export function taskWord(step: Step): TaskWord | null {
+  const bs = step.slide?.blocks ?? [];
+  const yt = bs.find((b) => !!(b as { yourTurn?: unknown }).yourTurn) as
+    | { yourTurn?: { where?: string } }
+    | undefined;
+  if (yt) return yt.yourTurn?.where === "sim" ? "flight" : "yourTurn";
+  if (bs.some((b) => b.kind === "quiz")) return "question";
+  if (bs.some((b) => b.kind === "calc")) return "calc";
   switch (step.kind) {
     case "try":
-      return step.goal
-        ? fr
-          ? "Exercice"
-          : "Exercise"
-        : fr
-          ? "Manipulation"
-          : "Try it";
     case "tap":
     case "plate":
-      return fr ? "Exercice" : "Exercise";
+      return "yourTurn";
     case "calc":
     case "drill":
-      return fr ? "Calcul" : "Calculation";
+      return "calc";
     case "quiz":
     case "predict":
     case "decision":
-      return "Quiz";
+      return "question";
     case "fly":
+      return "flight";
+    default:
+      return null;
+  }
+}
+/** The learner-side word of a step's task: À vous · Calcul · Question · Vol au simulateur; a reading step has none. */
+export function taskLabel(step: Step, lang: Lang): string | null {
+  const fr = lang === "fr";
+  switch (taskWord(step)) {
+    case "yourTurn":
+      return fr ? "À vous" : "Your turn";
+    case "question":
+      return "Question";
+    case "calc":
+      return fr ? "Calcul" : "Calculation";
+    case "flight":
       return fr ? "Vol au simulateur" : "Simulator flight";
     default:
       return null;
@@ -474,6 +502,9 @@ const ICONS = {
   plane: "M2 16l20-6-20-6 4 6zM6 10h8",
   flag: "M5 21V4h11l-2 4 2 4H5",
   sigma: "M18 5H6l6 7-6 7h12",
+  share: "M4 13v6h16v-6M12 3v12M7.5 7.5L12 3l4.5 4.5",
+  present: "M3 4h18v12H3zM12 16v4M8 20h8",
+  copy: "M9 9h11v11H9zM5 15V4h11",
 } as const;
 export type IconName = keyof typeof ICONS;
 export function icon(name: IconName, cls = "i"): SVGSVGElement {

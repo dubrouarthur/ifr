@@ -4547,6 +4547,40 @@ html.ga-doc body {
 .cp-app .cp-summary .cp-qact {
   width: 100%;
 }
+/* the end screen: one way on, then what to do with the course, then the way back as a link */
+.cp-app .cp-summary .cp-end-acts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  width: 100%;
+}
+.cp-app .cp-summary .cp-end-next .cp-bl {
+  white-space: normal;
+  text-align: left;
+}
+.cp-app .cp-summary .cp-end-more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cp-app .cp-summary .cp-end-back {
+  min-height: 44px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.cp-app .cp-summary .cp-end-back:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 .cp-app .cp-summary .cp-ol-row.is-todo .st {
   color: var(--warn);
   font-weight: 600;
@@ -4569,6 +4603,29 @@ html.ga-doc body {
 }
 .cp-app[data-next="go"] .sl-hud-btn.sl-yourturn .sl-hud-ic {
   background: var(--good);
+}
+/* an exercise done with the slide's own controls: « Agrandir » is a quiet button above the instrument, never on a dial
+   (the renderer anchors it 16 px inside the corner: this moves it just outside, right edges aligned) */
+.sl-hud-btn.sl-yourturn.is-enlarge,
+.cp-app[data-next] .sl-hud-btn.sl-yourturn.is-enlarge {
+  translate: 16px -24px;
+  min-height: 44px;
+  padding: 0 14px;
+  gap: 8px;
+  font-size: 14px;
+  background: #ffffff;
+  color: #14181f;
+  box-shadow: inset 0 0 0 1px #cbc7be;
+}
+.sl-hud-btn.sl-yourturn.is-enlarge .sl-hud-ic {
+  width: 12px;
+  height: 12px;
+  background: none;
+  border: 2px solid currentColor;
+  border-radius: 3px;
+}
+.sl-hud-btn.sl-yourturn.is-enlarge:hover {
+  background: #f3f1ec;
 }
 .cp-app .cp-summary .cp-sum-again {
   display: flex;
@@ -4719,4 +4776,73 @@ html.ga-doc body {
 .pr-app .sl-hud-btn.sl-yourturn,
 .ga-projector .sl-hud-btn.sl-yourturn {
   display: none;
+}
+
+/* the player's « Présenter » and « Partager »: quiet, and only where the bar has room (the end screen keeps them) */
+.cp-app .cp-top .cp-topact {
+  background: transparent;
+}
+@media (max-width: 1100px) {
+  .cp-app .cp-top .cp-topact {
+    display: none;
+  }
+}
+
+/* a question on a slide: « Réessayer » after a wrong answer, in the feedback line (44 CSS px at any slide scale) */
+.sl-quiz .sl-q-retry {
+  display: inline-flex;
+  align-items: center;
+  margin-left: calc(16px * var(--q, 1));
+  min-height: calc(44px / var(--sl-k, 1));
+  padding: 0 calc(24px * var(--q, 1));
+  border-radius: 10px;
+  border: 2px solid var(--sl-accent, #1d5fd1);
+  background: transparent;
+  color: var(--sl-accent, #1d5fd1);
+  font: 600 max(22px, calc(24px * var(--q, 1))) / 1.2 var(--sl-font-body, inherit);
+  cursor: pointer;
+  vertical-align: middle;
+}
+.sl-quiz .sl-q-retry:focus-visible {
+  outline: 3px solid var(--sl-cyan, #1d5fd1);
+  outline-offset: 2px;
+}
+/* the same answers under a small slide (phone, portrait tablet): 44 px buttons; hidden where the slide is big */
+.cp-slidequiz {
+  display: none;
+}
+@media (max-aspect-ratio: 1/1), (max-width: 900px) {
+  .cp-body[data-layout="canvas"] .cp-slidequiz {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0 16px 24px;
+    padding: 18px 20px;
+    max-width: 760px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+  }
+  .cp-slidequiz .cp-opts {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .cp-slidequiz .cp-opt {
+    min-height: 48px;
+    font-size: 16px;
+  }
+  .cp-slidequiz .cp-sq-why {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  /* the small slide's own « Réessayer » would be a blot: the one under it does the same */
+  .cp-body[data-layout="canvas"] .sl-quiz .sl-q-retry {
+    display: none;
+  }
+  .cp-slidequiz .cp-btn[hidden],
+  .cp-slidequiz .cp-sq-why[hidden] {
+    display: none;
+  }
 }

@@ -324,11 +324,15 @@ export function paneAriaLabel(
 export function sceneLine(
   sim: Sim,
   lang: Lang = "en",
+  /** false: no navaid part (an exercise that is not about navigation) */
+  nav = true,
 ): { main: string; extra: string } {
   const s = sim.ac.s;
   const n = sim.nav1.valid ? sim.nav1 : sim.nav2.valid ? sim.nav2 : null;
   let main = "";
-  if (n) {
+  if (!nav) {
+    /* only the altitude and the wind below */
+  } else if (n) {
     const nav = NAVAIDS.find((x) => x.ident === n.ident);
     const dist = nav ? distanceNm(s, nav) : null;
     main = `${n.ident} R-${pad3(n.radial)}${dist !== null ? ` · ${dec1(dist, lang)} NM` : ""}`;

@@ -834,3 +834,12 @@ html body.touch .topbar .tb-actions .btn {
     display: none;
   }
 }
+/* phone (audit §6): the situation bar keeps phase, altitude and conditions; next point, wind and minima are on the
+   instruments and would overlap one another at this width */
+@media (max-width: 600px) {
+  .cockpit .sitbar .sb-cells > .sb:nth-child(2),
+  .cockpit .sitbar .sb-cells > .sb:nth-child(4),
+  .cockpit .sitbar .sb-cells > .sb:nth-child(5) {
+    display: none;
+  }
+}

@@ -401,7 +401,8 @@ describe("outline and progress", () => {
     const q = step({ id: "q", kind: "quiz" });
     expect(markText(q, { visited: true, answered: true, correct: true }, "fr")).toBe("juste");
     expect(markText(q, { visited: true, answered: true }, "fr")).toBe("faux");
-    expect(markText(q, { visited: true, skipped: true }, "fr")).toBe("à faire");
+    // an open question is « sans réponse » (audit §1: each row in its own words)
+    expect(markText(q, { visited: true, skipped: true }, "fr")).toBe("sans réponse");
     expect(markText(ex, { visited: true }, "fr")).toBe("vu");
     expect(markText(tr, undefined, "en")).toBe("");
   });
@@ -664,7 +665,8 @@ describe("reader rules", () => {
       fallback: false,
     });
     expect(ps("stepOf", "fr", { n: 3, total: 12 })).toBe("Étape 3 sur 12");
-    expect(kindLabel("try", "fr")).toBe("Manipulation");
+    // every exercise on an instrument is « À vous » (one glossary, audit §41)
+    expect(kindLabel("try", "fr")).toBe("À vous");
     expect(stepMeta(step({ kind: "calc", minutes: 3 }), "en")).toBe(
       "about 3 min · practice, not graded",
     );

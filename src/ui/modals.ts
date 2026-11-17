@@ -177,7 +177,12 @@ export class Launcher extends Modal {
   assess: AssessSettings = store.get<AssessSettings>('ifr.assess', { mode: 'training', student: '', handFlown: false, randomFailure: false });
   constructor(private onFly: (sc: Scenario, wx: WxPreset, a: AssessSettings) => void) {
     super('Choose your flight');
+  }
+  /** drawn when opened only: the old English launcher's « Fly real IFR » h1 is not the first heading of the page
+   *  (audit §63; Accueil is the place every flight starts) */
+  open() {
     this.render();
+    super.open();
   }
   render() {
     clear(this.body);
@@ -377,6 +382,22 @@ export class DirectModal extends Modal {
 }
 
 // ----------------------------------------------------------------- joystick
+/** a word of these dialogs in the UI language (audit §26: no English in the French cockpit) */
+const W2 = (en: string, fr: string) => (uiLang() === 'fr' ? fr : en);
+const AXIS_FR: Record<AxisName, string> = { roll: 'Roulis (ailerons)', pitch: 'Tangage (profondeur)', yaw: 'Lacet (palonnier)', throttle: 'Puissance', brake: 'Freins (pédales)' };
+const BUTTON_FR: Record<ButtonAction, string> = {
+  apDisc: 'Déconnexion PA', apToggle: 'Engager le PA', toga: 'TOGA / remise de gaz', trimUp: 'Trim à cabrer', trimDn: 'Trim à piquer',
+  flapsUp: 'Rentrer les volets', flapsDn: 'Sortir les volets', brake: 'Freins (maintenir)', cdi: 'Source CDI', pause: 'Pause', hdgSync: 'Synchro HDG',
+};
+const axisLabel = (a: AxisName) => (uiLang() === 'fr' ? AXIS_FR[a] : AXIS_LABELS[a]);
+const buttonLabel = (b: ButtonAction) => (uiLang() === 'fr' ? BUTTON_FR[b] : BUTTON_LABELS[b]);
+/** a dialog's heading (and its accessible name) in the UI language, set each time it opens */
+function retitle(m: { box: HTMLElement }, en: string, fr: string) {
+  const t = W2(en, fr);
+  m.box.setAttribute('aria-label', t);
+  const h2 = m.box.querySelector('header h2');
+  if (h2) h2.textContent = t;
+}
 export class JoystickModal extends Modal {
   private listen: { kind: 'axis' | 'button'; name: string; det: AxisDetector } | null = null;
   private raf = 0;
@@ -385,6 +406,7 @@ export class JoystickModal extends Modal {
     this.onClose = () => cancelAnimationFrame(this.raf);
   }
   open() {
+    retitle(this as unknown as { box: HTMLElement }, 'Controllers', 'Manettes');
     super.open();
     this.render();
     const tick = () => {
@@ -402,46 +424,46 @@ export class JoystickModal extends Modal {
       this.body.append(
         h('div', { class: 'joy-empty' },
           (() => { const ic = svgIcon(I.joystick, 40); ic.classList.add('empty-ico'); return ic; })(),
-          h('h3', {}, 'No controller detected'),
-          h('p', {}, 'Plug in your joystick, yoke, rudder pedals or gamepad and press any button on it. Browsers only expose controllers after a button press.'),
-          h('p', { class: 'small' }, 'Works with Chrome, Edge and Firefox (Gamepad API). On the keyboard: arrow keys for the yoke, comma and period for the rudder, + / − or 1–0 for the throttle, Home / End for trim.'),
+          h('h3', {}, W2('No controller detected', 'Aucune manette détectée')),
+          h('p', {}, W2('Plug in your joystick, yoke, rudder pedals or gamepad and press any button on it. Browsers only expose controllers after a button press.', 'Branchez votre joystick, votre manche, votre palonnier ou votre manette de jeu, puis appuyez sur l’un de ses boutons : le navigateur ne la montre qu’après un appui.')),
+          h('p', { class: 'small' }, W2('On the keyboard: arrow keys for the yoke, comma and period for the rudder, + / − or 1–0 for the throttle, Home / End for trim.', 'Au clavier : les flèches pour le manche, la virgule et le point pour le palonnier, + / − ou 1 à 0 pour la puissance, Début / Fin pour le trim.')),
         ),
       );
-      this.foot.append(h('button', { class: 'btn', onclick: () => this.render() }, 'Re-scan'));
+      this.foot.append(h('button', { class: 'btn', onclick: () => this.render() }, W2('Look again', 'Chercher à nouveau')));
       return;
     }
     const p = this.input.profile!;
     if (pads.length > 1) {
       const sel = h('select', { onchange: (e: Event) => { this.input.attach(Number((e.target as HTMLSelectElement).value)); this.render(); } }, ...pads.map((g) => h('option', { value: g.index, selected: g.index === pad.index }, g.id)));
-      this.body.append(h('label', { class: 'field' }, h('b', {}, 'Controller'), sel));
+      this.body.append(h('label', { class: 'field' }, h('b', {}, W2('Controller', 'Manette')), sel));
     } else this.body.append(h('div', { class: 'chip live' }, pad.id.slice(0, 80)));
-    this.body.append(h('div', { class: 'section-t' }, 'Axes — click Assign, then move the control'));
+    this.body.append(h('div', { class: 'section-t' }, W2('Axes — click Assign, then move the control', 'Axes : cliquez sur Attribuer, puis bougez la commande')));
     const axes = h('div', { class: 'axes' });
     for (const name of Object.keys(AXIS_LABELS) as AxisName[]) {
       const m = p.axes[name];
       const listening = this.listen?.kind === 'axis' && this.listen.name === name;
       axes.append(
         h('div', { class: 'axis-row' },
-          h('b', {}, AXIS_LABELS[name]),
+          h('b', {}, axisLabel(name)),
           h('div', { class: 'bar', 'data-axis': name }, h('b', {}), h('i', {})),
-          h('button', { class: `btn${listening ? ' listening' : ''}`, onclick: () => { this.listen = { kind: 'axis', name, det: new AxisDetector(() => this.input.current()) }; this.render(); } }, listening ? 'Move it…' : m.index === null ? 'Assign' : `Axis ${m.index}`),
-          h('label', { class: 'ctl' }, h('input', { type: 'checkbox', checked: m.invert, onchange: (e: Event) => { m.invert = (e.target as HTMLInputElement).checked; this.input.saveProfile(); } }), 'Invert'),
-          h('select', { title: 'Response curve', onchange: (e: Event) => { m.curve = Number((e.target as HTMLSelectElement).value); this.input.saveProfile(); } },
-            ...[[0, 'Linear'], [0.3, 'Soft'], [0.6, 'Expo']].map(([v, l]) => h('option', { value: v, selected: Math.abs(m.curve - (v as number)) < 0.01 }, l as string))),
+          h('button', { class: `btn${listening ? ' listening' : ''}`, onclick: () => { this.listen = { kind: 'axis', name, det: new AxisDetector(() => this.input.current()) }; this.render(); } }, listening ? W2('Move it…', 'Bougez-la…') : m.index === null ? W2('Assign', 'Attribuer') : `${W2('Axis', 'Axe')} ${m.index}`),
+          h('label', { class: 'ctl' }, h('input', { type: 'checkbox', checked: m.invert, onchange: (e: Event) => { m.invert = (e.target as HTMLInputElement).checked; this.input.saveProfile(); } }), W2('Invert', 'Inverser')),
+          h('select', { title: W2('Response curve', 'Courbe de réponse'), onchange: (e: Event) => { m.curve = Number((e.target as HTMLSelectElement).value); this.input.saveProfile(); } },
+            ...[[0, W2('Linear', 'Linéaire')], [0.3, W2('Soft', 'Douce')], [0.6, 'Expo']].map(([v, l]) => h('option', { value: v, selected: Math.abs(m.curve - (v as number)) < 0.01 }, l as string))),
         ),
       );
     }
     this.body.append(axes);
-    this.body.append(h('div', { class: 'section-t' }, 'Buttons — click a slot, then press the button'));
+    this.body.append(h('div', { class: 'section-t' }, W2('Buttons — click a slot, then press the button', 'Boutons : cliquez sur une case, puis appuyez sur le bouton')));
     const grid = h('div', { class: 'btn-grid' });
     for (const a of Object.keys(BUTTON_LABELS) as ButtonAction[]) {
       const idx = p.buttons[a];
       const listening = this.listen?.kind === 'button' && this.listen.name === a;
-      grid.append(h('div', { class: 'row' }, h('span', {}, BUTTON_LABELS[a]), h('button', { class: `btn${listening ? ' listening' : ''}`, 'data-btn': idx ?? '', onclick: () => { this.listen = { kind: 'button', name: a, det: new AxisDetector(() => this.input.current()) }; this.render(); } }, listening ? 'Press…' : idx === undefined ? '—' : `Btn ${idx}`)));
+      grid.append(h('div', { class: 'row' }, h('span', {}, buttonLabel(a)), h('button', { class: `btn${listening ? ' listening' : ''}`, 'data-btn': idx ?? '', onclick: () => { this.listen = { kind: 'button', name: a, det: new AxisDetector(() => this.input.current()) }; this.render(); } }, listening ? W2('Press…', 'Appuyez…') : idx === undefined ? '—' : `${W2('Btn', 'Bouton')} ${idx}`)));
     }
     this.body.append(grid);
-    this.body.append(h('div', { class: 'section-t' }, 'Raw input'), h('div', { class: 'raw-axes', 'data-raw': '1' }));
-    this.foot.append(h('button', { class: 'btn danger', onclick: () => { this.input.resetProfile(); this.render(); } }, 'Reset to defaults'), h('button', { class: 'btn primary', onclick: () => { this.input.saveProfile(); this.close(); } }, 'Save'));
+    this.body.append(h('div', { class: 'section-t' }, W2('Raw input', 'Entrées brutes')), h('div', { class: 'raw-axes', 'data-raw': '1' }));
+    this.foot.append(h('button', { class: 'btn danger', onclick: () => { this.input.resetProfile(); this.render(); } }, W2('Reset to defaults', 'Valeurs par défaut')), h('button', { class: 'btn primary', onclick: () => { this.input.saveProfile(); this.close(); } }, W2('Save', 'Enregistrer')));
   }
   private live() {
     const pad = this.input.current();
@@ -541,48 +563,60 @@ export function saveFlightRecord(sim: Sim): ProcAttempt | null {
 export class HelpModal extends Modal {
   constructor() {
     super('Keyboard shortcuts', 'md');
-    const rows: [string, string][] = [
-      ['Pitch / roll (yoke)', '↑ ↓ ← →'],
-      ['Rudder', ', .'],
-      ['Throttle', '+ / −  or  1…0'],
-      ['Trim nose down / up', 'Home / End'],
-      ['Flaps down / up', 'F / Shift+F'],
-      ['Brakes', 'Space (hold)'],
-      ['Autopilot on/off', 'A'],
-      ['Flight director', 'Shift+A'],
-      ['HDG / NAV / APR', 'H / N / R'],
-      ['ALT hold / VS / FLC', 'L / Y / Shift+K'],
-      ['Nose up / down (AP)', 'Shift+↑ / Shift+↓'],
-      ['Heading bug ±1° (Shift ±10°)', 'Q / E'],
-      ['Altitude select ±100 ft', 'W / S'],
-      ['Course (OBS) ±1° (Shift ±10°)', 'O / P'],
-      ['CDI source GPS/NAV1/NAV2', 'C'],
-      ['Direct-To', 'D'],
-      ['Procedures (load approach)', 'X'],
-      ['Charts drawer', 'K'],
-      ['Go-around / missed approach', 'G'],
-      ['Set altimeter to QNH', 'B'],
-      ['Timer start/stop', 'T'],
-      ['Pause', 'Esc / Pause'],
-      ['Sim rate', 'Ctrl+1 / 2 / 4'],
-      ['Outside view size', 'Tab'],
-      ['Debrief / checkride report', 'Shift+D'],
-      ['Instructor station', 'I'],
-      ['Learn (paths & exercises)', 'J'],
-      ['Sound on/off', 'M'],
-      ['Plan a flight', 'U'],
-      ['Aircraft systems panel (switches, mixture, fuel)', 'Z'],
-      ['Emergency checklist: open / fold', 'Shift+C'],
-      ['Outside view (camera)', 'V / Shift+V'],
-      ['Knob step buttons', 'right-click a knob (tap on a touch screen)'],
-      ['Home', 'F2'],
-      ['This help', '?'],
+  }
+  /** drawn in the UI language each time it opens; the flight keys first (audit §25, §26) */
+  open() {
+    retitle(this, 'Keyboard shortcuts', 'Raccourcis clavier');
+    this.render();
+    super.open();
+  }
+  private render() {
+    clear(this.body);
+    const fr = uiLang() === 'fr';
+    // [English, French, keys, French keys when they differ]
+    const rows: [string, string, string, string?][] = [
+      ['Pitch / roll (yoke)', 'Tangage / roulis (manche)', '↑ ↓ ← →'],
+      ['Rudder', 'Palonnier', ', .'],
+      ['Throttle', 'Puissance', '+ / −  or  1…0', '+ / −  ou  1…0'],
+      ['Trim nose down / up', 'Trim à piquer / à cabrer', 'Home / End', 'Début / Fin'],
+      ['Flaps down / up', 'Sortir / rentrer les volets', 'F / Shift+F', 'F / Maj+F'],
+      ['Brakes', 'Freins', 'Space (hold)', 'Espace (maintenir)'],
+      ['Pause', 'Pause', 'Esc / Pause', 'Échap / Pause'],
+      ['Go-around / missed approach', 'Remise de gaz / approche interrompue', 'G'],
+      ['Autopilot on/off', 'Pilote automatique marche / arrêt', 'A'],
+      ['Flight director', 'Directeur de vol', 'Shift+A', 'Maj+A'],
+      ['HDG / NAV / APR', 'HDG / NAV / APR', 'H / N / R'],
+      ['ALT hold / VS / FLC', 'Tenue ALT / VS / FLC', 'L / Y / Shift+K', 'L / Y / Maj+K'],
+      ['Nose up / down (AP)', 'Nez haut / bas (PA)', 'Shift+↑ / Shift+↓', 'Maj+↑ / Maj+↓'],
+      ['Heading bug ±1° (Shift ±10°)', 'Repère de cap ±1° (Maj ±10°)', 'Q / E'],
+      ['Altitude select ±100 ft', 'Altitude sélectée ±100 ft', 'W / S'],
+      ['Course (OBS) ±1° (Shift ±10°)', 'Route (OBS) ±1° (Maj ±10°)', 'O / P'],
+      ['CDI source GPS/NAV1/NAV2', 'Source CDI GPS / NAV1 / NAV2', 'C'],
+      ['Direct-To', 'Direct-To', 'D'],
+      ['Procedures (load approach)', 'Procédures (charger une approche)', 'X'],
+      ['Charts drawer', 'Tiroir des cartes', 'K'],
+      ['Set altimeter to QNH', 'Caler l’altimètre au QNH', 'B'],
+      ['Timer start/stop', 'Chrono marche / arrêt', 'T'],
+      ['Sim rate', 'Vitesse de simulation', 'Ctrl+1 / 2 / 4'],
+      ['Outside view size', 'Taille de la vue extérieure', 'Tab'],
+      ['Debrief / checkride report', 'Débriefing / rapport de test', 'Shift+D', 'Maj+D'],
+      ['Instructor station', 'Poste instructeur', 'I'],
+      ['Learn (paths & exercises)', 'Apprendre (parcours et exercices)', 'J'],
+      ['Sound on/off', 'Son marche / arrêt', 'M'],
+      ['Plan a flight', 'Préparer un vol', 'U'],
+      ['Aircraft systems panel (switches, mixture, fuel)', 'Systèmes de l’avion (interrupteurs, mélange, carburant)', 'Z'],
+      ['Emergency checklist: open / fold', 'Check-list d’urgence : ouvrir / replier', 'Shift+C', 'Maj+C'],
+      ['Outside view (camera)', 'Vue extérieure (caméra)', 'V / Shift+V', 'V / Maj+V'],
+      ['Knob step buttons', 'Boutons de réglage fin', 'right-click a knob (tap on a touch screen)', 'clic droit sur un bouton (toucher sur un écran tactile)'],
+      ['Home', 'Accueil', 'F2'],
+      ['This help', 'Cette aide', '?'],
     ];
+    const or = fr ? 'ou' : 'or';
     // keys: chips; "or" and "/" are plain text between them; single keys in a row (", ." rudder, arrows) are chips each
     const keys = (k: string) => {
       const out: (HTMLElement | string)[] = [];
-      k.split(/\s{2}or\s{2}/).forEach((alt, i) => {
-        if (i) out.push(h('span', { class: 'kbd-or' }, 'or'));
+      k.split(new RegExp(`\\s{2}${or}\\s{2}`)).forEach((alt, i) => {
+        if (i) out.push(h('span', { class: 'kbd-or' }, or));
         alt.split(' / ').forEach((chip, j) => {
           if (j) out.push(h('span', { class: 'kbd-sep' }, '/'));
           for (const c of /^\S( \S)+$/.test(chip) ? chip.split(' ') : [chip]) out.push(h('kbd', {}, c));
@@ -590,12 +624,16 @@ export class HelpModal extends Modal {
       });
       return out;
     };
-    this.body.append(h('div', { class: 'help-grid' }, ...rows.map(([a, k]) => h('div', {}, h('span', {}, a), h('span', { class: 'keys' }, ...keys(k))))));
+    this.body.append(h('div', { class: 'help-grid' }, ...rows.map(([en, f, k, kf]) => h('div', {}, h('span', {}, fr ? f : en), h('span', { class: 'keys' }, ...keys(fr ? (kf ?? k) : k))))));
     this.body.append(
-      h('div', { class: 'section-t' }, 'Glass cockpit'),
-      h('p', { class: 'help-p' }, 'Every bezel knob responds to the mouse wheel, dragging, or clicking its left/right half (Shift or the outer ring = coarse). Click the centre of HDG to sync the bug, CRS to centre the needle, ALT to set current altitude. The PFD and MFD softkeys along the bottom of each screen are clickable. Pulling hard on the yoke with the autopilot engaged disconnects it.'),
-      h('div', { class: 'section-t' }, 'Disclaimer'),
-      h('p', { class: 'help-p' }, 'Training region, navaids and procedures are fictional. Not for real-world navigation.'),
+      h('div', { class: 'section-t' }, fr ? 'Cockpit à écrans' : 'Glass cockpit'),
+      h('p', { class: 'help-p' }, fr
+        ? 'Chaque bouton des écrans répond à la molette, au glisser ou à un clic sur sa moitié gauche ou droite (Maj ou l’anneau extérieur : pas large). Un clic au centre de HDG synchronise le repère, de CRS centre l’aiguille, d’ALT prend l’altitude actuelle. Les touches sous chaque écran se cliquent. Tirer fort sur le manche, pilote automatique engagé, le déconnecte.'
+        : 'Every bezel knob responds to the mouse wheel, dragging, or clicking its left/right half (Shift or the outer ring = coarse). Click the centre of HDG to sync the bug, CRS to centre the needle, ALT to set current altitude. The PFD and MFD softkeys along the bottom of each screen are clickable. Pulling hard on the yoke with the autopilot engaged disconnects it.'),
+      h('div', { class: 'section-t' }, fr ? 'Avertissement' : 'Disclaimer'),
+      h('p', { class: 'help-p' }, fr
+        ? 'La région d’entraînement, ses balises et ses procédures sont fictives. Ne pas utiliser pour la navigation réelle.'
+        : 'Training region, navaids and procedures are fictional. Not for real-world navigation.'),
     );
   }
 }

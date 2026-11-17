@@ -1,1 +1,19 @@
-/* placeholder so the glob has a match; area stylesheets live alongside */
+/* The page tokens every light page shares (audit §43): one width, one gutter, one h1, one button height, one card
+   radius. Loaded by both pages (index through styles/load.ts, academy through ui/appBar.ts). */
+:root {
+  --page-max: 1200px;
+  /* a formation page carries its Sommaire rail beside the same content column */
+  --page-max-rail: calc(var(--page-max) + 160px);
+  --gutter: clamp(16px, 4vw, 40px);
+  --h1: 2.375rem;
+  --btn-h: 44px;
+  --radius-card: 14px;
+}
+/* a page's title row: the title and its one action on the same baseline (« Nouveau cours » beside the title) */
+.page-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}

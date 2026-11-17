@@ -17,6 +17,7 @@ import {
 } from "./catalog";
 import { PATHS, type Path } from "../train/curriculum";
 import { progress } from "./learn";
+import { scenarioName } from "./scenarioText";
 import { history } from "./history";
 import { approachPlate } from "../plates/plates";
 import { findApproach, TRAINING_REGION } from "../nav/data";
@@ -99,6 +100,10 @@ export interface FcHooks {
   /** procedures mode: open a drill in the flight builder's Drill tab — a DRILL_TEMPLATES id or a saved drill.
    *  Default: the builder's openDrill() (circuitBuilder.ts), else openBuilder(circuit) */
   editDrill?: (x: Circuit | string) => void;
+  /** the flight paused behind Accueil, if one is under way (audit §5); Esc then goes back to it */
+  flight?: () => { title: string; timeS: number } | null;
+  resumeFlight?: () => void;
+  endFlight?: () => void;
 }
 
 /** the sections of the Procedures · Flying club page */
@@ -153,7 +158,7 @@ const CAT_FR: Record<string, string> = {
 const catTitle = (c: { id: string; title: string }) =>
   uiLang() === "fr" ? (CAT_FR[c.id] ?? c.title) : c.title;
 
-type QuickKind = "approach" | "hold";
+type QuickKind = "approach" | "hold" | "free";
 
 const DIFF = ["", "Easy", "Medium", "Hard"];
 const DIFF_FR = ["", "Facile", "Moyen", "Difficile"];
@@ -244,8 +249,10 @@ const aptName = (icao: string) => {
     : icao;
 };
 
-/** the flights Quick start draws from: approaches, or holds, at one airport (all airports when empty) */
+/** the flights Quick start draws from: the free VFR flight (any airport), approaches, or holds, at one airport (all
+ *  airports when empty) */
 export function quickPool(items: Item[], kind: QuickKind, apt: string): Item[] {
+  if (kind === "free") return items.filter((i) => i.cat === "free" && i.sc?.id === "free");
   return items.filter(
     (i) =>
       (kind === "approach"
@@ -253,6 +260,48 @@ export function quickPool(items: Item[], kind: QuickKind, apt: string): Item[] {
         : i.cat === "procedures" && i.sub === "Holdings") &&
       (!apt || i.airport === apt),
   );
+}
+
+/** the browser history of this page (audit §30): #accueil, #simulateur, and #vol for the cockpit */
+const PLACE_HASH = /^#(accueil|simulateur)$/;
+export const COCKPIT_HASH = "#vol";
+/** the flights this page started (newest first): a flight stopped before it could be graded (under 30 s, no
+ *  training record) is still one of « Vos derniers vols » (audit §29) */
+const STARTS_KEY = "ifr.fc.started";
+export interface FlightStart {
+  id: string;
+  at: string;
+}
+export type RecentVerdict = "passed" | "failed" | "ungraded";
+/** « Vos derniers vols »: the training records and the flights started here, one row per flight (its newest),
+ *  newest first. Pure. */
+export function recentEntries(
+  attempts: readonly Attempt[],
+  starts: readonly FlightStart[],
+  items: readonly Item[],
+  max = 8,
+): { item: Item; at: string; verdict: RecentVerdict }[] {
+  const byItem = new Map<string, { item: Item; at: string; verdict: RecentVerdict }>();
+  const put = (item: Item | undefined, at: string, verdict: RecentVerdict) => {
+    if (!item) return;
+    const was = byItem.get(item.id);
+    // a record dates from its take-off, a start from the click just before: a start only wins when it is newer
+    // than the record by more than a minute (the flight flown again and stopped early)
+    if (!was || Date.parse(at) > Date.parse(was.at) + (was.verdict === "ungraded" ? 0 : 60_000))
+      byItem.set(item.id, { item, at, verdict });
+  };
+  for (const a of attempts.slice(0, 20)) {
+    const item = items.find((i) =>
+      a.exercise ? i.id === a.exercise : i.kind === "scenario" && (i.title === a.scenario || i.sc?.name === a.scenario),
+    );
+    put(
+      item,
+      a.date,
+      a.graded === false ? "ungraded" : (a.passed ?? a.score >= 70) ? "passed" : "failed",
+    );
+  }
+  for (const s of starts) put(items.find((i) => i.id === s.id), s.at, "ungraded");
+  return [...byItem.values()].sort((x, y) => Date.parse(y.at) - Date.parse(x.at)).slice(0, max);
 }
 
 /** the Continue card: the next lesson of the syllabus and the last flight flown, when it is in the catalogue */
@@ -984,6 +1033,11 @@ export class FlightCenter extends Modal {
 
   close() {
     const was = this.isOpen;
+    // the cockpit comes forward (a flight starts, or Esc back to the paused one): its own entry in the browser's
+    // history, so Back returns to the page the pilot came from, never out of the app (audit §30). Leaving for
+    // another page or a tool (« Préparer un vol ») does not add one.
+    if (was && !this.leavingForTool && PLACE_HASH.test(location.hash))
+      window.history.pushState(null, "", location.pathname + location.search + COCKPIT_HASH);
     this.closePlate();
     this.closeQuick();
     this.placeView?.destroy();
@@ -1776,46 +1830,39 @@ export class FlightCenter extends Modal {
           .map((icao) => ({ icao, name: aptName(icao) })),
       quickPref: () => {
         const p = store.get<{ kind?: PlaceQuick; apt?: string }>(QUICK_KEY, {});
+        // a first quick flight is the free VFR flight (audit §24)
         return {
-          kind: p.kind === "approach" || p.kind === "hold" ? p.kind : "any",
+          kind: p.kind === "approach" || p.kind === "hold" || p.kind === "any" ? p.kind : "free",
           apt: typeof p.apt === "string" ? p.apt : "",
         };
       },
       setQuickPref: (p) => store.set(QUICK_KEY, p),
+      flight: () => this.hooks.flight?.() ?? null,
+      resumeFlight: () => {
+        this.close();
+        this.hooks.resumeFlight?.();
+      },
+      endFlight: () => {
+        this.close();
+        this.hooks.endFlight?.();
+      },
       planFlight: () => {
         this.returnTo = { view: this.view, focus: ".wd-plan-b" };
         this.leave(() => this.hooks.planFlight());
       },
       recent: () =>
-        history
-          .all()
-          .slice(0, 8)
-          .map((a) => {
-            const item = this.items.find((i) =>
-              a.exercise
-                ? i.id === a.exercise
-                : i.kind === "scenario" && i.title === a.scenario,
-            );
-            if (!item) return null;
-            const title =
-              (fr && item.ex ? LESSON_META[item.ex.id]?.fr : undefined) ??
-              item.title;
-            return {
-              title,
-              when: whenLabel(a.date, fr),
-              verdict:
-                a.graded === false
-                  ? ("ungraded" as const)
-                  : (a.passed ?? a.score >= 70)
-                    ? ("passed" as const)
-                    : ("failed" as const),
-              again: () => {
-                this.returnTo = { view: this.view, focus: "h1" };
-                this.fly(item);
-              },
-            };
-          })
-          .filter((x): x is NonNullable<typeof x> => !!x),
+        recentEntries(history.all(), store.get<FlightStart[]>(STARTS_KEY, []), this.items).map(({ item, at, verdict }) => ({
+          title:
+            (fr && item.ex ? LESSON_META[item.ex.id]?.fr : undefined) ??
+            (fr && item.sc ? scenarioName(item.sc) : undefined) ??
+            item.title,
+          when: whenLabel(at, fr),
+          verdict,
+          again: () => {
+            this.returnTo = { view: this.view, focus: "h1" };
+            this.fly(item);
+          },
+        })),
       lessonToRedo: () => {
         const all = progress.all();
         const row = Object.entries(all)
@@ -1841,9 +1888,13 @@ export class FlightCenter extends Modal {
     };
   }
 
+  /** a place has been shown once: later ones push a history entry */
+  private placed = false;
   /** Accueil or Simulateur, in this page (the app bar's tabs and the doors) */
   showPlace(p: "home" | "sim", focus = "h1") {
     const v: View = p === "sim" ? { type: "sim" } : { type: "home" };
+    // a flight waits behind the page: Esc goes back to it (paused), as the « Vol en cours » card's way back
+    this.escCloses = !!this.hooks.flight?.();
     if (!this.isOpen) {
       this.items = catalog();
       this.view = v;
@@ -1851,8 +1902,13 @@ export class FlightCenter extends Modal {
       super.open();
     } else this.go(v);
     const hash = p === "sim" ? "#simulateur" : "#accueil";
-    if (location.hash !== hash)
-      window.history.replaceState(null, "", location.pathname + location.search + hash);
+    // a place the pilot goes to is a new entry (Back comes back: audit §30); the page's first place is not
+    if (location.hash !== hash) {
+      const url = location.pathname + location.search + hash;
+      if (this.placed) window.history.pushState(null, "", url);
+      else window.history.replaceState(null, "", url);
+    }
+    this.placed = true;
     // the page's title: where you are
     // after the page's own first focus (Modal.trapFocus, a timer too): the title, or the button that opened a
     // dialog which has just closed
@@ -3678,6 +3734,9 @@ export class FlightCenter extends Modal {
   }
 
   private fly(i: Item, path: Path | null = null, quick = false) {
+    // « Vos derniers vols » lists it even if it is stopped before it can be graded (audit §29)
+    const starts = store.get<FlightStart[]>(STARTS_KEY, []).filter((x) => x.id !== i.id);
+    store.set(STARTS_KEY, [{ id: i.id, at: new Date().toISOString() }, ...starts].slice(0, 8));
     this.close();
     if (i.circuit) this.hooks.flyCircuit(i.circuit);
     else if (i.ex)

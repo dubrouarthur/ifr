@@ -27,7 +27,8 @@ registerStrings('en', {
   'br.keepFlying': 'Keep flying',
   'br.cancel': 'Cancel',
   'br.restart': 'Restart the flight',
-  'br.start': 'Start the flight',
+  // the one vocabulary of taking the controls (course/handoverWords.ts): a briefing hands the aircraft over too (audit §27)
+  'br.start': 'Take the controls',
   'br.clearance': 'ATC CLEARANCE',
   'br.quiz': 'Knowledge check',
   'br.right': 'Correct.',
@@ -62,7 +63,7 @@ registerStrings('fr', {
   'br.keepFlying': 'Continuer le vol',
   'br.cancel': 'Annuler',
   'br.restart': 'Recommencer le vol',
-  'br.start': 'Commencer le vol',
+  'br.start': 'Prendre les commandes',
   'br.clearance': 'CLAIRANCE ATC',
   'br.quiz': 'Question de contrôle',
   'br.right': 'Exact.',
@@ -228,7 +229,7 @@ export interface BriefingOptions {
   current?: LessonRun | null;
   /** the briefing closed without Start: Cancel, ×, Esc, a backdrop tap or another window opening */
   onCancel?: () => void;
-  /** Vol rapide (one click): the briefing opens on its last screen, the summary with « Commencer le vol »; the
+  /** Vol rapide (one click): the briefing opens on its last screen, the summary with « Prendre les commandes »; the
    *  slides stay one click away (« Voir le briefing ») and no question has to be answered first */
   quick?: boolean;
 }
@@ -527,7 +528,7 @@ export class BriefingModal extends Modal {
       d && !last && !(pending >= 0 && pending <= d.index)
         ? pending > d.index
           ? h('button', { class: 'btn link bd-skip', type: 'button', title: fr ? 'Aller à la question à répondre avant de démarrer' : 'Go to the question to answer before you start', onclick: toQuestion }, fr ? 'Aller à la question ›' : 'Go to the question ›')
-          : h('button', { class: 'btn link bd-skip', type: 'button', title: fr ? 'Aller au dernier écran, puis Commencer le vol' : 'Go to the last screen, then Start the flight', onclick: () => { d.go(d.count - 1); this.renderBar(); } }, fr ? 'Passer le briefing ›' : 'Skip briefing ›')
+          : h('button', { class: 'btn link bd-skip', type: 'button', title: fr ? 'Aller au dernier écran, puis Prendre les commandes' : 'Go to the last screen, then Take the controls', onclick: () => { d.go(d.count - 1); this.renderBar(); } }, fr ? 'Passer le briefing ›' : 'Skip briefing ›')
         : null,
       this.hint ? h('span', { class: 'bd-hint', role: 'status' }, this.hint) : h('span', { class: 'bd-sp' }),
       ex?.plate ? h('button', { class: 'btn ghost bd-plate', type: 'button', onclick: () => this.onPlate(ex.plate!), title: fr ? 'Ouvrir la carte d’approche dans le visualiseur' : 'Open the approach plate in the chart viewer' }, fr ? 'Carte' : 'Plate') : null,

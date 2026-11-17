@@ -143,7 +143,11 @@ describe("the cockpit chrome, in French (journey review)", () => {
   it("the Plus menu is short: flight, help, settings, and no duplicate of the library or the debrief", () => {
     const src = read("src/main.ts");
     const menu = src.slice(src.indexOf("moreMenu.append("), src.indexOf("// ------", src.indexOf("moreMenu.append(")));
-    expect(menu.match(/menuHead\('/g)).toHaveLength(3);
+    // three groups everywhere; on a phone (≤600 px) a fourth, « Sur cet écran », holds the top bar's View / EFB /
+    // Instructeur buttons that no longer fit (audit §6), and only there
+    expect(menu.match(/menuHead\('/g)).toHaveLength(4);
+    expect(menu).toMatch(/menuHead\('On this screen'\); x\.classList\.add\('phone-only'\)/);
+    expect(menu.match(/menuHead\('(Flight|Help|Settings)'\)/g)).toHaveLength(3);
     expect(menu).not.toMatch(/'Learning paths'|'Training records'|'Library'|'Debrief'|'Direct-To'|'Procedures'/);
     expect(src).toMatch(/Help: 'Aide'/);
   });

@@ -301,6 +301,8 @@ export class StageFrame {
     if (typeof requestAnimationFrame !== "undefined") requestAnimationFrame(place);
   }
   /** The goal strip (the player's GoalTracker state); null hides the goal text. */
+  /** the scene line names the navaid (« ARD R-090 · 8,0 NM ») only for a navigation exercise (the player sets it) */
+  navLine = true;
   setGoal(g: GoalStrip | null) {
     this.goalState = g;
     this.syncGoal();
@@ -435,7 +437,7 @@ export class StageFrame {
       this.scn.textContent = "";
       return;
     }
-    const l = sceneLine(this.host.sim, this.lang);
+    const l = sceneLine(this.host.sim, this.lang, this.navLine);
     this.scn.textContent = l.main;
     if (l.extra) {
       this.scnExtra.textContent = ` · ${l.extra}`;

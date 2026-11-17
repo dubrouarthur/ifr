@@ -121,6 +121,8 @@ describe("the one vocabulary", () => {
       "src/course/i18n.ts",
       "src/course/handover.ts",
       "src/ui/courseFlight.ts",
+      // the lesson briefing hands the aircraft over too (audit §27)
+      "src/ui/learn.ts",
     ];
     for (const f of files) {
       const code = readFileSync(resolve(__dirname, "..", f), "utf8")

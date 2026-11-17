@@ -656,6 +656,113 @@ body.cf-flying .tb-courses {
   font-size: 13px;
   opacity: 0.75;
 }
+/* capture mode: the way back to the slide while the cockpit prepares (the top bar is under the veil) */
+.cf-veil .cf-veil-back {
+  min-height: 44px;
+  margin-left: 8px;
+}
+.cf-veil .cf-veil-back[hidden] {
+  display: none;
+}
+/* a course flight being prepared (audit §16): the step's name, « Briefing ✓ · Vol · Débriefing », a moving bar and
+   « Annuler, revenir au cours » */
+.cf-veil-card.is-fly {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 14px;
+  width: min(460px, calc(100vw - 32px));
+  padding: 22px 24px;
+}
+.cf-veil-card.is-fly > .cf-veil-steps,
+.cf-veil-card.is-fly > .cf-veil-bar,
+.cf-veil-card.is-fly > .cf-veil-back {
+  grid-column: 1 / -1;
+}
+.cf-veil-card.is-fly > .cf-veil-back {
+  justify-self: start;
+  margin-left: 0;
+}
+.cf-veil-card.is-fly .cf-veil-t small {
+  font-size: 14px;
+  opacity: 1;
+  color: #46505c;
+}
+.cf-veil-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font: 600 13.5px/1.3 var(--font, system-ui, sans-serif);
+  color: #5d6671;
+}
+.cf-veil-steps[hidden],
+.cf-veil-bar[hidden] {
+  display: none;
+}
+.cf-veil-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cf-veil-steps li::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid #b8c1cc;
+}
+.cf-veil-steps li.done {
+  color: #1e6b3a;
+}
+.cf-veil-steps li.done::before {
+  content: "✓";
+  width: auto;
+  height: auto;
+  border: 0;
+  font-weight: 800;
+}
+.cf-veil-steps li.now {
+  color: #0b4fa8;
+}
+.cf-veil-steps li.now::before {
+  border-color: #0b63ce;
+  background: #0b63ce;
+}
+.cf-veil-bar {
+  position: relative;
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: #e2e7ed;
+  overflow: hidden;
+}
+.cf-veil-bar > i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 35%;
+  border-radius: 2px;
+  background: #0b63ce;
+  animation: cf-veil-bar 1.6s ease-in-out infinite;
+}
+@keyframes cf-veil-bar {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cf-veil-bar > i {
+    animation: none;
+    width: 100%;
+    opacity: 0.35;
+  }
+}
 /* a short outside view (portrait): the brief card is a sheet over the panel, under the bars (main.ts) */
 .cf-card-wrap.cf-sheet {
   position: fixed;
@@ -1070,4 +1177,15 @@ body.cf-flying .tb-courses {
 /* capture mode: no free-flight tips over the capture cards (the arrival card says what to do) */
 body.cf-capturing .coach {
   display: none !important;
+}
+
+/* a course flight: the top-left button names the course it goes back to (long titles end with … ; the tooltip says
+   where it goes) */
+body.cf-flying .topbar .tb-home .lbl {
+  display: inline-block;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }

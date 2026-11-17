@@ -52,8 +52,9 @@ registerStrings("en", {
   "cf.previewN": "Showing {n} s ago",
   "cf.captureShort": "Capture",
   "cf.preparing": "Preparing the flight…",
-  "cf.leaveQ": "Leave without a result?",
-  "cf.leave": "Leave",
+  "cf.preparingCapture": "Preparing the capture…",
+  "cf.leaveQ": "Back to the course without a result?",
+  "cf.leave": "Back to the course",
   "cf.keepFlying": "Keep flying",
   "cf.notNow": `Not now: ${hw("backToCourse", "en").toLowerCase()}`,
   "cf.numbers": "Your numbers",
@@ -105,8 +106,9 @@ registerStrings("fr", {
   "cf.previewN": "Il y a {n} s",
   "cf.captureShort": "Capture",
   "cf.preparing": "Préparation du vol…",
-  "cf.leaveQ": "Partir sans résultat ?",
-  "cf.leave": "Partir",
+  "cf.preparingCapture": "Préparation de la capture…",
+  "cf.leaveQ": "Revenir au cours sans résultat ?",
+  "cf.leave": "Revenir au cours",
   "cf.keepFlying": "Continuer le vol",
   "cf.notNow": `Pas maintenant : ${hw("backToCourse", "fr").toLowerCase()}`,
   "cf.numbers": "Vos valeurs",
@@ -149,8 +151,8 @@ export interface CourseStripState {
     /** hand-over: what the student is flying for, always in view in the strip (default: the step's title) */
     goal?: string;
   };
-  /** a ?fly= link is being resolved (the course store, the handoff, the samples load) */
-  loading?: boolean;
+  /** a ?fly= link is being resolved (the course store, the handoff, the samples load); 'capture': a ?capture= link */
+  loading?: boolean | "capture";
 }
 /** what the brief card of a course flight shows (main.ts builds it from the handoff and the plan) */
 export interface CourseBrief {
@@ -177,6 +179,10 @@ export interface CourseFlightActions {
   toEditor(): void;
   /** leave for the course page (the strip asks first when the flight has no result yet) */
   backToCourse(): void;
+  /** the aircraft waits while the strip asks « Revenir au cours sans résultat ? »: pause it (true if it was flying),
+   *  then fly on with « Continuer le vol » */
+  hold?(): boolean;
+  release?(): void;
   /** the brief card's Start */
   start(): void;
   /** capture mode (all optional: a course flight does not use them) */
@@ -265,16 +271,38 @@ export class CourseFlightUi {
   /** the loading card over the whole cockpit while a course flight is being prepared (main.ts appends it to body) */
   private readonly veilMsg = h("b", {}, tr("cf.preparing"));
   private readonly veilSub = h("small", { hidden: true });
-  readonly veil = h(
+  /** capture mode: « Revenir à la diapo » on the loading card itself (the top bar is under it) */
+  private veilBackFn: (() => void) | null = null;
+  private readonly veilBack = h("button", {
+    type: "button",
+    class: "btn cf-veil-back",
+    hidden: true,
+    onclick: () => this.veilBackFn?.(),
+  });
+  /** the way back the loading card offers: « Revenir à la diapo » in capture mode, « Annuler, revenir au cours »
+   *  for a course flight (null: none) */
+  setVeilBack(fn: (() => void) | null) {
+    this.veilBackFn = fn;
+  }
+  /** a course flight: the step being prepared, as the course page named it before leaving (cockpitLink FlyNote) */
+  private veilNote: { course: string; step: string } | null = null;
+  setVeilNote(n: { course: string; step: string } | null) {
+    this.veilNote = n;
+  }
+  /** « Briefing ✓ · Vol · Débriefing »: where the student is in the hand-over while the cockpit loads (audit §16) */
+  private readonly veilSteps = h("ol", { class: "cf-veil-steps", hidden: true });
+  /** the loading bar (it moves while the cockpit loads; it promises no time) */
+  private readonly veilBar = h("i", { class: "cf-veil-bar", hidden: true, "aria-hidden": "true" }, h("i", {}));
+  private readonly veilCard = h(
     "div",
-    { class: "cf-veil", hidden: true },
-    h(
-      "div",
-      { class: "cf-veil-card", role: "status" },
-      h("i", { class: "cf-spin", "aria-hidden": "true" }),
-      h("div", { class: "cf-veil-t" }, this.veilMsg, this.veilSub),
-    ),
+    { class: "cf-veil-card", role: "status" },
+    h("i", { class: "cf-spin", "aria-hidden": "true" }),
+    h("div", { class: "cf-veil-t" }, this.veilMsg, this.veilSub),
+    this.veilSteps,
+    this.veilBar,
+    this.veilBack,
   );
+  readonly veil = h("div", { class: "cf-veil", hidden: true }, this.veilCard);
   /** the hand-over to the course page: « Retour au cours… » and its title, never a blank page (UX logic §7) */
   private leavingTo: string | null = null;
   leaving(course: string) {
@@ -282,6 +310,10 @@ export class CourseFlightUi {
     this.veilMsg.textContent = tr("cf.backingQ");
     this.veilSub.textContent = course;
     this.veilSub.hidden = !course;
+    this.veilBack.hidden = true;
+    this.veilSteps.hidden = true;
+    this.veilBar.hidden = true;
+    this.veilCard.classList.remove("is-fly");
     this.veil.hidden = false;
   }
   private key = "";
@@ -295,6 +327,27 @@ export class CourseFlightUi {
 
   /** the strip asks "Leave without a result?" (touch users never see the tooltip that says so) */
   private confirming = false;
+  /** the strip paused the aircraft to ask: « Continuer le vol » flies on */
+  private held = false;
+  /** « Reprendre le cours » (the strip, and the top bar's « ← <cours> »): with no result yet, leaving records
+   *  nothing, so it asks first, in the strip, with the aircraft paused (never a native dialog); before Start (the
+   *  brief card still up) there is nothing to lose, so no question. */
+  requestBack() {
+    const f = this.last?.flight;
+    if (!f || f.hasResult || this.briefOpen) {
+      this.closeBrief(false);
+      this.act.backToCourse();
+      return;
+    }
+    if (this.confirming) return;
+    this.confirming = true;
+    this.held = this.act.hold?.() ?? false;
+    this.render(this.last);
+  }
+  /** the strip is asking: its two buttons are the one choice (no pause veil, no top-bar Pause meanwhile) */
+  get asking() {
+    return this.confirming;
+  }
   private last: CourseStripState = {};
   /** redraw the strip when what it says changed; returns true when its visibility changed */
   render(s: CourseStripState): boolean {
@@ -417,10 +470,13 @@ export class CourseFlightUi {
               h("span", { class: "cf-q" }, tr("cf.leaveQ")),
               btn("", tr("cf.keepFlying"), tr("cf.keepFlying"), () => {
                 this.confirming = false;
+                if (this.held) this.act.release?.();
+                this.held = false;
                 this.render(this.last);
               }),
               btn("danger", tr("cf.leave"), tr("cf.backCourseTip"), () => {
                 this.confirming = false;
+                this.held = false;
                 this.act.backToCourse();
               }),
             )
@@ -432,18 +488,7 @@ export class CourseFlightUi {
                 "cf-back",
                 tr("cf.backCourse"),
                 tr("cf.backCourseTip"),
-                () => {
-                  // with no result yet, leaving records nothing: ask first (in the strip, never a native dialog);
-                  // before Start (the brief card still up) there is nothing to lose, so no question
-                  if (f.hasResult || this.briefOpen) {
-                    this.closeBrief(false);
-                    this.act.backToCourse();
-                  }
-                  else {
-                    this.confirming = true;
-                    this.render(this.last);
-                  }
-                },
+                () => this.requestBack(),
                 h("span", { class: "cf-larr", "aria-hidden": "true" }, svgIcon(I.arrow, 14)),
               ),
             ),
@@ -455,7 +500,7 @@ export class CourseFlightUi {
           "div",
           { class: "cf-what", role: "status" },
           h("i", { class: "cf-spin", "aria-hidden": "true" }),
-          h("b", {}, tr("cf.preparing")),
+          h("b", {}, tr(s.loading === "capture" ? "cf.preparingCapture" : "cf.preparing")),
         ),
       );
     }
@@ -463,8 +508,31 @@ export class CourseFlightUi {
     // while a ?fly= link resolves, the whole cockpit waits under one card: the previous panel and outside view never
     // show before the course step's own
     if (this.leavingTo === null) {
-      this.veilMsg.textContent = tr("cf.preparing");
-      this.veilSub.hidden = true;
+      const cap = s.loading === "capture";
+      this.veilMsg.textContent = tr(cap ? "cf.preparingCapture" : "cf.preparing");
+      // a course flight: the step's name, where the hand-over is, a moving bar and a way back (audit §16)
+      const fly = !!s.loading && !cap;
+      const n = fly ? this.veilNote : null;
+      this.veilSub.textContent = n ? `${n.course} · ${n.step}` : "";
+      this.veilSub.hidden = !n;
+      this.veilCard.classList.toggle("is-fly", fly);
+      this.veilSteps.hidden = !fly;
+      this.veilBar.hidden = !fly;
+      if (fly) {
+        const st = (label: string, state: "done" | "now" | "next") =>
+          h("li", { class: state, ...(state === "now" ? { "aria-current": "step" } : {}) },
+            label,
+            state === "done" ? h("span", { class: "sr-only" }, L2(" (done)", " (fait)")) : null);
+        this.veilSteps.replaceChildren(
+          st(L2("Briefing", "Briefing"), "done"),
+          st(L2("Flight", "Vol"), "now"),
+          st(L2("Debrief", "Débriefing"), "next"),
+        );
+        this.veilSteps.setAttribute("aria-label", L2("Course flight", "Vol du cours"));
+      }
+      const back = !!s.loading && !!this.veilBackFn;
+      this.veilBack.hidden = !back;
+      if (back) this.veilBack.textContent = cap ? L2("Go back to the slide", "Revenir à la diapo") : L2("Cancel, back to the course", "Annuler, revenir au cours");
       this.veil.hidden = !s.loading;
     }
     return wasHidden !== this.strip.hidden;

@@ -12,7 +12,7 @@ import {
 const EN = {
   groundSchool: "Library",
   groundSchoolLead:
-    "The platform for aviation education: slides and a flight simulator in one tool, for aeroclubs and flight schools, from LAPL and PPL to IR and ATPL theory.",
+    "The slide deck for aviation: courses as slides with live instruments and a flight simulator, for aeroclubs and flight schools, from LAPL and PPL to IR and ATPL theory.",
   tileDesc: "Build courses with live instruments, teach them, fly them.",
   flightCenter: "Home",
   openSim: "Open the simulator",
@@ -172,7 +172,7 @@ export type CourseStringKey = keyof typeof EN;
 const FR: Record<CourseStringKey, string> = {
   groundSchool: "Bibliothèque",
   groundSchoolLead:
-    "La plateforme de l’éducation aéronautique : diapositives et simulateur de vol dans un seul outil, pour les aéroclubs et les écoles de pilotage, du LAPL et du PPL jusqu’à l’IR et la théorie ATPL.",
+    "Le deck de slides pour l’aviation : des cours en diapositives avec des instruments en direct et un simulateur de vol, pour les aéroclubs et les écoles de pilotage, du LAPL et du PPL jusqu’à l’IR et la théorie ATPL.",
   tileDesc: "Créez des cours avec instruments en direct, enseignez-les, volez-les.",
   flightCenter: "Accueil",
   openSim: "Ouvrir le simulateur",
@@ -319,6 +319,26 @@ const FR: Record<CourseStringKey, string> = {
 const TABLE: Record<Lang, Record<CourseStringKey, string>> = { en: EN, fr: FR };
 
 /** A UI string in `l`, with {name} placeholders filled. */
+/** The words of a step's section key (« overview », « check »…), as the Sommaire heads it; FR / EN. */
+const SECTION_WORDS: Record<string, [string, string]> = {
+  overview: ["Overview", "Présentation"],
+  picture: ["Understand", "Comprendre"],
+  why: ["Why", "Pourquoi"],
+  technique: ["Your turn", "À vous"],
+  check: ["Check", "Vérifier"],
+  numbers: ["The numbers", "Les chiffres"],
+  entry: ["The entry", "L’entrée"],
+  clearance: ["The clearance", "La clairance"],
+  wind: ["The wind", "Le vent"],
+  mistakes: ["Common mistakes", "Les erreurs fréquentes"],
+  errors: ["Common mistakes", "Les erreurs fréquentes"],
+};
+/** A section heading in words: a known key in the screen language, an author's own heading as written. Pure. */
+export function sectionLabel(section: string, l: Lang): string {
+  const w = SECTION_WORDS[section.trim().toLowerCase()];
+  return w ? w[l === "fr" ? 1 : 0] : section;
+}
+
 export function ct(
   key: CourseStringKey,
   l: Lang,

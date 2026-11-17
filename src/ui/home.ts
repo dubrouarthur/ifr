@@ -33,8 +33,8 @@ export const HOME_COPY = {
   },
   learnGo: { fr: "Voir les cours", en: "See the courses" },
   learnFirst: {
-    fr: "Je débute : commencer par LAPL · PPL",
-    en: "I’m new to flying: start with LAPL · PPL",
+    fr: "Je débute : premier cours de LAPL · PPL",
+    en: "I’m new to flying: first LAPL · PPL course",
   },
   teach: { fr: "Enseigner", en: "Teach" },
   teachLine: {
@@ -61,9 +61,10 @@ export const HOME_COPY = {
     en: "No course, at your own pace",
   },
   flyGo: { fr: "Ouvrir le simulateur", en: "Open the simulator" },
+  // a free VFR flight in clear weather, at once (audit §24): no IFR procedure for a first flight
   flyQuick: {
-    fr: "Ou un vol rapide, en un clic",
-    en: "Or a quick flight, in one click",
+    fr: "Ou voler librement, en un clic",
+    en: "Or fly freely, in one click",
   },
   flyPhoto: {
     fr: "Avion-école quadriplace · tableau classique ou écrans de vol",
@@ -75,8 +76,8 @@ export const HOME_COPY = {
     en: "See on one page what you can do with it.",
   },
   newHereGo: {
-    fr: "Voir la présentation · 1 min",
-    en: "See the introduction · 1 min",
+    fr: "Découvrir Wingdeck",
+    en: "Discover Wingdeck",
   },
   // returning
   welcome: { fr: "Bon retour", en: "Welcome back" },
@@ -90,6 +91,13 @@ export const HOME_COPY = {
   also: { fr: "Aussi en cours", en: "Also in progress" },
   redo: { fr: "Refaire", en: "Fly again" },
   open: { fr: "Ouvrir", en: "Open" },
+  flyingNow: { fr: "Vol en cours", en: "Flight in progress" },
+  flyingPaused: { fr: "En pause", en: "Paused" },
+  flyResume: { fr: "Reprendre le vol", en: "Resume the flight" },
+  flyEnd: { fr: "Terminer et débriefer", en: "End and debrief" },
+  resumeEdit: { fr: "Reprendre la modification", en: "Continue editing" },
+  editingWho: { fr: "Votre cours : {t}", en: "Your course: {t}" },
+  myCourse: { fr: "Votre cours · brouillon", en: "Your course · draft" },
   assigned: {
     fr: "À faire · demandé par votre instructeur",
     en: "To do · set by your instructor",
@@ -117,13 +125,14 @@ export const HOME_COPY = {
   },
   quick: { fr: "Vol rapide", en: "Quick flight" },
   quickLine: {
-    fr: "Wingdeck choisit pour vous une approche ou une attente aux instruments (IFR) à Port Ardent, une région fictive conçue pour l’entraînement, avec toutes ses cartes et ses balises. Vous commencez en vol, à quelques minutes de la procédure.",
-    en: "Wingdeck picks an instrument (IFR) approach or hold at Port Ardent, a fictional region made for training, with all its charts and navaids. You start in the air, a few minutes from the procedure.",
+    fr: "Un vol libre par beau temps, ou une procédure aux instruments (IFR) à Port Ardent, une région fictive conçue pour l’entraînement, avec toutes ses cartes et ses balises. Vous commencez en vol.",
+    en: "A free flight in clear weather, or an instrument (IFR) procedure at Port Ardent, a fictional region made for training, with all its charts and navaids. You start in the air.",
   },
   quickWhat: { fr: "Quoi ?", en: "What?" },
-  kApproach: { fr: "Une approche", en: "An approach" },
-  kHold: { fr: "Une attente", en: "A hold" },
-  kAny: { fr: "Au hasard", en: "Surprise me" },
+  kFree: { fr: "Voler librement (VFR)", en: "Fly freely (VFR)" },
+  kApproach: { fr: "Une approche IFR", en: "An IFR approach" },
+  kHold: { fr: "Une attente IFR", en: "An IFR hold" },
+  kAny: { fr: "Une procédure IFR au hasard", en: "Any IFR procedure" },
   quickWhere: { fr: "Où ?", en: "Where?" },
   anyApt: { fr: "Tous les aérodromes", en: "Any airport" },
   quickCount: { fr: "{n} vols possibles", en: "{n} possible flights" },
@@ -171,11 +180,13 @@ const I = {
   map: '<path d="m3 6 6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/>',
   dice: '<rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r=".8" fill="currentColor"/><circle cx="15" cy="15" r=".8" fill="currentColor"/><circle cx="15" cy="9" r=".8" fill="currentColor"/><circle cx="9" cy="15" r=".8" fill="currentColor"/>',
   reset: '<path d="M4 4v6h6"/><path d="M5.5 15A7.5 7.5 0 1 0 6 8.5L4 10"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
 };
+type HomeCourse = import("../course/ui/deckHome").HomeCourse;
 const icon = (d: string, size = 18) =>
   h("span", { class: "wd-ic", html: lineIcon(d, size) });
 
-export type QuickKind = "approach" | "hold" | "any";
+export type QuickKind = "free" | "approach" | "hold" | "any";
 export interface RecentFlight {
   title: string;
   when: string;
@@ -202,12 +213,96 @@ export interface HomeHooks {
   recent: () => RecentFlight[];
   /** a simulator lesson flown but not passed yet (« Aussi en cours ») */
   lessonToRedo: () => { title: string; meta: string; again: () => void } | null;
+  /** the flight paused behind this page, if one is under way (audit §5: never lose a flight by going home) */
+  flight?: () => FlightNow | null;
+  /** back to that flight (the cockpit, flying again) */
+  resumeFlight?: () => void;
+  /** end that flight and open its debrief */
+  endFlight?: () => void;
+}
+/** A flight under way, paused behind Accueil or Simulateur. */
+export interface FlightNow {
+  title: string;
+  /** seconds flown */
+  timeS: number;
+}
+/** « 3:07 » (m:ss) or « 1:02:07 » */
+export function flightClock(s: number): string {
+  const t = Math.max(0, Math.floor(s));
+  const hh = Math.floor(t / 3600);
+  const mm = Math.floor((t % 3600) / 60);
+  const ss = String(t % 60).padStart(2, "0");
+  return hh ? `${hh}:${String(mm).padStart(2, "0")}:${ss}` : `${mm}:${ss}`;
+}
+/** The « Vol en cours » card, on top of Accueil and Simulateur while a flight waits: « Reprendre le vol » is the
+ *  page's one filled button, « Terminer et débriefer » beside it. Null when no flight is under way. */
+function flightCard(o: HomeHooks): HTMLElement | null {
+  const f = o.flight?.();
+  if (!f || !o.resumeFlight) return null;
+  const T = (k: Key) => HOME_COPY[k][o.lang];
+  return h(
+    "section",
+    { class: "wd-card wd-flying", "aria-labelledby": "wd-flying-t" },
+    h(
+      "span",
+      { class: "wd-row-ic sim", "aria-hidden": "true" },
+      icon(I.plane, 20),
+    ),
+    h(
+      "div",
+      { class: "wd-flying-t" },
+      h("p", { class: "wd-flying-k" }, T("flyingNow")),
+      h("h2", { id: "wd-flying-t" }, f.title),
+      h(
+        "p",
+        { class: "wd-flying-m num" },
+        `${T("flyingPaused")} · ${flightClock(f.timeS)}`,
+      ),
+    ),
+    h(
+      "div",
+      { class: "wd-flying-acts" },
+      h(
+        "button",
+        {
+          class: "wd-btn primary wd-fly-go",
+          type: "button",
+          onclick: () => o.resumeFlight?.(),
+        },
+        icon(I.play, 16),
+        T("flyResume"),
+      ),
+      o.endFlight
+        ? h(
+            "button",
+            {
+              class: "wd-btn wd-fly-end",
+              type: "button",
+              onclick: () => o.endFlight?.(),
+            },
+            T("flyEnd"),
+          )
+        : null,
+    ),
+  );
+}
+/** a page with the « Vol en cours » card keeps ONE filled button: the flight's */
+function withFlight(root: HTMLElement, o: HomeHooks): void {
+  const card = flightCard(o);
+  if (!card) return;
+  root
+    .querySelectorAll(".wd-btn.primary")
+    .forEach((b) => b.classList.remove("primary"));
+  const head = root.querySelector(".wd-head");
+  if (head) head.after(card);
+  else root.prepend(card);
 }
 
 /** academy.html links of the doors (one route per place, UX logic §1) */
 export const HOME_LINKS = {
   library: PLACE_HREF.lib,
-  ppl: "academy.html#library&p=ppl",
+  /** « Je débute »: the first course of LAPL · PPL itself (its way back is the formation page) */
+  ppl: "academy.html#play=sample-deck-basic-instruments&from=ppl",
   newCourse: "academy.html#new",
   instructors: "academy.html#library&p=instructors",
   /** « Présenter un cours existant »: the Instructeurs page with the course picker already open */
@@ -233,6 +328,7 @@ export function lastCourseHint(): { id: string; stepId?: string } | null {
   }
 }
 
+const editHref = (id: string) => `academy.html#edit=${encodeURIComponent(id)}`;
 const playHref = (id: string, step?: string) =>
   `academy.html#play=${encodeURIComponent(id)}${step ? `&s=${encodeURIComponent(step)}` : ""}&from=home`;
 
@@ -254,9 +350,21 @@ function navLink(
         e.preventDefault();
         nav(url);
       },
+      // the course pages are another document: fetch it while the pointer (or the focus) is on its way (audit §17)
+      onpointerenter: () => prefetchPage(url),
+      onfocus: () => prefetchPage(url),
     },
     ...kids,
   );
+}
+/** pages already asked for (one <link rel="prefetch"> per document) */
+const prefetched = new Set<string>();
+/** Hint the browser to fetch a page of this site (`academy.html#…` → `academy.html`) before it is opened. */
+export function prefetchPage(url: string): void {
+  const page = url.split("#")[0].split("?")[0];
+  if (!page || !/^[a-z0-9_-]+\.html$/i.test(page) || prefetched.has(page) || typeof document === "undefined") return;
+  prefetched.add(page);
+  document.head.append(h("link", { rel: "prefetch", href: page }));
 }
 
 export interface HomeView {
@@ -298,7 +406,7 @@ export function homeView(o: HomeHooks): HomeView {
     );
 
   // ---------------------------------------------------------------- newcomer: three doors
-  const doors = () => {
+  const doors = (editing: HomeCourse | null = null) => {
     const learnFront = h("div", { class: "wd-cover wd-s1" });
     const learnBack = h("div", { class: "wd-cover wd-s2" });
     const teachCover = h("div", { class: "wd-cover" });
@@ -364,20 +472,36 @@ export function homeView(o: HomeHooks): HomeView {
         "wd-d-teach",
         T("teach"),
         T("teachLine"),
-        T("teachWho"),
-        navLink(
-          "wd-btn",
-          HOME_LINKS.newCourse,
-          o.nav,
-          icon(I.plus),
-          T("teachGo"),
-        ),
-        navLink(
-          "wd-link wd-door-alt",
-          HOME_LINKS.present,
-          o.nav,
-          T("teachPresent"),
-        ),
+        editing ? T("editingWho", { t: editing.title }) : T("teachWho"),
+        // a course of my own is waiting: the door continues it, and « Créer un cours » becomes the quiet link
+        editing
+          ? navLink(
+              "wd-btn wd-edit-go",
+              editHref(editing.id),
+              o.nav,
+              icon(I.edit),
+              T("resumeEdit"),
+            )
+          : navLink(
+              "wd-btn",
+              HOME_LINKS.newCourse,
+              o.nav,
+              icon(I.plus),
+              T("teachGo"),
+            ),
+        editing
+          ? navLink(
+              "wd-link wd-door-alt",
+              HOME_LINKS.newCourse,
+              o.nav,
+              T("teachGo"),
+            )
+          : navLink(
+              "wd-link wd-door-alt",
+              HOME_LINKS.present,
+              o.nav,
+              T("teachPresent"),
+            ),
       ),
       door(
         "sim",
@@ -409,7 +533,7 @@ export function homeView(o: HomeHooks): HomeView {
           {
             class: "wd-link wd-door-alt",
             type: "button",
-            onclick: () => o.quickFly("any", ""),
+            onclick: () => o.quickFly("free", ""),
           },
           T("flyQuick"),
         ),
@@ -437,10 +561,11 @@ export function homeView(o: HomeHooks): HomeView {
         icon(I.arrow, 16),
       ),
     );
-  const showNew = () => {
+  const showNew = (editing: HomeCourse | null = null) => {
     clearCovers();
     root.classList.remove("is-return");
-    root.replaceChildren(head(T("title"), T("lead")), doors(), newHere());
+    root.replaceChildren(head(T("title"), T("lead")), doors(editing), newHere());
+    withFlight(root, o);
   };
 
   // ---------------------------------------------------------------- returning: Reprendre
@@ -449,7 +574,8 @@ export function homeView(o: HomeHooks): HomeView {
   };
   const showReturn = (
     r: import("../course/ui/deckHome").HomeResume | null,
-    assigned: import("../course/ui/deckHome").HomeCourse | null,
+    assigned: HomeCourse | null,
+    editing: HomeCourse | null = null,
   ) => {
     clearCovers();
     root.classList.add("is-return");
@@ -562,6 +688,25 @@ export function homeView(o: HomeHooks): HomeView {
           navLink("wd-link", playHref(assigned.id), o.nav, T("open")),
         ),
       );
+    if (editing)
+      rows.push(
+        h(
+          "li",
+          { class: "wd-row" },
+          h(
+            "span",
+            { class: "wd-row-ic", "aria-hidden": "true" },
+            icon(I.edit, 18),
+          ),
+          h(
+            "span",
+            { class: "wd-row-t" },
+            h("b", {}, editing.title),
+            h("small", {}, T("myCourse")),
+          ),
+          navLink("wd-link", editHref(editing.id), o.nav, T("resumeEdit")),
+        ),
+      );
     const side = rows.length
       ? h(
           "aside",
@@ -640,6 +785,7 @@ export function homeView(o: HomeHooks): HomeView {
         ),
       ),
     );
+    withFlight(root, o);
   };
 
   const hint = lastCourseHint();
@@ -649,8 +795,9 @@ export function homeView(o: HomeHooks): HomeView {
     .then((m) => m.homeData({ lang: l, store: storeP }))
     .then((d) => {
       if (destroyed) return;
-      if (d.resume) showReturn(d.resume, d.assigned);
-      else if (root.classList.contains("is-return")) showNew();
+      if (d.resume) showReturn(d.resume, d.assigned, d.editing ?? null);
+      else if (d.editing || root.classList.contains("is-return"))
+        showNew(d.editing ?? null);
     })
     .catch(() => {
       if (!destroyed && root.classList.contains("is-return")) showNew();
@@ -694,6 +841,8 @@ export function simView(o: HomeHooks): HomeView {
         : T("quickCount", { n })
       : T("quickNone");
     go.disabled = !n;
+    // the free flight is over the training region's islands: no airport to pick
+    sel.disabled = pref.kind === "free";
     for (const b of seg.querySelectorAll<HTMLButtonElement>("button")) {
       const on = b.dataset.k === pref.kind;
       b.classList.toggle("on", on);
@@ -701,6 +850,7 @@ export function simView(o: HomeHooks): HomeView {
     }
   };
   const kinds: [QuickKind, Key][] = [
+    ["free", "kFree"],
     ["approach", "kApproach"],
     ["hold", "kHold"],
     ["any", "kAny"],
@@ -870,5 +1020,6 @@ export function simView(o: HomeHooks): HomeView {
     lessons,
   );
   sync();
+  withFlight(root, o);
   return { el: root, destroy() {} };
 }

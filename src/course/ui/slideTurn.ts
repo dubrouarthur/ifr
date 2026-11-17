@@ -25,7 +25,7 @@ import { h } from "../../ui/dom";
 import { ct, loc } from "../i18n";
 import { doThisFor, paneOfView } from "./templates";
 import { hw, hwq } from "../handoverWords";
-import { rowsFor } from "../goals";
+import { GoalTracker, rowsFor, stageView } from "../goals";
 
 export interface YourTurnCtx {
   course: Course;
@@ -256,6 +256,7 @@ export function yourTurnSlideRenderer(o: YourTurnRendererOptions): SlideRenderer
       v.setChecks(r.checks);
       v.fire("yourTurnDone");
       v.update(ctx.step.slide);
+      dress();
       showResult(yt, r, ctx.lang, say);
       if (say) ctx.announce(line.textContent ?? "");
     };
@@ -300,6 +301,9 @@ export function yourTurnSlideRenderer(o: YourTurnRendererOptions): SlideRenderer
         }),
     });
     el.append(line);
+    // the slide's own controls are the way to do the exercise: its button only opens a larger view of it
+    const dress = () => enlargeButtons(el, ctx.step, ctx.lang);
+    dress();
     // back on this slide later (or back from the cockpit): the last attempt shows again
     const turns = (ctx.step.slide?.blocks ?? []).flatMap((b) =>
       "yourTurn" in b && b.yourTurn ? [{ id: b.id, yt: b.yourTurn }] : [],
@@ -310,6 +314,39 @@ export function yourTurnSlideRenderer(o: YourTurnRendererOptions): SlideRenderer
           if (last && el.isConnected && !lineFor) apply(last.id, last.yt, last.r, false);
         })
         .catch(() => undefined);
+    const stopLive = watchLiveGoals({
+      el,
+      v,
+      step: ctx.step,
+      lang: ctx.lang,
+      turns,
+      onRows: (checks) => v.setChecks(checks),
+      // stuck for a while: the hint says itself on the slide (the student never had to look for it)
+      onStuck: (yt) => {
+        if (!yt.hint || lineFor?.r.met) return;
+        window.clearTimeout(hideT);
+        line.classList.remove("ok");
+        line.textContent = stuckLine(yt, ctx.lang);
+        line.hidden = false;
+        ctx.announce(line.textContent);
+      },
+      onMet: (blockId, yt, r) => {
+        apply(blockId, yt, r, true);
+        if (o.store)
+          void import("../handoff")
+            .then(({ recordYourTurnResult }) =>
+              recordYourTurnResult(o.store!, {
+                course: ctx.course,
+                stepId: ctx.step.id,
+                block: blockId,
+                profileId: "local",
+                result: r,
+                graded: yourTurnGraded(yt),
+              }),
+            )
+            .catch(() => null);
+      },
+    });
     return {
       el,
       next: () => v.next(),
@@ -318,10 +355,163 @@ export function yourTurnSlideRenderer(o: YourTurnRendererOptions): SlideRenderer
         v.setLang(l);
         if (lineFor) showResult(lineFor.yt, lineFor.r, l, !line.hidden);
       },
-      destroy: () => v.destroy(),
+      destroy: () => {
+        stopLive();
+        v.destroy();
+      },
       sims: v.sims,
+      relayout: () => v.relayout(),
     };
   };
+}
+
+/**
+ * The slide's own live instrument is where the student does the exercise: its goal is tracked right there, with the
+ * same tracker as the « À vous » runner, from the first touch of a control (a slide that opens already inside the
+ * goal never ticks by itself). The rows tick as they are met; once the whole goal is met, onMet gets the result.
+ * Returns the stop function.
+ */
+export function watchLiveGoals(o: {
+  el: HTMLElement;
+  v: Pick<SlideView, "sims">;
+  step: Step;
+  lang: Lang;
+  turns: { id: string; yt: YourTurn }[];
+  onRows(checks: boolean[]): void;
+  onMet(blockId: string, yt: YourTurn, r: YourTurnResult): void;
+  /** no new row met for `stuckS` seconds since the first touch (or the last row met): once per exercise */
+  onStuck?(yt: YourTurn): void;
+  stuckS?: number;
+  /** test seam: the clock and the timer */
+  now?: () => number;
+  every?: (fn: () => void, ms: number) => () => void;
+}): () => void {
+  const blocks = o.step.slide?.blocks ?? [];
+  const live = o.turns
+    .filter((t) => t.yt.where !== "sim")
+    .map((t) => {
+      const b = blocks.find((x) => x.id === t.id);
+      const scene =
+        t.yt.scene ??
+        (b && (b.kind === "instrument" || b.kind === "simViewport") ? b.scene : undefined) ??
+        o.step.slide?.scene;
+      const failures = b && b.kind === "instrument" ? b.failures : undefined;
+      return {
+        ...t,
+        scene,
+        failures,
+        tracker: new GoalTracker(t.yt.goal, o.lang),
+        done: false,
+        key: "",
+        ticks: 0,
+        progressAt: 0,
+        stuck: false,
+      };
+    })
+    .filter((t) => typeof t.scene === "string");
+  if (!live.length) return () => undefined;
+  const now = o.now ?? (() => performance.now());
+  let engagedAt: number | null = null;
+  const engage = (e: Event) => {
+    // the « À vous » button opens the larger view: it is not a touch of the slide's controls
+    if ((e.target as Element | null)?.closest?.(".sl-yourturn")) return;
+    if (engagedAt === null) {
+      engagedAt = now();
+      for (const x of live) x.progressAt = engagedAt;
+    }
+  };
+  o.el.addEventListener("pointerdown", engage, true);
+  o.el.addEventListener("keydown", engage, true);
+  let last = now();
+  const tick = () => {
+    const t = now();
+    const dt = Math.min(1, (t - last) / 1000);
+    last = t;
+    if (engagedAt === null || !o.el.isConnected) return;
+    for (const x of live) {
+      if (x.done) continue;
+      const sim = o.v.sims.get(x.scene as string, x.failures)?.sim;
+      if (!sim) continue;
+      const st = x.tracker.update(stageView(sim), dt);
+      const checks = st.rows.filter((r) => r.check >= 0).map((r) => r.ticked);
+      const key = checks.join();
+      if (key !== x.key) {
+        x.key = key;
+        o.onRows(checks);
+      }
+      const n = st.rows.filter((r) => r.ticked).length;
+      if (n > x.ticks) {
+        x.ticks = n;
+        x.progressAt = t;
+      }
+      if (!st.met && !x.stuck && t - x.progressAt >= (o.stuckS ?? 20) * 1000) {
+        x.stuck = true;
+        o.onStuck?.(x.yt);
+      }
+      if (st.met) {
+        x.done = true;
+        o.onMet(x.id, x.yt, { met: true, checks: checks.map(() => true), secs: (t - engagedAt) / 1000 });
+      }
+    }
+  };
+  const stop = o.every
+    ? o.every(tick, 250)
+    : (() => {
+        const id = window.setInterval(tick, 250);
+        return () => window.clearInterval(id);
+      })();
+  return () => {
+    stop();
+    o.el.removeEventListener("pointerdown", engage, true);
+    o.el.removeEventListener("keydown", engage, true);
+  };
+}
+
+/** The ids of the slide's exercises the student does on the slide itself: a live instrument with its own controls. Pure. */
+export function onSlideTurnIds(step: Step): string[] {
+  return (step.slide?.blocks ?? []).flatMap((b) =>
+    b.kind === "instrument" &&
+    "yourTurn" in b &&
+    b.yourTurn &&
+    b.yourTurn.where !== "sim" &&
+    (b.yourTurn.controls ?? b.controls ?? []).length > 0
+      ? [b.id]
+      : [],
+  );
+}
+
+/** The words of the slide's secondary button when the exercise is done on the slide (FR / EN). */
+export const enlargeWords = (lang: Lang): { label: string; aria: string } =>
+  lang === "fr"
+    ? { label: "Agrandir", aria: "Agrandir l’exercice : même objectif, en plus grand" }
+    : { label: "Enlarge", aria: "Enlarge the exercise: same goal, larger" };
+
+/**
+ * An exercise done on the slide: its « À vous » button is no longer a pill on the instrument face. It becomes a
+ * secondary « Agrandir » just above the instrument (outside it), since the controls under the instrument are the way
+ * to do it. A button the renderer made again (after an update) is dressed again.
+ */
+function enlargeButtons(el: HTMLElement, step: Step, lang: Lang) {
+  const ids = new Set(onSlideTurnIds(step));
+  if (!ids.size) return;
+  const w = enlargeWords(lang);
+  for (const b of el.querySelectorAll<HTMLButtonElement>(".sl-hud-btn.sl-yourturn:not(.is-sim)")) {
+    if (!ids.has(b.dataset.block ?? "")) continue;
+    b.classList.add("is-enlarge");
+    // above the block's top-right corner (the renderer reads these when it places its buttons)
+    b.dataset.at = "1,0";
+    b.dataset.origin = "1,1";
+    const text = b.querySelector<HTMLElement>("span:not(.sl-hud-ic)");
+    if (text) text.textContent = w.label;
+    b.setAttribute("aria-label", w.aria);
+    b.title = w.aria;
+  }
+}
+
+/** The hint, said on the slide when the student is stuck. Pure. */
+export function stuckLine(yt: YourTurn, lang: Lang): string {
+  const hint = yt.hint ? loc(yt.hint, lang) : "";
+  return lang === "fr" ? `Un indice : ${hint}` : `A hint: ${hint}`;
 }
 
 // ------------------------------------------------------------------ hand-over: the result on the slide
@@ -388,14 +578,15 @@ export async function flySlideYourTurn(
     c.step.slide?.scene;
   if (!c.store || typeof scene !== "string") return false;
   try {
-    const { cockpitBridgeReady } = await import("../cockpitLink");
+    const { cockpitBridgeReady, noteFly } = await import("../cockpitLink");
     if (!cockpitBridgeReady()) return false;
-    const { createHandoff, flyUrl } = await import("../handoff");
+    const { createHandoff, flyUrl, courseReturnUrl } = await import("../handoff");
     const hd = await createHandoff(c.store, {
       course: c.course,
       step: c.step,
       yourTurn: { block: b.id, yourTurn: c.yt, sceneId: scene },
     });
+    noteFly({ token: hd.token, course: loc(c.course.title, c.lang), step: loc(c.step.title, c.lang), back: courseReturnUrl(c.course.id, c.step.id) });
     navigate(flyUrl(hd.token));
     return true;
   } catch {
