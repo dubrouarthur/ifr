@@ -170,9 +170,9 @@
 /* ---------- Accueil, newcomer: three doors ---------- */
 .wd-doors {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 24px;
-  margin-top: 32px !important;
+  margin-top: 28px !important;
 }
 .wd-door {
   display: flex;
@@ -190,7 +190,7 @@
 }
 .wd-door-vis {
   position: relative;
-  aspect-ratio: 16 / 9.4;
+  aspect-ratio: 16 / 6.8;
   border-bottom: 1px solid var(--wd-rule);
   overflow: hidden;
 }
@@ -312,25 +312,32 @@
   font-weight: 600;
   pointer-events: none;
 }
-/* Voler: a slide with a live instrument, on the dark of the instrument panel (audit §60) */
-.wd-simvis {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(160deg, #1d2833, #121a22);
+/* Voler: the simulator on its own, a slim row under the two doors (the slides are the product, the simulator the
+   tool inside them) */
+.wd-door.sim.is-slim {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 20px;
+  padding: 12px 16px 12px 20px;
+  box-shadow: none;
 }
-.wd-simvis .wd-scr {
-  border-color: rgba(255, 255, 255, 0.12);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+.wd-door.sim.is-slim h2 {
+  font-size: 1.125rem;
 }
-.wd-simtag {
-  position: absolute;
-  left: 14px;
-  bottom: 12px;
-  z-index: 1;
-  color: #fff;
-  font-size: 0.78125rem;
-  font-weight: 600;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+.wd-door.sim.is-slim .wd-door-k .wd-ic {
+  width: 32px;
+  height: 32px;
+}
+.wd-door.sim.is-slim .wd-door-acts {
+  margin: 0;
+  padding: 0;
+  align-items: center;
+  gap: 18px;
+}
+.wd-door.sim.is-slim .wd-door-alt {
+  margin: 0;
 }
 .wd-newhere {
   margin-top: 26px;
@@ -730,7 +737,7 @@
     margin-top: 22px !important;
   }
   .wd-door-vis {
-    aspect-ratio: 16 / 8.2;
+    aspect-ratio: 16 / 7.2;
   }
   .wd-door-bd {
     padding: 16px 20px 18px;
@@ -792,7 +799,7 @@
     margin-top: 20px !important;
   }
   .wd-door-vis {
-    aspect-ratio: 16 / 7.2;
+    aspect-ratio: 16 / 6.2;
   }
   .wd-door-bd {
     padding: 16px 20px 18px;
@@ -847,6 +854,15 @@
   }
   .wd-sim-grid {
     grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 700px) {
+  .wd-door.sim.is-slim {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 14px 16px;
+  }
+  .wd-door.sim.is-slim .wd-door-acts {
+    flex-wrap: wrap;
   }
 }
 @media (max-width: 600px) {

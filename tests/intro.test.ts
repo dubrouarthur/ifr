@@ -40,6 +40,7 @@ import { CATEGORY_LABELS, libraryFor } from "../src/train/procedureLibrary";
 import { SAMPLES, allSamples, sampleCourse } from "../src/course/samples";
 import { DECKS } from "../src/course/samples/decks";
 import { academyRoute, libraryEntries } from "../src/course/ui/library";
+import { HOME_COPY } from "../src/ui/home";
 import { shelves } from "../src/library/model";
 import { libraryItems } from "../src/library/sources";
 import { stripShown } from "../src/course/canvas/controlStrip";
@@ -473,12 +474,16 @@ describe("start page: behaviour", () => {
     expect(main).toMatch(/const outsideWanted = \(\) => !intro\.isOpen && !fc\.isOpen;/);
     expect(main).toMatch(/if \(outsideWanted\(\)\) void initOutside\(\)/);
   });
-  it("Accueil opens on what to do, not on the pitch again", () => {
+  it("Accueil opens on the product in slide words (the start page's line), not on the brand pitch again", () => {
     const home = readFileSync("src/ui/home.ts", "utf8");
     expect(home).not.toMatch(
       /brandTagline|brandLead|brandEyebrow|brandAudience/,
     );
-    expect(home).toMatch(/Que voulez-vous faire(?:\\u00a0| )\?/);
+    // the owner's line: the slide deck for aviation, the simulator inside it; the same words as the start page
+    expect(HOME_COPY.title.fr).toBe(INTRO_COPY.fr.h1);
+    expect(HOME_COPY.title.en).toBe(INTRO_COPY.en.h1);
+    expect(HOME_COPY.lead.fr).toMatch(/diapositives/);
+    expect(HOME_COPY.lead.fr).toMatch(/simulateur/);
     expect(readFileSync("src/styles/ui-flightcenter.css", "utf8")).not.toMatch(
       /\.fc-sh::before/,
     );

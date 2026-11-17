@@ -1,7 +1,8 @@
 // Accueil and Simulateur, the two places of index.html (UX logic §4). Each is one light page under the app bar:
-//   Accueil (newcomer)   « Que voulez-vous faire ? »: three doors (Apprendre · Enseigner · Voler), each with a
-//                        picture, one sentence, one button and one quiet link. The page's only filled button is
-//                        « Voir les cours ».
+//   Accueil (newcomer)   « Le deck de slides pour l'aviation »: the slides are the product, the simulator the tool
+//                        inside them. Two doors (Enseigner · Apprendre), each with a picture, one sentence, one
+//                        button and one quiet link, then Voler as a slim row (the simulator on its own). The page's
+//                        only filled button is « Créer un cours ».
 //   Accueil (returning)  « Bon retour »: the Reprendre card (the course left part-way, at its step) is the hero and
 //                        holds the only filled button; « Aussi en cours » (at most 2 rows); the doors as one row.
 //   Simulateur           « Lancer un vol »: Vol rapide (the filled button), Préparer un vol, the last flights, and
@@ -17,10 +18,14 @@ type W = { fr: string; en: string };
 /** Every word of the two pages (tests read it: one word per thing). */
 export const HOME_COPY = {
   eyebrow: { fr: "Accueil", en: "Home" },
-  title: { fr: "Que voulez-vous faire ?", en: "What would you like to do?" },
+  // slides are the product, the simulator is the tool inside them (the start page says the same: ui/intro.ts)
+  title: {
+    fr: "Le deck de slides pour l’aviation",
+    en: "The slide deck for aviation",
+  },
   lead: {
-    fr: "Wingdeck réunit des cours en diapositives et un simulateur de vol. Choisissez par où entrer : vous pourrez changer à tout moment avec les onglets en haut.",
-    en: "Wingdeck brings slide courses and a flight simulator together. Choose a way in: you can switch at any time with the tabs at the top.",
+    fr: "Créez, présentez et partagez des cours en diapositives, avec de vrais instruments et un simulateur dedans.",
+    en: "Create, present and share courses as slides, with real instruments and a simulator inside.",
   },
   learn: { fr: "Apprendre", en: "Learn" },
   learnLine: {
@@ -38,8 +43,8 @@ export const HOME_COPY = {
   },
   teach: { fr: "Enseigner", en: "Teach" },
   teachLine: {
-    fr: "Créez un cours à partir d’un modèle, puis présentez-le en salle sur le projecteur.",
-    en: "Create a course from a template, then present it to your class on the projector.",
+    fr: "Créez un cours en diapositives à partir d’un modèle, présentez-le en salle, partagez-le avec vos élèves.",
+    en: "Create a slide course from a template, present it in class, share it with your students.",
   },
   teachWho: {
     fr: "Pour les instructeurs et les aéroclubs",
@@ -53,12 +58,8 @@ export const HOME_COPY = {
   present: { fr: "Présenter", en: "Present" },
   fly: { fr: "Voler", en: "Fly" },
   flyLine: {
-    fr: "Le simulateur seul : un vol rapide, ou un vol que vous préparez.",
-    en: "The simulator on its own: a quick flight, or a flight you plan.",
-  },
-  flyWho: {
-    fr: "Sans cours, à votre rythme",
-    en: "No course, at your own pace",
+    fr: "Le simulateur des cours, utilisé seul : un vol rapide ou un vol que vous préparez.",
+    en: "The courses’ simulator, on its own: a quick flight or a flight you plan.",
   },
   flyGo: { fr: "Ouvrir le simulateur", en: "Open the simulator" },
   // a free VFR flight in clear weather (audit §24); its short briefing (goal, « Comment piloter ») comes first (§31)
@@ -406,8 +407,6 @@ export function homeView(o: HomeHooks): HomeView {
     const learnFront = h("div", { class: "wd-cover wd-s1" });
     const learnBack = h("div", { class: "wd-cover wd-s2" });
     const teachCover = h("div", { class: "wd-cover" });
-    // Voler shows a slide with a live instrument, like the two other doors (audit §60), not a photo
-    const simCover = h("div", { class: "wd-cover" });
     // « Créer un cours » is the one filled button of the doors (audit §60): Wingdeck is where courses are made
     const teachBtn = "wd-btn primary";
     const door = (
@@ -503,14 +502,22 @@ export function homeView(o: HomeHooks): HomeView {
         ),
         navLink("wd-link wd-door-alt", HOME_LINKS.ppl, o.nav, T("learnFirst")),
       ),
-      door(
-        "sim",
-        h("div", { class: "wd-simvis" }, h("div", { class: "wd-scr" }, simCover)),
-        I.plane,
-        "wd-d-sim",
-        T("fly"),
-        T("flyLine"),
-        T("flyWho"),
+    );
+    // Voler: the simulator is the tool inside the courses; on its own it is a slim row under the two doors, still one
+    // click away (« Ouvrir le simulateur », « Ou voler librement »)
+    const simRow = h(
+      "section",
+      { class: "wd-door sim is-slim", "aria-labelledby": "wd-d-sim" },
+      h(
+        "div",
+        { class: "wd-door-k" },
+        icon(I.plane, 20),
+        h("h2", { id: "wd-d-sim" }, T("fly")),
+      ),
+      h("p", { class: "wd-door-line" }, T("flyLine")),
+      h(
+        "div",
+        { class: "wd-door-acts" },
         h(
           "a",
           {
@@ -538,8 +545,7 @@ export function homeView(o: HomeHooks): HomeView {
     cover(learnFront, { product: "p-asi" });
     cover(learnBack, { course: "sample-maths-vfr" });
     cover(teachCover, { course: "sample-holding" });
-    cover(simCover, { course: "sample-deck-standard-turn-scan" });
-    return list;
+    return h("div", { class: "wd-doorset" }, list, simRow);
   };
   const newHere = () =>
     h(
