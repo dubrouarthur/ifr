@@ -44,6 +44,7 @@ import {
   type CourseLibrary,
 } from "../course/ui/library";
 import { allSamples, isSampleId, sampleCourse } from "../course/samples";
+import { enterCourseWorld } from "../course/realWorld";
 import {
   playCourse,
   type CoursePlayer,
@@ -361,6 +362,8 @@ async function loadCourse(
     course = null;
   }
   if (!course && isSampleId(id)) course = sampleCourse(id);
+  // a course set at a real airfield: its navigation data first (its situations sit on the real runways)
+  await enterCourseWorld(course);
   return { course, store };
 }
 /** A course with no step yet: nothing to present or play, one way back to the editor (never a blank page). */
@@ -716,6 +719,7 @@ async function showEditor(id: string) {
     );
   }
   if (!course) return notFound(id);
+  await enterCourseWorld(course);
   // the course editor (package F): one builder for courses, briefings and designed slides (a lazy chunk)
   const editor = await import("../course/ui/editor");
   if (key !== routeKey && routeKey !== routeKeyOf({ k: "edit", id: course.id }))

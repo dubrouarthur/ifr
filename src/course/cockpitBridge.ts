@@ -53,6 +53,7 @@ import { setCaptureChoice, type KV } from "./captureHandoff";
 import { flyCriteria } from "./goals";
 import { ClipRecorder } from "./clip";
 import { generate } from "./calc";
+import { courseWorld, worldAirports } from "./realWorld";
 
 export { BRIDGE_KEY, BRIDGE_VERSION, cockpitBridgeReady, legacyFlyLink, markCockpitBridge } from "./cockpitLink";
 
@@ -112,6 +113,9 @@ export interface CockpitHost {
   startScenario(scenarioId: string, wx?: string): void;
   /** start a procedure drill (procedures mode) */
   startProcedure?(procId: string): void;
+  /** load the world a course flight needs (a real airfield's region, or back to the training region) before the
+   *  flight is posed; false: it could not be loaded */
+  ensureWorld?(w: World): Promise<boolean>;
   /** capture mode: a moment was refused (a crash, beyond VNE…): the cockpit says why where the pilot looks */
   refused?(r: Refusal): void;
   /** capture mode: a capture landed in the tray (the cockpit's strip of captures shows it at once) */
@@ -156,6 +160,10 @@ const T = {
     "Le cours a changé depuis « À vous » : vous volez la version ouverte.",
   ],
   flyStart: ["Course flight: {t}", "Vol du cours : {t}"],
+  worldMissing: [
+    "The navigation data of {w} could not be loaded: check the connection and open the course flight again.",
+    "Les données de navigation de {w} n’ont pas pu être chargées : vérifiez la connexion et relancez le vol du cours.",
+  ],
   sceneBad: [
     "This scene link cannot be used: {r}",
     "Ce lien de scène est inutilisable : {r}",
@@ -278,6 +286,19 @@ export class CourseBridge {
     if (r.state === "consumed")
       this.host.toast(tx("flyConsumed", lang), "info");
     if (r.courseChanged) this.host.toast(tx("courseChanged", lang), "info");
+    // a course set at a real airfield: its region first (the scene sits on the real runway)
+    const t0 = r.handoff.target;
+    const world: World =
+      (t0.kind === "scene" ? r.course.scenes[t0.scene]?.world : undefined) ??
+      courseWorld(r.course);
+    if (this.host.ensureWorld && !(await this.host.ensureWorld(world))) {
+      this.host.toast(
+        tx("worldMissing", lang, { w: worldAirports(world).join(", ") }),
+        "bad",
+        9000,
+      );
+      return false;
+    }
     this.handoff = r.handoff;
     this.course = r.course;
     this.step = r.step;

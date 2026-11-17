@@ -47,6 +47,7 @@ import { distanceNm, wrap180 } from './nav/geo';
 import { runway } from './nav/data';
 import { assessTouchdown } from './sim/landing';
 import { currentRegion, leaveRealWorld, toReal } from './nav/world';
+import { enterWorld } from './course/realWorld';
 import { chartIndex } from './plates/plates';
 import type { Phase } from './sim/recorder';
 import { setSetupPanel, setAllRemaining, setSetupHelp, type SetupItem } from './train/setupAssist';
@@ -1270,6 +1271,8 @@ let capNotice: { kind: 'bad' | 'good'; text: string } | null = null;
 let capNoticeTimer = 0;
 /** the exercises a course flight started (their result window offers "Back to the course") */
 const courseExIds = new Set<string>();
+/** the course flight being started flies in a real airfield's region (CockpitHost.ensureWorld) */
+let courseRealWorld = false;
 /** the course flight being started while the bridge installs (the strip names it at once) */
 let pendingFlight: { course: string; step: string } | null = null;
 // hand-over: the goal of the course flight, shown in the course strip while the student flies
@@ -1657,9 +1660,21 @@ const courseHost: CockpitHost = {
     if (bridgeBuffer) bridgeBuffer.push({ text: t, kind: k ?? 'info', ...(ms ? { ms } : {}) });
     else toast(t, k ?? 'info', ms);
   },
+  // a course set at a real airfield (course/realWorld.ts): its region with the terrain, kept for the flight
+  ensureWorld: async (w) => {
+    courseRealWorld = false;
+    if (w.kind !== 'real') return true;
+    const ok = await enterWorld(w, { terrain: true });
+    if (ok) {
+      courseRealWorld = true;
+      rebuildOutside();
+      charts.refresh?.();
+    }
+    return ok;
+  },
   runExercise: (ex) => {
     courseExIds.add(ex.id);
-    backToTraining();
+    if (!courseRealWorld) backToTraining();
     Modal.closeAll();
     courseLaunch(() => startExerciseNow(ex));
   },

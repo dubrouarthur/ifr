@@ -1,0 +1,21 @@
+{
+  "about": "Airport data checked against the official AIP, applied over OurAirports by build.mjs (and by apply-corrections.mjs on the generated files). Training only, not for real-world navigation.",
+  "airports": {
+    "LFPN": {
+      "source": "SIA eAIP France, AIRAC 29 OCT 2026: AD 2 LFPN 2.2 (ARP, elevation, variation), 2.12-2.13 (thresholds, 07R displaced threshold: LDA 890 m of 1050 m), 2.18 (ATIS 127.480, TWR 120.755, GND 122.130), 2.19 (ILS 25R TNO: LOC 110.15, GP 3.5 deg, RDH 59 ft, DME Ch 38Y at the GP); FNA ILS ou LOC RWY 25R (final 250 deg). The localizer is on the runway axis (QFU true 251.23 deg): with the 2025 variation 1.7372 deg E its magnetic course is 249.5 deg (the chart prints 250 with VAR 1 deg E (2020))",
+      "name": "Paris Saclay Versailles (Toussus-le-Noble)",
+      "lat": 48.74972,
+      "lon": 2.11111,
+      "elev": 538,
+      "magVar": 1.7372,
+      "freqs": { "atis": 127.48, "ground": 122.13, "tower": 120.755 },
+      "runways": [
+        { "ids": ["07L", "25R"], "len": 3609, "wid": 98, "le": [48.75121, 2.09873, 538, 0], "he": [48.75439, 2.1129, 503, 0] },
+        { "ids": ["07R", "25L"], "len": 3445, "wid": 98, "le": [48.74954, 2.09974, 536, 525], "he": [48.75258, 2.11326, 499, 0] }
+      ],
+      "ils": [
+        { "id": "TNO", "f": 110.15, "rwy": "25R", "lat": 48.74958, "lon": 2.0915, "crs": 249.5, "gs": 3.5, "gsLat": 48.75467, "gsLon": 2.10903, "dmeLat": 48.75467, "dmeLon": 2.10903, "tch": 59 }
+      ]
+    }
+  }
+}

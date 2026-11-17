@@ -67,7 +67,11 @@ export function computeNav(freq: number, obs: number, ac: AircraftPos, magVar = 
   const radial = norm360(bearingDeg(n, ac) - magVar);
   const bearingTo = norm360(radial + 180);
   const slant = Math.hypot(d, (ac.altFt - n.elevFt) / FT_PER_NM);
-  const dme = n.dme ? slant : null;
+  const dme = n.dme
+    ? n.dmePos
+      ? Math.hypot(distanceNm(n.dmePos, ac), (ac.altFt - n.elevFt) / FT_PER_NM)
+      : slant
+    : null;
 
   if (n.type === 'ILS' || n.type === 'LOC') {
     const course = n.course ?? obs;
