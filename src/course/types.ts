@@ -111,6 +111,9 @@ export interface Course {
   shareConfirmed?: boolean;
   /** id of the built-in sample it was duplicated from */
   sample?: string;
+  /** additive: step ids an earlier version of the course had (old id → the step that took its place), so saved
+   *  progress, « Reprendre » and shared links (#play=…&s=…) still land on a step */
+  stepAliases?: Record<string, string>;
   /** library facets (e.g. 'maths', 'ifr', 'vfr', 'holding'); free text, lower case */
   tags?: string[];
   /** additive (unified library): the program(s) the course belongs to, first = its home shelf; a course without

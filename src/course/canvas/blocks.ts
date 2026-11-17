@@ -58,6 +58,7 @@ import type { DiagramWidget } from "../stage/svgkit";
 import { fitFloor, HINT_H, slidePalette } from "./metrics";
 export { fitFloor, HINT_H, slidePalette } from "./metrics";
 import { holdFootText } from "../../train/diagram";
+import type { DiagramHub } from "./diagramMirror";
 import { problemFor, checkAnswer } from "../calc/index";
 import { UNIT_LABEL } from "../calc/text";
 
@@ -125,6 +126,8 @@ export interface BlockEnv {
   onYourTurn?: (b: SlideBlock, yt: YourTurn) => void;
   /** the slide's animation of a situation (the first instrument of the slide showing it with one, canvas/motion.ts) */
   motionOf?: (sceneId: string) => InstrumentMotion | undefined;
+  /** the drawings the presenter works, mirrored on the projector (canvas/diagramMirror.ts) */
+  diagrams?: DiagramHub;
 }
 
 export interface BlockView {
@@ -626,6 +629,7 @@ function diagramBlock(b: Of<"diagram">, env: BlockEnv): BlockView {
   let pane: DiagramPane | null = null;
   let widget: DiagramWidget<unknown> | null = null;
   let slot: SlotHandle | null | void = null;
+  let unhub: (() => void) | null = null;
   if (!d && !b.asset) {
     box.append(
       mk("div", "sl-missing", b.fromCalc ? tx("calcSlot", env.lang) : "—"),
@@ -637,6 +641,12 @@ function diagramBlock(b: Of<"diagram">, env: BlockEnv): BlockView {
     box.firstElementChild?.setAttribute("role", "img");
     if (label) box.firstElementChild?.setAttribute("aria-label", label);
   } else if (d?.kind === "calc") {
+    // what the drawing says to a screen reader (a goal met, an answer checked)
+    const say = mk("div", "sl-sr");
+    say.setAttribute("aria-live", "polite");
+    el.append(say);
+    const hub = env.diagrams;
+    const live = () => hub?.changed(b.id);
     widget = createCalcDiagram(d.calc, {
       theme: diagramThemeOf(env.theme),
       palette,
@@ -654,7 +664,21 @@ function diagramBlock(b: Of<"diagram">, env: BlockEnv): BlockView {
         met.forEach((m, i) => m && env.fire(`afterCheck:${i}`));
         if (met.length && met.every(Boolean)) env.fire("goalMet");
       },
+      onChange: live,
+      onLive: live,
+      announce: (t) => {
+        say.textContent = "";
+        // a fresh node each time: the same sentence twice is read twice
+        requestAnimationFrame(() => (say.textContent = t));
+      },
     }) as DiagramWidget<unknown> | null;
+    if (widget?.live && widget.follow && hub) {
+      const w = widget;
+      unhub = hub.add(b.id, {
+        live: () => w.live!(),
+        follow: (st) => w.follow!(st),
+      });
+    }
     if (widget) box.append(widget.el);
     else {
       slot = env.slots?.calcDiagram?.(d, box, {
@@ -713,6 +737,7 @@ function diagramBlock(b: Of<"diagram">, env: BlockEnv): BlockView {
     el,
     block: b,
     destroy: () => {
+      unhub?.();
       widget?.destroy();
       pane?.destroy();
       if (slot) slot.destroy?.();

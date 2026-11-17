@@ -4405,6 +4405,54 @@ html.ga-doc body {
     display: grid;
     gap: 6px;
   }
+  /* a drawing the student works: what it shows now, its answers as chips, its goals ticked */
+  .cp-slidetext .cp-st-status p {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.45;
+    font-weight: 600;
+  }
+  .cp-slidetext .cp-st-status p + p {
+    font-weight: 400;
+    color: var(--text-2, #3a4654);
+  }
+  .cp-slidetext .cp-st-chips .cp-btn {
+    flex: 1 1 0;
+    font-weight: 650;
+  }
+  .cp-slidetext .cp-st-goals {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 6px;
+  }
+  .cp-slidetext .cp-st-goals li {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    font-size: 16px;
+    color: var(--text-2, #3a4654);
+  }
+  .cp-slidetext .cp-st-goals li.done {
+    color: var(--text);
+  }
+  .cp-slidetext .cp-st-tick {
+    flex: none;
+    display: inline-grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid var(--muted);
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+  }
+  .cp-slidetext .cp-st-goals li.done .cp-st-tick {
+    background: var(--ok, #1f7a4d);
+    border-color: var(--ok, #1f7a4d);
+  }
 }
 
 /* the course's labelled way back (« ← Bibliothèque », « ← Accueil », « ← LAPL · PPL ») */

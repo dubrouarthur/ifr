@@ -1191,6 +1191,26 @@ button.sl-q-opt.is-right:hover {
 .cp-projector .sl-motion-btn {
   display: none;
 }
+/* nor works a drawing there: the hold follows the console (its heading, its wind, pause / replay, the answers) */
+.cp-projector .cs-holdfly .cs-btn:not(.cs-chip),
+.cp-projector .cs-holdfly .cs-handle,
+.cp-projector .sl-diagram .sl-hint-ic {
+  display: none;
+}
+/* the trainer's three answers stay in view for the class, answered from the console */
+.cp-projector .cs-holdfly .cs-chip {
+  pointer-events: none;
+}
+/* what a drawing says to a screen reader (a goal met, an answer checked) */
+.sl-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .sl-motion-btn:hover {
   background: rgba(5, 8, 11, 0.88);
 }

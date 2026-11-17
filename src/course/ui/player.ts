@@ -54,6 +54,7 @@ import { windText } from "../calc/text";
 import { Sim } from "../../sim/sim";
 import { clickSteps, isRevealed, renderSlide } from "../canvas/render";
 import type { SceneSims } from "../canvas/instruments";
+import type { DiagramHub } from "../canvas/diagramMirror";
 import { readingOrder } from "../canvas/geom";
 import { baseThemeId } from "../canvas/themes";
 import { StageFrame } from "../stage/frame";
@@ -142,6 +143,7 @@ export const canvasSlideRenderer: SlideRenderer = (ctx) => {
     setLang: (l) => v.setLang(l),
     destroy: () => v.destroy(),
     sims: v.sims,
+    diagrams: v.diagrams,
     relayout: () => v.relayout(),
   };
 };
@@ -254,6 +256,8 @@ export interface SlideHost {
   destroy(): void;
   /** the live situations of the slide (the presenter drives them and mirrors them on the projector) */
   sims?: SceneSims;
+  /** the drawings the presenter works (the hold's heading, the wind): mirrored on the projector */
+  diagrams?: DiagramHub;
   /** fit the slide's text again (a quiz's feedback appeared) */
   relayout?(): void;
 }
@@ -266,6 +270,15 @@ export type PlayerLayout =
   | "readerOnly"
   | "fly"
   | "canvas";
+/** A step id as the course has it now: an id an earlier version used goes to the step that took its place. Pure. */
+export function resolveStepId(
+  course: Pick<Course, "steps" | "stepAliases">,
+  id: string,
+): string {
+  if (course.steps.some((s) => s.id === id)) return id;
+  const to = course.stepAliases?.[id];
+  return to && course.steps.some((s) => s.id === to) ? to : id;
+}
 /** The layout of a step: its own, else from its kind and whether it has a stage. */
 export function layoutFor(
   step: Step,
@@ -575,7 +588,7 @@ export class CoursePlayer {
     this.unsub = this.frame.on((e) => this.onStage(e));
     document.addEventListener("keydown", this.onKey);
     document.addEventListener("keyup", this.onKeyUp);
-    const startId = o.stepId;
+    const startId = o.stepId ? resolveStepId(this.course, o.stepId) : undefined;
     const idx = startId
       ? this.ctx.steps.findIndex((s) => s.id === startId)
       : -1;
@@ -655,7 +668,8 @@ export class CoursePlayer {
     this.summaryOn = false;
     this.show(true);
   }
-  goToId(id: string) {
+  goToId(id0: string) {
+    const id = resolveStepId(this.course, id0);
     const i = this.ctx.steps.findIndex((s) => s.id === id);
     if (i >= 0) this.goTo(i);
     else if (this.ctx.briefingOf) {
@@ -1674,6 +1688,11 @@ export class CoursePlayer {
       ...(this.slideQuiz ? [this.slideQuiz.el] : []),
     );
     wireSlideQuizRetry(host, this.lang, () => this.slideQuiz?.sync());
+    // a drawing the student works says what it shows now (the hold's heading, its entry, the goals): the phone's
+    // panel under the slide follows
+    host.el.addEventListener("cs-status", () => {
+      if (this.slide === host) this.syncSlideText();
+    });
     this.syncSlideText();
     this.bottom.append(this.foot);
   }
@@ -1756,19 +1775,44 @@ export class CoursePlayer {
         // a drawing the student works (the hold's heading, the wind): how to work it, and its buttons again at 44 px
         // (on a phone the drawing's own are a few pixels: these press them)
         if (b.caption) out.push(richEl(txt(b.caption), lang, undefined, "cp-rich cp-st-body"));
-        const own = [
+        // what the drawing shows now, as words (the heading, the entry, the wind), and its goals ticked
+        let rows: { t: string; done?: boolean }[] = [];
+        try {
+          const raw = host
+            .querySelector(`[data-id="${CSS.escape(b.id)}"] svg[data-status]`)
+            ?.getAttribute("data-status");
+          const v: unknown = raw ? JSON.parse(raw) : [];
+          if (Array.isArray(v))
+            rows = v.filter(
+              (r): r is { t: string; done?: boolean } =>
+                !!r && typeof (r as { t?: unknown }).t === "string",
+            );
+        } catch {
+          rows = [];
+        }
+        const said = rows.filter((r) => r.done === undefined);
+        const goals = rows.filter((r) => r.done !== undefined);
+        if (said.length)
+          out.push(h("div", { class: "cp-st-status" }, ...said.map((r) => h("p", {}, r.t))));
+        const all = [
           ...host.querySelectorAll<SVGElement>(
             `[data-id="${CSS.escape(b.id)}"] .cs-btn[aria-label]`,
           ),
         ];
-        if (own.length)
+        // the answers first (the trainer's three entries), then the drawing's own buttons
+        const groups = [
+          all.filter((g) => g.classList.contains("cs-chip")),
+          all.filter((g) => !g.classList.contains("cs-chip")),
+        ];
+        for (const own of groups)
+          if (own.length)
           out.push(
             h(
               "div",
-              { class: "cp-st-ctls" },
+              { class: `cp-st-ctls${own[0].classList.contains("cs-chip") ? " cp-st-chips" : ""}` },
               ...own.map((g) => {
                 const name = g.getAttribute("aria-label") ?? "";
-                const x = btn(g.textContent?.trim() || name, "", () => {
+                const x = btn(g.getAttribute("data-label") || g.textContent?.trim() || name, "", () => {
                   const cur = [
                     ...host.querySelectorAll<SVGElement>(
                       `[data-id="${CSS.escape(b.id)}"] .cs-btn[aria-label]`,
@@ -1780,6 +1824,21 @@ export class CoursePlayer {
                 x.tabIndex = -1;
                 return x;
               }),
+            ),
+          );
+        if (goals.length)
+          out.push(
+            h(
+              "ul",
+              { class: "cp-st-goals" },
+              ...goals.map((r) =>
+                h(
+                  "li",
+                  { class: r.done ? "done" : "" },
+                  h("span", { class: "cp-st-tick", "aria-hidden": "true" }, r.done ? "✓" : ""),
+                  h("span", {}, r.t),
+                ),
+              ),
             ),
           );
       } else if (b.kind === "checklist") {
@@ -2795,7 +2854,8 @@ export class CoursePlayer {
     try {
       const p = await store.getProgress(this.course.id, this.profileId);
       if (!p || this.destroyed) return;
-      const i = this.ctx.steps.findIndex((s) => s.id === p.stepId);
+      const at = resolveStepId(this.course, p.stepId);
+      const i = this.ctx.steps.findIndex((s) => s.id === at);
       if (i <= 0 || this.i !== 0) return;
       this.state(this.ctx.steps[i]).reveal = Math.min(
         p.reveal,

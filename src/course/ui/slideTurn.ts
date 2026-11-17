@@ -383,6 +383,7 @@ export function yourTurnSlideRenderer(o: YourTurnRendererOptions): SlideRenderer
         v.destroy();
       },
       sims: v.sims,
+      diagrams: v.diagrams,
       relayout: () => v.relayout(),
     };
   };

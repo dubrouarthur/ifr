@@ -214,6 +214,9 @@ export class Projector {
       case "anim":
         if (m.stepId === this.player.step.id) this.anim(m.id, m.op);
         break;
+      case "diagram":
+        if (m.stepId === this.player.step.id) this.slideHost?.diagrams?.apply(m.id, m.st);
+        break;
       default:
         break;
     }

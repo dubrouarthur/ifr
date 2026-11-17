@@ -128,6 +128,7 @@ export class Presenter {
   private slideHost: SlideHost | null = null;
   private demo: DemoPanel;
   private demoT = 0;
+  private diagT = 0;
   /** the presentation picked up where it was left (said in the top bar, never a toast over the slide) */
   private resumedAt: number | null = null;
   private resumeObs: MutationObserver | null = null;
@@ -202,6 +203,9 @@ export class Presenter {
       };
       host.el.addEventListener("pointerdown", touched, true);
       host.el.addEventListener("keydown", touched, true);
+      // a drawing the presenter works (the hold's heading, the wind, pause / replay): the class sees the same
+      const stepId = ctx.step.id;
+      host.diagrams?.on((id, st) => this.link.post({ t: "diagram", stepId, id, st }));
       // the instruments register while the slide is built: the card follows once it is on the page
       requestAnimationFrame(() => {
         if (this.slideHost === host && this.ready) this.demo.render();
@@ -286,9 +290,24 @@ export class Presenter {
       reveal: this.player.reveal,
     });
     this.link.post({ t: "black", on: this.black });
+    this.postDiagrams();
+  }
+  /** every drawing of the slide as it is now (a projector opened late, a slide just built there, a clock that drifts) */
+  private postDiagrams() {
+    const hub = this.slideHost?.diagrams;
+    if (!hub?.size) return;
+    const stepId = this.player.step.id;
+    for (const [id, st] of hub.snapshot())
+      this.link.post({ t: "diagram", stepId, id, st });
   }
   private tick() {
     this.renderClock();
+    // the drawings again once a second: the projector's slide may have been built after the last change
+    const t = Date.now();
+    if (t - this.diagT >= 1000) {
+      this.diagT = t;
+      this.postDiagrams();
+    }
     // the stage pose, while the stage moves (≤10 Hz)
     const now = Date.now();
     if (now - this.stageT < STAGE_PERIOD_MS) return;

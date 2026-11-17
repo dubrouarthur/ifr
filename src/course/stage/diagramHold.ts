@@ -7,7 +7,10 @@
 //  - headings: the wind, the inbound heading and the outbound heading with the tripled drift.
 // Drag 'crs': the student sets the arrival heading (drag the aircraft round the fix, or −10° / +10°, or the arrow
 // keys): the sector lights up and the entry is flown. Drag 'wind': the wind dial (the presenter changes it live).
-// `goals`: arrival headings to set one after the other; each is ticked once its entry has been flown (onGoal).
+// `goals` (the entries trainer): arrival headings to set one after the other. The entry stays hidden and the aircraft
+// waits until the student picks it (Directe / Décalée / Parallèle); a right pick ticks the goal (onGoal) and the
+// entry is flown as the feedback. Without goals (the presenter's demonstration) the entry shows at once.
+// live() / follow(): the presenter's heading, wind, pause and replay mirrored on the projector (canvas/diagramMirror.ts).
 // Slide units (SPEC slides v2 §5): viewBox = the block, labels ≥ 24 × u, theme tokens only. Reduced motion: no
 // animation, the whole path is drawn and the goals tick as soon as the heading is set.
 import type { CalcDiagram, Lang } from "../types";
@@ -138,34 +141,42 @@ function svgButton(
   text: string,
   name: string,
   act: () => void,
+  o: { cls?: string; color?: string; hidden?: boolean } = {},
 ): { g: SVGGElement; t: SVGTextElement } {
   const { u, p } = sh.c;
+  const col = o.color ?? p.accent;
   const t = lab(sh.c, x + w / 2, y + h / 2 + 10 * u, text, {
     role: "pri",
     anchor: "middle",
-    color: p.accent,
+    color: col,
     weight: 600,
   });
   const g = s(
     "g",
     {
-      class: "cs-btn",
+      class: `cs-btn${o.cls ? ` ${o.cls}` : ""}`,
       role: "button",
-      tabindex: 0,
+      tabindex: o.hidden ? -1 : 0,
       "aria-label": name,
-      style: "cursor:pointer",
+      style: o.hidden ? "display:none" : "cursor:pointer",
+      // a button only for the phone's panel: its word is an attribute, never drawn
+      ...(o.hidden ? { "data-label": text } : {}),
     },
-    s("rect", {
-      x,
-      y,
-      width: w,
-      height: h,
-      rx: 12 * u,
-      fill: tint(p.accent, 0.1),
-      stroke: p.accent,
-      "stroke-width": 3 * u,
-    }),
-    t,
+    ...(o.hidden
+      ? []
+      : [
+          s("rect", {
+            x,
+            y,
+            width: w,
+            height: h,
+            rx: 12 * u,
+            fill: tint(col, 0.1),
+            stroke: col,
+            "stroke-width": 3 * u,
+          }),
+          t,
+        ]),
   );
   g.addEventListener("pointerdown", (e) => {
     e.preventDefault();
@@ -204,6 +215,12 @@ export function createHoldFly(
   const speed = clamp(spec0.speed ?? 8, 1, 30);
   const goals = spec0.goals ?? [];
   const met: boolean[] = goals.map(() => false);
+  /** the entries trainer: the student names the entry before it is shown */
+  const trainer = goals.length > 0 && drag.has("crs");
+  let decided = !trainer;
+  let wrong: HoldEntry[] = [];
+  const revealed = () => !trainer || decided;
+  let lastStatus = "";
   let flight: HoldFlight = holdFlightOf(spec0);
   let tSim = 0;
   let paused = false;
@@ -236,6 +253,7 @@ export function createHoldFly(
   };
   /** the time a still shows: the end of the entry, or well into the outbound leg of the first lap */
   const stillT = () => {
+    if (!revealed()) return 0;
     if (getSpec().crs !== undefined) return flight.establishedT;
     const out = flight.samples.find(
       (x) =>
@@ -243,12 +261,23 @@ export function createHoldFly(
     );
     return out ? out.t : endT() * 0.4;
   };
+  const entryWord = (e: HoldEntry) => ENTRY_WORD[e][fr ? 1 : 0];
   const tickGoal = () => {
     if (pendingGoal < 0 || met[pendingGoal]) return;
-    met[pendingGoal] = true;
+    const i = pendingGoal;
+    met[i] = true;
     pendingGoal = -1;
     rePanel?.();
     o.onGoal?.([...met]);
+    const e = entrySector(spec0.inbound, spec0.turn, goals[i]).entry;
+    o.announce?.(
+      met.every(Boolean)
+        ? T("All three entries found.", "Les trois entrées sont trouvées.")
+        : T(
+            `Heading ${hdg3(goals[i])}: ${ENTRY_WORD[e][0].toLowerCase()} entry, goal met.`,
+            `Cap ${hdg3(goals[i])} : entrée ${ENTRY_WORD[e][1].toLowerCase()}, objectif atteint.`,
+          ),
+    );
   };
   const setCrs = (v: number) => {
     const crs = Math.round(norm360(v)) || 360;
@@ -256,8 +285,83 @@ export function createHoldFly(
     if (crs === Math.round(norm360(cur.crs ?? 0))) return;
     pendingGoal = goalIndex(goals, crs);
     tSim = 0;
+    decided = !trainer;
+    wrong = [];
     setSpec({ ...cur, crs });
-    if (!animate) tickGoal();
+    if (!trainer && !animate) tickGoal();
+  };
+  /** the student's answer: which entry for this arrival heading */
+  const pick = (e: HoldEntry) => {
+    const cur = getSpec();
+    if (decided || cur.crs === undefined) return;
+    const sec = entrySector(cur.inbound, cur.turn, cur.crs);
+    if (sec.either.includes(e)) {
+      decided = true;
+      tSim = 0;
+      setSpec({ ...cur });
+      if (pendingGoal >= 0) tickGoal();
+      else
+        o.announce?.(
+          T(
+            `Right: ${ENTRY_WORD[sec.entry][0].toLowerCase()} entry.`,
+            `Juste : entrée ${ENTRY_WORD[sec.entry][1].toLowerCase()}.`,
+          ),
+        );
+    } else {
+      if (!wrong.includes(e)) wrong = [...wrong, e];
+      setSpec({ ...cur });
+      o.announce?.(
+        T(
+          `Not ${ENTRY_WORD[e][0].toLowerCase()}: look which side of the lines the aircraft comes from.`,
+          `Pas ${ENTRY_WORD[e][1].toLowerCase()} : regardez de quel côté des lignes arrive l’avion.`,
+        ),
+      );
+    }
+  };
+  /** what the drawing shows, as words (the phone's panel under the slide reads it: data-status, 'cs-status') */
+  const statusRows = (): { t: string; done?: boolean }[] => {
+    const sp = getSpec();
+    const rows: { t: string; done?: boolean }[] = [];
+    if (sp.crs !== undefined) {
+      const e = entrySector(sp.inbound, sp.turn, sp.crs).entry;
+      rows.push({
+        t: `${T("Arrival heading", "Cap d’arrivée")} ${hdg3(sp.crs)}° · ${T("entry", "entrée")} ${revealed() ? entryWord(e).toLowerCase() : "?"}`,
+      });
+      if (!revealed())
+        rows.push({
+          t: wrong.length
+            ? T(
+                `Not ${wrong.map((w) => ENTRY_WORD[w][0].toLowerCase()).join(", ")}: look which side of the lines the aircraft comes from.`,
+                `Pas ${wrong.map((w) => ENTRY_WORD[w][1].toLowerCase()).join(", ")} : regardez de quel côté des lignes arrive l’avion.`,
+              )
+            : T("Which entry? Pick it below.", "Quelle entrée ? Choisissez-la ci-dessous."),
+        });
+    }
+    if ((sp.windKt ?? 0) > 0.5 && drag.has("wind"))
+      rows.push({
+        t: T(
+          `Wind ${hdg3(sp.windDir ?? 360)}/${Math.round(sp.windKt ?? 0)} · inbound heading ${hdg3(flight.inHdg)} · outbound ${hdg3(flight.outHdg)}`,
+          `Vent ${hdg3(sp.windDir ?? 360)}/${Math.round(sp.windKt ?? 0)} · cap ${hdg3(flight.inHdg)} en rapprochement · ${hdg3(flight.outHdg)} en éloignement`,
+        ),
+      });
+    goals.forEach((gh, i) => {
+      const e = entrySector(sp.inbound, sp.turn, gh).entry;
+      rows.push({
+        t: `${T("Heading", "Cap")} ${hdg3(gh)} → ${met[i] ? entryWord(e).toLowerCase() : "?"}`,
+        done: met[i],
+      });
+    });
+    return rows;
+  };
+  const pushStatus = () => {
+    const el = svgEl;
+    if (!el) return;
+    const j = JSON.stringify(statusRows());
+    if (j === lastStatus) return;
+    lastStatus = j;
+    el.setAttribute("data-status", j);
+    if (typeof CustomEvent === "function" && typeof el.dispatchEvent === "function")
+      el.dispatchEvent(new CustomEvent("cs-status", { bubbles: true }));
   };
 
   const frame = (t: number) => {
@@ -315,7 +419,7 @@ export function createHoldFly(
       clockBig.textContent = big;
       clockSub.textContent = sub;
     }
-    if (t >= flight.establishedT) tickGoal();
+    if (!trainer && t >= flight.establishedT) tickGoal();
   };
 
   const loop = (now: number) => {
@@ -326,7 +430,7 @@ export function createHoldFly(
     else if (wasConnected) return; // gone from the page: stop for good
     const dt = last ? Math.min(0.25, (now - last) / 1000) : 0;
     last = now;
-    if (!paused) {
+    if (!paused && revealed()) {
       // the arrival is only the way in: it plays faster than the entry and the hold
       const ph = sampleAt(flight, tSim).phase;
       tSim += dt * speed * (ph === "arrive" ? 2.5 : 1);
@@ -430,12 +534,12 @@ export function createHoldFly(
       for (const S of SECT) {
         const a = at(abs(S.from), RC);
         const b = at(abs(S.to), RC);
-        const lit = sector?.entry === S.e;
+        const lit = revealed() && sector?.entry === S.e;
         ly.append(
           s("path", {
             d: `M${fx} ${fy}L${a[0]} ${a[1]}A${RC} ${RC} 0 ${S.to - S.from > 180 ? 1 : 0} ${sg > 0 ? 1 : 0} ${b[0]} ${b[1]}Z`,
             fill: S.col,
-            "fill-opacity": sector ? (lit ? 0.28 : 0.06) : 0.14,
+            "fill-opacity": sector && revealed() ? (lit ? 0.28 : 0.06) : 0.14,
           }),
         );
       }
@@ -456,16 +560,27 @@ export function createHoldFly(
       ly.append(
         s("path", {
           d: `M${e1[0]} ${e1[1]}L${e2[0]} ${e2[1]}M${fx} ${fy}L${e3[0]} ${e3[1]}`,
-          stroke: p.muted,
-          "stroke-width": SW.constr * u,
+          // a wrong answer: the lines that split the arrivals stand out
+          stroke: wrong.length && !revealed() ? p.accent : p.muted,
+          "stroke-width": (wrong.length && !revealed() ? SW.second : SW.constr) * u,
           fill: "none",
         }),
       );
+      // where the arrival comes from (relative to the inbound course): a sector's name moves off its line
+      const arrRel =
+        spec.crs !== undefined
+          ? norm360((norm360(spec.crs + 180) - I) * sg)
+          : null;
       for (const S of SECT) {
-        const q = at(
-          abs((S.from + S.to) / 2),
-          RC * (S.e === "DIRECT" ? 0.72 : 0.68),
-        );
+        let mid = (S.from + S.to) / 2;
+        if (arrRel !== null && arrRel >= S.from && arrRel <= S.to) {
+          // the middle of the larger free part of the sector
+          mid =
+            arrRel - S.from >= S.to - arrRel
+              ? (S.from + arrRel) / 2
+              : (arrRel + S.to) / 2;
+        }
+        const q = at(abs(mid), RC * (S.e === "DIRECT" ? 0.72 : 0.68));
         const lit = sector?.entry === S.e;
         ly.append(
           lab(c, q[0], q[1] - 4 * u, ENTRY_WORD[S.e][fr ? 1 : 0], {
@@ -497,6 +612,7 @@ export function createHoldFly(
     }
     // the path to fly, faint, then the trail drawn as the aircraft flies
     const all = flight.samples
+      .filter((q) => revealed() || q.phase === "arrive")
       .map((q) =>
         toPx(q.x, q.y)
           .map((v) => v.toFixed(1))
@@ -657,7 +773,7 @@ export function createHoldFly(
         wKt > 0.5
           ? T(
               `inbound · ${d}° into the wind`,
-              `rapprochement · ${d}° face au vent`,
+              `rapprochement · ${d}° côté vent`,
             )
           : T("inbound · no wind", "rapprochement · sans vent"),
         { role: "key", color: p.heading },
@@ -767,7 +883,9 @@ export function createHoldFly(
       handle.g.setAttribute("aria-valuenow", String(Math.round(spec.crs)));
       handle.g.setAttribute(
         "aria-valuetext",
-        `${T("heading", "cap")} ${hdg3(spec.crs)}`,
+        revealed() && sector
+          ? `${T("heading", "cap")} ${hdg3(spec.crs)}, ${T("entry", "entrée")} ${entryWord(sector.entry).toLowerCase()}`
+          : `${T("heading", "cap")} ${hdg3(spec.crs)}`,
       );
     }
     // the side panel: the heading, its entry, the goals
@@ -782,7 +900,7 @@ export function createHoldFly(
         let y = 44 * u;
         if (spec.crs !== undefined && sector) {
           g.append(
-            lab(c, x0, y, T("YOUR HEADING", "VOTRE CAP"), {
+            lab(c, x0, y, T("ARRIVAL HEADING", "CAP D’ARRIVÉE"), {
               role: "sec",
               spacing: 0.08,
             }),
@@ -795,6 +913,69 @@ export function createHoldFly(
           big.setAttribute("font-size", String(72 * u));
           g.append(big);
           y += 148 * u;
+          if (!revealed()) {
+            // the student's answer: three chips, the entry and its flight shown once the right one is picked
+            g.append(
+              lab(c, x0, y, T("WHICH ENTRY?", "QUELLE ENTRÉE ?"), {
+                role: "sec",
+                spacing: 0.08,
+                color: p.text,
+              }),
+            );
+            y += 20 * u;
+            const gap = 12 * u;
+            const cw = (wP - 2 * gap) / 3;
+            const ENT: HoldEntry[] = ["DIRECT", "TEARDROP", "PARALLEL"];
+            ENT.forEach((e, i) => {
+              const no = wrong.includes(e);
+              g.append(
+                svgButton(
+                  sh,
+                  x0 + i * (cw + gap),
+                  y,
+                  cw,
+                  88 * u,
+                  entryWord(e),
+                  no
+                    ? T(
+                        `${ENTRY_WORD[e][0]} entry: not this one`,
+                        `Entrée ${ENTRY_WORD[e][1].toLowerCase()} : pas celle-ci`,
+                      )
+                    : T(
+                        `${ENTRY_WORD[e][0]} entry`,
+                        `Entrée ${ENTRY_WORD[e][1].toLowerCase()}`,
+                      ),
+                  () => pick(e),
+                  { cls: "cs-chip", color: no ? p.muted : p.accent },
+                ).g,
+              );
+            });
+            y += 88 * u + 44 * u;
+            for (const line of wrapWords(
+              wrong.length
+                ? T(
+                    "Not that one: which side of the lines does the aircraft come from?",
+                    "Pas celle-ci : de quel côté des lignes arrive l’avion ?",
+                  )
+                : T(
+                    "The aircraft waits for your answer.",
+                    "L’avion attend votre réponse.",
+                  ),
+              FS.sec * u,
+              wP,
+            )) {
+              g.append(
+                lab(c, x0, y, line, {
+                  role: "sec",
+                  color: wrong.length ? p.bad : p.ink2,
+                  italic: !wrong.length,
+                }),
+              );
+              y += 32 * u;
+            }
+            y += 28 * u;
+          }
+          if (revealed()) {
           g.append(
             lab(c, x0, y, T("ENTRY", "ENTRÉE"), { role: "sec", spacing: 0.08 }),
           );
@@ -841,6 +1022,7 @@ export function createHoldFly(
               y += 32 * u;
             }
           y += 28 * u;
+          }
         }
         if (goals.length) {
           g.append(
@@ -859,7 +1041,7 @@ export function createHoldFly(
               c,
               x0,
               y,
-              T("YOUR TURN · SET EACH HEADING", "À VOUS · RÉGLEZ CHAQUE CAP"),
+              T("YOUR TURN · EACH HEADING, ITS ENTRY", "À VOUS · CHAQUE CAP, SON ENTRÉE"),
               { role: "sec", spacing: 0.04, color: p.text },
             ),
           );
@@ -894,7 +1076,7 @@ export function createHoldFly(
                 c,
                 x0 + 52 * u,
                 cy + 10 * u,
-                `${T("Heading", "Cap")} ${hdg3(gh)} → ${done ? ENTRY_WORD[e][fr ? 1 : 0].toLowerCase() : "?"}`,
+                `${T("Heading", "Cap")} ${hdg3(gh)} → ${done ? entryWord(e).toLowerCase() : "?"}`,
                 { role: "pri", color: done ? p.text : p.ink2 },
               ),
             );
@@ -907,7 +1089,7 @@ export function createHoldFly(
                 c,
                 x0,
                 y,
-                T("All three entries flown.", "Les trois entrées sont faites."),
+                T("All three entries found.", "Les trois entrées sont trouvées."),
                 { role: "pri", color: p.nav },
               ),
             );
@@ -915,8 +1097,12 @@ export function createHoldFly(
         }
       };
       paint();
-      rePanel = paint;
+      rePanel = () => {
+        paint();
+        pushStatus();
+      };
     }
+    pushStatus();
   }
 
   const widget = makeWidget<HoldFlySpec>(spec0, o, [1680, 720], "cs-holdfly", {
@@ -951,7 +1137,8 @@ export function createHoldFly(
         const bw = 132 * u;
         const bh = 88 * u;
         const bx = W - 24 * u - 2 * bw - 16 * u;
-        const by = 44 * u + 4 * u;
+        // under the panel's small label, level with the heading
+        const by = 60 * u;
         sh.top.append(
           svgButton(
             sh,
@@ -992,6 +1179,21 @@ export function createHoldFly(
           () => ({ dir: get().windDir ?? 360, kt: get().windKt ?? 0 }),
           true,
         ).set(spec.windDir ?? 360, spec.windKt ?? 0);
+        // the wind again as buttons, for the phone's panel under the slide (the dial is a few pixels there)
+        const wind = (dd: number, dk: number) => {
+          const cur = get();
+          const kt = clamp(Math.round((cur.windKt ?? 0) + dk), 0, 60);
+          const dir = Math.round(norm360((cur.windDir ?? 360) + dd)) || 360;
+          widget.update({ ...cur, windDir: dir, windKt: kt });
+          o.onChange?.(widget.spec());
+        };
+        const hide = { hidden: true, cls: "cs-proxy" };
+        sh.top.append(
+          svgButton(sh, 0, 0, 1, 1, T("Wind −10°", "Vent −10°"), T("Wind direction minus 10°", "Direction du vent moins 10°"), () => wind(-10, 0), hide).g,
+          svgButton(sh, 0, 0, 1, 1, T("Wind +10°", "Vent +10°"), T("Wind direction plus 10°", "Direction du vent plus 10°"), () => wind(10, 0), hide).g,
+          svgButton(sh, 0, 0, 1, 1, "−5 kt", T("Wind strength minus 5 kt", "Force du vent moins 5 kt"), () => wind(0, -5), hide).g,
+          svgButton(sh, 0, 0, 1, 1, "+5 kt", T("Wind strength plus 5 kt", "Force du vent plus 5 kt"), () => wind(0, 5), hide).g,
+        );
       }
       pauseLabel = null;
       if (controls()) {
@@ -1013,6 +1215,7 @@ export function createHoldFly(
               pauseLabel.textContent = paused
                 ? T("Play", "Lecture")
                 : T("Pause", "Pause");
+            o.onLive?.();
           },
         );
         pauseLabel = pz.t;
@@ -1029,6 +1232,7 @@ export function createHoldFly(
             paused = false;
             if (pauseLabel) pauseLabel.textContent = T("Pause", "Pause");
             frame(0);
+            o.onLive?.();
           },
         );
         sh.top.append(pz.g, rp.g);
@@ -1042,7 +1246,7 @@ export function createHoldFly(
     label(_sh, spec) {
       const f = flight;
       const e =
-        spec.crs !== undefined
+        spec.crs !== undefined && revealed()
           ? entrySector(spec.inbound, spec.turn, spec.crs).entry
           : null;
       const turns =
@@ -1070,6 +1274,44 @@ export function createHoldFly(
     raf = requestAnimationFrame(loop);
   return {
     ...widget,
+    live: () => ({
+      spec: widget.spec(),
+      t: tSim,
+      paused,
+      x: { decided, wrong: [...wrong], met: [...met] },
+    }),
+    follow(st) {
+      const sp = st.spec as HoldFlySpec;
+      const x = st.x as
+        | { decided?: boolean; wrong?: HoldEntry[]; met?: boolean[] }
+        | undefined;
+      const metBefore = met.join();
+      let redraw = JSON.stringify(sp) !== JSON.stringify(widget.spec());
+      if (x) {
+        if (typeof x.decided === "boolean" && x.decided !== decided) {
+          decided = x.decided;
+          redraw = true;
+        }
+        if (Array.isArray(x.wrong) && x.wrong.join() !== wrong.join()) {
+          wrong = [...x.wrong];
+          redraw = true;
+        }
+        if (Array.isArray(x.met))
+          x.met.forEach((m, i) => {
+            if (i < met.length) met[i] = !!m;
+          });
+      }
+      if (met.join() !== metBefore) {
+        redraw = true;
+        o.onGoal?.([...met]);
+      }
+      if (typeof st.t === "number") tSim = st.t;
+      if (typeof st.paused === "boolean") paused = st.paused;
+      if (redraw) widget.update(sp);
+      if (pauseLabel)
+        pauseLabel.textContent = paused ? T("Play", "Lecture") : T("Pause", "Pause");
+      frame(animate ? Math.min(tSim, endT()) : stillT());
+    },
     destroy() {
       if (raf && typeof cancelAnimationFrame === "function")
         cancelAnimationFrame(raf);

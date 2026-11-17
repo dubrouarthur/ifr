@@ -2,6 +2,7 @@
 // BroadcastChannel 'ifr-course-present'; the projector follows (step, reveal, black screen, the stage pose at
 // ≤10 Hz while the stage is live). The projector never simulates alone, so it cannot drift from the console.
 import type { Lang, PresentMsg, StagePose } from "./types";
+import type { DiagramLive } from "./stage/svgkit";
 
 export const PRESENT_CHANNEL = "ifr-course-present";
 /** the stage pose is mirrored at most this often (ms) */
@@ -33,6 +34,8 @@ export type PresentWire =
   | { t: "sims"; stepId: string; who: DemoWhoWire; list: SimMirrorWire[] }
   /** an animation of the slide replayed / paused / resumed by the presenter (the projector plays its own copy) */
   | { t: "anim"; stepId: string; id: string; op: "replay" | "pause" | "resume" }
+  /** a drawing the presenter works (the hold's heading, the wind, pause / replay): the projector shows the same */
+  | { t: "diagram"; stepId: string; id: string; st: DiagramLive }
   /** the presenter went into the simulator (the projector says the course resumes here) */
   | { t: "away"; on: boolean };
 
@@ -61,6 +64,7 @@ export function isPresentWire(x: unknown): x is PresentWire {
     t === "lang" ||
     t === "sims" ||
     t === "anim" ||
+    t === "diagram" ||
     t === "away"
   );
 }

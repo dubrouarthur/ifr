@@ -314,6 +314,19 @@ export interface DiagramOptions {
   animate?: boolean;
   /** goals the drawing checks by itself (the hold flown: one flag per goal heading) */
   onGoal?: (met: boolean[]) => void;
+  /** what the presenter changed that the projector must show too (paused, replayed, a choice made) */
+  onLive?: () => void;
+  /** a sentence for screen readers (a goal met, an answer checked): the block reads it in a polite live region */
+  announce?: (text: string) => void;
+}
+/** A drawing's live state, mirrored from the presenter console to the projector (canvas/diagramMirror.ts). */
+export interface DiagramLive {
+  spec: unknown;
+  /** the animation's clock, s of simulated time */
+  t?: number;
+  paused?: boolean;
+  /** the drawing's own state (the trainer's answers) */
+  x?: unknown;
 }
 export interface DiagramWidget<S> {
   readonly el: SVGSVGElement;
@@ -326,6 +339,10 @@ export interface DiagramWidget<S> {
   resize?(w: number, h: number, u?: number): void;
   /** what the drawing does not show to scale ("vertical scale × 4"), for the hint row under it */
   note?(): string | null;
+  /** the live state the projector mirrors (drawings the presenter works: the hold flown) */
+  live?(): DiagramLive;
+  /** apply the presenter's live state (the projector) */
+  follow?(st: DiagramLive): void;
   destroy(): void;
 }
 
