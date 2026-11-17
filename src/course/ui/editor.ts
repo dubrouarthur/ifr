@@ -145,6 +145,10 @@ import {
 import { exampleScenes } from "../canvas/examples";
 import { showcaseScenes, startSlide } from "../samples/showcaseDecks";
 import { toolSlides } from "../samples/toolSlides";
+import { gallerySlides } from "../samples/exampleSlides";
+/** the ready slide « Modèles » gives an engine (samples/exampleSlides.ts engineSlides) */
+const engineReady = (engine: string) =>
+  gallerySlides().find((g) => g.group === "engines" && g.slide.blocks.some((x) => x.kind === "engine3d" && x.engine === engine));
 import type { SlideLayoutId, ThemeId } from "../types";
 import "../../styles/course-editor.css";
 import "../../styles/course-studio.css";
@@ -811,6 +815,13 @@ export class CourseEditor implements InspectorHost {
             x.p = { ...(tool.p ?? {}) };
           }
         this.addComposedSlide(slide, ready.title);
+      } else if (d.kind === "engine3d" && engineReady(d.engine)) {
+        // a 3D engine likewise gets its slide of « Modèles »: its title, its task for the student, its source
+        const eng = d;
+        const slide = clone(engineReady(eng.engine)!.slide);
+        for (const x of slide.blocks)
+          if (x.kind === "engine3d" && eng.controls) x.controls = [...eng.controls];
+        this.addComposedSlide(slide, engineReady(eng.engine)!.title);
       } else {
         this.addTemplate("slide", { layout: "blank" });
         this.canvasEd?.add(d);
