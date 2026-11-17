@@ -351,8 +351,8 @@ export const PROGRAMS: readonly ProgramDef[] = [
     code: { en: "LAPL · PPL", fr: "LAPL · PPL" },
     title: { en: "Pilot licence, aeroplane", fr: "Licence de pilote avion" },
     frame: {
-      en: "EASA Part-FCL · on the Cessna 172",
-      fr: "EASA Part-FCL · sur Cessna 172",
+      en: "EASA Part-FCL · on a single-engine trainer",
+      fr: "EASA Part-FCL · sur avion-école monomoteur",
     },
     blurb: {
       en: "The instruments, flight planning and human performance, then flying: handling, failures, navigation.",
@@ -380,7 +380,7 @@ export const PROGRAMS: readonly ProgramDef[] = [
     id: "ir",
     code: { en: "IR", fr: "IR" },
     title: { en: "Instrument rating", fr: "Vol aux instruments" },
-    frame: { en: "EASA and FAA · on the Cessna 172", fr: "EASA et FAA · sur Cessna 172" },
+    frame: { en: "EASA and FAA · on a single-engine trainer", fr: "EASA et FAA · sur avion-école monomoteur" },
     blurb: {
       en: "Eight subjects, from attitude instrument flying to the checkride and real airfields.",
       fr: "Huit matières, du pilotage aux instruments jusqu’au test pratique et aux terrains réels.",
