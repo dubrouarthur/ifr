@@ -403,19 +403,24 @@ export function mountEngine(
       const t = btn("eng-btn eng-toggle", name);
       const hint = mk("span", "eng-c-hint", tl(REVERSER_LOCKED, lang));
       hint.id = `${id}-h`;
+      // the words show once the student tries (a screen reader hears them from the start, as the description)
+      let tried = false;
       const put = () => {
         const locked = !sim.reverserFree();
+        if (!locked) tried = false;
         t.setAttribute("aria-pressed", String(st.set.reverse));
         t.setAttribute("aria-disabled", String(locked));
         if (locked) t.setAttribute("aria-describedby", hint.id);
         else t.removeAttribute("aria-describedby");
         t.textContent = `${name} · ${st.set.reverse ? w("on", lang) : w("off", lang)}`;
-        hint.hidden = !locked;
+        hint.hidden = !(locked && tried);
         row.classList.toggle("locked", locked);
       };
       t.addEventListener("click", () => {
         if (!sim.toggleReverse()) {
-          // said where the student looks: the hint under the switch flashes
+          // said where the student looks: the hint under the switch shows, and flashes
+          tried = true;
+          put();
           hint.classList.remove("flash");
           void hint.offsetWidth;
           hint.classList.add("flash");

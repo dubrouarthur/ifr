@@ -270,6 +270,13 @@
   flex-direction: column;
   gap: 0.55em;
 }
+.eng-piston:not(.big) .eng-ctl,
+.eng-piston:not(.big) .eng-panel {
+  gap: 0.4em;
+}
+.eng-piston:not(.big) .eng-g {
+  padding: 0.3em 0.55em 0.4em;
+}
 .eng-c-n {
   display: block;
   font-weight: 600;
@@ -296,6 +303,9 @@
 .eng:not(.narrow) .eng-c-ends {
   grid-column: 2;
 }
+/* on a slide the piston's four controls fill the panel: its throttle (more is forward, as everywhere) keeps no
+   end words; the mixture, the less obvious lever, keeps them (and every lever says them to a screen reader) */
+.eng-piston:not(.big) .eng-c-throttle .eng-c-ends,
 .eng:not(.big) .eng-steps,
 .eng:not(.big) .eng-foot {
   display: none;
