@@ -82,18 +82,18 @@ const make = (starter: (typeof DECK_STARTERS)[number], title = "", program: "ppl
   buildNewCourse({ id: "c1", lang: "fr", title, program, subject: null, starter, now: new Date("2026-11-16T00:00:00Z") });
 
 describe("the starting template of each formation", () => {
-  it("each formation starts from its own template, then its subject decks, then the blank slide", () => {
-    expect(startersFor("ppl")[0].id).toBe("ppl-circuit");
-    expect(startersFor("night")[0].id).toBe("night-flight");
-    expect(startersFor("ir")[0].id).toBe("ir-ils");
-    expect(startersFor("atpl")[0].id).toBe("atpl-displays");
+  it("each formation offers the blank slide first, then its own template, then its subject decks", () => {
+    expect(startersFor("ppl")[1].id).toBe("ppl-circuit");
+    expect(startersFor("night")[1].id).toBe("night-flight");
+    expect(startersFor("ir")[1].id).toBe("ir-ils");
+    expect(startersFor("atpl")[1].id).toBe("atpl-displays");
     // LAPL · PPL never offers an IR template (the old bug: the holding briefing was preselected)
     const ppl = startersFor("ppl").map((d) => d.id);
     expect(ppl).not.toContain("hold-briefing");
     expect(ppl).not.toContain("ir-ils");
-    expect(ppl.at(-1)).toBe(BLANK_STARTER.id);
+    expect(ppl[0]).toBe(BLANK_STARTER.id);
     expect(startersFor("ir").map((d) => d.id)).not.toContain("ppl-circuit");
-    // nothing chosen: every template, the blank slide last
+    // nothing chosen: the blank slide, then every template
     expect(startersFor(null).length).toBe(DECK_STARTERS.length + 1);
   });
   it("the typed title is on the cover and names the course", () => {

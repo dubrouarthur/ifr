@@ -1,5 +1,6 @@
-/* « Nouveau cours » (src/course/ui/newCourse.ts): a light page of its own, the focus bar, three fields, the
-   templates as real covers, a sticky bar with the one primary « Créer le cours » (UX logic §3, §6). */
+/* « Nouveau cours » (src/course/ui/newCourse.ts): a light page of its own: the focus bar, two or three fields, the
+   starting points as one gallery of real slides (the blank slide first), quieter ways to start under it, and a
+   sticky bar with the one primary « Créer le cours » (UX logic §3, §6). */
 .nc-page {
   --paper: #fbfaf7;
   --raise: #f3f1ec;
@@ -11,7 +12,8 @@
   --rule: #e4e1da;
   --rule-strong: #cbc7be;
   --accent: #1d5fd1;
-  --accent-soft: #e8effc;
+  --accent-ink: #1853ba;
+  --bad: #a8331f;
   --sh-card:
     0 1px 2px rgba(20, 24, 31, 0.04), 0 4px 16px rgba(20, 24, 31, 0.05);
   --sh-lift:
@@ -62,8 +64,7 @@
     background 0.12s;
 }
 .nc-btn:hover {
-  border-color: #aeb3ab;
-  background: #fdfcfa;
+  border-color: var(--faint);
 }
 .nc-btn:focus-visible,
 .nc-card:focus-visible,
@@ -80,7 +81,7 @@
   box-shadow: 0 1px 2px rgba(29, 95, 209, 0.3);
 }
 .nc-btn.nc-primary:hover {
-  background: #1853ba;
+  background: var(--accent-ink);
 }
 .nc-page.is-busy .nc-primary {
   opacity: 0.7;
@@ -106,18 +107,9 @@
   flex: none;
 }
 .nc-ttl {
-  display: flex;
-  flex-direction: column;
   min-width: 0;
-  line-height: 1.25;
-}
-.nc-ttl b {
   font-size: 0.97rem;
   font-weight: 650;
-}
-.nc-ttl span {
-  font-size: 0.8125rem;
-  color: var(--mute);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -160,7 +152,7 @@
 .nc-in {
   max-width: calc(var(--page-max, 1200px) + 2 * var(--gutter, 40px));
   margin: 0 auto;
-  padding: 36px var(--gutter, 40px) 40px;
+  padding: 36px var(--gutter, 40px) 48px;
 }
 .nc-eyebrow {
   margin: 0 0 6px;
@@ -188,17 +180,23 @@
   font-size: 1.0625rem;
   color: var(--ink-2);
 }
+
+/* ---------- the fields: the title is the widest; the subject only once a formation is chosen */
 .nc-fields {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: 16px;
   margin-top: 28px;
 }
 .nc-field {
   display: flex;
+  flex: 1 1 220px;
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+}
+.nc-field.is-title {
+  flex: 2 1 320px;
 }
 .nc-field label {
   font-size: 0.875rem;
@@ -226,10 +224,6 @@
 .nc-input::placeholder {
   color: var(--faint);
 }
-.nc-input:disabled {
-  background: var(--raise);
-  color: var(--mute);
-}
 .nc-select {
   appearance: none;
   padding-right: 40px;
@@ -244,7 +238,7 @@
   align-items: baseline;
   flex-wrap: wrap;
   gap: 6px 14px;
-  margin: 36px 0 14px;
+  margin: 40px 0 16px;
 }
 .nc-h2 {
   margin: 0;
@@ -257,11 +251,11 @@
   color: var(--mute);
 }
 
-/* ---------- the starting points: real covers, one checked */
+/* ---------- the starting points (audit item 62): one radio group, one even grid of 16:9 slides, one checked */
 .nc-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
 }
 .nc-card {
   position: relative;
@@ -299,25 +293,10 @@
   position: absolute;
   inset: 0;
 }
-.nc-cover.is-blank {
-  display: grid;
-  place-items: center;
-  background: repeating-linear-gradient(
-    135deg,
-    #f6f4ef 0 10px,
-    #efece5 10px 20px
-  );
-}
-.nc-cover.is-blank > .nc-plus {
-  position: static;
-  display: grid;
-  place-items: center;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: var(--card);
-  border: 1px solid var(--rule-strong);
-  color: var(--accent);
+/* a card plays its slide as a picture: no « Pause » on it, nothing in it takes the pointer */
+.nc-cover .sl-motion-btn,
+.nc-cover .sl-hud-btn {
+  display: none;
 }
 .nc-tick {
   position: absolute;
@@ -335,8 +314,17 @@
 .nc-card.on .nc-tick {
   display: grid;
 }
+/* the blank slide: a clean white sheet on the desk, as the editor will show it */
+.nc-card.is-blank .nc-cover > * {
+  transform: scale(0.76);
+  border-radius: 4px;
+  box-shadow:
+    0 0 0 1px var(--rule),
+    0 6px 18px rgba(20, 24, 31, 0.08);
+}
 .nc-card-b {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 4px;
   padding: 14px 16px 16px;
@@ -351,118 +339,13 @@
   line-height: 1.4;
 }
 .nc-card-m {
-  margin-top: 6px;
+  margin-top: auto;
+  padding-top: 6px;
   font-size: 0.8125rem;
   color: var(--ink-2);
   font-variant-numeric: tabular-nums;
 }
-
-/* ---------- import a PDF (only when the build has the importer) */
-.nc-import {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-top: 22px;
-  padding: 16px 18px;
-  border: 1.5px dashed var(--rule-strong);
-  border-radius: 14px;
-}
-.nc-import > div {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.nc-import span {
-  font-size: 0.875rem;
-  color: var(--mute);
-}
-.nc-file {
-  display: none;
-}
-
-/* ---------- the sticky bar */
-.nc-foot {
-  background: rgba(255, 255, 255, 0.97);
-  border-top: 1px solid var(--rule);
-}
-.nc-foot-in {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  max-width: calc(var(--page-max, 1200px) + 2 * var(--gutter, 40px));
-  margin: 0 auto;
-  padding: 12px var(--gutter, 40px);
-  padding-bottom: max(12px, env(safe-area-inset-bottom));
-}
-.nc-what {
-  margin: 0;
-  font-size: 0.9375rem;
-  color: var(--ink-2);
-  min-width: 0;
-}
-
-/* ---------- iPad and portrait */
-@media (max-width: 900px) {
-  .nc-bar {
-    padding: 0 16px;
-    gap: 12px;
-  }
-  .nc-fields {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-  .nc-field.is-title {
-    grid-column: 1 / -1;
-  }
-  .nc-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .nc-h1 {
-    font-size: 2rem;
-  }
-}
-@media (max-width: 560px) {
-  .nc-fields,
-  .nc-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .nc-ttl span {
-    display: none;
-  }
-  .nc-what {
-    display: none;
-  }
-}
-@media (pointer: coarse) {
-  .nc-btn,
-  .nc-input {
-    min-height: 48px;
-  }
-  .nc-lang button {
-    min-height: 44px;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .nc-card,
-  .nc-btn {
-    transition: none;
-  }
-  .nc-card:hover {
-    transform: none;
-  }
-}
-
-/* ---------- the starting points as a showcase: a template of the formation is a wide card that plays its slide
-   (the aircraft flies, the needles move), one badge names what it shows; a line under the grid says what the
-   course will contain */
-.nc-card.is-feature {
-  grid-column: span 2;
-}
-@media (max-width: 620px) {
-  .nc-card.is-feature {
-    grid-column: auto;
-  }
-}
+/* the capability a showcase card names (samples/showcaseDecks.ts CAPABILITY) */
 .nc-badge {
   align-self: flex-start;
   display: inline-flex;
@@ -495,22 +378,147 @@
   background: #8fe39b;
   box-shadow: 0 0 0 3px rgba(143, 227, 155, 0.22);
 }
-.nc-card.is-feature .nc-card-t {
-  font-size: 1.0625rem;
+
+/* ---------- other ways to start: quieter than the gallery, under it */
+.nc-other {
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px solid var(--rule);
 }
-.nc-sum {
-  margin: 16px 0 0;
-  padding: 12px 16px;
-  border-radius: 12px;
-  background: var(--accent-soft);
-  color: var(--ink-2);
-  font-size: 0.9375rem;
-  line-height: 1.45;
-  font-variant-numeric: tabular-nums;
-}
-.nc-sum-k {
+.nc-h3 {
+  margin: 0 0 14px;
+  font-size: 1rem;
   font-weight: 650;
-  color: var(--ink);
+}
+.nc-other-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 40px;
+}
+.nc-other-i {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.nc-other-n {
+  font-size: 0.875rem;
+  color: var(--mute);
+}
+.nc-file {
+  display: none;
+}
+
+/* ---------- the sticky bar: what will be made, or « Votre terrain »'s code */
+.nc-foot {
+  background: rgba(255, 255, 255, 0.97);
+  border-top: 1px solid var(--rule);
+}
+.nc-foot-in {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  max-width: calc(var(--page-max, 1200px) + 2 * var(--gutter, 40px));
+  margin: 0 auto;
+  padding: 12px var(--gutter, 40px);
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+/* what is said fills the bar; the code of « Votre terrain » keeps its width: both push the buttons to the right */
+.nc-what {
+  flex: 1 1 0;
+  margin: 0 auto 0 0;
+  min-width: 0;
+  font-size: 0.9375rem;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nc-kit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-width: 0;
+  margin-right: auto;
+}
+.nc-kit[hidden],
+.nc-what[hidden] {
+  display: none;
+}
+.nc-kit label {
+  font-size: 0.9375rem;
+  font-weight: 650;
+}
+.nc-input.nc-icao {
+  width: 6.5em;
+  min-height: var(--btn-h, 44px);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.nc-icao::placeholder {
+  font-weight: 500;
+}
+.nc-icao[aria-invalid] {
+  border-color: var(--bad);
+}
+.nc-kit-msg {
+  font-size: 0.875rem;
+  color: var(--mute);
+}
+.nc-kit-msg.is-bad {
+  color: var(--bad);
+  font-weight: 600;
+}
+
+/* ---------- iPad and portrait, then a phone */
+@media (max-width: 900px) {
+  .nc-bar {
+    padding: 0 16px;
+    gap: 12px;
+  }
+  .nc-h1 {
+    font-size: 2rem;
+  }
+}
+@media (max-width: 560px) {
+  /* the page's h1 says where you are: the bar keeps the way back and the language */
+  .nc-rule,
+  .nc-ttl {
+    display: none;
+  }
+  .nc-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .nc-what {
+    display: none;
+  }
+  .nc-kit {
+    flex-basis: 100%;
+  }
+  .nc-other-i {
+    flex-wrap: wrap;
+  }
+}
+@media (pointer: coarse) {
+  .nc-btn,
+  .nc-input {
+    min-height: 48px;
+  }
+  .nc-lang button {
+    min-height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nc-card,
+  .nc-btn {
+    transition: none;
+  }
+  .nc-card:hover {
+    transform: none;
+  }
 }
 
 /* ---------- the tip beside the editor's « Simulateur » tab, once after « Créer le cours » (simTip.ts) */
@@ -534,7 +542,10 @@
   box-shadow:
     0 2px 4px rgba(20, 24, 31, 0.06),
     0 16px 40px rgba(20, 24, 31, 0.16);
-  font-size: 0.9375rem;
+  font:
+    400 0.9375rem/1.4 "Inter",
+    system-ui,
+    sans-serif;
 }
 .nc-simtip > b {
   display: block;
@@ -615,11 +626,6 @@
   background: rgba(255, 255, 255, 0.12);
   color: #ffffff;
 }
-.nc-simtip-acts {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
 .nc-simtip-arrow {
   position: absolute;
   top: 34px;
@@ -635,84 +641,4 @@
   outline: 2px solid #1d5fd1;
   outline-offset: 2px;
   border-radius: 10px;
-}
-/* a card plays its slide as a picture: no « Pause » on it, nothing in it takes the pointer */
-.nc-cover .sl-motion-btn,
-.nc-cover .sl-hud-btn {
-  display: none;
-}
-.nc-simtip {
-  font-family: "Inter", system-ui, sans-serif;
-  line-height: 1.4;
-}
-/* a wide card does not stretch the small ones beside it */
-.nc-grid {
-  align-items: start;
-}
-
-/* « Créer avec l’IA » and what it needs, on one line (audit item 42) */
-.nc-ai-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 14px;
-  margin-top: 16px;
-}
-.nc-ai-row .nc-btn.nc-ai {
-  margin-top: 0 !important;
-}
-.nc-ai-note {
-  color: #5d6671;
-  font-size: 0.875rem;
-}
-
-/* the starting points (audit item 62): one even grid of 16:9 covers, no double-width card; « Partir d'une
-   description (IA) » is its first card */
-.nc-grid {
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  align-items: stretch;
-}
-.nc-radios {
-  display: contents;
-}
-.nc-card.is-feature {
-  grid-column: auto;
-}
-.nc-card.is-feature .nc-card-t {
-  font-size: inherit;
-}
-button.nc-card {
-  padding: 0;
-  font: inherit;
-  text-align: left;
-  color: inherit;
-}
-.nc-card-ai {
-  border-style: dashed;
-  border-color: var(--rule-strong);
-  box-shadow: none;
-}
-.nc-card-ai:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-.nc-cover-ai {
-  display: grid;
-  place-items: center;
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.nc-cover.nc-cover-ai > * {
-  position: static;
-  inset: auto;
-}
-@media (max-width: 760px) {
-  .nc-grid {
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  }
-}
-@media (max-width: 560px) {
-  .nc-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }

@@ -34,7 +34,4 @@ describe("English strings never use « »", () => {
     }
     expect(bad).toEqual([]);
   });
-  it("the new course page subtitle", () => {
-    expect(readFileSync("src/course/ui/newCourse.ts", "utf8")).toMatch(/Nothing is saved before “Create the course”/);
-  });
 });

@@ -1,8 +1,8 @@
 // « Nouveau cours » (academy.html#new, UX logic §6): a page of its own, without the editor's chrome. The instructor
-// names the course, says where it belongs (formation, optional subject), picks a starting point (the templates of
-// that formation first, then the empty course) and creates it. NOTHING is saved before « Créer le cours »: leaving
-// the page leaves the course store as it was. The pure parts (the order of the templates, the course that is made)
-// are unit-tested.
+// names the course, may file it in a formation, picks a starting point in one gallery (the blank slide first, then
+// the templates, « Votre terrain » among them) and creates it. NOTHING is saved before « Créer le cours »: leaving the
+// page leaves the course store as it was. The pure parts (the order of the cards, the course that is made) are
+// unit-tested.
 import type { Course, L10n, Lang, SlideCanvas, ThemeId } from "../types";
 import type { CourseStore } from "../store";
 import { h } from "../../ui/dom";
@@ -17,7 +17,7 @@ import {
 } from "./deckStarters";
 import { renderSlide, renderThumb, type SlideView } from "../canvas/render";
 import { courseMinutes } from "./templates";
-import { CAPABILITY } from "../samples/showcaseDecks";
+import { CAPABILITY, type Capability } from "../samples/showcaseDecks";
 import { armSimTip } from "./simTip";
 import {
   courseProgramOf,
@@ -30,8 +30,7 @@ import {
   type SubjectId,
 } from "../../library/programs";
 import { aiCreateButton } from "../ai/entry";
-import type { AirfieldKit } from "../airfieldKit";
-import { airfieldKitPanel, type AirfieldKitPanel } from "./airfieldKitPanel";
+import type { AirfieldKit, AirfieldKitResult } from "../airfieldKit";
 import "../../styles/newcourse.css";
 
 // ------------------------------------------------------------------ the formations a course can be filed in
@@ -53,14 +52,31 @@ export function starterFormations(d: DeckStarter): ProgramId[] {
   if (/\bIR\b/.test(lv)) out.push("ir", "atpl");
   return out;
 }
-/** The templates the page shows: with a formation chosen, only its own (its starting template first), else all of
- *  them (the starting templates first); the blank slide is always last. */
+/** The templates the page shows, the blank slide first: with a formation chosen, only its own (its starting
+ *  template first), else all of them (the starting templates first). */
 export function startersFor(p: ProgramId | null): DeckStarter[] {
   const all = [...DECK_STARTERS];
-  if (!p) return [...all, BLANK_STARTER];
+  if (!p) return [BLANK_STARTER, ...all];
   const mine = all.filter((d) => starterFormations(d).includes(p));
   const first = mine.filter((d) => d.formations?.includes(p));
-  return [...first, ...mine.filter((d) => !first.includes(d)), BLANK_STARTER];
+  return [BLANK_STARTER, ...first, ...mine.filter((d) => !first.includes(d))];
+}
+/** « Votre terrain »: the card whose slides are made from the ICAO code typed (course/airfieldKit.ts). */
+export const AIRFIELD = "airfield";
+export type StartingPoint = DeckStarter | typeof AIRFIELD;
+/** The cards of the gallery, in order: the blank slide, the formation's starting templates, « Votre terrain »,
+ *  then the other templates. */
+export function startingPoints(p: ProgramId | null): StartingPoint[] {
+  const [blank, ...decks] = startersFor(p);
+  const lead = decks.filter((d) => (p ? d.formations?.includes(p) : !!d.formations?.length));
+  return [blank, ...lead, AIRFIELD, ...decks.filter((d) => !lead.includes(d))];
+}
+/** The card chosen when the page opens: « Votre terrain » when the link brings a code, the formation's starting
+ *  template when the page is opened from a formation (its page said a template exists), else the blank slide. */
+export function firstPick(p: ProgramId | null, kit?: string): string {
+  if (kit !== undefined) return AIRFIELD;
+  const own = p ? startersFor(p).find((d) => d.formations?.includes(p)) : undefined;
+  return (own ?? BLANK_STARTER).id;
 }
 /** How long a template's course takes, as the editor will say it (templates.ts courseMinutes of the course it
  *  makes), so the card and the editor never disagree. */
@@ -109,7 +125,6 @@ export function starterSummary(d: DeckStarter, lang: Lang): string {
     BUILT.set(d.id, c);
   }
   const n = c.steps.length;
-  if (d.id === BLANK_STARTER.id) return fr ? "1 diapo vierge, les diapos prêtes à portée de main" : "1 blank slide, the ready slides at hand";
   const blocks = c.steps.flatMap((s) => s.slide?.blocks ?? []);
   const parts = [fr ? `${n} ${n > 1 ? "diapos" : "diapo"}` : `${n} ${n > 1 ? "slides" : "slide"}`];
   if (blocks.some((b) => b.kind === "instrument" || b.kind === "simViewport"))
@@ -195,7 +210,7 @@ export interface NewCourseOptions {
   store: Promise<CourseStore | null>;
   program?: string;
   subject?: string;
-  /** opened from Accueil's « Votre terrain »: the ICAO field takes the focus, and a code typed there is prepared */
+  /** a link to « Votre terrain » (#new&kit=LFPN): that card is chosen, with the code typed and its slides prepared */
   kit?: string;
   /** the way back's word (« Bibliothèque », « LAPL · PPL », « Accueil ») */
   backLabel: (l: Lang) => string;
@@ -236,6 +251,17 @@ const svg = (d: string, size = 18): SVGSVGElement => {
   return s;
 };
 
+/** « Votre terrain »'s slides for a code (the navdata is only read when the card needs it). */
+const airfieldSlides = (code: string, lang: Lang): Promise<AirfieldKitResult> =>
+  import("../airfieldKit").then((m) => m.airfieldKit(code, lang));
+/** Before a code is typed, the card shows the slides of an example field (the code in the field's placeholder). */
+const EXAMPLE_ICAO = "LFPN";
+let example: Promise<AirfieldKit | null> | null = null;
+const exampleKit = (lang: Lang): Promise<AirfieldKit | null> =>
+  (example ??= airfieldSlides(EXAMPLE_ICAO, lang)
+    .then((r) => (r.ok ? r : null))
+    .catch(() => null));
+
 export function mountNewCourse(
   root: HTMLElement,
   o: NewCourseOptions,
@@ -255,12 +281,13 @@ export function mountNewCourse(
       ? o.subject
       : null;
   let title = "";
-  let pick: DeckStarter = startersFor(program)[0];
-  // « Adapter à mon terrain »: the slides prepared for the instructor's field (a starting point like a template)
+  /** the chosen card: a template's id, or AIRFIELD */
+  let pick = firstPick(program, o.kit);
+  // « Votre terrain »: the code typed, and the slides prepared for it (null: none yet, or the code changed since)
+  let code = (o.kit ?? "").trim().toUpperCase();
   let kit: AirfieldKit | null = null;
-  let kitPanel: AirfieldKitPanel | null = null;
-  let kitValue = o.kit ?? "";
-  const isKit = (d: DeckStarter) => !!kit && d.id === kit.starter.id;
+  let kitSeq = 0;
+  let kitT = 0;
   let busy = false;
   let views: SlideView[] = [];
   /** the playing covers, by template: the typed title shows on them as it is typed */
@@ -278,16 +305,77 @@ export function mountNewCourse(
       ),
     };
   };
+  const deckOf = (id: string): DeckStarter =>
+    startersFor(program).find((d) => d.id === id) ?? BLANK_STARTER;
   const el = h("div", { class: "nc-page" });
   root.append(el);
+  // what render() draws and the airfield card's updates reach
+  let kitIn: HTMLInputElement | null = null;
+  let kitMsg: HTMLElement | null = null;
+  let airfieldCover: HTMLElement | null = null;
+  let airfieldMeta: HTMLElement | null = null;
+  let airfieldView: SlideView | null = null;
+  let syncFoot = () => {};
+
+  const kitLine = (k: AirfieldKit) =>
+    T(lang, `${k.name} (${k.icao}) · ${k.slides.length} slides`, `${k.name} (${k.icao}) · ${k.slides.length} diapos`);
+  const say = (text: string, bad = false) => {
+    if (!kitMsg) return;
+    kitMsg.textContent = text;
+    kitMsg.classList.toggle("is-bad", bad);
+    kitIn?.toggleAttribute("aria-invalid", bad);
+  };
+  /** the airfield card's cover and line: the field typed once its slides are ready, else the example field */
+  const drawAirfield = () => {
+    if (airfieldMeta)
+      airfieldMeta.textContent = kit
+        ? kitLine(kit)
+        : T(lang, "ICAO code · 6 or 7 slides", "Code OACI · 6 ou 7 diapos");
+    const cover = airfieldCover;
+    if (!cover) return;
+    void (kit ? Promise.resolve(kit) : exampleKit(lang)).then((k) => {
+      if (!k || !cover.isConnected || cover !== airfieldCover) return;
+      airfieldView?.destroy();
+      cover.replaceChildren();
+      try {
+        airfieldView = renderThumb(k.slides[0].slide, cover, {
+          lang,
+          theme: "classroom",
+          scenes: k.scenes,
+          cockpit: "steam",
+        });
+      } catch {
+        airfieldView = null; /* a cover is decoration: the card still says what it is */
+      }
+    });
+  };
+  /** the slides of the code typed (kept while the code stays the same); null with the reason said under the field */
+  async function prepareKit(): Promise<AirfieldKit | null> {
+    if (kit && kit.icao === code) return kit;
+    const my = ++kitSeq;
+    say(T(lang, "Reading the navigation data…", "Lecture des données de navigation…"));
+    const r = await airfieldSlides(code, lang).catch(() => null);
+    if (my !== kitSeq) return null;
+    if (!r?.ok) {
+      say(
+        r?.message ??
+          T(lang, "The slides could not be prepared. Try again.", "Les diapos n’ont pas pu être préparées. Réessayez."),
+        true,
+      );
+      return null;
+    }
+    kit = r;
+    code = r.icao;
+    if (kitIn && kitIn.value !== r.icao) kitIn.value = r.icao;
+    say(T(lang, `${r.name}: the slides are ready.`, `${r.name} : les diapos sont prêtes.`));
+    drawAirfield();
+    return r;
+  }
 
   const render = (focusTitle = false) => {
     for (const v of views.splice(0)) v.destroy();
-    if (kitPanel) {
-      kitValue = kitPanel.value();
-      kitPanel.destroy();
-      kitPanel = null;
-    }
+    airfieldView?.destroy();
+    airfieldView = null;
     covers.clear();
     const keepFocus = document.activeElement?.id;
     // ---- focus bar: the labelled way back, where you are, FR | EN
@@ -325,25 +413,12 @@ export function mountNewCourse(
       { class: "nc-bar" },
       back,
       h("span", { class: "nc-rule", "aria-hidden": "true" }),
-      h(
-        "div",
-        { class: "nc-ttl" },
-        h("b", {}, T(lang, "New course", "Nouveau cours")),
-        h(
-          "span",
-          {},
-          T(
-            lang,
-            "Nothing is saved before “Create the course”",
-            "Rien n’est enregistré avant « Créer le cours »",
-          ),
-        ),
-      ),
+      h("b", { class: "nc-ttl" }, T(lang, "New course", "Nouveau cours")),
       h("span", { class: "nc-sp" }),
       seg,
     );
 
-    // ---- the three fields
+    // ---- the fields: the title, the formation; the subject once a formation is chosen
     const tIn = h("input", {
       id: "nc-title",
       class: "nc-input",
@@ -385,139 +460,86 @@ export function mountNewCourse(
     pSel.addEventListener("change", () => {
       program = pSel.value && isProgramId(pSel.value) ? pSel.value : null;
       subject = null;
-      // the gallery follows the formation, and so does the pick: its starting template (the field's slides stay)
-      if (!isKit(pick)) pick = startersFor(program)[0];
+      // the gallery follows the formation; the card chosen stays chosen while it is shown
       render();
       el.querySelector<HTMLElement>("#nc-prog")?.focus();
     });
-    const sSel = h("select", {
-      id: "nc-subj",
-      class: "nc-input nc-select",
-    }) as HTMLSelectElement;
-    sSel.append(
-      h("option", { value: "" }, T(lang, "Choose later", "Choisir plus tard")),
-    );
-    if (program)
+    const field = (id: string, label: (Node | string)[], input: HTMLElement, cls = "") =>
+      h(
+        "div",
+        { class: `nc-field ${cls}`.trim() },
+        h("label", { for: id }, ...label),
+        input,
+      );
+    let subjField: HTMLElement | null = null;
+    if (program) {
+      const sSel = h("select", {
+        id: "nc-subj",
+        class: "nc-input nc-select",
+      }) as HTMLSelectElement;
+      sSel.append(
+        h("option", { value: "" }, T(lang, "Choose later", "Choisir plus tard")),
+      );
       for (const s of subjectsOf(program))
         sSel.append(
           h("option", { value: s.id }, `${s.n} · ${loc(s.title, lang)}`),
         );
-    sSel.disabled = !program;
-    sSel.value = subject ?? "";
-    sSel.addEventListener("change", () => {
-      subject = sSel.value && isSubjectId(sSel.value) ? sSel.value : null;
-    });
-    const field = (
-      id: string,
-      label: HTMLElement,
-      input: HTMLElement,
-      cls = "",
-    ) =>
-      h(
-        "div",
-        { class: `nc-field ${cls}`.trim() },
-        h("label", { for: id }, label),
-        input,
+      sSel.value = subject ?? "";
+      sSel.addEventListener("change", () => {
+        subject = sSel.value && isSubjectId(sSel.value) ? sSel.value : null;
+      });
+      subjField = field(
+        "nc-subj",
+        [T(lang, "Subject", "Matière"), " ", h("small", {}, T(lang, "(optional)", "(facultatif)"))],
+        sSel,
       );
+    }
     const fields = h(
       "div",
       { class: "nc-fields" },
+      field("nc-title", [T(lang, "Course title", "Titre du cours")], tIn, "is-title"),
       field(
-        "nc-title",
-        h("span", {}, T(lang, "Course title", "Titre du cours")),
-        tIn,
-        "is-title",
+        "nc-prog",
+        [T(lang, "Programme", "Formation"), " ", h("small", {}, T(lang, "(optional)", "(facultatif)"))],
+        pSel,
       ),
-      field("nc-prog", h("span", {}, T(lang, "Programme", "Formation")), pSel),
-      field(
-        "nc-subj",
-        h(
-          "span",
-          {},
-          T(lang, "Subject", "Matière"),
-          " ",
-          h("small", {}, T(lang, "(optional)", "(facultatif)")),
-        ),
-        sSel,
-      ),
+      subjField,
     );
 
-    // ---- the starting points
-    const list = startersFor(program);
-    if (!list.some((d) => d.id === pick.id) && !isKit(pick)) pick = list[0];
-    // « Partir d'une description (IA) » is the first card of the grid (a button that opens the assistant), then
-    // the templates as one radio group (audit item 62)
+    // ---- the starting points: one radio group, the blank slide first
+    const points = startingPoints(program);
+    const idOf = (p: StartingPoint) => (p === AIRFIELD ? AIRFIELD : p.id);
+    if (!points.some((p) => idOf(p) === pick)) pick = BLANK_STARTER.id;
     const radios = h("div", {
-      class: "nc-radios",
+      class: "nc-grid",
       role: "radiogroup",
-      "aria-label": T(lang, "Starting point", "Point de départ"),
+      "aria-labelledby": "nc-start-h",
     });
-    const ai = aiCreateButton({ lang, store: o.store, program, onCreated: o.onCreated });
-    const sparkIco = ai.querySelector("svg");
-    sparkIco?.setAttribute("width", "30");
-    sparkIco?.setAttribute("height", "30");
-    ai.className = "nc-card nc-card-ai";
-    ai.style.marginTop = "";
-    ai.replaceChildren(
-      h("div", { class: "nc-cover nc-cover-ai", "aria-hidden": "true" }, sparkIco),
-      h(
-        "div",
-        { class: "nc-card-b" },
-        h("b", { class: "nc-card-t" }, T(lang, "Start from a description (AI)", "Partir d’une description (IA)")),
-        h(
-          "span",
-          { class: "nc-card-p" },
-          T(
-            lang,
-            "Describe the course in a few lines: the slides are laid out for you, ready to change.",
-            "Décrivez le cours en quelques lignes : les diapos sont mises en page pour vous, prêtes à modifier.",
-          ),
-        ),
-        // what it needs, said before the click: a paid key, about a minute (audit item 42)
-        h(
-          "span",
-          { class: "nc-card-m" },
-          T(lang, "With your AI assistant key (paid) · about 1 minute", "Avec votre clé d’assistant IA (payante) · environ 1 minute"),
-        ),
-      ),
-    );
-    const grid = h("div", { class: "nc-grid" }, ai, radios);
     const cards: HTMLElement[] = [];
-    const select = (d: DeckStarter, focus = false) => {
-      pick = d;
+    const select = (id: string, focus = false) => {
+      pick = id;
       cards.forEach((c) => {
-        const on = c.dataset.deck === d.id;
+        const on = c.dataset.deck === id;
         c.setAttribute("aria-checked", String(on));
         c.tabIndex = on ? 0 : -1;
         c.classList.toggle("on", on);
         if (on && focus) c.focus();
       });
-      kitPanel?.setChosen(isKit(d));
       syncFoot();
     };
-    list.forEach((d) => {
-      const blank = d.id === BLANK_STARTER.id;
-      const feature = d.hero !== undefined;
-      const cover = h("div", {
-        class: `nc-cover${blank ? " is-blank" : ""}`,
-        "aria-hidden": "true",
-      });
-      const badge = d.badge
-        ? h(
-            "span",
-            { class: `nc-badge is-${d.badge}` },
-            h("i", { "aria-hidden": "true" }),
-            loc(CAPABILITY[d.badge], lang),
-          )
-        : null;
-      const card = h(
+    const card = (
+      id: string,
+      info: { name: string; pitch: string; meta: HTMLElement; badge?: Capability; cls?: string },
+    ) => {
+      const cover = h("div", { class: "nc-cover", "aria-hidden": "true" });
+      const c = h(
         "div",
         {
-          class: `nc-card${feature ? " is-feature" : ""}`,
+          class: `nc-card${info.cls ? ` ${info.cls}` : ""}`,
           role: "radio",
           tabindex: "-1",
           "aria-checked": "false",
-          "data-deck": d.id,
+          "data-deck": id,
         },
         cover,
         h(
@@ -528,43 +550,73 @@ export function mountNewCourse(
         h(
           "div",
           { class: "nc-card-b" },
-          badge,
-          h("b", { class: "nc-card-t" }, starterName(d, lang)),
-          h("span", { class: "nc-card-p" }, loc(d.pitch, lang)),
-          h("span", { class: "nc-card-m" }, starterMeta(d, lang)),
+          info.badge
+            ? h(
+                "span",
+                { class: `nc-badge is-${info.badge}` },
+                h("i", { "aria-hidden": "true" }),
+                loc(CAPABILITY[info.badge], lang),
+              )
+            : null,
+          h("b", { class: "nc-card-t" }, info.name),
+          h("span", { class: "nc-card-p" }, info.pitch),
+          info.meta,
         ),
       );
-      card.addEventListener("click", () => select(d));
-      card.addEventListener("keydown", (e) => {
-        const i = list.indexOf(d);
+      c.addEventListener("click", () => {
+        select(id);
+        // « Votre terrain » asks for its code: the field below takes the focus when nothing is typed yet
+        if (id === AIRFIELD && !code) kitIn?.focus();
+      });
+      c.addEventListener("keydown", (e) => {
+        const i = cards.indexOf(c);
         const k = e.key;
         if (k === " " || k === "Enter") {
           e.preventDefault();
-          if (k === "Enter" && pick.id === d.id) void create();
-          else select(d);
+          if (k === "Enter" && pick === id) void create();
+          else select(id);
         } else if (k === "ArrowRight" || k === "ArrowDown") {
           e.preventDefault();
-          select(list[(i + 1) % list.length], true);
+          select(cards[(i + 1) % cards.length].dataset.deck ?? "", true);
         } else if (k === "ArrowLeft" || k === "ArrowUp") {
           e.preventDefault();
-          select(list[(i - 1 + list.length) % list.length], true);
+          select(cards[(i - 1 + cards.length) % cards.length].dataset.deck ?? "", true);
         }
       });
-      cards.push(card);
-      radios.append(card);
-      if (blank) {
-        cover.append(
-          h("span", { class: "nc-plus" }, svg("M12 5v14M5 12h14", 22)),
-        );
-        return;
+      cards.push(c);
+      radios.append(c);
+      return cover;
+    };
+    for (const p of points) {
+      if (p === AIRFIELD) {
+        airfieldMeta = h("span", { class: "nc-card-m" });
+        airfieldCover = card(AIRFIELD, {
+          name: T(lang, "Your airfield", "Votre terrain"),
+          pitch: T(
+            lang,
+            "Its runways, its frequencies, the view on final and a takeoff in the simulator, from the navigation data.",
+            "Ses pistes, ses fréquences, la vue en finale et un décollage au simulateur, tirés des données de navigation.",
+          ),
+          meta: airfieldMeta,
+          badge: "flight",
+        });
+        continue;
       }
+      const d = p;
+      const cover = card(d.id, {
+        name: starterName(d, lang),
+        pitch: loc(d.pitch, lang),
+        meta: h("span", { class: "nc-card-m" }, starterMeta(d, lang)),
+        badge: d.badge,
+        cls: d.id === BLANK_STARTER.id ? "is-blank" : "",
+      });
       requestAnimationFrame(() => {
         if (!cover.isConnected) return;
         try {
           const scenes = d.scenes ? { scenes: d.scenes() } : {};
           // a showcase template plays its slide as the class will see it: the aircraft flies, the needles move
           // (only while the card is on screen; under reduced motion it rests on its telling picture)
-          if (feature) {
+          if (d.hero !== undefined) {
             cover.setAttribute("inert", "");
             const v = renderSlide(heroSlide(d), cover, {
               mode: "play",
@@ -587,30 +639,15 @@ export function mountNewCourse(
           /* a cover is decoration: the card still says what it is */
         }
       });
-    });
+    }
+    drawAirfield();
     const progName = program ? loc(programDef(program).code, lang) : "";
 
-    // ---- « Adapter à mon terrain »: an ICAO code, the slides of that field as the starting point
-    kitPanel = airfieldKitPanel({
-      lang,
-      idPrefix: "nc-afk",
-      value: kitValue,
-      kit,
-      onReady: (k) => {
-        kit = k;
-        select(k.starter);
-      },
-      readyLine: () =>
-        T(
-          lang,
-          "These slides are the starting point: “Create the course”, below.",
-          "Ces diapos sont le point de départ : « Créer le cours », en bas.",
-        ),
-    });
-    kitPanel.el.classList.add("nc-afk");
-
-    // ---- already have slides? (only when the build can import a PDF)
-    let importRow: HTMLElement | null = null;
+    // ---- other ways to start, quieter: a description for the assistant, a PDF of slides already made
+    const ai = aiCreateButton({ lang, store: o.store, program, onCreated: o.onCreated });
+    const other = (btn: HTMLElement, note: string) =>
+      h("div", { class: "nc-other-i" }, btn, h("span", { class: "nc-other-n" }, note));
+    let pdf: HTMLElement | null = null;
     if (o.importPdf) {
       const file = h("input", {
         type: "file",
@@ -634,39 +671,70 @@ export function mountNewCourse(
         const r = await o.importPdf(s, f, lang).catch(() => null);
         if (r) o.onCreated(r.id);
       });
-      importRow = h(
-        "div",
-        { class: "nc-import" },
-        h(
-          "div",
-          {},
-          h(
-            "b",
-            {},
-            T(
-              lang,
-              "Already have your slides?",
-              "Vous avez déjà vos diapos ?",
-            ),
-          ),
-          h(
-            "span",
-            {},
-            T(
-              lang,
-              "Import a PDF: each page becomes a step you can complete.",
-              "Importez un PDF : chaque page devient une étape que vous pourrez compléter.",
-            ),
-          ),
-        ),
-        b,
-        file,
+      pdf = other(
+        h("span", { class: "nc-other-b" }, b, file),
+        T(lang, "Each page becomes a slide you can complete.", "Chaque page devient une diapo que vous pourrez compléter."),
       );
     }
+    const others = h(
+      "section",
+      { class: "nc-other", "aria-labelledby": "nc-other-h" },
+      h("h2", { id: "nc-other-h", class: "nc-h3" }, T(lang, "Other ways to start", "Autres façons de commencer")),
+      h(
+        "div",
+        { class: "nc-other-row" },
+        // what it needs, said before the click: a paid key, about a minute (audit item 42)
+        other(
+          ai,
+          T(lang, "With your AI assistant key (paid) · about 1 minute", "Avec votre clé d’assistant IA (payante) · environ 1 minute"),
+        ),
+        pdf,
+      ),
+    );
 
-    // ---- the sticky bar: what will be made, Annuler, Créer le cours
+    // ---- the sticky bar: what will be made (« Votre terrain »: its code), Annuler, Créer le cours
     const what = h("p", { class: "nc-what", "aria-live": "polite" });
-    const sum = h("p", { class: "nc-sum" });
+    kitIn = h("input", {
+      id: "nc-icao",
+      class: "nc-input nc-icao",
+      type: "text",
+      maxlength: "4",
+      autocomplete: "off",
+      autocapitalize: "characters",
+      spellcheck: "false",
+      placeholder: EXAMPLE_ICAO,
+      "aria-describedby": "nc-icao-msg",
+    }) as HTMLInputElement;
+    kitIn.value = code;
+    kitMsg = h("span", { id: "nc-icao-msg", class: "nc-kit-msg", role: "status" });
+    if (kit) say(kitLine(kit));
+    kitIn.addEventListener("input", () => {
+      const v = kitIn?.value.trim().toUpperCase() ?? "";
+      if (v === code) return;
+      code = v;
+      kitSeq++;
+      say("");
+      if (kit) {
+        kit = null;
+        drawAirfield();
+      }
+      clearTimeout(kitT);
+      // four letters typed: the card shows that field's slides (no button to press)
+      if (code.length === 4) kitT = window.setTimeout(() => void prepareKit(), 300);
+    });
+    kitIn.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        void create();
+      }
+    });
+    const kitBox = h(
+      "div",
+      { class: "nc-kit" },
+      h("label", { for: "nc-icao" }, T(lang, "ICAO code of your airfield", "Code OACI de votre terrain")),
+      kitIn,
+      kitMsg,
+    );
     const cancel = h(
       "button",
       { type: "button", class: "nc-btn" },
@@ -687,22 +755,23 @@ export function mountNewCourse(
         "div",
         { class: "nc-foot-in" },
         what,
-        h("span", { class: "nc-sp" }),
+        kitBox,
         cancel,
         go,
       ),
     );
-    function syncFoot() {
-      sum.replaceChildren(
-        h("span", { class: "nc-sum-k" }, T(lang, "Your course: ", "Votre cours : ")),
-        starterSummary(pick, lang),
-      );
+    syncFoot = () => {
+      const field = pick === AIRFIELD;
+      kitBox.hidden = !field;
+      what.hidden = field;
+      if (field) return;
+      const d = deckOf(pick);
       what.replaceChildren(
         T(lang, "Starting point: ", "Point de départ : "),
-        h("b", {}, starterName(pick, lang)),
-        ` · ${starterMeta(pick, lang).split(" · ")[0]}`,
+        h("b", {}, starterName(d, lang)),
+        ` · ${starterSummary(d, lang)}`,
       );
-    }
+    };
 
     const main = h(
       "main",
@@ -721,8 +790,8 @@ export function mountNewCourse(
           { class: "nc-lead" },
           T(
             lang,
-            "Start from a template that is already laid out: you change the words, the instruments stay live. Everything can be changed afterwards.",
-            "Partez d’un modèle déjà mis en page : vous changez les mots, les instruments restent vivants. Tout se modifie ensuite.",
+            "Start from a blank slide or from a template already laid out: the instruments and the simulator come with it, and everything can be changed.",
+            "Partez d’une diapo vierge ou d’un modèle déjà mis en page : les instruments et le simulateur sont prêts, et tout se modifie.",
           ),
         ),
         fields,
@@ -731,7 +800,7 @@ export function mountNewCourse(
           { class: "nc-h2row" },
           h(
             "h2",
-            { class: "nc-h2" },
+            { id: "nc-start-h", class: "nc-h2" },
             T(lang, "Choose a starting point", "Choisissez un point de départ"),
           ),
           progName
@@ -746,10 +815,8 @@ export function mountNewCourse(
               )
             : null,
         ),
-        kitPanel.el,
-        grid,
-        sum,
-        importRow,
+        radios,
+        others,
       ),
     );
     el.replaceChildren(bar, main, foot);
@@ -764,6 +831,12 @@ export function mountNewCourse(
     busy = true;
     el.classList.add("is-busy");
     try {
+      const starter = pick === AIRFIELD ? (await prepareKit())?.starter : deckOf(pick);
+      // « Votre terrain » without its slides: the reason is said under the code, which takes the focus
+      if (!starter) {
+        kitIn?.focus();
+        return;
+      }
       const s = await o.store;
       if (!s) throw new Error("no store");
       const id = await s.newId(lang === "fr" ? "mon-cours" : "my-course");
@@ -773,34 +846,48 @@ export function mountNewCourse(
         title,
         program,
         subject,
-        starter: pick,
+        starter,
       });
       const r = await s.save(c);
       if (!r.ok) throw new Error(loc(r.message, lang));
       // the editor opens on slide 1; its « Simulateur » tab gets one tip (simTip.ts)
-      if (pick.id !== BLANK_STARTER.id) armSimTip(lang);
+      if (starter.id !== BLANK_STARTER.id) armSimTip(lang);
       o.onCreated(r.course.id);
+      return;
     } catch (e) {
+      const msg = T(
+        lang,
+        `The course could not be saved on this device (${(e as Error).message}).`,
+        `Le cours n’a pas pu être enregistré sur cet appareil (${(e as Error).message}).`,
+      );
+      if (pick === AIRFIELD) say(msg, true);
+      else el.querySelector<HTMLElement>(".nc-what")?.replaceChildren(msg);
+    } finally {
       busy = false;
       el.classList.remove("is-busy");
-      const msg = el.querySelector<HTMLElement>(".nc-what");
-      if (msg)
-        msg.textContent = T(
-          lang,
-          `The course could not be saved on this device (${(e as Error).message}).`,
-          `Le cours n’a pas pu être enregistré sur cet appareil (${(e as Error).message}).`,
-        );
     }
   }
 
-  // the title field takes the focus on a desk (never pops a tablet's keyboard by itself); opened from Accueil's
-  // « Votre terrain », the ICAO field does (and a code typed there is prepared at once)
+  // the title field takes the focus on a desk (never pops a tablet's keyboard by itself); a link to « Votre
+  // terrain » focuses its code instead, and a code it brings is prepared at once
   render(
     o.kit === undefined &&
       (typeof matchMedia === "undefined" ||
         !matchMedia("(pointer: coarse)").matches),
   );
-  if (o.kit !== undefined) requestAnimationFrame(() => kitPanel?.focus(true));
+  if (o.kit !== undefined) {
+    requestAnimationFrame(() => {
+      const reduce =
+        typeof matchMedia !== "undefined" &&
+        matchMedia("(prefers-reduced-motion: reduce)").matches;
+      el.querySelector(`[data-deck="${AIRFIELD}"]`)?.scrollIntoView({
+        block: "center",
+        behavior: reduce ? "auto" : "smooth",
+      });
+      kitIn?.focus({ preventScroll: true });
+    });
+    if (code.length === 4) void prepareKit();
+  }
   return {
     el,
     setLang(l: Lang) {
@@ -811,7 +898,9 @@ export function mountNewCourse(
     destroy() {
       for (const v of views.splice(0)) v.destroy();
       views = [];
-      kitPanel?.destroy();
+      airfieldView?.destroy();
+      kitSeq++;
+      clearTimeout(kitT);
       el.remove();
     },
   };

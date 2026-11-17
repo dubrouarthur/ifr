@@ -35,7 +35,6 @@ export function aiCreateButton(o: {
   b.type = "button";
   b.className = "nc-btn nc-ai";
   b.dataset.ai = "create";
-  b.style.marginTop = "16px";
   const label = document.createElement("span");
   label.textContent = o.lang === "fr" ? "Créer avec l’IA" : "Create with AI";
   b.append(spark(), label);

@@ -49,14 +49,14 @@ const visuals = (c: Course) =>
   );
 
 describe("the starting template of each formation", () => {
-  it("is the formation's own, first, and the blank slide is offered last", () => {
-    expect(startersFor("ppl")[0].id).toBe("ppl-circuit");
-    expect(startersFor("club")[0].id).toBe("ppl-circuit");
-    expect(startersFor("night")[0].id).toBe("night-flight");
-    expect(startersFor("ir")[0].id).toBe("ir-ils");
-    expect(startersFor("atpl")[0].id).toBe("atpl-displays");
+  it("is the formation's own, right after the blank slide, which is offered first", () => {
+    expect(startersFor("ppl")[1].id).toBe("ppl-circuit");
+    expect(startersFor("club")[1].id).toBe("ppl-circuit");
+    expect(startersFor("night")[1].id).toBe("night-flight");
+    expect(startersFor("ir")[1].id).toBe("ir-ils");
+    expect(startersFor("atpl")[1].id).toBe("atpl-displays");
     for (const p of ["ppl", "night", "ir", "atpl"] as const)
-      expect(startersFor(p).at(-1)!.id).toBe(BLANK_STARTER.id);
+      expect(startersFor(p)[0].id).toBe(BLANK_STARTER.id);
   });
   it("shows at least four different capabilities, 5 to 7 slides, and names one of them on its card", () => {
     for (const d of SHOWCASE_DECKS) {
@@ -182,7 +182,9 @@ describe("what the course will contain", () => {
     expect(starterSummary(SHOWCASE_DECKS[3], "en")).toContain(
       "1 calculation tool",
     );
-    expect(starterSummary(BLANK_STARTER, "fr")).toMatch(/^1 diapo vierge/);
+    // the blank slide shows nothing yet: its count only
+    expect(starterSummary(BLANK_STARTER, "fr")).toBe("1 diapo");
+    expect(starterSummary(BLANK_STARTER, "en")).toBe("1 slide");
   });
 });
 

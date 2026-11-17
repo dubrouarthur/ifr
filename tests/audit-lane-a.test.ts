@@ -572,7 +572,10 @@ describe("§21 a course opened from a link keeps its author's formation and says
 describe("§23 « 12 Tour de piste » says a template exists, and « Nouveau cours » opens on it", () => {
   it("the PPL's first template is the circuit; the row names it for who teaches", async () => {
     const { startersFor } = await import("../src/course/ui/newCourse");
-    expect(startersFor("ppl")[0].id).toBe("ppl-circuit");
+    const { firstPick } = await import("../src/course/ui/newCourse");
+    expect(startersFor("ppl")[1].id).toBe("ppl-circuit");
+    // opened from the formation (#new&p=ppl), the page has the circuit chosen
+    expect(firstPick("ppl")).toBe("ppl-circuit");
     const { readFileSync } = await import("fs");
     const lib = readFileSync("src/course/ui/library.ts", "utf8");
     expect(lib).toMatch(/const SUBJECT_TEMPLATE: Partial<Record<string, LibStringKey>> = \{ "ppl\.circ": "soonCircuit" \};/);

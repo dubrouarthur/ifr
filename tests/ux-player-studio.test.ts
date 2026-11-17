@@ -8,11 +8,14 @@ import { isTask, ps, taskLabel } from "../src/course/ui/reader";
 import { markText } from "../src/course/ui/outline";
 import { academyHash, academyRoute } from "../src/course/ui/library";
 import {
+  AIRFIELD,
   buildNewCourse,
+  firstPick,
   NEW_COURSE_FORMATIONS,
   starterFormations,
   starterMeta,
   startersFor,
+  startingPoints,
 } from "../src/course/ui/newCourse";
 import { BLANK_STARTER, DECK_STARTERS } from "../src/course/ui/deckStarters";
 import { courseMinutes } from "../src/course/ui/templates";
@@ -107,25 +110,46 @@ describe("Nouveau cours (#new)", () => {
       "#new&p=ir&s=ir.hold&from=lib",
     );
   });
-  it("shows only the chosen formation's templates, its own first, and the blank slide last", () => {
+  it("shows the blank slide first, then only the chosen formation's templates, its own first", () => {
     for (const p of NEW_COURSE_FORMATIONS) {
       const list = startersFor(p);
-      expect(list.at(-1)?.id).toBe(BLANK_STARTER.id);
-      // only the formation's own templates (its starting template first), then the blank slide
+      expect(list[0].id).toBe(BLANK_STARTER.id);
+      // the blank slide, then only the formation's own templates (its starting template first)
       const mine = DECK_STARTERS.filter((d) =>
         starterFormations(d).includes(p),
       );
       expect(list).toHaveLength(mine.length + 1);
-      expect(new Set(list.slice(0, -1).map((d) => d.id))).toEqual(
+      expect(new Set(list.slice(1).map((d) => d.id))).toEqual(
         new Set(mine.map((d) => d.id)),
       );
-      expect(list[0].formations).toContain(p);
+      expect(list[1].formations).toContain(p);
     }
-    expect(starterFormations(startersFor("ppl")[0])).toContain("ppl");
-    expect(starterFormations(startersFor("ir")[0])).toContain("ir");
+    expect(starterFormations(startersFor("ppl")[1])).toContain("ppl");
+    expect(starterFormations(startersFor("ir")[1])).toContain("ir");
+  });
+  it("puts « Votre terrain » among the templates: after the starting templates, never first", () => {
+    for (const p of [null, ...NEW_COURSE_FORMATIONS]) {
+      const cards = startingPoints(p);
+      const ids = cards.map((c) => (c === AIRFIELD ? AIRFIELD : c.id));
+      expect(ids[0]).toBe(BLANK_STARTER.id);
+      expect(ids.filter((x) => x === AIRFIELD)).toHaveLength(1);
+      // every template is still there, once
+      expect(ids.filter((x) => x !== AIRFIELD)).toEqual(startersFor(p).map((d) => d.id));
+      const at = ids.indexOf(AIRFIELD);
+      expect(at).toBeGreaterThan(1);
+      // only starting templates before it
+      for (const c of cards.slice(1, at)) expect(c !== AIRFIELD && !!c.formations?.length).toBe(true);
+    }
+  });
+  it("opens on the blank slide, on the formation's template from a formation, on « Votre terrain » with a code", () => {
+    expect(firstPick(null)).toBe(BLANK_STARTER.id);
+    expect(firstPick("ppl")).toBe("ppl-circuit");
+    expect(firstPick("ir")).toBe("ir-ils");
+    expect(firstPick(null, "LFPN")).toBe(AIRFIELD);
+    expect(firstPick("ppl", "")).toBe(AIRFIELD);
   });
   it("makes the course only from what was chosen: the template's steps, the title, the formation and subject", () => {
-    const d = startersFor("ppl")[0];
+    const d = startersFor("ppl")[1];
     const c = buildNewCourse({
       id: "mon-cours-1",
       lang: "fr",
