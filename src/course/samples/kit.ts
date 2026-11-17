@@ -404,7 +404,11 @@ export function isStudentAction(s: Step): boolean {
       b.kind === "quiz" ||
       b.kind === "calc" ||
       (b.kind === "diagram" && b.interactive) ||
-      ((b.kind === "instrument" || b.kind === "simViewport") && !!b.yourTurn),
+      ((b.kind === "instrument" || b.kind === "simViewport") && !!b.yourTurn) ||
+      // a teaching tool with a value to find (course/tools), a 3D engine with levers (course/engines): as
+      // validate.ts hasStudentAction
+      (b.kind === "tool" && !!b.task && (b.controls === undefined || b.controls.includes(b.task.key))) ||
+      (b.kind === "engine3d" && (b.controls === undefined || b.controls.length > 0)),
   );
 }
 
