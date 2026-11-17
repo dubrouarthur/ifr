@@ -1,0 +1,512 @@
+/* The 3D engines (course/engines): the cutaway, its part names, the step caption, the gauges and the levers.
+   Sizes in em of --eng-fs: a slide block sets it in logical px (the slide is scaled as a whole), the full-screen
+   view in CSS px. Colours from the slide theme (--sl-*), with the cockpit theme as the fallback. Targets ≥ 44 px
+   at the full-screen size (2.95em at 15 px). */
+.eng {
+  --e-bg: var(--sl-bg, #0d1117);
+  --e-text: var(--sl-text, #e8edf2);
+  --e-ink2: var(--sl-ink2, #b6c0cb);
+  --e-surface: var(--sl-surface, #161c24);
+  --e-raise: var(--sl-raise, #1f2731);
+  --e-line: var(--sl-line, #39434f);
+  --e-accent: var(--sl-accent, #4fb4ff);
+  --e-accent-ink: var(--sl-accentInk, #06121d);
+  --e-stop: var(--sl-stop, #ff5a4f);
+  --e-key: var(--sl-key, #ffbf3c);
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(15em, 32%);
+  gap: 0.75em;
+  width: 100%;
+  height: 100%;
+  font-size: var(--eng-fs, 15px);
+  line-height: 1.3;
+  color: var(--e-text);
+  font-family: var(--sl-font-body, system-ui, -apple-system, "Segoe UI", sans-serif);
+  box-sizing: border-box;
+}
+/* a phone: the picture over the panel */
+.eng.narrow {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(16em, 1fr) auto;
+  height: auto;
+  min-height: 100%;
+}
+.eng *,
+.eng *::before,
+.eng *::after {
+  box-sizing: border-box;
+}
+.eng-view {
+  position: relative;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 0.5em;
+  background: radial-gradient(
+    ellipse at 50% 45%,
+    color-mix(in srgb, var(--e-surface) 70%, var(--e-text) 6%),
+    var(--e-surface) 70%
+  );
+  border: 1px solid var(--e-line);
+}
+.eng-cv {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  cursor: grab;
+  outline: none;
+}
+.eng-cv:active {
+  cursor: grabbing;
+}
+.eng-cv:focus-visible {
+  box-shadow: inset 0 0 0 3px var(--e-accent);
+}
+.eng.inert .eng-cv {
+  pointer-events: none;
+}
+.eng-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.eng-lb {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  will-change: transform;
+}
+.eng-lb-dot {
+  position: absolute;
+  left: -0.22em;
+  top: -0.22em;
+  width: 0.44em;
+  height: 0.44em;
+  border-radius: 50%;
+  background: var(--e-text);
+  box-shadow: 0 0 0 2px var(--e-bg);
+}
+.eng-lb-t {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 0.12em 0.5em;
+  border-radius: 0.35em;
+  background: color-mix(in srgb, var(--e-bg) 84%, transparent);
+  color: var(--e-text);
+  border: 1px solid var(--e-line);
+  font-size: 0.86em;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.eng-lb.on .eng-lb-t {
+  background: var(--e-accent);
+  color: var(--e-accent-ink);
+  border-color: var(--e-accent);
+  font-weight: 650;
+}
+.eng-lb.on {
+  z-index: 2;
+}
+.eng-lb.on .eng-lb-dot {
+  background: var(--e-accent);
+}
+.eng-cap {
+  position: absolute;
+  left: 0.6em;
+  right: 0.6em;
+  bottom: 0.6em;
+  padding: 0.55em 0.8em;
+  border-radius: 0.45em;
+  background: color-mix(in srgb, var(--e-bg) 88%, transparent);
+  border: 1px solid var(--e-line);
+  pointer-events: none;
+  max-height: 45%;
+  overflow: hidden;
+}
+.eng-cap-n {
+  display: block;
+  font-size: 0.78em;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--e-ink2);
+}
+.eng-cap-t {
+  display: block;
+  font-size: 1.12em;
+  color: var(--e-accent);
+}
+.eng-cap-x {
+  display: block;
+  font-size: 0.95em;
+  color: var(--e-text);
+}
+.eng-top {
+  position: absolute;
+  top: 0.5em;
+  left: 0.5em;
+  right: 0.5em;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.4em;
+  pointer-events: none;
+}
+.eng-top > * {
+  pointer-events: auto;
+}
+.eng-tools {
+  display: flex;
+  gap: 0.4em;
+  margin-left: auto;
+}
+.eng-top .eng-tr .eng-btn {
+  background: color-mix(in srgb, var(--e-bg) 85%, transparent);
+}
+.eng-no3d {
+  position: absolute;
+  top: 35%;
+  left: 1em;
+  right: 1em;
+  text-align: center;
+  color: var(--e-ink2);
+}
+.eng-panel {
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+  padding: 0.1em;
+}
+.eng-gauges {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45em;
+}
+.eng-g {
+  padding: 0.4em 0.55em 0.5em;
+  border-radius: 0.4em;
+  background: var(--e-raise);
+  border: 1px solid var(--e-line);
+  min-width: 0;
+}
+.eng-g-n {
+  display: block;
+  font-size: 0.8em;
+  color: var(--e-ink2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.eng-g-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3em;
+}
+.eng-g-v {
+  font-variant-numeric: tabular-nums;
+  font-size: 1.35em;
+  font-weight: 650;
+}
+.eng-g-u {
+  font-size: 0.78em;
+  color: var(--e-ink2);
+}
+.eng-g-bar {
+  position: relative;
+  display: block;
+  height: 0.4em;
+  margin-top: 0.3em;
+  border-radius: 0.2em;
+  background: var(--e-surface);
+  overflow: visible;
+}
+.eng-g-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 0.2em;
+  background: var(--e-accent);
+}
+.eng-g-red,
+.eng-g-zero {
+  position: absolute;
+  top: -0.2em;
+  bottom: -0.2em;
+  width: 0.18em;
+  margin-left: -0.09em;
+  background: var(--e-stop);
+}
+.eng-g-zero {
+  background: var(--e-ink2);
+}
+.eng-g.over .eng-g-v {
+  color: var(--e-stop);
+}
+.eng-g.over .eng-g-fill {
+  background: var(--e-stop);
+}
+/* below zero (reverse thrust): the other way, another colour */
+.eng-g.neg .eng-g-fill {
+  background: var(--e-key);
+}
+.eng-status {
+  margin: 0;
+  font-size: 0.92em;
+  color: var(--e-key);
+  min-height: 1.3em;
+}
+.eng-ctl {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55em;
+}
+.eng-piston:not(.big) .eng-ctl,
+.eng-piston:not(.big) .eng-panel {
+  gap: 0.4em;
+}
+.eng-piston:not(.big) .eng-g {
+  padding: 0.3em 0.55em 0.4em;
+}
+.eng-c-n {
+  display: block;
+  font-weight: 600;
+  font-size: 0.92em;
+  margin-bottom: 0.15em;
+}
+.eng:not(.narrow) .eng-c {
+  display: grid;
+  grid-template-columns: 7.2em minmax(0, 1fr);
+  column-gap: 0.6em;
+  align-items: center;
+}
+.eng:not(.narrow) .eng-c > .eng-toggle,
+.eng:not(.narrow) .eng-c > .eng-c-hint,
+.eng:not(.narrow) .eng-c-magnetos .eng-seg {
+  grid-column: 1 / -1;
+}
+.eng:not(.narrow) .eng-c-magnetos .eng-c-n {
+  margin-bottom: 0.2em;
+}
+.eng:not(.narrow) .eng-c-n {
+  margin: 0;
+}
+.eng:not(.narrow) .eng-c-ends {
+  grid-column: 2;
+}
+/* on a slide the piston's four controls fill the panel: its throttle (more is forward, as everywhere) keeps no
+   end words; the mixture, the less obvious lever, keeps them (and every lever says them to a screen reader) */
+.eng-piston:not(.big) .eng-c-throttle .eng-c-ends,
+.eng:not(.big) .eng-steps,
+.eng:not(.big) .eng-foot {
+  display: none;
+}
+.eng-c-ends {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5em;
+  font-size: 0.78em;
+  line-height: 1.15;
+  color: var(--e-ink2);
+}
+.eng-c-ends > span:last-child {
+  text-align: right;
+}
+/* the reverser interlock: the switch waits for the thrust lever at idle, and says so */
+.eng-c.locked > .eng-toggle {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.eng-c-hint {
+  display: block;
+  margin-top: 0.2em;
+  font-size: 0.82em;
+  color: var(--e-key);
+}
+.eng-c-hint[hidden] {
+  display: none;
+}
+.eng-c-hint.flash {
+  animation: eng-flash 0.6s ease-out 2;
+}
+@keyframes eng-flash {
+  50% {
+    color: var(--e-text);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .eng-c-hint.flash {
+    animation: none;
+    font-weight: 700;
+  }
+}
+/* the projector: the room sees the picture, the gauges and where the levers are; nothing to press */
+.eng.display .eng-top,
+.eng.display .eng-foot,
+.eng.display .eng-c-hint,
+.eng.display .eng-steps {
+  display: none;
+}
+.eng.display .eng-range {
+  pointer-events: none;
+}
+.eng.display .eng-cv {
+  cursor: default;
+}
+.eng .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.eng-range {
+  width: 100%;
+  height: 2.95em;
+  margin: 0;
+  accent-color: var(--e-accent);
+  cursor: pointer;
+}
+.eng-btn {
+  min-height: 2.95em;
+  min-width: 2.95em;
+  padding: 0.35em 0.8em;
+  border-radius: 0.45em;
+  border: 1px solid var(--e-line);
+  background: var(--e-raise);
+  color: var(--e-text);
+  font: inherit;
+  font-size: 0.92em;
+  font-weight: 600;
+  cursor: pointer;
+}
+.eng-btn:hover {
+  border-color: var(--e-accent);
+}
+.eng-btn:focus-visible {
+  outline: 3px solid var(--e-accent);
+  outline-offset: 2px;
+}
+.eng-btn[aria-pressed="true"],
+.eng-btn[aria-checked="true"],
+.eng-chip[aria-current="step"] {
+  background: var(--e-accent);
+  color: var(--e-accent-ink);
+  border-color: var(--e-accent);
+}
+.eng-tool {
+  background: color-mix(in srgb, var(--e-bg) 85%, transparent);
+}
+.eng-toggle {
+  width: 100%;
+  text-align: left;
+}
+.eng-seg {
+  display: flex;
+  gap: 0.3em;
+}
+.eng-seg-b {
+  flex: 1 1 auto;
+  padding: 0.35em 0.45em;
+  white-space: nowrap;
+}
+.eng-tr {
+  display: flex;
+  gap: 0.4em;
+}
+.eng-tr .eng-play {
+  flex: 1;
+}
+.eng-ic {
+  font-size: 1.3em;
+  line-height: 1;
+  padding: 0;
+}
+.eng-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35em;
+}
+.eng-chip {
+  font-weight: 500;
+  font-size: 0.85em;
+  padding: 0.3em 0.6em;
+}
+.eng-foot,
+.eng-cert {
+  margin: 0;
+  font-size: 0.78em;
+  color: var(--e-ink2);
+}
+.eng.no3d .eng-labels,
+.eng.no3d .eng-tools .eng-tool:first-child {
+  display: none;
+}
+
+/* the full-screen layer */
+.eng-fs {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  background: var(--sl-bg, #0d1117);
+  color: var(--sl-text, #e8edf2);
+  padding: max(12px, env(safe-area-inset-top)) 16px
+    max(12px, env(safe-area-inset-bottom));
+  gap: 10px;
+}
+.eng-fs-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.eng-fs-t {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+}
+.eng-fs-x {
+  font-size: 15px;
+}
+.eng-fs-b {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.eng-fs .eng {
+  --eng-fs: 15px;
+}
+.eng.narrow .eng-cap {
+  font-size: 0.88em;
+  max-height: 38%;
+}
+.eng-fs .eng.narrow {
+  grid-template-rows: minmax(56vh, 1fr) auto;
+}
+.eng-fs {
+  font-family: var(--sl-font-body, system-ui, -apple-system, "Segoe UI", sans-serif);
+}
+/* reduced motion: say why it stands still */
+.eng.reduced .eng-foot {
+  display: block;
+}
+@media (prefers-reduced-motion: reduce) {
+  .eng * {
+    transition: none !important;
+  }
+}

@@ -94,6 +94,7 @@ const S = {
   layouts: ["Layouts", "Mises en page"],
   themes: ["Themes", "Thèmes"],
   interactive: ["Questions", "Questions"],
+  engines: ["Engines", "Moteurs"],
   addHere: ["Add to the slide", "Ajouter à la diapo"],
   dropHere: ["Drop on the slide", "Déposez sur la diapo"],
   editHint: [
@@ -125,6 +126,7 @@ const KIND: Record<string, [string, string]> = {
   checklist: ["Checklist", "Liste de vérification"],
   quiz: ["Question", "Question"],
   tool: ["Tool", "Outil"],
+  engine3d: ["3D engine", "Moteur 3D"],
 };
 export function blockKindLabel(kind: string, lang: Lang = "en"): string {
   const v = KIND[kind];

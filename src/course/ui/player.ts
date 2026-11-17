@@ -1874,6 +1874,20 @@ export class CoursePlayer {
           go.addEventListener("click", () => open.click());
           out.push(go);
         }
+      } else if (b.kind === "engine3d") {
+        // a 3D engine on a small slide: its caption, and the way to open it big (its levers at 44 px there)
+        if (b.caption) out.push(richEl(txt(b.caption), lang, undefined, "cp-rich cp-st-body"));
+        out.push(
+          h(
+            "div",
+            { class: "cp-st-ctls" },
+            btn(lang === "fr" ? "Ouvrir le moteur en plein écran" : "Open the engine full screen", "", () => {
+              host
+                .querySelector<HTMLButtonElement>(`[data-id="${CSS.escape(b.id)}"] .eng-tools .eng-tool:last-child`)
+                ?.click();
+            }),
+          ),
+        );
       } else if (b.kind === "checklist") {
         out.push(
           h(
@@ -2914,11 +2928,15 @@ export class CoursePlayer {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const t = e.target as HTMLElement | null;
     const tag = t?.tagName;
+    // a 3D engine's lever has the focus: a clicker's PageDown / PageUp still turns the page (course/engines)
+    const clicker =
+      (e.key === "PageDown" || e.key === "PageUp") && !!t?.closest?.(".eng");
     if (
-      tag === "INPUT" ||
-      tag === "TEXTAREA" ||
-      tag === "SELECT" ||
-      t?.isContentEditable
+      !clicker &&
+      (tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        t?.isContentEditable)
     )
       return;
     // a control of a slide's instrument has the focus (canvas/controlStrip.ts): its keys are its own

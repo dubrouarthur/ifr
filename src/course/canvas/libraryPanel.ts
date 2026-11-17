@@ -44,6 +44,7 @@ const TAB_LABEL: Record<LibraryTab, CanvasString> = {
   icons: "icons",
   photos: "photos",
   interactive: "interactive",
+  engines: "engines",
 };
 const mk = <K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -149,6 +150,7 @@ export class LibraryPanel {
       instruments: ["Search an instrument", "Rechercher un instrument"],
       photos: ["Search a photo or an icon", "Rechercher une photo ou une icône"],
       interactive: ["Search a question, a calculation…", "Rechercher une question, un calcul…"],
+      engines: ["Search an engine", "Rechercher un moteur"],
     };
     const ph = PH[(o.tabs ?? [this.tab])[0] ?? this.tab] ?? PH.text;
     this.search.placeholder = (o.tabs?.length ?? 2) > 1 && !o.tabs ? tx("search", this.lang) : ph[fr ? 1 : 0];
@@ -339,6 +341,23 @@ export class LibraryPanel {
               : "is-diagram",
         );
         el.append(img);
+        break;
+      }
+      case "engine": {
+        // the engine itself, a still from the one shared renderer (drawn when the panel opens, never one per tile)
+        el.classList.add("is-engine");
+        void import("../engines/view")
+          .then((m) => {
+            const url = m.engineSnapshot(p.engine, 0, 320, 200);
+            if (!url) return;
+            const img = mk("img");
+            img.alt = "";
+            img.draggable = false;
+            img.src = url;
+            el.replaceChildren(img);
+          })
+          .catch(() => {});
+        el.innerHTML = GLYPHS.viewport ?? "";
         break;
       }
       case "instrument": {

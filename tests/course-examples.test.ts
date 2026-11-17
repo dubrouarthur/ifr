@@ -49,6 +49,8 @@ describe("the gallery of ready slides", () => {
         expect(tools.every((b) => b.kind === "tool" && b.controls === undefined), s.id).toBe(true);
         continue;
       }
+      // a 3D engine slide moves by itself: the engine block runs its own cycle (course/engines)
+      if (s.slide.blocks.some((b) => b.kind === "engine3d")) continue;
       expect(moving.length, s.id).toBeGreaterThan(0);
       for (const b of moving) {
         expect(motionIssues(b.motion), s.id).toEqual([]);

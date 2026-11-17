@@ -1548,7 +1548,38 @@ export type SlideBlock = BlockBase &
         /** where the controls sit: right of the drawing (default on a wide frame) or under it */
         panel?: "right" | "below";
       }
+    | {
+        /** a live 3D engine (course/engines): a cutaway that runs, named parts, the levers and the gauges */
+        kind: "engine3d";
+        engine: EngineKind;
+        /** the levers the student may move on the slide (default: every lever of that engine); [] = watch only */
+        controls?: EngineControl[];
+        /** where the levers start */
+        set?: EngineSettings;
+        /** the step shown first (a stroke, a station), and the picture in reduced motion; 0-based */
+        stage?: number;
+        /** every part named (default false: only the parts of the step shown are named) */
+        labels?: boolean;
+        /** start in slow motion */
+        slow?: boolean;
+        caption?: L10n;
+      }
   );
+/** The engines a slide can show (course/engines). */
+export type EngineKind = "piston" | "turboprop" | "turbofan" | "prop";
+/** The levers of an engine block: throttle (power / thrust lever), mixture, carburettor heat, the magneto
+ *  switch, propeller rpm lever, thrust reversers. */
+export type EngineControl = "throttle" | "mixture" | "carbHeat" | "magnetos" | "prop" | "reverse";
+/** Lever positions (0..1 from idle / lean cut-off / low rpm to full). */
+export interface EngineSettings {
+  throttle?: number;
+  mixture?: number;
+  carbHeat?: boolean;
+  /** the magneto switch (the run-up check: one magneto at a time) */
+  mags?: "both" | "left" | "right" | "off";
+  prop?: number;
+  reverse?: boolean;
+}
 export type SlideBlockKind = SlideBlock["kind"];
 
 /** The teaching tools a slide can hold (course/tools/index.ts lists them). */

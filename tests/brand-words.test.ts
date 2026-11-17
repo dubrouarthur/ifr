@@ -31,6 +31,12 @@ const FILES = [
   "src/course/tools/defs/mach.ts",
   "src/course/tools/defs/cabin.ts",
   "src/course/ui/studio.ts",
+  "src/course/engines/sim.ts",
+  "src/course/engines/view.ts",
+  "src/course/engines/piston3d.ts",
+  "src/course/engines/prop3d.ts",
+  "src/course/engines/turbine3d.ts",
+  "src/course/samples/exampleSlides.ts",
 ];
 const BRAND = /G1000|Garmin|Cessna|Jeppesen/;
 /** the string literals of a source file, comments dropped */
