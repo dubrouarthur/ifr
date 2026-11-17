@@ -1120,6 +1120,27 @@ export type CalcDiagram = { drag?: string[] } &
         table: "c172s";
         points: { weightLb: number; momentLbIn: number; label: L10n }[];
       }
+    /** an aerodrome's runways drawn from their published thresholds (plan view, true north up) and the wind:
+     *  head and cross components on each runway direction, the runway in use (drag: 'wind') */
+    | {
+        kind: "runways";
+        strips: {
+          /** the two designators, low QFU first ("07L", "25R") */
+          ids: [string, string];
+          /** magnetic QFU of each end */
+          qfu: [number, number];
+          /** the two thresholds, metres east and north of a reference point */
+          ends: [[number, number], [number, number]];
+          widthM: number;
+          /** displaced threshold at each end, m (the landing threshold is that far in) */
+          dthrM?: [number, number];
+          /** a short line beside the strip ("1 100 × 30 m") */
+          label?: string;
+        }[];
+        /** magnetic wind (the ATIS gives it magnetic), ° and kt */
+        windDir: number;
+        windKt: number;
+      }
     /** VDP on the final segment: MDA, TDZE, 3° path, distance from the threshold */
     | {
         kind: "vdp";

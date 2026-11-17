@@ -8,7 +8,7 @@ import { MATHS_IFR_ID, mathsIfrCourse } from "./mathsIfr";
 import { MATHS_VFR_ID, mathsVfrCourse } from "./mathsVfr";
 import { CRAFTED_BRIEFINGS, HOLD_NDB_BRIEFING_ID } from "./briefings";
 import { LIBRARY_COURSES, type LibraryProgram } from "./library";
-import { DECKS } from "./decks";
+import { AIRFIELD_DECKS, DECKS } from "./decks";
 
 export { VOR_ID, HOLDING_ID, HOLD_NDB_BRIEFING_ID, MATHS_IFR_ID, MATHS_VFR_ID };
 
@@ -84,6 +84,16 @@ export const SAMPLES: readonly SampleDef[] = [
     (d, i): SampleDef => ({
       id: d.id,
       order: 5 + CRAFTED_BRIEFINGS.length + LIBRARY_COURSES.length + i,
+      build: d.build,
+      blurb: d.blurb,
+    }),
+  ),
+  // the decks set at a real airfield (samples/decks: LFPN), after the ready decks
+  ...AIRFIELD_DECKS.map(
+    (d, i): SampleDef => ({
+      id: d.id,
+      order:
+        5 + CRAFTED_BRIEFINGS.length + LIBRARY_COURSES.length + DECKS.length + i,
       build: d.build,
       blurb: d.blurb,
     }),

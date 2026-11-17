@@ -276,7 +276,37 @@ export function holdSlideSvg(
     return best;
   };
   // the fix's label, between the two boundaries next to it (never on a line), off the arrival's way
-  const fl = at(absB(planeRel !== null && dRel(-35, planeRel) < 25 ? 250 : -35), 78 * u);
+  let fl = at(absB(planeRel !== null && dRel(-35, planeRel) < 25 ? 250 : -35), 78 * u);
+  // a long ident (MOLBA) can reach a sector's name: then the first place nearby that clears every name and line
+  if (!quiet) {
+    const halfW = (0.62 * 28 * u * fixIdent.length) / 2 + 6 * u;
+    const nameBoxes = (Object.keys(SECT) as K[]).map((k) => {
+      const q = at(absB(SECT[k].lab), RC * SECT[k].lr);
+      return { x: q[0] - 84 * u, y: q[1] - 34 * u, w: 168 * u, h: 112 * u };
+    });
+    const box = (q: [number, number]) => ({ x: q[0] - halfW, y: q[1] - 16 * u, w: 2 * halfW, h: 34 * u });
+    const hits = (a: { x: number; y: number; w: number; h: number }) =>
+      nameBoxes.some((b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h);
+    const onRay = (q: [number, number]) =>
+      [I, I + 110 * s, I - 70 * s, ...(o.courseToFix !== undefined ? [o.courseToFix + 180] : [])].some((b) => {
+        const v = at(b, 1);
+        const dx = v[0] - cx;
+        const dy = v[1] - cy;
+        const t = (q[0] - cx) * dx + (q[1] - cy) * dy;
+        const px = q[0] - cx - t * dx;
+        const py = q[1] - cy - t * dy;
+        return t > 0 && Math.abs(px * dy - py * dx) < halfW + 4 * u && Math.hypot(px, py) < 20 * u + halfW;
+      });
+    if (hits(box(fl)))
+      search: for (const r of [78, 64, 96])
+        for (const rel of [-35, -20, -50, 250, 200, 160, 70, 30]) {
+          const q = at(absB(rel), r * u);
+          if (!hits(box(q)) && !onRay(q) && (planeRel === null || dRel(rel, planeRel) >= 25)) {
+            fl = q;
+            break search;
+          }
+        }
+  }
   // a sector's name (a box about 160 × 110 at u = 1): kept clear of the lines from the fix — the two sector
   // boundaries, the inbound extension and the dashed arrival — by trying a few bearings and radii in its sector
   const rays: number[] = [I, I + 110 * s, I - 70 * s];

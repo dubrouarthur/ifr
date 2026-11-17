@@ -249,6 +249,13 @@ const SUBJECT_ROWS = [
     ["departures", "arrivals", "sid", "star", "planning", "maths"],
   ),
   S("ir", "test", "07", "Checkride", "Test pratique", ["checkride", "test"]),
+  // real airfields: their procedures, flown in the real navigation data around them
+  S("ir", "ad", "08", "Airfields", "Terrains", [
+    "airfield",
+    "airfields",
+    "aerodrome",
+    "terrains",
+  ]),
   // ATPL: the 13 EASA subjects
   A("010", "Air law", "Droit aérien", ["law"]),
   A("021", "Airframe, systems and powerplant", "Cellule, systèmes et moteurs", [
@@ -369,8 +376,8 @@ export const PROGRAMS: readonly ProgramDef[] = [
     title: { en: "Instrument rating", fr: "Vol aux instruments" },
     frame: { en: "EASA and FAA · on the Cessna 172", fr: "EASA et FAA · sur Cessna 172" },
     blurb: {
-      en: "Seven subjects, from attitude instrument flying to the checkride.",
-      fr: "Sept matières, du pilotage aux instruments jusqu’au test pratique.",
+      en: "Eight subjects, from attitude instrument flying to the checkride and real airfields.",
+      fr: "Huit matières, du pilotage aux instruments jusqu’au test pratique et aux terrains réels.",
     },
     who: { en: "I am preparing the IR", fr: "Je prépare l’IR" },
     level: 2,
