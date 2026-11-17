@@ -68,10 +68,10 @@ function vector(
 }
 
 // ------------------------------------------------------------------ wind dial (shared)
-interface WindDial {
+export interface WindDial {
   set(dir: number, kt: number): void;
 }
-function windDial(
+export function windDial(
   sh: Shell,
   lang: Lang,
   cx: number,

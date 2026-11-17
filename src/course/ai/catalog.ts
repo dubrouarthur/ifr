@@ -51,9 +51,10 @@ export const CONTROL_IDS = ids(
     (c) => stripWidget(c) !== null && !NOT_ON_STEAM.includes(c),
   ),
 );
-/** Calc diagrams the stage really draws (others would show a placeholder); the CG envelope needs a loading table. */
+/** Calc diagrams the stage really draws (others would show a placeholder); the CG envelope needs a loading table, the
+ *  hold flown is the holding course's own animated drawing. */
 export const CALC_IDS = ids(
-  STAGE_CALC_DIAGRAMS.filter((k) => k !== "cgEnvelope"),
+  STAGE_CALC_DIAGRAMS.filter((k) => k !== "cgEnvelope" && k !== "holdFly"),
 );
 
 /** What the student may drag on each calc diagram (the samples' own choices); [] = static. */

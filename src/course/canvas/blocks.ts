@@ -648,6 +648,12 @@ function diagramBlock(b: Of<"diagram">, env: BlockEnv): BlockView {
       u: 1,
       transparent: true,
       card: false,
+      animate: env.mode === "play",
+      // a drawing that checks its own goals (the hold flown): each met goal and all of them reveal like a step goal
+      onGoal: (met) => {
+        met.forEach((m, i) => m && env.fire(`afterCheck:${i}`));
+        if (met.length && met.every(Boolean)) env.fire("goalMet");
+      },
     }) as DiagramWidget<unknown> | null;
     if (widget) box.append(widget.el);
     else {

@@ -1752,6 +1752,36 @@ export class CoursePlayer {
         if (b.n !== undefined)
           el.prepend(h("span", { class: "cp-st-n num" }, String(b.n)));
         out.push(el);
+      } else if (b.kind === "diagram" && b.interactive) {
+        // a drawing the student works (the hold's heading, the wind): how to work it, and its buttons again at 44 px
+        // (on a phone the drawing's own are a few pixels: these press them)
+        if (b.caption) out.push(richEl(txt(b.caption), lang, undefined, "cp-rich cp-st-body"));
+        const own = [
+          ...host.querySelectorAll<SVGElement>(
+            `[data-id="${CSS.escape(b.id)}"] .cs-btn[aria-label]`,
+          ),
+        ];
+        if (own.length)
+          out.push(
+            h(
+              "div",
+              { class: "cp-st-ctls" },
+              ...own.map((g) => {
+                const name = g.getAttribute("aria-label") ?? "";
+                const x = btn(g.textContent?.trim() || name, "", () => {
+                  const cur = [
+                    ...host.querySelectorAll<SVGElement>(
+                      `[data-id="${CSS.escape(b.id)}"] .cs-btn[aria-label]`,
+                    ),
+                  ].find((y) => y.getAttribute("aria-label") === name);
+                  cur?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+                });
+                x.title = name;
+                x.tabIndex = -1;
+                return x;
+              }),
+            ),
+          );
       } else if (b.kind === "checklist") {
         out.push(
           h(
@@ -2800,6 +2830,8 @@ export class CoursePlayer {
       return;
     // a control of a slide's instrument has the focus (canvas/controlStrip.ts): its keys are its own
     if (t?.closest?.(".sl-strip")) return;
+    // so are a diagram's handle and buttons (the wind dial, the hold's heading): the arrows move them, not the slide
+    if (t?.closest?.(".cs-handle, .cs-btn") || e.defaultPrevented) return;
     const layout = this.body.dataset.layout;
     // the arrow keys turn the instrument only when one of its controls has the focus; otherwise they page the steps
     if (

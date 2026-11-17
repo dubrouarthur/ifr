@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { holdEntry, acceptableEntries, clearanceText, teardropCourse } from '../src/nav/holding';
+import { holdEntry, acceptableEntries, clearanceText, teardropCourse, entrySector } from '../src/nav/holding';
 
 describe('hold entries (AIM 5-3-8)', () => {
   // Right hold, inbound 360: the racetrack lies south of the fix, on the east (holding) side.
@@ -84,5 +84,44 @@ describe('flying hold entries with the autopilot', () => {
     expect(lastIn).toBeGreaterThan(35);
     expect(lastIn).toBeLessThan(85);
     expect(ev.maxNonHoldingSide).toBeLessThan(0.6);
+  });
+});
+
+describe('entry sector at its boundaries (70° / 110° / 180° sectors)', () => {
+  // inbound 270, right turns (the course's ARD hold): boundaries at courses 020 (the 70° line), 200 (its
+  // extension) and 090 (the outbound course)
+  it.each([
+    [19, 'DIRECT'],
+    [20, 'DIRECT'], // on the 70° line: direct
+    [21, 'TEARDROP'],
+    [89, 'TEARDROP'],
+    [90, 'TEARDROP'], // the outbound course itself: the end of the 70° sector
+    [91, 'PARALLEL'],
+    [199, 'PARALLEL'],
+    [200, 'DIRECT'], // −70: direct
+    [201, 'DIRECT'],
+    [270, 'DIRECT'],
+  ])('inbound 270 R, course %i° → %s', (crs, entry) => {
+    expect(entrySector(270, 'R', crs as number).entry).toBe(entry);
+  });
+  it('measures the sectors: 180° direct, 70° teardrop, 110° parallel', () => {
+    const n = { DIRECT: 0, TEARDROP: 0, PARALLEL: 0 };
+    for (let c = 0; c < 360; c++) n[entrySector(270, 'R', c).entry]++;
+    expect(n).toEqual({ DIRECT: 181, TEARDROP: 70, PARALLEL: 109 });
+  });
+  it('gives the nearest boundary and the margin to it', () => {
+    expect(entrySector(270, 'R', 50)).toMatchObject({ entry: 'TEARDROP', margin: 30, boundary: 20 });
+    expect(entrySector(270, 'R', 180)).toMatchObject({ entry: 'PARALLEL', margin: 20, boundary: 200 });
+    expect(entrySector(270, 'R', 300)).toMatchObject({ entry: 'DIRECT', rel: 30 });
+    expect(entrySector(270, 'R', 93)).toMatchObject({ margin: 3, boundary: 90 });
+    expect(entrySector(270, 'R', 93).either.sort()).toEqual(['PARALLEL', 'TEARDROP']);
+    expect(entrySector(270, 'R', 300).either).toEqual(['DIRECT']);
+  });
+  it('mirrors left turns', () => {
+    // inbound 270, left turns: the 70° line is at course 160, its extension at 340
+    expect(entrySector(270, 'L', 160).entry).toBe('DIRECT');
+    expect(entrySector(270, 'L', 159).entry).toBe('TEARDROP');
+    expect(entrySector(270, 'L', 341).entry).toBe('PARALLEL');
+    expect(entrySector(270, 'L', 159).boundary).toBe(160);
   });
 });

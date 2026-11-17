@@ -310,6 +310,10 @@ export interface DiagramOptions {
   onChange?: (spec: unknown) => void;
   /** accessible name (the block's alt); default: generated from the numbers */
   label?: string;
+  /** play what the drawing animates (the player only: never in the editor or a thumbnail) */
+  animate?: boolean;
+  /** goals the drawing checks by itself (the hold flown: one flag per goal heading) */
+  onGoal?: (met: boolean[]) => void;
 }
 export interface DiagramWidget<S> {
   readonly el: SVGSVGElement;
