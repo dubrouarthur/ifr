@@ -44,8 +44,8 @@ export const HOME_COPY = {
   },
   teach: { fr: "Enseigner", en: "Teach" },
   teachLine: {
-    fr: "Créez un cours en diapositives à partir d’un modèle, présentez-le en salle, partagez-le avec vos élèves.",
-    en: "Create a slide course from a template, present it in class, share it with your students.",
+    fr: "Créez un cours en diapositives, d’une diapo vierge ou d’un modèle, présentez-le en salle, partagez-le avec vos élèves.",
+    en: "Create a slide course, from a blank slide or a template, present it in class, share it with your students.",
   },
   teachWho: {
     fr: "Pour les instructeurs et les aéroclubs",
