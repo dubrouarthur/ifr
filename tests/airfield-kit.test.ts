@@ -116,6 +116,31 @@ describe("airfieldKit", () => {
     expect(Math.round(sim.ac.s.altFt)).toBeGreaterThan(900);
   });
 
+  it("in the cockpit, once the field's region is loaded, the takeoff starts on the same runway and stays on the ground", async () => {
+    const { airfieldKit } = await import("../src/course/airfieldKit");
+    const { loadRegion, leaveRealWorld } = await import("../src/nav/world");
+    const { applyScene } = await import("../src/course/scene");
+    const { Sim } = await import("../src/sim/sim");
+    const k = await airfieldKit("LFPN", "fr");
+    if (!k.ok) throw new Error(k.message);
+    const dep = Object.values(k.scenes).find((s) => s.id.endsWith(".dep"))!;
+    const onSlide = new Sim();
+    applyScene(onSlide, dep);
+    await loadRegion(["LFPN"]);
+    try {
+      const sim = new Sim();
+      applyScene(sim, dep);
+      // the same frame: the slide's runway is the cockpit's (within a few metres)
+      expect(Math.abs(sim.ac.s.lat - onSlide.ac.s.lat)).toBeLessThan(0.0001);
+      expect(Math.abs(sim.ac.s.lon - onSlide.ac.s.lon)).toBeLessThan(0.0001);
+      for (let i = 0; i < 100; i++) sim.step(0.05);
+      expect(sim.ac.s.crashed).toBeNull();
+      expect(sim.ac.s.onGround).toBe(true);
+    } finally {
+      leaveRealWorld();
+    }
+  }, 30000);
+
   it("the kit becomes a course like any template, and the course validates", async () => {
     const { airfieldKit } = await import("../src/course/airfieldKit");
     const { buildNewCourse } = await import("../src/course/ui/newCourse");

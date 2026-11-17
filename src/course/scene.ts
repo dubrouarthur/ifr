@@ -804,6 +804,11 @@ export function applyApModes(sim: Sim, ap: SceneAp | undefined) {
   A.apprMode = armed.includes("APR");
 }
 
+/** a situation lined up on a runway (its threshold or a few metres on), at taxi speed or stopped */
+function parkedOnRunway(f: SceneFields): boolean {
+  return "runway" in f.pos && f.pos.distNm <= 0.05 && f.iasKt < 25;
+}
+
 function applyFieldsPose(sim: Sim, f: SceneFields) {
   const s = sim.ac.s;
   const r = f.radios ?? {};
@@ -812,6 +817,7 @@ function applyFieldsPose(sim: Sim, f: SceneFields) {
   s.psi = norm360(f.hdg) * DEG;
   const bank = f.bank ?? 0;
   const air = f.iasKt >= 25;
+  if (parkedOnRunway(f)) s.altFt = groundElevation(s);
   s.onGround = !air && s.altFt <= groundElevation(s) + 5;
   s.tas = air ? tasForIas(f.iasKt, s.altFt, sim.weather, bank) : f.iasKt * KT;
   s.phi = bank * DEG;
@@ -883,8 +889,11 @@ export function applyScene(sim: Sim, scene: SimScene): SceneDiff[] {
       altFt: fields!.altFt,
       hdg: fields!.hdg,
       iasKt: fields!.iasKt,
-      onGround: fields!.iasKt < 25 && fields!.altFt <= groundElevation(pos) + 5,
+      onGround: parkedOnRunway(fields!) || (fields!.iasKt < 25 && fields!.altFt <= groundElevation(pos) + 5),
     };
+    // lined up on a runway: on the runway as the terrain of the loaded region has it (a real field's DEM can sit a
+    // few dozen feet off the published elevation the slide was written with)
+    if (parkedOnRunway(fields!)) start.altFt = groundElevation(pos);
   }
   startAt(sim, { ...start, weather });
   // 2

@@ -1647,6 +1647,8 @@ function outsideStill(): Promise<Blob | null> {
   x.drawImage(src, (src.width - w) / 2, (src.height - hh) / 2, w, hh, 0, 0, 480, 270);
   return new Promise((res) => c.toBlob(res, 'image/webp', 0.8));
 }
+/** the course flight's real-world region is loaded (loadWorld): its exercise must not fall back to the training one */
+let courseRegionLoaded = false;
 const courseHost: CockpitHost = {
   sim,
   lang: () => uiLang(),
@@ -1657,6 +1659,7 @@ const courseHost: CockpitHost = {
   },
   // a course situation at a real field (« Adapter à mon terrain »): the field's region, as « Préparer un vol » loads it
   loadWorld: async (w) => {
+    courseRegionLoaded = false;
     if (w.kind !== 'real') return true;
     const icaos = (w.icaos?.length ? w.icaos : [w.region]).filter((c) => /^[A-Z][A-Z0-9]{3}$/.test(c));
     if (!icaos.length) return false;
@@ -1664,6 +1667,7 @@ const courseHost: CockpitHost = {
       const { loadRegion } = await import('./nav/world');
       await loadRegion(icaos);
       regionChanged();
+      courseRegionLoaded = true;
       return true;
     } catch {
       return false;
@@ -1675,7 +1679,8 @@ const courseHost: CockpitHost = {
   },
   runExercise: (ex) => {
     courseExIds.add(ex.id);
-    backToTraining();
+    // a flight at the instructor's own field flies in the region loadWorld just loaded
+    if (!courseRegionLoaded) backToTraining();
     Modal.closeAll();
     courseLaunch(() => startExerciseNow(ex));
   },
