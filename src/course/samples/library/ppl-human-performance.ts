@@ -689,8 +689,8 @@ export function pplHumanPerformanceCourse(): Course {
         IMG(
           { lib: "photo:in-cloud" },
           L(
-            "A Cessna 172 flying close to cloud",
-            "Un Cessna 172 qui vole près des nuages",
+            "A training aircraft flying close to cloud",
+            "Un avion-école qui vole près des nuages",
           ),
           G.left,
           288,

@@ -10,7 +10,7 @@
 // flaps up, 2,550 lb); EASA Part-FCL AMC1 FCL.210.A (exercises 6 to 9) and AMC1 FCL.235 (PPL skill test
 // tolerances: height ±150 ft, heading ±10°, speed ±15 kt).
 import type { Course, SimScene, Step } from "../../types";
-import { DIAGRAM, G as GOAL, INST, L, course, step } from "../kit";
+import { DIAGRAM, G as GOAL, INST, L, course, livenAll, step } from "../kit";
 import { G } from "../navSlides";
 import {
   GAUGE,
@@ -688,6 +688,8 @@ export function pplFlightManoeuvresCourse(): Course {
       controls: ["power"],
       goal: {
         all: [GOAL.alt(3300, 6000), GOAL.ias(85, 115)],
+        // the end: both rows true together for 3 s once 3,300 ft is passed (the climb is established)
+        holdS: 3,
         graded: false,
         success: L(
           "300 ft gained at about the same speed: the extra power became a climb.",
@@ -1648,7 +1650,25 @@ export function pplFlightManoeuvresCourse(): Course {
         "turn",
       ],
     },
-    steps.map((st) => (st.notes || !NOTES[st.id] ? st : { ...st, notes: NOTES[st.id] })),
+    livenAll(steps, {
+      // the cover flies a standard-rate turn (canvas/motion.ts « turn-std », FAA AFH ch. 3)
+      "fm-cover.six": {
+        motion: "turn-std",
+        alt: L(
+          "The training aircraft’s six instruments at 3,000 ft and 100 KIAS: a standard-rate turn, 3° a second",
+          "Les six instruments de l’avion-école à 3 000 ft et 100 KIAS : un virage au taux standard, 3° par seconde",
+        ),
+      },
+      // attitude + power = performance: the power changes, the RPM first, then the speed (« power »: PHAK ch. 6,
+      // POH C172S section 5 cruise table)
+      "fm-apf.inst": {
+        motion: "power",
+        alt: L(
+          "The six instruments live, level at 3,000 ft: the power goes from 2,100 to 2,500 RPM, the RPM first, then the speed",
+          "Les six instruments en direct, en palier à 3 000 ft : la puissance passe de 2 100 à 2 500 tr/min, d’abord les tours, puis la vitesse",
+        ),
+      },
+    }).map((st) => (st.notes || !NOTES[st.id] ? st : { ...st, notes: NOTES[st.id] })),
     scenes(),
   );
 }

@@ -8,7 +8,7 @@ import { exampleScenes } from "../canvas/examples";
 import { galleryScenes } from "../samples/exampleSlides";
 import { showcaseScenes } from "../samples/showcaseDecks";
 import { DECK_STARTERS } from "./deckStarters";
-import { starterScene } from "./templates";
+import { PRACTICE_SCENES, starterScene } from "./templates";
 
 let known: Map<string, string[]> | null = null;
 /** a scene as JSON, without the time it was built (built-in scenes stamp « captured.at » when they are made) */
@@ -36,7 +36,11 @@ function builtIns(): Map<string, string[]> {
       /* a source that cannot build here is not an example */
     }
   }
-  for (const ck of ["g1000", "steam", "airliner"] as const) add("sc-start", starterScene(ck));
+  for (const ck of ["g1000", "steam", "airliner"] as const) {
+    add("sc-start", starterScene(ck));
+    // the practice situations a layout's « À vous » starts from
+    for (const [id, p] of Object.entries(PRACTICE_SCENES)) add(id, p.make(ck, id));
+  }
   known = m;
   return m;
 }

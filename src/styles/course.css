@@ -3789,6 +3789,12 @@ html.ga-doc body {
   font-size: 12.5px;
   white-space: nowrap;
 }
+/* a phone: the line wraps, so « Recommencer » stays on screen and reachable */
+@media (max-width: 560px) {
+  .pr-sub {
+    white-space: normal;
+  }
+}
 .pr-clock.late {
   color: var(--gl-warn, #9a5a00);
   font-weight: 600;

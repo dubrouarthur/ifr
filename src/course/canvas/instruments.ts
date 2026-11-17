@@ -524,7 +524,12 @@ export class SlideInstrument {
       this.canvas.width = pw;
       this.canvas.height = ph;
     }
-    const ctx = this.canvas.getContext("2d");
+    // a still (thumbnail) is read back once into an image: a CPU canvas makes that read cheap, where a GPU one stalls
+    // the page for seconds on a software renderer (the strip's last thumbnails then stay blank)
+    const ctx = this.canvas.getContext(
+      "2d",
+      this.o.still ? { willReadFrequently: true } : undefined,
+    );
     if (!ctx) return;
     const [x, y, rw, rh] = this.frame.rect;
     ctx.setTransform(1, 0, 0, 1, 0, 0);

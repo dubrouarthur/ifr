@@ -19,6 +19,7 @@ import "../../styles/presenter.css";
 import { btn, L, ps, taskChip } from "./reader";
 import { toDesignedSlide } from "./templates";
 import { fallbackNotes } from "./presenterNotes";
+import { clickerPage } from "./clickerKeys";
 import { courseMinutes } from "./outline";
 import { stagePoseOf } from "../scene";
 import { renderThumb } from "../canvas/render";
@@ -366,6 +367,21 @@ export class Presenter {
     }, 1000);
   }
   private onDemoKey = (e: KeyboardEvent) => {
+    // the clicker (PageDown / PageUp, Space) always turns the page, even after the presenter touched a control of the
+    // slide (its strip keeps the focus): a classroom remote sends these keys. The arrows too, unless the focus is on a
+    // knob or a slider (role slider), whose own keys they are; the strip lets go of the focus so the next key pages.
+    const tEl = e.target as HTMLElement | null;
+    if (tEl?.closest?.(".sl-strip") && !this.demo.el.contains(tEl)) {
+      const turn = clickerPage(e, tEl.getAttribute("role") === "slider");
+      if (turn) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        tEl.blur();
+        if (turn === "next") this.player.next();
+        else this.player.back();
+        return;
+      }
+    }
     // Space turns the page, as the deck says, even when one of its buttons or sliders has the focus
     const t = e.target as Node | null;
     if (

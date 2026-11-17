@@ -1950,6 +1950,10 @@ button.sl-q-opt.is-right:hover {
 .sl-strip.is-static {
   pointer-events: none;
 }
+/* the projector: the class sees the values the instructor sets, never a button it cannot press */
+.sl-strip.is-mirror .sl-sc-btn {
+  visibility: hidden;
+}
 .sl-strip-in {
   position: absolute;
   left: 0;

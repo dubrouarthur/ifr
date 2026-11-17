@@ -481,10 +481,19 @@
     flex: none;
   }
   .dm-rows {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     column-gap: 8px;
   }
   .dm-chips {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+/* a phone: one control a row (two side by side left the second column cut off at 390 px) */
+@media (max-width: 560px) {
+  .dm-rows {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .dm-chips {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 }

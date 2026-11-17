@@ -8,7 +8,7 @@
 // C172S POH sect. 3 "Vacuum System Failure", "Emergency Operation in Clouds", sect. 7 "Vacuum Gage" (desired
 // suction 4.5 to 5.5 inHg; the low-vacuum annunciation below 3.0 inHg).
 import type { Course, SimScene, SlideBlock, Step } from "../../types";
-import { DIAGRAM, INST, L, MARK, T, course, slideStep, step } from "../kit";
+import { DIAGRAM, INST, L, MARK, T, course, livenAll, slideStep, step } from "../kit";
 import { G, foot, head, slide } from "../navSlides";
 import {
   GAUGE,
@@ -52,6 +52,13 @@ function scenes(): Record<string, SimScene> {
       "gc.pp",
       { pos: AREA, altFt: 4000, hdg: 45, iasKt: 95 },
       { label: "Partial panel · heading 045 · 4,000 ft", covers: ["ai", "dg"] },
+    ),
+    // the « À vous » finds the aircraft in a gentle descending turn under the covers (what a vacuum failure leaves
+    // when it goes unnoticed, FAA IFH ch. 7): 15° right, 400 ft/min down, 4,150 ft. Left alone it leaves the band.
+    "gc.pp-turn": sceneA1(
+      "gc.pp-turn",
+      { pos: AREA, altFt: 4150, hdg: 45, iasKt: 95, bank: 15, pitch: -2, vsFpm: -400 },
+      { label: "Partial panel · descending turn · 4,150 ft", covers: ["ai", "dg"] },
     ),
     "gc.vac": sceneA1(
       "gc.vac",
@@ -365,11 +372,11 @@ export function irGyrosCompassCourse(): Course {
         "Live six-pack with the attitude and heading indicators covered",
         "Six instruments en direct, horizon et cap masqués",
       ),
-      scene: "gc.pp",
+      scene: "gc.pp-turn",
       covers: ["ai", "dg"],
       prompt: L(
-        "Your turn: hold the wings level and 4,000 ft for 45 s",
-        "À vous : tenez les ailes à plat et 4 000 ft pendant 45 s",
+        "Your turn: it is descending in a turn. Wings level, back to 4,000 ft, hold 45 s",
+        "À vous : l’avion descend en virage. Ailes à plat, revenez à 4 000 ft, tenez 45 s",
       ),
       controls: ["pitch", "bank"],
       assist: { holdIas: true },
@@ -394,8 +401,8 @@ export function irGyrosCompassCourse(): Course {
         "FAA IFH ch. 7 · C172S POH sect. 3 : vol en nuages en secours",
       ),
       reader: L(
-        "Your turn with the attitude and heading indicators covered, as after a vacuum failure. Keep the wings level with the turn coordinator (its small aircraft on the horizon line) and the pitch with the altimeter and VSI, for 45 seconds. The stage holds the airspeed (FAA IFH ch. 7; C172S POH section 3).",
-        "À vous avec l’horizon et le conservateur de cap masqués, comme après une panne de dépression. Tenez les ailes à plat à l’indicateur de virage (sa maquette sur la ligne d’horizon) et l’assiette à l’altimètre et au variomètre, pendant 45 secondes. La scène tient la vitesse (FAA IFH ch. 7 ; C172S POH section 3).",
+        "Your turn with the attitude and heading indicators covered, as after a vacuum failure. The aircraft is in a gentle descending turn: level the wings with the turn coordinator (its small aircraft on the horizon line), stop the descent with the altimeter and VSI, back to 4,000 ft, then hold it for 45 seconds. The stage holds the airspeed (FAA IFH ch. 7; C172S POH section 3).",
+        "À vous avec l’horizon et le conservateur de cap masqués, comme après une panne de dépression. L’avion descend en léger virage : mettez les ailes à plat à l’indicateur de virage (sa maquette sur la ligne d’horizon), arrêtez la descente à l’altimètre et au variomètre, revenez à 4 000 ft, puis tenez-le 45 secondes. La scène tient la vitesse (FAA IFH ch. 7 ; C172S POH section 3).",
       ),
     }),
     // 7 ------------------------------------------------------------------ variation and deviation
@@ -694,6 +701,8 @@ export function irGyrosCompassCourse(): Course {
           scene: "gc.vac",
           failuresOnEnter: { vacuum: true },
           assist: { holdAlt: true, holdIas: true },
+          // the presenter replays the failure or lets it run a minute: the horizon tips further
+          presenter: [{ k: "reset" }, { k: "failure", key: "vacuum" }, { k: "flyFor", s: 60 }],
         },
         quiz: {
           kind: "tap",
@@ -828,7 +837,27 @@ export function irGyrosCompassCourse(): Course {
       ],
       minutes: 50,
     },
-    steps,
+    livenAll(steps, {
+      // the course in one picture: a vacuum failure, the horizon tips slowly (« vacuum »: FAA IFH ch. 5,
+      // POH C172S section 3)
+      "gc-cover.ai": {
+        motion: "vacuum",
+        alt: L(
+          "Attitude indicator in level flight, after a vacuum failure: it tips slowly while the aircraft stays level",
+          "Horizon artificiel en palier, après une panne de dépression : il bascule lentement alors que l’avion reste à plat",
+        ),
+      },
+      // which instruments the vacuum drives: the same failure on the six-pack, the turn coordinator stays right
+      "gc-power.inst": {
+        motion: "vacuum",
+        alt: L(
+          "The training aircraft’s six instruments after a vacuum failure: the attitude and heading indicators drift, the electric turn coordinator stays right",
+          "Les six instruments de l’avion-école après une panne de dépression : l’horizon et le cap dérivent, l’indicateur de virage électrique reste juste",
+        ),
+      },
+      // a reading lesson: the drift is minutes long, the picture stays still
+      "gc-drift.hi": { still: true },
+    }),
     scenes(),
   );
 }

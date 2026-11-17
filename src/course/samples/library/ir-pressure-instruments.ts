@@ -8,7 +8,7 @@
 // C172S POH sect. 2 (airspeed indicator markings), sect. 3 (static source blockage), sect. 5 (airspeed
 // calibration). The training world's figures: the steam altimeter reads inHg; 1 hPa ≈ 27 ft near sea level.
 import type { Course, SimScene, Step } from "../../types";
-import { DIAGRAM, INST, L, course, step } from "../kit";
+import { DIAGRAM, INST, L, course, livenAll, step } from "../kit";
 import { G } from "../navSlides";
 import {
   GAUGE,
@@ -950,7 +950,20 @@ export function irPressureInstrumentsCourse(): Course {
       ],
       minutes: 55,
     },
-    steps,
+    livenAll(steps, {
+      // the three pitot-static instruments move together in a climb at VY (« climb-vy »: POH C172S sections 4-5)
+      "pi-ports.inst": {
+        motion: "climb-vy",
+        alt: L(
+          "The six-pack in a climb at VY: airspeed, altimeter and VSI on the pitot-static system all move",
+          "Les six instruments en montée à VY : anémomètre, altimètre et variomètre, sur le circuit pitot-statique, bougent ensemble",
+        ),
+      },
+      // a reading lesson: the marks sit on the needles at 5,000 ft, the picture stays still
+      "pi-face.inst": { still: true },
+      // the needle sweeps the arcs of the C172S (« asi-arcs »: POH C172S section 2, airspeed indicator markings)
+      "pi-asi.inst": { motion: "asi-arcs" },
+    }),
     scenes(),
   );
 }

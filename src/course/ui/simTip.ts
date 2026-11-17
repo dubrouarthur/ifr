@@ -48,6 +48,45 @@ export function clearTop(
   return null;
 }
 
+/** the margin kept between the card and the slide's words (px) */
+const GAP = 16;
+/**
+ * Where the card goes: beside the tab (clearTop), else further right in 40 px steps, still clear of the words; null
+ * when no place is clear at all. Pure.
+ */
+export function clearSpot(
+  tab: { top: number; bottom: number },
+  w: number,
+  hgt: number,
+  left: number,
+  avoid: Box[],
+  bounds: { top: number; bottom: number },
+  maxRight: number,
+): { left: number; top: number } | null {
+  for (let x = left; x + w <= maxRight; x += 40) {
+    const top = clearTop(tab, w, hgt, x, avoid, bounds);
+    if (top !== null) return { left: x, top };
+  }
+  return null;
+}
+
+/**
+ * A phone's rail is a bar at the bottom: no room beside the tab, so the card stands above it, centred on it and kept
+ * inside the screen (8 px margin). Pure.
+ */
+export function aboveSpot(
+  tab: { left: number; right: number; top: number },
+  w: number,
+  hgt: number,
+  vw: number,
+): { left: number; top: number } {
+  const mid = (tab.left + tab.right) / 2;
+  return {
+    left: Math.round(Math.max(8, Math.min(vw - w - 8, mid - w / 2))),
+    top: Math.round(Math.max(8, tab.top - hgt - 12)),
+  };
+}
+
 /** Arm the tips: they show when the editor's slide and « Simulateur » tab appear (within 20 s), then never again. */
 export function armSimTip(lang: Lang): void {
   if (typeof document === "undefined") return;
@@ -261,16 +300,27 @@ function showSimTip(lang: Lang) {
     const w = tip.offsetWidth || 260;
     const th = tip.offsetHeight || 110;
     const left = Math.round(r.right + 12);
-    // the slide's words, as drawn: the card never covers one
+    if (left + w > innerWidth - 8) {
+      // no room beside the tab (a phone: the rail is the bottom bar): the card stands above it
+      const a = aboveSpot(r, w, th, innerWidth);
+      tip.style.top = `${a.top}px`;
+      tip.style.left = `${a.left}px`;
+      if (arrow) arrow.hidden = true;
+      return;
+    }
+    // the slide's words, as drawn, with a breathing margin: the card never covers one, nor touches it
     const words = [
       ...document.querySelectorAll<HTMLElement>(
         `${SLIDE} .sl-text, ${SLIDE} .sl-callout, ${SLIDE} .sl-quiz, ${SLIDE} .sl-checklist`,
       ),
     ]
       .map((e) => e.getBoundingClientRect())
-      .filter((b) => b.width > 0 && b.height > 0);
+      .filter((b) => b.width > 0 && b.height > 0)
+      .map((b) => ({ left: b.left - GAP, top: b.top - GAP, right: b.right + GAP, bottom: b.bottom + GAP }));
+    const bounds = { top: 64, bottom: innerHeight - 8 };
+    const spot = clearSpot(r, w, th, left, words, bounds, innerWidth - 8);
     const top =
-      clearTop(r, w, th, left, words, { top: 64, bottom: innerHeight - 8 }) ??
+      spot?.top ??
       Math.max(
         8,
         Math.min(
@@ -278,11 +328,13 @@ function showSimTip(lang: Lang) {
           Math.round(r.top + r.height / 2 - th / 2),
         ),
       );
+    const x = spot?.left ?? left;
     tip.style.top = `${top}px`;
-    tip.style.left = `${left}px`;
+    tip.style.left = `${x}px`;
     const at = r.top + r.height / 2 - top - 6;
     if (arrow) {
-      arrow.hidden = at < 12 || at > th - 20;
+      // the arrow points at the tab only when the card sits right beside it
+      arrow.hidden = x !== left || at < 12 || at > th - 20;
       arrow.style.top = `${Math.round(at)}px`;
     }
   };
@@ -296,6 +348,9 @@ function showSimTip(lang: Lang) {
   });
   document.body.append(tip);
   place();
+  // the slide's texts fit themselves once the web font is in: place the card again on what is finally drawn
+  (document as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready.then(() => tip.isConnected && place());
+  setTimeout(() => tip.isConnected && place(), 700);
   tab.classList.add("nc-simtip-for");
   setTimeout(() => tab.classList.remove("nc-simtip-for"), 2400);
 }

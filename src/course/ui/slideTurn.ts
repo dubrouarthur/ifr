@@ -214,6 +214,8 @@ export interface YourTurnRendererOptions {
   run?(c: YourTurnCtx): Promise<YourTurnResult | null>;
   /** tell the student something (a 'sim' Your turn outside the cockpit) */
   notify?(text: string): void;
+  /** the projector: the class watches, a control strip shows its values only (SlideRenderOptions.mirror) */
+  mirror?: boolean;
 }
 
 /** The slide renderer with Your turn wired (academy player, presenter, and the editor's Test as student). */
@@ -271,6 +273,7 @@ export function yourTurnSlideRenderer(o: YourTurnRendererOptions): SlideRenderer
       return (b.key ? r.worst?.[b.key] : Object.values(r.worst ?? {})[0]) ?? null;
     };
     v = renderSlide(ctx.step.slide, el, {
+      ...(o.mirror ? { mirror: true } : {}),
       mode: "play",
       lang: ctx.lang,
       theme: ctx.course.theme,

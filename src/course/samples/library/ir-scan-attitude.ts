@@ -8,7 +8,7 @@
 // EASA Part-FCL Appendix 7 (IR skill test tolerances: heading ±5°, speed ±5 kt with all engines operating);
 // AMC1 FCL.615(b) IR theoretical knowledge; C172S POH section 4 (Vy 74 KIAS at sea level).
 import type { Course, SimScene, Step } from "../../types";
-import { DIAGRAM, INST, L, course, slideStep, step } from "../kit";
+import { DIAGRAM, INST, L, course, livenAll, slideStep, step } from "../kit";
 import { G, calloutRows, foot, head, slide } from "../navSlides";
 import {
   GAUGE,
@@ -42,6 +42,13 @@ function scenes(): Record<string, SimScene> {
       "sa.level",
       { pos: AREA, altFt: 3000, hdg: 270, iasKt: 100 },
       { label: "Straight and level · 3,000 ft · heading 270 · 100 KIAS" },
+    ),
+    // the « À vous » starts off the numbers (150 ft low, 15° off heading), as an instructor sets it up: the student
+    // has something to fix before holding, and the trimmed aircraft never gets there by itself
+    "sa.off": sceneA1(
+      "sa.off",
+      { pos: AREA, altFt: 2850, hdg: 255, iasKt: 100 },
+      { label: "Off the numbers · 2,850 ft · heading 255 · 100 KIAS" },
     ),
     "sa.low": sceneA1(
       "sa.low",
@@ -308,13 +315,13 @@ export function irScanAttitudeCourse(): Course {
       ],
       view: SIX,
       alt: L(
-        "Live six-pack, 3,000 ft, heading 270, 100 KIAS",
-        "Six instruments en direct, 3 000 ft, cap 270, 100 KIAS",
+        "Live six-pack, 2,850 ft, heading 255, 100 KIAS",
+        "Six instruments en direct, 2 850 ft, cap 255, 100 KIAS",
       ),
-      scene: "sa.level",
+      scene: "sa.off",
       prompt: L(
-        "Your turn: hold 3,000 ft and heading 270 for 60 s",
-        "À vous : tenez 3 000 ft et le cap 270 pendant 60 s",
+        "Your turn: back to 3,000 ft and heading 270, then hold them 60 s",
+        "À vous : revenez à 3 000 ft et au cap 270, puis tenez-les 60 s",
       ),
       controls: ["pitch", "bank", "power"],
       goal: {
@@ -338,8 +345,8 @@ export function irScanAttitudeCourse(): Course {
         "FAA-S-ACS-8C · altitude ±100 ft, cap ±10°",
       ),
       reader: L(
-        "Your turn on the live six-pack: no assist. Hold 3,000 ft and heading 270 for 60 seconds, inside the instrument rating tolerances (altitude ±100 ft, heading ±10°, FAA-S-ACS-8C). Keep the eyes coming back to the attitude indicator and make small, early corrections.",
-        "À vous sur les six instruments en direct, sans aide : tenez 3 000 ft et le cap 270 pendant 60 secondes, dans les tolérances de la qualification (altitude ±100 ft, cap ±10°, FAA-S-ACS-8C). Revenez toujours à l’horizon artificiel et corrigez tôt, et peu.",
+        "Your turn on the live six-pack: no assist. The aircraft is at 2,850 ft on heading 255: climb back to 3,000 ft, turn to 270, then hold them for 60 seconds, inside the instrument rating tolerances (altitude ±100 ft, heading ±10°, FAA-S-ACS-8C). Keep the eyes coming back to the attitude indicator and make small, early corrections.",
+        "À vous sur les six instruments en direct, sans aide : l’avion est à 2 850 ft au cap 255. Remontez à 3 000 ft, prenez le 270, puis tenez-les pendant 60 secondes, dans les tolérances de la qualification (altitude ±100 ft, cap ±10°, FAA-S-ACS-8C). Revenez toujours à l’horizon artificiel et corrigez tôt, et peu.",
       ),
     }),
     // 7 ------------------------------------------------------------------ the radial cross-check and its errors
@@ -739,7 +746,33 @@ export function irScanAttitudeCourse(): Course {
       tags: ["ir", "easa", "faa", "c172s", "attitude", "instruments", "scan"],
       minutes: 45,
     },
-    steps,
+    livenAll(steps, {
+      // the cover flies a standard-rate turn (canvas/motion.ts « turn-std », FAA IFH ch. 6)
+      "sa-cover.six": {
+        motion: "turn-std",
+        alt: L(
+          "The training aircraft’s six instruments at 3,000 ft and 100 KIAS: a standard-rate turn, 3° a second",
+          "Les six instruments de l’avion-école à 3 000 ft et 100 KIAS : un virage au taux standard, 3° par seconde",
+        ),
+      },
+      // control, then performance: the power is set, the tachometer moves first, the airspeed follows (« power »:
+      // FAA IFH ch. 6 control and performance; POH C172S section 5 cruise table)
+      "sa-control.inst": {
+        motion: "power",
+        alt: L(
+          "The six-pack, level at 3,000 ft: the power goes from 2,100 to 2,500 RPM, then the speed builds",
+          "Les six instruments, en palier à 3 000 ft : la puissance passe de 2 100 à 2 500 tr/min, puis la vitesse augmente",
+        ),
+      },
+      // the primary instruments of straight and level appear as the aircraft levels off (« level-off », FAA IFH ch. 6)
+      "sa-primary.six": {
+        motion: "level-off",
+        alt: L(
+          "Six-pack: a level-off from a climb, then straight and level",
+          "Six instruments : une mise en palier depuis une montée, puis le palier",
+        ),
+      },
+    }),
     scenes(),
   );
 }

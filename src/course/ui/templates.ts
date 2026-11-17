@@ -226,6 +226,58 @@ export function starterScene(cockpit: Cockpit, id = "sc-start"): SimScene {
   );
   return sc;
 }
+/**
+ * The situations a layout's « À vous » starts from, by id: its own, so that no row of the exercise is met before the
+ * student acts (an « À vous » that solves itself teaches nothing). Added to the course with the slide (makeStep).
+ */
+export const PRACTICE_SCENES: Record<string, { layout: SlideLayoutId; make: (cockpit: Cockpit, id: string) => SimScene }> = {
+  // the checklist layout's intercept (FAA IFH ch. 9): north of the 090 course to ARD (R-278 at 6 NM is about 0.8 NM
+  // off), heading 160 in HDG mode (the bug flies the aircraft; the turn to the 120 cut does not pass 090), OBS 040
+  // (not the course yet), a 10 kt headwind on the course so the bar holds once on it
+  "sc-hsi-turn": {
+    layout: "checklist",
+    make: (cockpit, id) =>
+      sceneFromFields(
+        {
+          kind: "fields",
+          pos: { fix: "ARD", radial: 278, distNm: 6 },
+          altFt: 4000,
+          hdg: 160,
+          iasKt: 100,
+          radios: { nav1: "ARD", obs1: 40, cdi: "NAV1", brg1: "NAV1" },
+        },
+        {
+          id,
+          cockpit,
+          label: "ARD R-278 · 6 NM · HDG 160",
+          weather: { windDir: 90, windKt: 10 },
+          ap: { engaged: true, lat: "HDG", vert: "ALT", hdg: 160, alt: 4000 },
+        },
+      ),
+  },
+  // the « Find your radial » layout: on ARD R-300 at 8 NM, flying 120 straight to the station, OBS 090 (30° off: the
+  // bar on the stop, and it stays there with nobody at the knob, calm wind). The OBS centred with TO reads 120: the
+  // radial is 300.
+  "sc-find-radial": {
+    layout: "yourTurn",
+    make: (cockpit, id) =>
+      sceneFromFields(
+        {
+          kind: "fields",
+          pos: { fix: "ARD", radial: 300, distNm: 8 },
+          altFt: 4000,
+          hdg: 120,
+          iasKt: 100,
+          radios: { nav1: "ARD", obs1: 90, cdi: "NAV1", brg1: "NAV1" },
+        },
+        { id, cockpit, label: "ARD R-300 · 8 NM · 4,000 ft", weather: { windDir: 0, windKt: 0 } },
+      ),
+  },
+};
+/** The practice situation a layout's « À vous » starts from (its id), if it has its own. */
+export const practiceSceneOf = (layout: SlideLayoutId | undefined): string | undefined =>
+  layout ? Object.keys(PRACTICE_SCENES).find((k) => PRACTICE_SCENES[k].layout === layout) : undefined;
+
 /** The checks a Try it / Fly it starts with when nothing better is suggested (track the course within 1 dot). */
 export function defaultChecks(cockpit: Cockpit): GoalCheck[] {
   return [
@@ -601,6 +653,13 @@ export function makeStep(
       };
       break;
     case "slide": {
+      // a layout whose « À vous » has its own starting situation shows that one (added to the course once)
+      const practice = practiceSceneOf(o.layout);
+      if (practice) {
+        if (!c.scenes[practice])
+          c = { ...c, scenes: { ...c.scenes, [practice]: PRACTICE_SCENES[practice].make(c.cockpit, practice) } };
+        scene = practice;
+      }
       const slide = layoutCanvas(o.layout ?? "instrumentNotes", {
         ...(o.theme ? { theme: o.theme } : {}),
         ...(scene ? { scene } : {}),
@@ -609,13 +668,18 @@ export function makeStep(
       if (!o.theme) delete slide.theme;
       // a checklist the sim ticks (checklist, Your turn layouts) points at the step goal's checks: give the step a
       // goal, and rows past its checks stay as plain rows (the author binds them in the inspector)
+      // …unless the slide has an « À vous »: its rows then stand for that goal (canvas/blocks.ts checklistBlock,
+      // validate.ts goalLen), and the step needs none of its own
       const ticks = slide.blocks.some((b) => b.kind === "checklist");
-      const goal = ticks ? newGoal(c.cockpit, o.suggested) : undefined;
-      if (goal)
+      const ytChecks = slide.blocks
+        .map((b) => ("yourTurn" in b ? b.yourTurn?.goal.all.length : undefined))
+        .find((n) => !!n);
+      const goal = ticks && !ytChecks ? newGoal(c.cockpit, o.suggested) : undefined;
+      const len = ytChecks ?? goal?.all.length ?? 0;
+      if (ticks)
         for (const b of slide.blocks)
           if (b.kind === "checklist")
-            for (const r of b.rows)
-              if (typeof r.check === "number" && r.check >= goal.all.length) delete r.check;
+            for (const r of b.rows) if (typeof r.check === "number" && r.check >= len) delete r.check;
       step = {
         ...base,
         title: o.title ? clone(o.title) : (titleOfSlide(slide) ?? clone(title)),
