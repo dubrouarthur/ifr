@@ -591,12 +591,15 @@ async function shareCourse(course: Course) {
 function academySlideRenderer(
   store: CourseStore | null,
   playerEl: () => HTMLElement | null,
+  /** the projector window: strips read-only, « L'instructeur pilote » */
+  mirror = false,
 ): SlideRenderer {
   return yourTurnSlideRenderer({
     store,
     playerEl,
     root: () => root,
     run: yourTurn,
+    ...(mirror ? { mirror: true } : {}),
   });
 }
 
@@ -669,6 +672,7 @@ async function showPresent(k: "present" | "project", id: string) {
   const renderSlide = academySlideRenderer(
     k === "present" ? store : null,
     () => el,
+    k === "project",
   );
   if (k === "present") {
     const { mountPresenter } = await import("../course/ui/presenter");

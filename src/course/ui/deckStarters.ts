@@ -202,10 +202,11 @@ function hsiRecap(theme?: ThemeId): SlideCanvas {
   const words: L10n[] = [
     L("Keys to success", "Clés du succès"),
     L("Reading the HSI: what to keep", "Lire le HSI : à retenir"),
-    L("HDG", "CAP"),
-    L("under the lubber line, at the top: read it first", "sous l’index, en haut : à lire d’abord"),
-    L("CRS", "ROUTE"),
-    L("the arrow: the course you want, set with the OBS", "la flèche : la route voulue, affichée à l’OBS"),
+    // the knobs' own labels, in English on the instrument in both languages
+    L("HDG", "HDG"),
+    L("the heading, under the lubber line at the top: read it first", "le cap, sous l’index en haut : à lire d’abord"),
+    L("CRS", "CRS"),
+    L("the course you want: the arrow, set with the OBS", "la route voulue : la flèche, affichée à l’OBS"),
     L("10°", "10°"),
     L("full scale of the bar on a VOR, either side", "pleine échelle de la barre sur un VOR, de chaque côté"),
     L("Every time", "À chaque fois"),
