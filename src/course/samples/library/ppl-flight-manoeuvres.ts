@@ -1655,8 +1655,8 @@ export function pplFlightManoeuvresCourse(): Course {
       "fm-cover.six": {
         motion: "turn-std",
         alt: L(
-          "The C172S six instruments at 3,000 ft and 100 KIAS: a standard-rate turn, 3° a second",
-          "Les six instruments du C172S à 3 000 ft et 100 KIAS : un virage au taux standard, 3° par seconde",
+          "The training aircraft’s six instruments at 3,000 ft and 100 KIAS: a standard-rate turn, 3° a second",
+          "Les six instruments de l’avion-école à 3 000 ft et 100 KIAS : un virage au taux standard, 3° par seconde",
         ),
       },
       // attitude + power = performance: the power changes, the RPM first, then the speed (« power »: PHAK ch. 6,

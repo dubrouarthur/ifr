@@ -844,8 +844,8 @@ export function irGyrosCompassCourse(): Course {
       "gc-power.inst": {
         motion: "vacuum",
         alt: L(
-          "The C172S six-pack after a vacuum failure: the attitude and heading indicators drift, the electric turn coordinator stays right",
-          "Les six instruments du C172S après une panne de dépression : l’horizon et le cap dérivent, l’indicateur de virage électrique reste juste",
+          "The training aircraft’s six instruments after a vacuum failure: the attitude and heading indicators drift, the electric turn coordinator stays right",
+          "Les six instruments de l’avion-école après une panne de dépression : l’horizon et le cap dérivent, l’indicateur de virage électrique reste juste",
         ),
       },
       // a reading lesson: the drift is minutes long, the picture stays still
