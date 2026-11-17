@@ -2933,9 +2933,10 @@ export class CoursePlayer {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const t = e.target as HTMLElement | null;
     const tag = t?.tagName;
-    // a 3D engine's lever has the focus: a clicker's PageDown / PageUp still turns the page (course/engines)
+    // a 3D engine's lever or a teaching tool's slider has the focus: a clicker's PageDown / PageUp still turns the
+    // page (course/engines, course/tools), and its preventDefault keeps the slider where it was
     const clicker =
-      (e.key === "PageDown" || e.key === "PageUp") && !!t?.closest?.(".eng");
+      (e.key === "PageDown" || e.key === "PageUp") && !!t?.closest?.(".eng, .sl-tool");
     if (
       !clicker &&
       (tag === "INPUT" ||

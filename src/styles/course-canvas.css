@@ -1212,6 +1212,12 @@ button.sl-q-opt.is-right:hover {
 .cp-projector .sl-diagram .sl-hint-ic {
   display: none;
 }
+/* a teaching tool there shows its values, not its buttons: the console moves them (canvas/toolBlock.ts) */
+.cp-projector .sl-tool .sl-tc-btn,
+.cp-projector .sl-tool .sl-tool-acts,
+.cp-projector .sl-tool-open {
+  visibility: hidden;
+}
 /* the trainer's three answers stay in view for the class, answered from the console */
 .cp-projector .cs-holdfly .cs-chip {
   pointer-events: none;

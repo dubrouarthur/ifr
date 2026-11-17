@@ -525,6 +525,16 @@ export function toolBlock(b: Of, env: BlockEnv): BlockView {
     },
   });
 
+  // the projector shows the tool to the room: the console drives it, nobody handles it there (like a strip's
+  // « L'instructeur pilote », canvas/controlStrip.ts)
+  if (play && typeof requestAnimationFrame === "function")
+    requestAnimationFrame(() => {
+      if (!el.closest(".cp-projector")) return;
+      el.classList.add("is-static", "on-projector");
+      panel.setAttribute("inert", "");
+      if (hudBtn) hudBtn.hidden = true;
+    });
+
   // ---------------------------------------------------------------- size
   // ---------------------------------------------------------------- a small screen: the tool opens full screen
   // Under this scale the panel cannot keep 44 px targets inside the frame (a phone, a tablet held upright): the
