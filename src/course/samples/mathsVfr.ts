@@ -1865,7 +1865,14 @@ export function mathsVfrCourse(): Course {
         ),
       },
     ],
-    { minutes: 3, calcLink: { step: "mv-tvmdc-calc", use: "both" } },
+    {
+      minutes: 3,
+      calcLink: { step: "mv-tvmdc-calc", use: "both" },
+      notes: L(
+        "Same numbers as the calculation they just solved. Ask for the true heading before they fly: course plus the wind correction angle. Then watch the track readout: it stays on the course within 3° only with the right heading. A drifting track means the wind correction went the wrong way (FAA PHAK ch. 16).",
+        "Mêmes chiffres que le calcul qu’ils viennent de résoudre. Demandez le cap vrai avant de voler : la route plus la dérive. Puis regardez la route suivie : elle reste à 3° de la route prévue seulement avec le bon cap. Si elle dérive, la correction de vent est partie du mauvais côté (FAA PHAK ch. 16).",
+      ),
+    },
   );
   const GS_CALC = step(
     "mv-gs-calc",

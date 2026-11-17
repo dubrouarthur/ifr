@@ -673,7 +673,27 @@ function templateBlocks(id: SlideLayoutId, o: LayoutOptions): SlideBlock[] {
             { text: L("Bar within 1 dot", "Barre à moins d’un point"), check: 2, readout: "cdiDots" },
           ],
         },
-        INST(HSI, L("HSI", "HSI"), 1080, 264, 720, 720, { scene: o.scene }),
+        // the rows tick for real: the student turns the OBS and the heading bug on the slide, the goal is checked
+        // live (a 30° intercept of the 090 course to ARD, FAA IFH ch. 9) and the run ends once it is held 3 s
+        INST(HSI, L("HSI, live: OBS and heading bug in the student's hands", "HSI en direct : OBS et index de cap aux mains de l’élève"), 1080, 264, 720, 720, {
+          scene: o.scene,
+          mode: "live",
+          controls: ["obs1", "hdgBug"],
+          yourTurn: {
+            where: "slide",
+            prompt: L("Set 090 with a TO flag, fly heading 120, centre the bar", "Affichez 090 avec TO, prenez le cap 120, centrez la barre"),
+            controls: ["obs1", "hdgBug"],
+            goal: {
+              all: [
+                { id: "obs", p: { nav: 1, value: 90, tol: 3 } },
+                { id: "heading", p: { value: 120, tol: 5 } },
+                { id: "cdiDefl", p: { maxDots: 1 } },
+              ],
+              holdS: 3,
+              graded: false,
+            },
+          },
+        }),
       ];
     case "yourTurn":
       return [

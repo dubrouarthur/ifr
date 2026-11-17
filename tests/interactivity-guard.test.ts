@@ -26,6 +26,8 @@ import type {
   YourTurn,
 } from "../src/course/types";
 import { SAMPLES } from "../src/course/samples";
+import { LIBRARY_COURSES } from "../src/course/samples/library";
+import { AIRFIELD_DECKS, DECKS } from "../src/course/samples/decks";
 import { isStudentAction } from "../src/course/samples/kit";
 import { fallbackNotes } from "../src/course/ui/presenterNotes";
 import { DECK_STARTERS, addStarterDeck } from "../src/course/ui/deckStarters";
@@ -156,8 +158,12 @@ function flyItIssues(c: Course, f: FlyIt): string[] {
   if (t.kind !== "scene" && t.kind !== "calc") return [];
   const out: string[] = [];
   // the criteria the flight checks: the author's, else (a calc target) the solved problem's stage goals
-  const crit = flyCriteria(f, t.kind === "calc" ? calcProblemOf(c, t.step) : undefined);
-  if (!crit.length || !crit.some((x) => toleranced(x.check)))
+  const problem = t.kind === "calc" ? calcProblemOf(c, t.step) : undefined;
+  const crit = flyCriteria(f, problem);
+  // a flight on the student's own numbers: the number is checked with its tolerance in the calculation first (the
+  // flight will not start before), the flight then ends at its milestone (« Pass ARD »)
+  const solved = t.kind === "calc" && (problem?.tolerance ?? 0) > 0 && crit.length > 0;
+  if (!solved && (!crit.length || !crit.some((x) => toleranced(x.check))))
     out.push("Fly it: no criterion with a tolerance");
   const end =
     t.kind === "scene"
@@ -325,7 +331,10 @@ if (REPORT) {
 } else {
   describe("interactivity guard", () => {
     it("enumerates every built-in course and starting template", () => {
-      expect(ENTRIES.length).toBeGreaterThan(40);
+      // the library's own list (every sample, library course, ready deck and briefing) plus every starting template
+      expect(ENTRIES.length).toBe(SAMPLES.length + DECK_STARTERS.length);
+      for (const d of [...LIBRARY_COURSES, ...DECKS, ...AIRFIELD_DECKS])
+        expect(ENTRIES.some((e) => e.id === d.id), d.id).toBe(true);
       expect(ENTRIES.some((e) => e.group.startsWith("library"))).toBe(true);
       expect(ENTRIES.some((e) => e.group === "starting template")).toBe(true);
     });

@@ -75,7 +75,14 @@ export const DECK_STARTERS: readonly DeckStarter[] = [
     ),
     theme: "classroom",
     level: L("IR", "IR"),
-    slides: ["cover", "heroDiagram", "stepByStep", "quiz", "ready"],
+    // the question right after the picture: the students act on the third slide (interactivity guard)
+    slides: ["cover", "heroDiagram", "quiz", "stepByStep", "ready"],
+    presenter: {
+      3: L(
+        "Have a student recite the five Ts in order while the others check: Turn, Time, Twist, Throttle, Talk (an instructors' memory aid).",
+        "Faites réciter les cinq T dans l’ordre par un élève, les autres vérifient : Virer, Chrono, Tourner, Puissance, Parler (moyen mnémotechnique d’instructeur).",
+      ),
+    },
     cover: {
       eyebrow: L("Ground school · Holding", "Théorie · Attentes"),
       title: L("Holding", "L’attente"),
@@ -168,7 +175,8 @@ export const DECK_STARTERS: readonly DeckStarter[] = [
     theme: "classroom",
     level: L("IR", "IR"),
     badge: "sim",
-    slides: ["cover", "instrumentNotes", "compare", "checklist", "recap"],
+    // « À vous » third: the students turn the OBS and the heading bug before the before / after picture
+    slides: ["cover", "instrumentNotes", "checklist", "compare", "recap"],
     cover: {
       eyebrow: L("Instruments · HSI", "Instruments · HSI"),
       title: L("Reading the HSI", "Lire le HSI"),

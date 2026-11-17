@@ -101,6 +101,11 @@ function drillLine(d: DrillSpec, lang: Lang): string {
     ? `Entraînement chronométré : ${d.count} calculs (${names.join(", ")}). Pour l’élève seul, jamais noté.`
     : `Timed practice: ${d.count} problems (${names.join(", ")}). For the student only, never graded.`;
 }
+/** after a drill: what the instructor does with the scores */
+const drillAfter = (lang: Lang): string =>
+  lang === "fr"
+    ? "Après la série : demandez les scores à main levée, puis refaites au tableau le calcul le plus raté."
+    : "After the drill: ask for the scores by a show of hands, then redo the most missed calculation on the board.";
 /** a Fly it: the brief, then what is checked */
 function flyLines(f: FlyIt, lang: Lang): string[] {
   const out: string[] = [];
@@ -133,7 +138,10 @@ export function fallbackNotes(step: Step, lang: Lang): string[] {
   if (step.goal) push(goalLine(step.goal, lang));
   if (step.quiz) push(quizLine(step.quiz, lang));
   if (step.calc) for (const l of calcLines(step.calc, lang)) push(l);
-  if (step.drill) push(drillLine(step.drill, lang));
+  if (step.drill) {
+    push(drillLine(step.drill, lang));
+    push(drillAfter(lang));
+  }
   if (step.flyIt) for (const l of flyLines(step.flyIt, lang)) push(l);
   for (const b of step.slide?.blocks ?? []) {
     const yt = (b as { yourTurn?: { goal?: StepGoal } }).yourTurn;
@@ -147,9 +155,11 @@ export function fallbackNotes(step: Step, lang: Lang): string[] {
   // points from the reader.
   if (out.length < 2) {
     const title = plain(tx(step.title, lang));
+    /** a point worth saying: a phrase, not a label or the title again */
+    const worth = (p: string) => p.length >= 12 && p !== title;
     let said = 0;
     const say = (p: string) => {
-      if (!p || p.length < 12 || p === title || said >= 3) return;
+      if (!worth(p) || said >= 3) return;
       said++;
       push((lang === "fr" ? "À dire : " : "Say: ") + p);
     };
@@ -175,9 +185,14 @@ export function fallbackNotes(step: Step, lang: Lang): string[] {
         if (r.t === "text" || r.t === "takeaway") points.push(plain(tx(r.text, lang)));
         else if (r.t === "keys") for (const k of r.items) points.push(plain(tx(k, lang)));
         else if (r.t === "reveal") readerPoints(r.blocks);
+        else if (r.t === "formula") {
+          // a numbers slide: the formula to write on the board, then the worked example
+          points.push((lang === "fr" ? "La formule : " : "The formula: ") + plain(tx(r.formula, lang)));
+          if (r.ruleOfThumb) points.push(plain(tx(r.ruleOfThumb, lang)));
+        }
       }
     };
-    if (points.filter(Boolean).length + out.length < 2) readerPoints(step.reader ?? []);
+    if (points.filter(worth).length + out.length < 2) readerPoints(step.reader ?? []);
     for (const p of points.filter(Boolean)) say(firstSentence(p));
   }
   return out;

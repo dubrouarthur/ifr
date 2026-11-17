@@ -207,6 +207,23 @@ const APPROACH: MotionScript = {
     ],
   },
 };
+/** Short final, sinking under the path: from 400 to 650 ft/min down for 12 s at 68 kt, about 50 ft under the 3°
+ *  path at 0.37 NM (318 ft per NM, 50 ft over the threshold): the aiming point rises in the windscreen (FAA AFH ch. 9,
+ *  « the aiming point »). Replayed in a loop; it ends well above the ground (about 120 ft). */
+const LOW_FINAL: MotionScript = {
+  duration: 12,
+  telling: 10,
+  tracks: {
+    ias: [[0, 68]],
+    vs: [
+      [0, -400],
+      [2, -400],
+      [4, -650],
+      [12, -650],
+    ],
+    turn: [[0, 0]],
+  },
+};
 /** An airliner turn at 1.5°/s, FL100, 250 kt: about 22° of bank (tan φ = ω·V/g), as the autopilot flies it. */
 const AIRLINER_TURN: MotionScript = {
   duration: 40,
@@ -356,6 +373,8 @@ function demoSlide(o: {
   alt: L10n;
   scene: string;
   motion?: InstrumentMotion;
+  /** the controls on the slide: the presenter flies from the slide too, the students try on their own screens */
+  controls?: StageControl[];
 }): SlideCanvas {
   const big = o.view.kind !== "gauge";
   const [ix, iy, iw, ih] = big ? [960, 216, 840, 630] : [1080, 160, 720, 720];
@@ -363,6 +382,7 @@ function demoSlide(o: {
     id: `${o.id}.inst`,
     scene: o.scene,
     mode: "live",
+    ...(o.controls ? { controls: [...o.controls] } : {}),
   });
   return canvas(
     [
@@ -517,7 +537,7 @@ function questionSlide(o: {
   explain: L10n;
   source: L10n;
   scene: string;
-  visual: SlideBlock;
+  visual: SlideBlock | SlideBlock[];
 }): SlideCanvas {
   return canvas(
     [
@@ -537,7 +557,7 @@ function questionSlide(o: {
         960,
         536,
       ),
-      o.visual,
+      ...(Array.isArray(o.visual) ? o.visual : [o.visual]),
       foot(o.source),
     ],
     o.scene,
@@ -562,6 +582,8 @@ interface Spec {
     Made,
     L10n,
     Capability | "quiz" | "recap" | "moment",
+    /** what the presenter says on this slide (the step's presenter notes) */
+    L10n?,
   ][];
 }
 export type ShowcaseDeck = DeckStarter & {
@@ -589,6 +611,9 @@ function deck(o: Spec): ShowcaseDeck {
     slides: o.slides.map((s) => s[0]),
     make: Object.fromEntries(o.slides.map((s, i) => [i, s[1]])),
     notes: Object.fromEntries(o.slides.map((s, i) => [i, s[2]])),
+    presenter: Object.fromEntries(
+      o.slides.flatMap((s, i) => (s[4] ? [[i, s[4]]] : [])),
+    ),
     scenes: showcaseScenes,
     badge: o.badge,
     hero: o.hero,
@@ -679,13 +704,19 @@ export const PPL_CIRCUIT = deck({
           ),
           view: { kind: "six" },
           alt: L(
-            "The six instruments on final, live",
-            "Les six instruments en finale, en direct",
+            "The six instruments on final, live: small corrections around 68 kt and 400 ft/min",
+            "Les six instruments en finale, en direct : petites corrections autour de 68 kt et 400 ft/min",
           ),
           scene: "sp.final",
+          motion: { script: APPROACH },
+          controls: ["pitch", "power"],
         }),
       SHOW_NOTES.demo,
       "demo",
+      L(
+        "Let the final play, then fly it: less power, the vario goes down; nose down, the speed comes back. Then a student takes the same controls (FAA AFH ch. 9).",
+        "Laissez jouer la finale, puis pilotez : moins de puissance, le vario descend ; on rend la main, la vitesse revient. Puis un élève prend les mêmes commandes (FAA AFH ch. 9).",
+      ),
     ],
     [
       "yourTurn",
@@ -803,22 +834,50 @@ export const PPL_CIRCUIT = deck({
             "FAA AFH ch. 9 · le point d’aboutissement",
           ),
           scene: "sp.short",
-          visual: view(
-            "sp-ppl-quiz.view",
-            "outside",
-            "sp.short",
-            L(
-              "The runway ahead, on short final",
-              "La piste devant, en courte finale",
+          // the view sinks under the path (LOW_FINAL): the runway climbs in the windscreen, the vario says why
+          visual: [
+            view(
+              "sp-ppl-quiz.view",
+              "outside",
+              "sp.short",
+              L(
+                "The runway ahead on short final, the aircraft sinking under the path: the runway climbs in the windscreen",
+                "La piste devant en courte finale, l’avion qui passe sous le plan : la piste monte dans le pare-brise",
+              ),
+              1176,
+              296,
+              624,
+              384,
             ),
-            1176,
-            320,
-            624,
-            468,
-          ),
+            withMotion(
+              INST(
+                gauge("vsi"),
+                L("Vertical speed, from 400 to 650 ft/min down", "Variomètre, de 400 à 650 ft/min en descente"),
+                1292,
+                712,
+                184,
+                184,
+                { id: "sp-ppl-quiz.vsi", scene: "sp.short" },
+              ),
+              loop({ script: LOW_FINAL }),
+            ),
+            INST(
+              gauge("asi"),
+              L("Airspeed indicator, 68 kt", "Anémomètre, 68 kt"),
+              1500,
+              712,
+              184,
+              184,
+              { id: "sp-ppl-quiz.asi", scene: "sp.short" },
+            ),
+          ],
         }),
       SHOW_NOTES.quiz,
       "moment",
+      L(
+        "Let them vote. The vario reads 650 ft/min, not 400: under the path, the aiming point rises. A little power, speed held (FAA AFH ch. 9).",
+        "Faites voter. Le vario lit 650 ft/min, pas 400 : sous le plan, le point d’aboutissement monte. Un peu de puissance, vitesse tenue (FAA AFH ch. 9).",
+      ),
     ],
     [
       "recap",
@@ -959,6 +1018,43 @@ export const NIGHT_FLIGHT = deck({
     [
       "instrumentNotes",
       () =>
+        demoSlide({
+          id: "sp-nt-demo",
+          title: L(
+            "A turn at night: watch the screen",
+            "Un virage de nuit : regardez l’écran",
+          ),
+          items: [
+            L(
+              "Bank on the attitude indicator, not outside",
+              "L’inclinaison se lit sur l’horizon, pas dehors",
+            ),
+            L(
+              "The heading turns at 3° a second",
+              "Le cap tourne de 3° par seconde",
+            ),
+            L("The altitude does not move", "L’altitude ne bouge pas"),
+          ],
+          source: L(
+            "FAA AFH ch. 10 · night flying",
+            "FAA AFH ch. 10 · vol de nuit",
+          ),
+          view: { kind: "pfd" },
+          alt: L(
+            "The flight display at night, live",
+            "L’écran de vol de nuit, en direct",
+          ),
+          scene: "sp.night.g1000",
+          motion: { preset: "turn-std" },
+          // the bank under the screen: the presenter rolls in and out from the slide, a student tries it next
+          controls: ["bank"],
+        }),
+      SHOW_NOTES.demo,
+      "demo",
+    ],
+    [
+      "instrumentNotes",
+      () =>
         canvas(
           [
             T(
@@ -1007,6 +1103,20 @@ export const NIGHT_FLIGHT = deck({
               888,
               500,
             ),
+            // the aircraft sinks under the path (LOW_FINAL): the view and the needles move together
+            ...(
+              [
+                ["ai", L("Attitude indicator on final at night", "Horizon artificiel en finale, de nuit")],
+                ["asi", L("Airspeed indicator, 68 kt", "Anémomètre, 68 kt")],
+                ["vsi", L("Vertical speed, from 400 to 650 ft/min down", "Variomètre, de 400 à 650 ft/min en descente")],
+              ] as const
+            ).map(([g, alt], i) => {
+              const b = INST(gauge(g), alt, 1032 + i * 224, 740, 200, 200, {
+                id: `sp-nt-moment.g${i}`,
+                scene: "sp.final.night",
+              });
+              return i === 2 ? withMotion(b, loop({ script: LOW_FINAL })) : b;
+            }),
             foot(
               L(
                 "FAA AFH ch. 10 · night approach illusions",
@@ -1019,41 +1129,6 @@ export const NIGHT_FLIGHT = deck({
         ),
       SHOW_NOTES.moment,
       "moment",
-    ],
-    [
-      "instrumentNotes",
-      () =>
-        demoSlide({
-          id: "sp-nt-demo",
-          title: L(
-            "A turn at night: watch the screen",
-            "Un virage de nuit : regardez l’écran",
-          ),
-          items: [
-            L(
-              "Bank on the attitude indicator, not outside",
-              "L’inclinaison se lit sur l’horizon, pas dehors",
-            ),
-            L(
-              "The heading turns at 3° a second",
-              "Le cap tourne de 3° par seconde",
-            ),
-            L("The altitude does not move", "L’altitude ne bouge pas"),
-          ],
-          source: L(
-            "FAA AFH ch. 10 · night flying",
-            "FAA AFH ch. 10 · vol de nuit",
-          ),
-          view: { kind: "pfd" },
-          alt: L(
-            "The flight display at night, live",
-            "L’écran de vol de nuit, en direct",
-          ),
-          scene: "sp.night.g1000",
-          motion: { preset: "turn-std" },
-        }),
-      SHOW_NOTES.demo,
-      "demo",
     ],
     [
       "yourTurn",
@@ -1160,6 +1235,10 @@ export const NIGHT_FLIGHT = deck({
         }),
       SHOW_NOTES.quiz,
       "quiz",
+      L(
+        "Let them vote. The leans: the inner ear stops sensing a long turn, so rolling out feels like a turn the other way. Trust the attitude indicator (FAA PHAK ch. 17).",
+        "Faites voter. L’illusion des inclinaisons : l’oreille ne sent plus un long virage, la remise à plat ressemble à un virage inverse. On croit l’horizon (FAA PHAK ch. 17).",
+      ),
     ],
     [
       "recap",
@@ -1367,6 +1446,10 @@ export const IR_ILS = deck({
         }),
       SHOW_NOTES.quiz,
       "quiz",
+      L(
+        "Let them vote. The index shows where the path is, not where you are: above the centre, the path is above, so you are low. Less descent (a little power) until it centres, then the original rate again (FAA IFH ch. 9).",
+        "Faites voter. L’index montre où est le plan, pas où vous êtes : au-dessus du centre, le plan est au-dessus, vous êtes donc bas. Moins de descente (un peu de puissance) jusqu’à le centrer, puis le taux d’origine (FAA IFH ch. 9).",
+      ),
     ],
   ],
 });
@@ -1504,6 +1587,10 @@ export const ATPL_DISPLAYS = deck({
         ),
       SHOW_NOTES.calc,
       "calc",
+      L(
+        "Ask a student to drag the wind round: the drift changes side as the wind crosses the course, the ground speed falls with a headwind component. Then compare with the arrow on the ND: same wind, 320° at 30 kt (FAA PHAK ch. 16).",
+        "Demandez à un élève de faire tourner le vent : la dérive change de côté quand le vent traverse la route, la vitesse sol baisse avec une composante de face. Puis comparez avec la flèche du ND : même vent, 320° à 30 kt (FAA PHAK ch. 16).",
+      ),
     ],
     [
       "instrumentNotes",
@@ -1518,8 +1605,12 @@ export const ATPL_DISPLAYS = deck({
           ],
           source: L("EASA ATPL 022 · FAA Advanced Avionics Handbook ch. 2", "EASA ATPL 022 · FAA Advanced Avionics Handbook ch. 2"),
           view: { kind: "nd" },
-          alt: L("The navigation display at FL100, live", "L’écran de navigation au FL100, en direct"),
+          alt: L(
+            "The navigation display at FL100, live: a turn at 1.5° a second, the drift changing side",
+            "L’écran de navigation au FL100, en direct : un virage à 1,5° par seconde, la dérive qui change de côté",
+          ),
           scene: "sp.airliner",
+          motion: { script: AIRLINER_TURN },
         }),
       SHOW_NOTES.demo,
       "demo",
@@ -1601,6 +1692,10 @@ export const ATPL_DISPLAYS = deck({
         }),
       SHOW_NOTES.quiz,
       "quiz",
+      L(
+        "Let them vote, then let the RMI play: the head of the needle always points at the beacon, so as the nose comes round to it the needle comes to the top. Magnetic bearing to the beacon = heading + relative bearing (FAA IFH ch. 9).",
+        "Faites voter, puis laissez jouer le RMI : la tête de l’aiguille pointe toujours la balise, et quand le nez vient dessus l’aiguille arrive en haut. Relèvement magnétique de la balise = cap + gisement (FAA IFH ch. 9).",
+      ),
     ],
     [
       "recap",
