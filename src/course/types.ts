@@ -606,7 +606,14 @@ export type Quiz =
 
 // ---------------------------------------------------------------- fly it
 export type FlyTarget =
-  | { kind: "scene"; scene: string; durationS?: number; endWhen?: GoalCheck[] }
+  | {
+      kind: "scene";
+      scene: string;
+      durationS?: number;
+      endWhen?: GoalCheck[];
+      /** endWhen must stay true together this long (s) before the flight ends; 0 or absent: at once */
+      endHoldS?: number;
+    }
   | { kind: "lesson"; exerciseId: string; pathId?: string }
   | { kind: "circuit"; circuit: Circuit }
   | { kind: "procedure"; procId: string }
@@ -626,6 +633,8 @@ export interface Criterion {
   check: GoalCheck;
   acs?: string /* 'IR.V.A' */;
   trace?: ReadoutId;
+  /** a target to reach (an « À vous » goal), not a tolerance kept from the first second: met once it holds */
+  reach?: boolean;
 }
 export interface FlyIt {
   target: FlyTarget;

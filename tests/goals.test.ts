@@ -813,7 +813,60 @@ describe("stepToExercise (SPEC §9.4)", () => {
       course(st),
     );
     expect(ex.objectives).toEqual(["Altitude 3900–4100 ft"]);
-    expect(ex.setup(new Sim()).steps.length).toBe(1);
+    // the goal row, then the end of the flight (the goal held, or the time limit)
+    expect(ex.setup(new Sim()).steps.length).toBe(2);
+  });
+  it("a sim YourTurn ends as soon as its goal is held for holdS, and passes", () => {
+    const st: Step = { id: "s1", kind: "slide", title: { en: "Your turn" }, reader: [] };
+    const ex = yourTurnToExercise(
+      st,
+      {
+        where: "sim",
+        prompt: { en: "Hold 4000 ft" },
+        goal: { all: [{ id: "altBand", p: { min: 3900, max: 4100 } }], holdS: 10, graded: false },
+        durationS: 180,
+      },
+      "r276",
+      course(st),
+    );
+    const { run } = fly(ex, 40);
+    expect(run.finished).not.toBeNull();
+    expect(run.totalT).toBeLessThan(20);
+    expect(run.finished!.passed).toBe(true);
+  });
+  it("a sim YourTurn target not reached by the time limit is not passed (no early pass on a path check)", () => {
+    const st: Step = { id: "s1", kind: "slide", title: { en: "Your turn" }, reader: [] };
+    const ex = yourTurnToExercise(
+      st,
+      {
+        where: "sim",
+        prompt: { en: "Climb to 6000 ft" },
+        goal: { all: [{ id: "altBand", p: { min: 5900, max: 6100 } }], holdS: 10, graded: false },
+        durationS: 30,
+      },
+      "r276",
+      course(st),
+    );
+    const { run } = fly(ex, 31);
+    expect(run.finished).not.toBeNull();
+    expect(run.finished!.passed).toBe(false);
+  });
+  it("a sim YourTurn goal touched but not held for holdS before the time limit is not passed", () => {
+    const st: Step = { id: "s1", kind: "slide", title: { en: "Your turn" }, reader: [] };
+    const ex = yourTurnToExercise(
+      st,
+      {
+        where: "sim",
+        prompt: { en: "Hold 4000 ft for 60 s" },
+        goal: { all: [{ id: "altBand", p: { min: 3900, max: 4100 } }], holdS: 60, graded: false },
+        durationS: 20,
+      },
+      "r276",
+      course(st),
+    );
+    const { run } = fly(ex, 21);
+    expect(run.finished).not.toBeNull();
+    expect(run.finished!.passed).toBe(false);
   });
   it("flyItPlan routes the other targets", () => {
     const base = flyStep([]);

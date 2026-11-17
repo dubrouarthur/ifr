@@ -337,6 +337,9 @@ function compile(
       : undefined;
   const endWhen: GoalCheck[] =
     target.kind === "scene" ? (target.endWhen ?? []) : [];
+  const endHoldS = target.kind === "scene" ? Math.max(0, target.endHoldS ?? 0) : 0;
+  // a path check is graded from the first second, unless the criterion is a target to reach (« À vous »)
+  const isPath = (c: Criterion) => !c.reach && goalKind(c.check) === "path";
   const apply = opts.applyScene ?? fallbackApplyScene;
 
   let tracked: Tracked[] = [];
@@ -351,7 +354,7 @@ function compile(
     return v;
   };
 
-  const milestones = criteria.filter((c) => goalKind(c.check) !== "path");
+  const milestones = criteria.filter((c) => !isPath(c));
   const paths = () => tracked.filter((t) => t.kind === "path");
   const pathCheck = (c: Ctx): string | null => {
     const v = view(c);
@@ -446,7 +449,7 @@ function compile(
       apply(sim, scene);
       applyOptions(sim, scene, fly, on, cockpit);
       tracked = criteria.map((c) => {
-        const kind = goalKind(c.check) === "path" ? "path" : "milestone";
+        const kind = isPath(c) ? "path" : "milestone";
         // a path criterion is met until it is broken for too long; a milestone until it happens
         return {
           c,
@@ -475,6 +478,10 @@ function compile(
       let ended = false;
       let endIdx = -1;
       const endMem: CheckMem[] = endWhen.map(() => ({}));
+      let endHeld = 0;
+      // an « À vous » flight: its end condition IS the goal, so running out of time is not a success
+      let endMet = false;
+      const goalEnds = endWhen.length > 0 && criteria.some((c) => c.reach);
       const steps: EngineStep[] = milestones.map((c) => ({
         text: tr(c.label, lang) || goalLabel(c.check, lang),
         done: () => byId(c.id).met,
@@ -491,11 +498,16 @@ function compile(
           // the step row of the exercise window and the result: the brief when it is one short line, else the
           // generic words (a paragraph does not fit a step row)
           text:
+            (goalEnds && endHoldS > 0
+              ? f
+                ? `Tenez-le ${Math.round(endHoldS)} s`
+                : `Hold it for ${Math.round(endHoldS)} s`
+              : "") ||
             (brief && brief.length <= 90 && !/[.:;]\s/.test(brief) ? brief : "") ||
             (f
               ? "Pilotez jusqu’à la fin de l’exercice"
               : "Fly until the end of the exercise"),
-          done: () => ended,
+          done: () => (goalEnds ? endMet : ended),
           check: pathCheck,
           readout: (cx) => {
             const left =
@@ -503,7 +515,12 @@ function compile(
                 ? Math.max(0, Math.round(endTime - cx.run.totalT))
                 : null;
             const r = pathReadout(cx);
+            const held =
+              goalEnds && endHoldS > 0
+                ? `${Math.min(Math.round(endHoldS), Math.floor(endHeld))} / ${Math.round(endHoldS)} s`
+                : "";
             return [
+              held,
               left !== null
                 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`
                 : "",
@@ -529,8 +546,12 @@ function compile(
           const v = view(cx);
           const t = cx.run.totalT;
           if (!ended && endIdx >= 0) {
-            ended = (endTime !== undefined && t >= endTime) || (endWhen.length > 0 && endWhen.every((g, i) => evaluate(g, v, endMem[i])));
-            if (ended && cx.run.idx < endIdx) cx.run.finish();
+            const endNow = endWhen.length > 0 && endWhen.every((g, i) => evaluate(g, v, endMem[i]));
+            endHeld = endNow ? endHeld + cx.dt : 0;
+            endMet = endNow && endHeld + 1e-9 >= endHoldS;
+            ended = (endTime !== undefined && t >= endTime) || endMet;
+            // the time limit ends an « À vous » flight whose goal is not met yet, whatever step it is on
+            if (ended && (cx.run.idx < endIdx || (goalEnds && !endMet))) cx.run.finish();
           }
           for (const k of tracked) {
             const ok = evaluate(k.c.check, v, k.mem);

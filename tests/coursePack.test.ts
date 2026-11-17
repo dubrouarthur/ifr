@@ -1103,7 +1103,9 @@ describe("Fly-it handoff (SPEC §6.2)", () => {
       kind: "scene",
       scene: "r276",
       durationS: undefined,
-      endWhen: undefined,
+      // the flight ends when the « À vous » goal is met (held for its holdS)
+      endWhen: [{ id: "altBand", p: { min: 3900, max: 4100 } }],
+      endHoldS: undefined,
     });
     const a = await recordYourTurnResult(s, {
       course: c,

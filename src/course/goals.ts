@@ -2220,7 +2220,9 @@ export function yourTurnFlyIt(yt: YourTurn, sceneId: string): FlyIt {
       kind: "scene",
       scene: yt.scene ?? sceneId,
       durationS: yt.durationS,
-      endWhen: yt.endWhen,
+      // without its own end condition, the flight ends when the goal is met: every row true together for holdS
+      endWhen: yt.endWhen ?? (yt.goal.all.length ? yt.goal.all : undefined),
+      endHoldS: yt.endWhen ? undefined : yt.goal.holdS,
     },
     brief: yt.prompt,
     options: yt.options ?? [],
@@ -2229,6 +2231,7 @@ export function yourTurnFlyIt(yt: YourTurn, sceneId: string): FlyIt {
       id: `g${i}`,
       label: { en: goalLabel(check, "en"), fr: goalLabel(check, "fr") },
       check,
+      reach: true,
     })),
     returnTo: yt.returnTo ?? "thisStep",
   };
