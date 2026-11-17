@@ -421,6 +421,8 @@ export function toolBlock(b: Of, env: BlockEnv): BlockView {
       if (ok && !met && play && (lastSrc === "user" || lastSrc === "remote")) {
         met = true;
         if (own?.hides?.length) draw(); // the hidden values come back
+        // the player's words under a small slide tick the question too
+        el.dispatchEvent(new CustomEvent("cs-status", { bubbles: true }));
         env.fire("goalMet");
         announce(t2(lang, "Found. ", "Trouvé. ") + (view?.say ?? ""));
       }
@@ -552,8 +554,9 @@ export function toolBlock(b: Of, env: BlockEnv): BlockView {
       ),
     );
     hudBtn.addEventListener("click", () => openSheet());
-    // hung under the block's frame (never over the drawing and its values)
-    hud.push({ el: hudBtn, at: [1, 1], origin: [1, 0] });
+    // in the block's top-right corner: the lightest part of every drawing (its values row is at the bottom; the
+    // slide is clipped just under the block on a phone, so it cannot hang below it)
+    hud.push({ el: hudBtn, at: [1, 0], origin: [1, 0] });
   }
   const onSheetKey = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
@@ -563,8 +566,14 @@ export function toolBlock(b: Of, env: BlockEnv): BlockView {
   };
   // the sheet is modal: everything else on the page is inert while it is open (focus stays in it)
   let inerted: Element[] = [];
+  let opener: HTMLElement | null = null;
   function openSheet() {
     if (sheet) return;
+    opener =
+      document.activeElement instanceof HTMLElement &&
+      document.activeElement !== document.body
+        ? document.activeElement
+        : null;
     setMenu(false);
     panel.classList.remove("is-menu");
     const view = el.closest(".sl-view") as HTMLElement | null;
@@ -609,8 +618,17 @@ export function toolBlock(b: Of, env: BlockEnv): BlockView {
     el.append(panel);
     sheet.remove();
     sheet = null;
-    if (hudBtn?.isConnected) hudBtn.focus();
+    // back to what opened it (the player's « Manipuler » under a small slide, or the slide's own)
+    const back = opener?.isConnected
+      ? opener
+      : hudBtn?.isConnected
+        ? hudBtn
+        : null;
+    opener = null;
+    back?.focus();
     layout();
+    // the player's words under a small slide read the question again (ticked if it was met in the sheet)
+    el.dispatchEvent(new CustomEvent("cs-status", { bubbles: true }));
   }
 
   // ---------------------------------------------------------------- size

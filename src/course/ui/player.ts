@@ -1846,6 +1846,34 @@ export class CoursePlayer {
               ),
             ),
           );
+      } else if (b.kind === "tool") {
+        // a teaching tool on a small slide: its question at reading size (ticked once met) and « Manipuler » as a
+        // 44 px button here, never over the drawing (it presses the block's own, which opens the tool full screen)
+        const blockEl = host.querySelector(`[data-id="${CSS.escape(b.id)}"]`);
+        const task = blockEl?.querySelector(".sl-tool-task");
+        if (task)
+          out.push(
+            h(
+              "ul",
+              { class: "cp-st-goals" },
+              h(
+                "li",
+                { class: task.classList.contains("done") ? "done" : "" },
+                h("span", { class: "cp-st-tick", "aria-hidden": "true" }, task.classList.contains("done") ? "✓" : ""),
+                h("span", {}, task.textContent?.trim() ?? ""),
+              ),
+            ),
+          );
+        const open = host.querySelector<HTMLElement>(`.sl-tool-open[data-block="${CSS.escape(b.id)}"]`);
+        if (open) {
+          const go = h(
+            "button",
+            { type: "button", class: "cp-btn primary cp-st-fly", tabindex: "-1" },
+            lang === "fr" ? "Manipuler" : "Try it",
+          );
+          go.addEventListener("click", () => open.click());
+          out.push(go);
+        }
       } else if (b.kind === "checklist") {
         out.push(
           h(

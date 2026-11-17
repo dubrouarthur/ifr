@@ -4346,6 +4346,12 @@ html.ga-doc body {
   .cp-body[data-layout="canvas"] .sl-hud-btn.sl-yourturn.is-sim {
     display: none;
   }
+  /* a teaching tool's « Manipuler »: the card's, never over the drawing; the slide's own stays in the tab order
+     and shows only while it has the keyboard focus */
+  .cp-body[data-layout="canvas"] .sl-hud-btn.sl-tool-open:not(:focus-visible) {
+    opacity: 0;
+    pointer-events: none;
+  }
   .cp-slidetext .cp-rich p,
   .cp-slidetext .cp-rich li {
     font-size: 16px;

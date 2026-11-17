@@ -234,12 +234,15 @@ export const carbIceTool: ToolDef = {
       stroke: c.bg,
       "stroke-width": 4,
     });
-    // the day's label beside its point, under it near the top (clear of the axis title), left of it on the right
-    const hi = py < pl.Y(85);
+    // the day's label beside its point, never on the axis title or the zone's name (at 91 %): level with the
+    // point at the very top, under it just below the name, above it elsewhere; on its left near the right edge
+    const nameY = pl.Y(91);
+    const dy =
+      rh >= 95 ? 8 : Math.abs(py - nameY) < 44 && py > nameY ? 36 : -14;
     const onRight = px > pl.X(30);
     s.text(
       px + (onRight ? -18 : 18),
-      py + (hi ? 36 : -14),
+      py + dy,
       `${num(p.t, 0, lang)}/${num(td, 0, lang)}`,
       {
         size: 24,
